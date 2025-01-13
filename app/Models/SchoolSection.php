@@ -16,4 +16,14 @@ class SchoolSection extends Model
     {
         return $this->belongsTo(School::class);
     }
+
+    /**
+     * The staffs that belong to the SchoolSection
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function staffs()
+    {
+        return $this->belongsToMany(Staff::class, 'staff_school_setion _pivot');
+    }
 }
