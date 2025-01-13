@@ -239,7 +239,7 @@ return [
         | Please check the docs to see what you need to do in case you have the package already configured.
         |
         */
-        'enabled' => false,
+        'enabled' => true,
 
         /*
         |--------------------------------------------------------------------------
@@ -251,7 +251,7 @@ return [
         | it will check only if the user has added that role/permission ignoring the team.
         |
         */
-        'strict_check' => false,
+        'strict_check' => true,
     ],
 
     /*
@@ -262,7 +262,7 @@ return [
     | Determines if you can check if a user has a permission using the "can" method.
     |
     */
-    'permissions_as_gates' => false,
+    'permissions_as_gates' => true,
 
     /*
     |--------------------------------------------------------------------------
