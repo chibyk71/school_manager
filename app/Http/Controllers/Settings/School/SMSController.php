@@ -12,7 +12,7 @@ class SMSController extends Controller
     public function index()
     {
         // Display Payments settings
-        $setting = tenant()->getSetting('sms'); // Fetch SMS settings from the database
+        $setting = getMergedSettings('sms', GetSchoolModel()); // Fetch SMS settings from the database
         return Inertia::render('Settings.School.SMS', compact('setting'));
     }
 
@@ -27,18 +27,8 @@ class SMSController extends Controller
 
         // Get the current school
         // Update the settings with the new values from the request
-        tenant()->setSettingetSetting('sms', $validated);
+        SaveOrUpdateSchoolSettings('sms', $validated);
 
         return redirect()->route('settings.school.sms.index')->with('success', 'SMS settings updated successfully.');
-    }
-
-
-    public function destroy(Request $request)
-    {
-        // Update SMS settings
-        // Remove the SMS settings from the database
-        tenant()->deleteSetting('sms');
-
-        return redirect()->route('settings.school.sms.index')->with('success', 'SMS settings removed successfully.');
     }
 }

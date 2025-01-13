@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School;
+namespace App\Http\Controllers\Settings\School\General;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\School;
@@ -12,40 +12,26 @@ class ApplicationController extends Controller
 {
     public function index()
     {
-        // Fetch tenant-wide settings as defaults
-        $tenantSettings = Settings::get('general', []);
-
-        // Fetch school-specific settings
-        // TODO find a way to get the current school id
-        $schoolSettings = School::getSetting('general', []);
-
         // Merge settings: Use school-specific if set, otherwise tenant defaults
-        $settings = array_replace_recursive($tenantSettings, array_filter($schoolSettings, fn($value) => $value !== null));
-
-
-        return Inertia::render('Settings.School.General', compact('settings'));
+        $settings = getMergedSettings('application', GetSchoolModel());
+        return Inertia::render('Settings.School.Application', compact('settings'));
     }
 
     public function store(Request $request)
     {
         // Validate incoming request data
         $validatedData = $request->validate([
-            'school_name' => 'required|string|max:255',
-            'short_name' => 'required|string|max:255',
-            'motto' => 'sometimes|string',
-            'about' => 'sometimes|string',
-            'pledge' => 'nullable|string',
-            'anthem' => 'nullable|string',
-            'sidebar_default'=> 'required|string|in:mini,full,compactǀ',
-            'table_pagination'=> 'required|integer',
-            'outside_click'=> 'required|boolean',
-            'start_day_of_week'=> 'required|integer|between:0,6',
-            'session_from'=> 'required|date',
-            'session_to'=> 'required|date'
+            'app_name' => 'required|string|max:255',
+            'short_name' => 'required|string|max:50',
+            'sidebar_default' => 'required|string|in:full,compact,mini',
+            'table_pagination' => 'required|integer|min:1|max:100',
+            'outside_click' => 'required|boolean',
+            'allow_school_custom_logo' => 'required|boolean',
+            'allow_school_default_payment' => 'required|boolean'
         ]);
 
         // Save or update the school-specific settings
-        tenant()->setSetting('general', $validatedData);
+        SaveOrUpdateSchoolSettings('general', $validatedData);
 
         return redirect()
             ->route('settings.school.general.index')

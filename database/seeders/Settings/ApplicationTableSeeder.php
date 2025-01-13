@@ -15,18 +15,13 @@ class ApplicationTableSeeder extends Seeder
     {
         // Define default application settings
         $defaultSettings = [
-            'school_name' => 'Default School Name',
+            'app_name' => 'Default School Name',
             'short_name' => 'DSN',
-            'motto' => 'Learning for the Future',
-            'about' => 'This is a default school description.',
-            'pledge' => 'Default pledge text.',
-            'anthem' => 'Default anthem text.',
             'sidebar_default' => 'full',
-            'table_pagination' => 10,
+            'table_pagination' => 50,
             'outside_click' => true,
-            'start_day_of_week' => 0,
-            'session_from' => Carbon::now(),
-            'session_to' => Carbon::now()->addYear(),
+            'allow_school_custom_logo' => true,
+            'allow_school_default_payment' => true
         ];
 
         // Save the default settings to the database

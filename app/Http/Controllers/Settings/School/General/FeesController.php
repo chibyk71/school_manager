@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School;
+namespace App\Http\Controllers\Settings\School\General;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -11,9 +11,6 @@ class FeesController extends Controller
 {
     public function index()
     {
-        // Fetch tenant-wide settings as defaults
-        $tenantSettings = Settings::get('fees', []);
-
         // Merge settings: Use school-specific if set, otherwise tenant defaults
         $settings = getMergedSettings('fees', GetSchoolModel());
 
@@ -32,7 +29,7 @@ class FeesController extends Controller
         ]);
 
         // Save or update the school-specific settings
-        GetSchoolModel()->setSetting('fees', $validatedData);
+        SaveOrUpdateSchoolSettings('fees', $validatedData);
 
         return redirect()
             ->route('settings.school.fees.index')

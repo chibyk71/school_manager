@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\Tenant\School;
+use App\Models\School;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
 
 if (!function_exists('getMergedSettings')) {
@@ -13,12 +13,14 @@ if (!function_exists('getMergedSettings')) {
     function getMergedSettings(string $key, $model): array
     {
         $tenantSettings = Settings::get($key, []);
-        $schoolSettings = $model::getSetting($key, []);
+        $schoolSettings = $model? $model::getSetting($key, []): [];
 
         // Merge settings: Use school-specific if set, otherwise tenant defaults
         return array_replace_recursive($tenantSettings, array_filter($schoolSettings, fn($value) => $value !== null));
     }
+}
 
+if (!function_exists('GetSchoolModel')) {
     /**
      * Get the current school model instance for the currently authenticated user or that this request is for
      */
@@ -36,5 +38,19 @@ if (!function_exists('getMergedSettings')) {
 
         // return null if no school is found
         return null;
+    }
+}
+
+if (!function_exists('SaveOrUpdateSchoolSettings')) {
+    /**
+     * Save or update the school-specific settings
+     */
+    function SaveOrUpdateSchoolSettings($key, $validatedData): void {
+        // Get the current school model instance for the currently authenticated user or that this request is for
+        // or use the Settings Model if no school is found to save as a default/system wide setting.
+
+        $model = GetSchoolModel() ?? Settings::class;
+
+        $model->setSetting($key, $validatedData);
     }
 }

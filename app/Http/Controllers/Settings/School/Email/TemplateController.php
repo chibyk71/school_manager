@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Tenant\Settings\School\Email;
+namespace App\Http\Controllers\Settings\School\Email;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\MailTemplate;

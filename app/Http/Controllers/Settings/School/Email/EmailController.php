@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\Email;
+namespace App\Http\Controllers\Settings\School\Email;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -27,7 +27,7 @@ class EmailController extends Controller
         ]);
 
         // Save or update the school-specific settings
-        GetSchoolModel()->setSetting('email', $validatedData);
+        SaveOrUpdateSchoolSettings('email', $validatedData);
 
         return redirect()
             ->route('settings.email.general.index')

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School;
+namespace App\Http\Controllers\Settings\School\General;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\School;
@@ -32,8 +32,6 @@ class BrandingController extends Controller
             'accent_color' => 'required|string',
         ]);
 
-        $currentlyActiveSchool = tenant();
-
         // Upload and store the logo, small_logo, and favicon files if they are provided
         if ($request->hasFile('logo')) {
             $validated['logo'] = $request->file('logo')->store('branding', 'public');
@@ -48,7 +46,7 @@ class BrandingController extends Controller
         }
 
         // Save the file paths to the settings
-        $currentlyActiveSchool->setSetting('branding', $validated);
+        SaveOrUpdateSchoolSettings('branding', $validated);
 
         return redirect()->route('settings.branding.index')->with('success', 'Branding settings updated successfully.');
     }

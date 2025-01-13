@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\Email;
+namespace App\Http\Controllers\Settings\School\Email;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -11,9 +11,6 @@ class SMTPController extends Controller
 {
     public function index()
     {
-        // Fetch tenant-wide settings as defaults
-        $tenantSettings = Settings::get('smtp', []);
-
         // Merge settings: Use school-specific if set, otherwise tenant defaults
         $settings = getMergedSettings('smtp', GetSchoolModel());
 
@@ -32,7 +29,7 @@ class SMTPController extends Controller
         ]);
 
         // Save or update the school-specific settings
-        GetSchoolModel()->setSetting('smtp', $validatedData);
+        SaveOrUpdateSchoolSettings('smtp', $validatedData);
 
         return redirect()
             ->route('settings.email.smtp.index')

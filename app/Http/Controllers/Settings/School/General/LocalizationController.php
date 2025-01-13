@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School;
+namespace App\Http\Controllers\Settings\School\General;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant\School;
@@ -12,7 +12,7 @@ class LocalizationController extends Controller
     public function index()
     {
         // Display Localization settings
-        $setting = tenant()->getSetting('localization');
+        $setting = getMergedSettings('localization', GetSchoolModel());
         return Inertia::render('Settings.School.Localization', compact('setting'));
     }
 

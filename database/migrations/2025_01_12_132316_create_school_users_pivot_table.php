@@ -13,9 +13,14 @@ return new class extends Migration
     {
         Schema::create('school_users', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('school_id')->index();
+            $table->string('user_id')->index();
             $table->timestamps();
+
+            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+
+            $table->unique(['school_id', 'user_id'], 'unique_school_user' );
         });
     }
 

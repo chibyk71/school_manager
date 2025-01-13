@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School;
+namespace App\Http\Controllers\Settings\School\General;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -27,7 +27,7 @@ class MaintainanceController extends Controller
         ]);
 
         // Save or update the school-specific settings
-        GetSchoolModel()->setSetting('maintenance', $validatedData);
+        SaveOrUpdateSchoolSettings('maintenance', $validatedData);
 
         return redirect()
             ->route('settings.school.maintenance.index')

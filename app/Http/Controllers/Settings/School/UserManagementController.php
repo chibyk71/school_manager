@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Tenant\Settings\UserManagement;
+namespace App\Http\Controllers\Settings\School;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -11,9 +11,6 @@ class UserManagementController extends Controller
 {
     public function index()
     {
-        // Fetch tenant-wide settings as defaults
-        $tenantSettings = Settings::get('user_management', []);
-
         // Merge settings: Use school-specific if set, otherwise tenant defaults
         $settings = getMergedSettings('user_management', GetSchoolModel());
 
@@ -34,7 +31,7 @@ class UserManagementController extends Controller
         ]);
 
         // Save or update the school-specific settings
-        GetSchoolModel()->setSetting('user_management', $validatedData);
+        SaveOrUpdateSchoolSettings('user_management', $validatedData);
 
         return redirect()
             ->route('settings.user_management.general.index')

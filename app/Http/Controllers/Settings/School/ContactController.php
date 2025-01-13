@@ -30,11 +30,8 @@ class ContactController extends Controller
             // Add more validation rules as needed
         ]);
 
-        // get the ccurrent school/tenent to scope the settings to
-        $currentlyActiveSchool = tenant();
-
         // Save the settings to the database or perform other actions
-       $currentlyActiveSchool->setSetting('contact', $validated);
+       SaveOrUpdateSchoolSettings('contact', $validated);
 
 
         return redirect()->route('settings.school.contact.index')->with('success', 'Contact settings saved successfully.');

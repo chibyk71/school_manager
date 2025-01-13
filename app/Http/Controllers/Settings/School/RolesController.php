@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Settings\School;
 
 use App\Http\Controllers\Controller;
-use App\Models\Tenant\Permission;
-use App\Models\Tenant\Role;
-use App\Models\Tenant\Team;
-use App\Models\Tenant\User;
+use App\Models\Permission;
+use App\Models\Role;
+use App\Models\Team;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
