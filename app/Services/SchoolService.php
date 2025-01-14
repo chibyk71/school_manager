@@ -9,6 +9,24 @@ use Illuminate\Support\Facades\Hash;
 
 class SchoolService
 {
+    protected $activeSchool;
+
+    public function setActiveSchool($school)
+    {
+        $this->activeSchool = $school;
+    }
+
+    public function getActiveSchool()
+    {
+        return $this->activeSchool ?: $this->getSchoolFromSession();
+    }
+
+    protected function getSchoolFromSession()
+    {
+        $schoolId = session('active_school_id');
+        return $schoolId ? School::find($schoolId) : null;
+    }
+
     public function createSchool(array $data): School
     {
         // Create the school record

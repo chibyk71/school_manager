@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\School;
+use Illuminate\Support\Arr;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
 
 if (!function_exists('getMergedSettings')) {
@@ -25,19 +26,14 @@ if (!function_exists('GetSchoolModel')) {
      * Get the current school model instance for the currently authenticated user or that this request is for
      */
     function GetSchoolModel(): ?School {
-        // first of all check if there is a school item in the request, if so, use that one
-        if (request()->has('school')) {
-            return School::find(request('school'));
-        }
-
+        return app('schoolManager')->getActiveSchool();
+       
         // if there is no school in the request, check if the user is authenticated and belongs to a school
-        if (auth()->check()) {
-            // check if the user belongs to a school and return that school model instance
-            return auth()->user()->school;
-        }
+        // if (auth()->check()) {
+        //     // check if the user belongs to a school and return that school model instance
+        //     return auth()->user()->school;
+        // }
 
-        // return null if no school is found
-        return null;
     }
 }
 
@@ -81,5 +77,20 @@ if (!function_exists('createExcerpt')) {
             $excerpt = substr($excerpt, 0, $position) . $more;
         }
         return $excerpt;
+    }
+}
+
+if (! function_exists('array_get')) {
+    /**
+     * Get an item from an array using "dot" notation.
+     *
+     * @param  \ArrayAccess|array  $array
+     * @param  string|int  $key
+     * @param  mixed  $default
+     * @return mixed
+     */
+    function array_get($array, $key, $default = null)
+    {
+        return Arr::get($array, $key, $default);
     }
 }

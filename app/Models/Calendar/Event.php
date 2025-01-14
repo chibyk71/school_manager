@@ -2,6 +2,7 @@
 
 namespace App\Models\Calendar;
 
+use App\Models\Academic\Term;
 use App\Models\Configuration\EventType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +18,7 @@ class Event extends Model
 
     protected $fillable = [
         'event_type_id',
+        'term_id',
         'title',
         'description',
         'start_date',
@@ -45,6 +47,16 @@ class Event extends Model
     public function eventType()
     {
         return $this->belongsTo(EventType::class);
+    }
+
+    /**
+     * Get the term that owns the Event
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function term()
+    {
+        return $this->belongsTo(Term::class);
     }
 
     public function getActivitylogOptions(): LogOptions

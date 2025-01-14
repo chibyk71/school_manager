@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use RuangDeveloper\LaravelSettings\Traits\HasSettings;
+use Spatie\Activitylog\Traits\CausesActivity;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasSettings;
+    use HasFactory, Notifiable, HasSettings, CausesActivity;
 
     /**
      * The attributes that are mass assignable.
