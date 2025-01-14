@@ -14,7 +14,6 @@ class SchoolScope implements Scope
      */
     public function apply(Builder $builder, Model $model)
     {
-        // TODO write the actual logic to check if there is a school initialized
         $currentlyInitializedSchool = GetSchoolModel()->id;
 
         if (! $currentlyInitializedSchool ) {

@@ -12,19 +12,19 @@ trait BelongsToSchool
 
     public function school()
     {
-        return $this->belongsTo(School::class, BelongsToschool::$schoolIdColumn);
+        return $this->belongsTo(School::class, BelongsToSchool::$schoolIdColumn);
     }
 
-    public static function bootBelongsToschool()
+    public static function bootBelongsToSchool()
     {
         static::addGlobalScope(new SchoolScope);
 
         static::creating(function ($model) {
-            if (! $model->getAttribute(BelongsToschool::$schoolIdColumn) && ! $model->relationLoaded('school')) {
+            if (! $model->getAttribute(BelongsToSchool::$schoolIdColumn) && ! $model->relationLoaded('school')) {
                 $currentSchool = GetSchoolModel()->id;
-                if (tenancy()->initialized) {
-                    $model->setAttribute(BelongsToschool::$schoolIdColumn, school()->getschoolKey());
-                    $model->setRelation('school', school());
+                if ($currentSchool) {
+                    $model->setAttribute(BelongsToSchool::$schoolIdColumn, $currentSchool);
+                    $model->setRelation('school', GetSchoolModel());
                 }
             }
         });
