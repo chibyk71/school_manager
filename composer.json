@@ -16,6 +16,7 @@
         "laravel/tinker": "^2.9",
         "ruangdeveloper/laravel-settings": "^2.0",
         "santigarcor/laratrust": "^8.3",
+        "spatie/laravel-activitylog": "^4.9",
         "spykapp/laravel-custom-fields": "^1.0",
         "tightenco/ziggy": "^2.0"
     },
