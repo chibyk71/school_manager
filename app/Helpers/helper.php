@@ -54,3 +54,32 @@ if (!function_exists('SaveOrUpdateSchoolSettings')) {
         $model->setSetting($key, $validatedData);
     }
 }
+
+if (!function_exists('createExcerpt')) {
+    
+    /**
+     * Creates an excerpt from the given content.
+     *
+     * This function strips HTML tags from the content, trims it, and then creates
+     * an excerpt of the specified length. If the content exceeds the specified length,
+     * it appends a specified string (default is '...') to the end of the excerpt.
+     *
+     * @param string $content The content to create an excerpt from.
+     * @param int $length The maximum number of words for the excerpt. Default is 20.
+     * @param string $more The string to append if the content exceeds the length. Default is '...'.
+     * @return string The generated excerpt.
+     */
+    function createExcerpt($content, $length = 20, $more = '...')
+    {
+        $excerpt = strip_tags(trim($content));
+        $words = str_word_count($excerpt, 2);
+        if (count($words) > $length) {
+            $words = array_slice($words, 0, $length, true);
+            end($words);
+            // $position = key( $words ) + strlen( current( $words ) );
+            $position = key($words);
+            $excerpt = substr($excerpt, 0, $position) . $more;
+        }
+        return $excerpt;
+    }
+}

@@ -28,4 +28,14 @@ class School extends Model
     {
         return $this->belongsToMany(User::class, 'school_users');
     }
+
+    /**
+     * Get all of the academic Sessions for the School
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function academicSessions()
+    {
+        return $this->hasMany(AcademicSession::class);
+    }
 }
