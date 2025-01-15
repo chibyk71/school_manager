@@ -14,8 +14,7 @@ return new class extends Migration
         Schema::create('terms', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('academic_session_id')->index();
-            $table->foreign('academic_session_id')->references('id')->on('academic_sessions')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignId('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete()->cascadeOnUpdate();
             $table->date('start_date')->nullable();
             $table->date('end_date')->nullable();
             $table->text('description')->nullable();

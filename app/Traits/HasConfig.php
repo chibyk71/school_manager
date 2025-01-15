@@ -5,7 +5,7 @@ namespace App\Traits;
 use App\Models\Configuration\Config;
 use App\Models\School;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 trait HasConfig
 {
@@ -26,9 +26,9 @@ trait HasConfig
      *
      * @return 
      */
-    public function configs(): MorphMany
+    public function configs(): MorphOne
     {
-        return $this->morphMany(Config::class, 'configurable');
+        return $this->morphOne(Config::class, 'configurable');
     }
 
     /**

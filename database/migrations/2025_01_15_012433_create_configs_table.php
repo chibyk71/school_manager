@@ -15,8 +15,8 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('description')->nullable();
-            $table->morphs('scope')->nullable();
-            $table->morph('configurable');
+            $table->nullableMorphs('scope');
+            $table->morphs('configurable');
             $table->string('color')->nullable();
             $table->timestamps();
         });
