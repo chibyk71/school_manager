@@ -17,10 +17,11 @@ return new class extends Migration
             $table->string('code');
             $table->string('description')->nullable();
             $table->string('credit')->nullable();
-            $table->string('school_id')->nullable()->index();
+            $table->boolean('is_elective')->default(false);
+            $table->foreignId('school_section_id')->constrained('school_sections')->onDelete('cascade');
+            $table->json('options')->nullable();
             $table->timestamps();
-
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
+            $table->softDeletes();
         });
     }
 

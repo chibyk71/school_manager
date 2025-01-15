@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('school_sections', function (Blueprint $table) {
             $table->id();
-            $table->string('school_id')->index();
+            $table->string('school_id')->nullable()->index();
             $table->string('name')->unique();
             $table->timestamps();
 

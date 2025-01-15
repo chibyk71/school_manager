@@ -47,6 +47,6 @@ class TimeTable extends Model
      */
     public function term()
     {
-        return $this->belongsTo(Term::class, 'term_id', 'ig');
+        return $this->belongsTo(Term::class, 'term_id', 'id');
     }
 }
