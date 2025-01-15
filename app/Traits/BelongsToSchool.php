@@ -15,7 +15,7 @@ trait BelongsToSchool
         return $this->belongsTo(School::class, BelongsToSchool::$schoolIdColumn);
     }
 
-    public static function bootBelongsToSchool()
+    protected static function bootBelongsToSchool()
     {
         static::addGlobalScope(new SchoolScope);
 

@@ -13,13 +13,15 @@ class TimeTable extends Model
     use HasFactory, LogsActivity;
 
     protected $fillable = [
+        'title',
+        "timeable_type_id",
         'term_id',
-        'day',
-        'start_time',
-        'end_time',
-        'subject_id',
-        'teacher_id',
-        'room_id',
+        'effective_date',
+    ];
+
+    protected $casts = [
+        'start_time' => 'datetime',
+        'end_time' => 'datetime',
     ];
 
     public function getActivitylogOptions(): LogOptions
