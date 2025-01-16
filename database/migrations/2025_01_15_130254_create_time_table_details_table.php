@@ -13,6 +13,9 @@ return new class extends Migration
     {
         Schema::create('time_table_details', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('class_period_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('teacher_class_section_subject_id')->constrained('teacher_class_section_subjects')->cascadeOnDelete();
+            $table->foreignId('time_table_id')->constrained('time_tables')->cascadeOnDelete();
             $table->timestamps();
         });
     }
