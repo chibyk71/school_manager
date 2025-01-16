@@ -16,8 +16,14 @@ class ConfigFactory extends Factory
      */
     public function definition(): array
     {
+        $defaultClassTeacherSubjectRoleConfig = [
+            'headteacher',
+            'assistant headteacher',
+            'subject teacher',
+        ];
+
         return [
-            //
+            
         ];
     }
 }

@@ -29,7 +29,7 @@ class TimeTable extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->useLogName('class_timing')
+            ->useLogName('time table')
             ->logAll()
             ->logExcept(['updated_at'])
             ->logOnlyDirty();

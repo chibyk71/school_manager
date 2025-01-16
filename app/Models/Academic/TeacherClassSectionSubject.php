@@ -31,7 +31,6 @@ class TeacherClassSectionSubject extends Pivot
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->useLogName('subject')
             ->logAll()
             ->logExcept(['updated_at'])
             ->logOnlyDirty();
