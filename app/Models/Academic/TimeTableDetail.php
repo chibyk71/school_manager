@@ -2,7 +2,7 @@
 
 namespace App\Models\Academic;
 
-use App\Models\Tenant\TimeTable;
+use App\Models\Academic\TimeTable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
