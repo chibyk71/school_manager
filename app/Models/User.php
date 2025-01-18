@@ -4,7 +4,10 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Models\Finance\FeeConcession;
+use App\Models\Transport\Route;
+use App\Models\Transport\Vehicle\Vehicle;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use RuangDeveloper\LaravelSettings\Traits\HasSettings;
@@ -62,5 +65,26 @@ class User extends Authenticatable
     public function feeConcessions()
     {
         return $this->belongsToMany(FeeConcession::class, 'user_fee_concessions', 'user_id', 'fee_concession_id');
+    }
+
+    /**
+     * The routes that belong to the User
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function routes(): BelongsToMany
+    {
+        return $this->belongsToMany(Route::class, 'route_vehicle', 'user_id', 'route_id')
+        ->withPivot('vehicle_id');
+    }
+
+    /**
+     * The vehicles that belong to the User
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function vehicles(): BelongsToMany
+    {
+        return $this->belongsToMany(Vehicle::class, 'route_vehicle', 'user_id', 'vehicle_id')->withPivot('route_id');
     }
 }

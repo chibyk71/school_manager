@@ -22,6 +22,13 @@ class ConfigFactory extends Factory
             'subject teacher',
         ];
 
+        $defaultVehicleExpenseConfig = [
+            'fuel',
+            'maintainance',
+            'repair',
+            'papers renewal'
+        ];
+
         return [
             
         ];

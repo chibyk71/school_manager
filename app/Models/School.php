@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\ClassLevel;
+use App\Models\Transport\Vehicle\Vehicle;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -39,5 +40,15 @@ class School extends Model
     public function academicSessions()
     {
         return $this->hasMany(AcademicSession::class);
+    }
+
+    /**
+     * Get all of the vehicles for the School
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function vehicles()
+    {
+        return $this->hasMany(Vehicle::class);
     }
 }

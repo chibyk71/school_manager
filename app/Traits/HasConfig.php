@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 trait HasConfig
 {
-    /**
+   /**
      * Set the configuration value for a given key.
      *
      * @param string $key
