@@ -29,6 +29,13 @@ class ConfigFactory extends Factory
             'papers renewal'
         ];
 
+        $defaultSalaryStructureConfig = [
+            'basic',
+            'allowance',
+            'bonus',
+            'deduction',
+        ];
+
         return [
             
         ];

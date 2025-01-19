@@ -1,7 +1,9 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\Employee;
 
+use App\Models\SchoolSection;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use SpykApp\LaravelCustomFields\Traits\HasCustomFields;
@@ -13,7 +15,8 @@ class Staff extends Model
     use HasFactory, HasCustomFields, LoadCustomFields;
 
     protected $fillable = [
-        'user_id'
+        'user_id',
+        'department_role_id'
     ];
 
     /**

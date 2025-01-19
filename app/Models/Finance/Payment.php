@@ -3,6 +3,7 @@
 namespace App\Models\Finance;
 
 use App\Models\User;
+use App\Traits\HasTransaction;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
@@ -11,7 +12,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class Payment extends Model
 {
     /** @use HasFactory<\Database\Factories\Finance\PaymentFactory> */
-    use HasFactory, LogsActivity;
+    use HasFactory, LogsActivity, HasTransaction;
 
     public function getActivitylogOptions(): LogOptions
     {
@@ -34,6 +35,10 @@ class Payment extends Model
         'fee_installment_detail_id',
         'fee_id'
     ];
+
+    public function getAmount() {
+        return $this->payment_amount ?? 0.0;
+    }
 
     protected $casts = [
         'payment_date' => 'datetime',

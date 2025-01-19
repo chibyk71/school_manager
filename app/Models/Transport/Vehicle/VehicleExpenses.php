@@ -3,6 +3,7 @@
 namespace App\Models\Transport\Vehicle;
 
 use App\Traits\HasConfig;
+use App\Traits\HasTransaction;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
@@ -11,7 +12,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class VehicleExpenses extends Model
 {
     /** @use HasFactory<\Database\Factories\Transport\Vehicle\VehicleExpensesFactory> */
-    use HasFactory, LogsActivity, HasConfig;
+    use HasFactory, LogsActivity, HasConfig, HasTransaction;
 
     protected $fillable = [
         'amount',
@@ -32,6 +33,11 @@ class VehicleExpenses extends Model
         'date_of_expense',
         'amount' => 'decimal:2'
     ];
+
+    public function getTransactionType(): string
+    {
+        return 'expense';
+    }
 
     public function getActivitylogOptions(): LogOptions
     {
