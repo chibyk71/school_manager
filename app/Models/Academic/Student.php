@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Academic\ClassSection;
+use App\Models\Misc\AttendanceLedger;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -58,4 +60,9 @@ class Student extends Model
     {
         return $this->belongsToMany(ClassSection::class, 'student_class_section_pivot', 'user_id');
     }
+
+    public function attendance() {
+        return $this->morphMany(AttendanceLedger::class, 'attendable');
+    }
+    
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models\Employee;
 
+use App\Models\Misc\AttendanceLedger;
 use App\Models\SchoolSection;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -38,4 +39,9 @@ class Staff extends Model
     {
         return $this->belongsToMany(SchoolSection::class, 'staff_school_section_pivot');
     }
+
+    public function attendance() {
+        return $this->morphMany(AttendanceLedger::class, 'attendable');
+    }
+    
 }

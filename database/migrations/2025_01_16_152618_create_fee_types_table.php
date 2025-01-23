@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('description')->nullable();
             $table->string('color')->nullable();
-            $table->string('school_id')->nullable()->index();
+            $table->uuid('school_id')->nullable()->index();
             $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
             $table->json('options')->nullable();
             $table->timestamps();

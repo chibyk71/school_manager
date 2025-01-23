@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('description')->nullable();
-            $table->string('school_id')->nullable()->index();
+            $table->uuid('school_id')->nullable()->index();
             $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
             $table->foreignId('fee_type_id')->constrained('fee_types')->cascadeOnDelete();
             $table->enum('type', ['amount', 'percent']);

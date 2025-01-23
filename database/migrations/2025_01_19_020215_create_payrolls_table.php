@@ -13,9 +13,9 @@ return new class extends Migration
     {
         Schema::create('payrolls', function (Blueprint $table) {
             $table->id();
-            $table->string('staff_id')->index();
+            $table->uuid('staff_id')->index();
             $table->foreign('staff_id')->references('id')->on('staffs')->onDelete('cascade');
-            $table->string('school_id')->index();
+            $table->uuid('school_id')->index();
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->foreignId('salary_id')->constrained('salaries')->onDelete('cascade');
             $table->decimal('bonus', 15, 2)->nullable();

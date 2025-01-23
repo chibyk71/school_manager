@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('leave_ledgers', function (Blueprint $table) {
             $table->id();
-            $table->string('staff_id')->index();
+            $table->uuid('staff_id')->index();
             $table->foreign('staff_id')->references('id')->on('staff')->onDelete('cascade');
             $table->foreignId('leave_type_id')->constrained('leave_types')->onDelete('cascade');
             $table->foreignId('academic_session_id')->constrained('academic_sessions')->onDelete('cascade');
