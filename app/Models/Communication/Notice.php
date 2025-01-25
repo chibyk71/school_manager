@@ -4,6 +4,8 @@ namespace App\Models\Communication;
 
 use App\Traits\HasConfig;
 use Illuminate\Database\Eloquent\Model;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Notice extends Model
 {
@@ -42,6 +44,13 @@ class Notice extends Model
     }
 
     public function recipients() {
-        return $this->belongsToMany('App\Models\User', 'notice_recipients', 'notice_id', 'user_id');
+        return $this->belongsToMany('App\Models\User', 'notice_recipients', 'notice_id', 'user_id')->withPivot(['seen'])->withTimestamps();
+    }
+
+    public function getActivityLogOptions() {
+        return LogOptions::defaults()
+        ->logAll()
+        ->logExcept(['updated_at'])
+        ->logOnlyDirty();
     }
 }

@@ -3,6 +3,8 @@
 namespace App\Models\Academic;
 
 use App\Models\SchoolSection;
+use App\Traits\BelongsToSections;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -12,7 +14,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class Subject extends Model
 {
     /** @use HasFactory<\Database\Factories\SubjectFactory> */
-    use HasFactory, SoftDeletes, LogsActivity;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSections, HasUuids;
 
     protected $fillable = [
         'name',
@@ -20,7 +22,6 @@ class Subject extends Model
         'code',
         'credit',
         'is_elective',
-        'school_secttion_id',
         'options'
     ];
 
@@ -36,10 +37,5 @@ class Subject extends Model
             ->logAll()
             ->logExcept(['updated_at'])
             ->logOnlyDirty();
-    }
-
-    public function schoolSection()
-    {
-        return $this->belongsTo(SchoolSection::class);
     }
 }

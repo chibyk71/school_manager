@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('time_tables', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->string('title');
             $table->foreignId('term_id')->constrained()->cascadeOnDelete();
             $table->boolean('status')->default('true');
@@ -21,7 +21,6 @@ return new class extends Migration
             $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();
-            $table->unique(['term_id', 'school_section_id']);
         });
     }
 

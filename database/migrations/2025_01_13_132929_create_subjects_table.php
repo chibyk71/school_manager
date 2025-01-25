@@ -12,13 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('subjects', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->string('name');
             $table->string('code');
             $table->string('description')->nullable();
             $table->string('credit')->nullable();
             $table->boolean('is_elective')->default(false);
-            $table->foreignId('school_section_id')->constrained('school_sections')->onDelete('cascade');
             $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();

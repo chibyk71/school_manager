@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Academic\ClassSection;
 use App\Models\Misc\AttendanceLedger;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,7 +15,7 @@ use SpykApp\LaravelCustomFields\Traits\LoadCustomFields;
 class Student extends Model
 {
     /** @use HasFactory<\Database\Factories\StudentFactory> */
-    use HasFactory, HasCustomFields, LoadCustomFields;
+    use HasFactory, HasCustomFields, LoadCustomFields, HasUuids;
 
     protected $fillable = [
         'user_id',
