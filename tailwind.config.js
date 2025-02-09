@@ -18,5 +18,7 @@ export default {
         },
     },
 
-    plugins: [forms],
+    darkMode: ['selector', '[class*="dark"]'],
+
+    plugins: [forms, require('tailwindcss-primeui')],
 };

@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('school_id')->nullable()->index();
             $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
             $table->unsignedMediumInteger('order');
-            $table->boolean('is-break')->default('false');
+            $table->boolean('is-break')->default(false);
             $table->decimal('duration');
             $table->timestamps();
         });

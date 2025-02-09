@@ -16,7 +16,7 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->string('title');
             $table->foreignId('term_id')->constrained()->cascadeOnDelete();
-            $table->boolean('status')->default('true');
+            $table->boolean('status')->default(true);
             $table->dateTime('effective_date');
             $table->json('options')->nullable();
             $table->timestamps();

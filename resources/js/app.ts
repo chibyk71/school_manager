@@ -1,4 +1,4 @@
-import '../css/app.css';
+import '../css/app.postcss';
 import './bootstrap';
 
 import { createInertiaApp } from '@inertiajs/vue3';
@@ -6,7 +6,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, DefineComponent, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import PrimeVue from 'primevue/config';
-import Nora from '@primevue/themes/nora';
+import Lara from '@primevue/themes/lara';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -22,9 +22,7 @@ createInertiaApp({
             .use(plugin)
             .use(ZiggyVue)
             .use(PrimeVue, {
-                theme: {
-                    preset: Nora
-                }
+                theme: 'none',
             })
             .mount(el);
     },

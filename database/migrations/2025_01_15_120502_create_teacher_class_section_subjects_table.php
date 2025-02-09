@@ -15,8 +15,8 @@ return new class extends Migration
             $table->id();
             $table->string('teacher_id')->index();
             $table->foreign('teacher_id')->references('id')->on('staff')->cascadeOnDelete()->cascadeOnUpdate();
-            $table->foreignId('class_section_subject_id')->constrained('class_section_subjects')->cascadeOnDelete();
-            $table->foreignId('subject_id')->nullable()->constrained('subjects')->cascadeOnDelete();
+            $table->foreignId('class_section_id')->constrained('class_sections')->cascadeOnDelete();
+            $table->foreignUuid('subject_id')->nullable()->constrained('subjects')->cascadeOnDelete();
             $table->timestamps();
         });
     }
