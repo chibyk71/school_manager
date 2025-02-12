@@ -3,10 +3,12 @@ import './bootstrap';
 
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
-import { createApp, DefineComponent, h } from 'vue';
+import { createApp, DefineComponent, h, VueElement } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import PrimeVue from 'primevue/config';
-import Lara from '@primevue/themes/lara';
+import { PerfectScrollbarPlugin } from 'vue3-perfect-scrollbar';
+import 'vue3-perfect-scrollbar/style.css';
+import { Tooltip } from 'primevue';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -24,6 +26,8 @@ createInertiaApp({
             .use(PrimeVue, {
                 theme: 'none',
             })
+            .use(PerfectScrollbarPlugin)
+            .directive('tooltip', Tooltip)
             .mount(el);
     },
     progress: {

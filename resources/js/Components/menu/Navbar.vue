@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { isDarkTheme } from '@/store';
+import { isDarkTheme, sidebarCollapsed } from '@/store';
 import { Link } from '@inertiajs/vue3';
 import { Avatar, Button, IconField, Image, InputIcon, InputText, Menu, Menubar, OverlayBadge, Select } from 'primevue';
 import { ref } from 'vue';
@@ -10,6 +10,11 @@ import { ref } from 'vue';
     const toggleDarkMode = () => {
         isDarkTheme.value = !!document.querySelector('html')?.classList.toggle('dark');
     };
+
+    const toggleSidebar = () => {
+        sidebarCollapsed.value = !sidebarCollapsed.value;
+        document.body.classList.toggle('mini-sidebar');
+    }
 </script>
 
 <template>
@@ -23,7 +28,7 @@ import { ref } from 'vue';
         </template>
         <!-- Brand Logo -->
         <template #start>
-            <Button variant="text" icon="pi pi-bars">
+            <Button @click="toggleSidebar" variant="text" icon="pi pi-bars">
             </Button>
             <div class="brand">
                 <Link :href="route('dashboard')" class="router-link-active router-link-exact-active brand-logo" aria-current="page">
@@ -88,7 +93,7 @@ import { ref } from 'vue';
                         </template>
                         <template class="grid grid-cols-2 gap-x-4" #item="slotProps">
                             <div class="">
-                                <a v-ripple class="block bg-primary/10 rounded p-3 text-center mb-3">
+                                <a class="block bg-primary/10 rounded p-3 text-center mb-3">
                                     <div class="mb-2">
                                         <span class="inline-flex items-center justify-center w-12 h-12 bg-primary rounded-full"><i class="pi pi-building-columns"></i></span>
                                     </div>

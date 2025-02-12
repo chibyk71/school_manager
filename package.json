@@ -23,8 +23,10 @@
     },
     "dependencies": {
         "@primevue/themes": "^4.2.5",
+        "@tailwindcss/nesting": "^0.0.0-insiders.565cd3e",
         "primeicons": "^7.0.0",
         "primevue": "^4.2.5",
-        "tailwindcss-primeui": "^0.4.0"
+        "tailwindcss-primeui": "^0.4.0",
+        "vue3-perfect-scrollbar": "^2.0.0"
     }
 }
