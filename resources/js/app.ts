@@ -9,6 +9,7 @@ import PrimeVue from 'primevue/config';
 import { PerfectScrollbarPlugin } from 'vue3-perfect-scrollbar';
 import 'vue3-perfect-scrollbar/style.css';
 import { Tooltip } from 'primevue';
+import ToastService from 'primevue/toastservice';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -27,6 +28,7 @@ createInertiaApp({
                 theme: 'none',
             })
             .use(PerfectScrollbarPlugin)
+            .use(ToastService)
             .directive('tooltip', Tooltip)
             .mount(el);
     },
