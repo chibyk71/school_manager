@@ -1,10 +1,8 @@
 <script setup lang="ts">
+import TextInput from '@/Components/inputs/textInput.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { Button, Card, Password } from 'primevue';
 
 const form = useForm({
     password: '',
@@ -20,38 +18,32 @@ const submit = () => {
 </script>
 
 <template>
+    <Head title="Confirm Password" />
     <GuestLayout>
-        <Head title="Confirm Password" />
 
-        <div class="mb-4 text-sm text-gray-600 dark:text-gray-400">
-            This is a secure area of the application. Please confirm your
-            password before continuing.
-        </div>
+        <Card>
+            <template #content>
+                <div class=" mb-4">
+                    <h2 class="mb-2 text-2xl/none font-bold text-color">Confirm Password</h2>
+                    <p class="mb-0 text-sm/none text-color">This is a secure area of the application. Please confirm your
+                        password before continuing.</p>
+                </div>
 
-        <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="password" value="Password" />
-                <TextInput
-                    id="password"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password"
-                    required
-                    autocomplete="current-password"
-                    autofocus
-                />
-                <InputError class="mt-2" :message="form.errors.password" />
-            </div>
 
-            <div class="mt-4 flex justify-end">
-                <PrimaryButton
-                    class="ms-4"
-                    :class="{ 'opacity-25': form.processing }"
-                    :disabled="form.processing"
-                >
-                    Confirm
-                </PrimaryButton>
-            </div>
-        </form>
+            <form @submit.prevent="submit">
+                <TextInput label="Password" icon="pi pi-lock" :error="form.errors.password">
+                    <template #input="{invalid}">
+                        <Password required autofocus :invalid="invalid" v-model="form.password" toggleMask></Password>
+                    </template>
+                </TextInput>
+
+                <div class="mt-4">
+                    <Button type="submit" :loading="form.processing" fluid>
+                        Confirm
+                    </Button>
+                </div>
+            </form>
+            </template>
+        </Card>
     </GuestLayout>
 </template>

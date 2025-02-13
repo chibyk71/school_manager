@@ -1,16 +1,15 @@
 <script setup lang="ts">
+import TextInput from '@/Components/inputs/textInput.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Button, Card, Checkbox, Image, Password } from 'primevue';
 
 const form = useForm({
     name: '',
     email: '',
     password: '',
     password_confirmation: '',
+    terms: false
 });
 
 const submit = () => {
@@ -23,93 +22,77 @@ const submit = () => {
 </script>
 
 <template>
+    <Head title="Register" />
     <GuestLayout>
-        <Head title="Register" />
-
         <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="name" value="Name" />
+            <Card class="card">
+                <template #content>
 
-                <TextInput
-                    id="name"
-                    type="text"
-                    class="mt-1 block w-full"
-                    v-model="form.name"
-                    required
-                    autofocus
-                    autocomplete="name"
-                />
+                    <div class=" mb-4">
+                        <h2 class="mb-2 text-2xl/none font-bold text-color">Register</h2>
+                        <p class="mb-0 text-sm/none text-color">Please enter your details to sign in</p>
+                    </div>
+                    <div class="mt-4">
+                        <div class="mt-4">
+                            <div
+                                class="flex items-center justify-center flex-wrap gap-x-2">
+                                <div class="text-center flex-1">
+                                    <Button fluid severity="primary" class="">
+                                        <Image class="img-fluid m-1" src="assets/img/icons/facebook-logo.svg" alt="Facebook" />
+                                    </Button>
+                                </div>
+                                <div class="text-center flex-1">
+                                    <Button fluid class="" severity="" variant="outlined" plain >
+                                        <Image class="img-fluid m-1" src="assets/img/icons/google-logo.svg" alt="Facebook" />
+                                    </Button>
+                                </div>
+                                <div class="text-center flex-1">
+                                    <Button fluid class="" severity="contrast">
+                                        <img class="img-fluid m-1" src="assets/img/icons/apple-logo.svg" alt="Apple">
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="login-or">
+                            <span class="span-or">Or</span>
+                        </div>
+                        <div class="mb-3 ">
+                            <TextInput label="Name" v-model="form.name" icon="pi pi-user" :error="form.errors.name" />
 
-                <InputError class="mt-2" :message="form.errors.name" />
-            </div>
+                            <TextInput label="Email" v-model="form.email" icon="pi pi-envelope" :error="form.errors.email" />
 
-            <div class="mt-4">
-                <InputLabel for="email" value="Email" />
+                            <TextInput label="Password" icon="pi pi-lock" :error="form.errors.password">
+                                <template #input="{ invalid }">
+                                    <Password v-model="form.password" fluid toggleMask :invalid="invalid" />
+                                </template>
+                            </TextInput>
 
-                <TextInput
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    required
-                    autocomplete="username"
-                />
-
-                <InputError class="mt-2" :message="form.errors.email" />
-            </div>
-
-            <div class="mt-4">
-                <InputLabel for="password" value="Password" />
-
-                <TextInput
-                    id="password"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password"
-                    required
-                    autocomplete="new-password"
-                />
-
-                <InputError class="mt-2" :message="form.errors.password" />
-            </div>
-
-            <div class="mt-4">
-                <InputLabel
-                    for="password_confirmation"
-                    value="Confirm Password"
-                />
-
-                <TextInput
-                    id="password_confirmation"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password_confirmation"
-                    required
-                    autocomplete="new-password"
-                />
-
-                <InputError
-                    class="mt-2"
-                    :message="form.errors.password_confirmation"
-                />
-            </div>
-
-            <div class="mt-4 flex items-center justify-end">
-                <Link
-                    :href="route('login')"
-                    class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:text-gray-400 dark:hover:text-gray-100 dark:focus:ring-offset-gray-800"
-                >
-                    Already registered?
-                </Link>
-
-                <PrimaryButton
-                    class="ms-4"
-                    :class="{ 'opacity-25': form.processing }"
-                    :disabled="form.processing"
-                >
-                    Register
-                </PrimaryButton>
-            </div>
+                            <TextInput label="Confirm Password" icon="pi pi-lock" :error="form.errors.password_confirmation">
+                                <template #input="{ invalid }">
+                                    <Password v-model="form.password_confirmation" fluid toggleMask :invalid="invalid" />
+                                </template>
+                            </TextInput>
+                        </div>
+                        <div class="flex items-center mb-3">
+                            <div class="flex items-center">
+                                <Checkbox required v-model="form.terms" />
+                                <!-- TODO: replace link with actual link for terms page -->
+                                <h6 class="font-normal text-color .l-2 mb-0">I Agree to<Link href="#"
+                                        class="text-primary hover:text-primary-emphasis"> Terms & Privacy</Link>
+                                </h6>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <Button type="submit" fluid :loading="form.processing" class="">Sign Up</Button>
+                    </div>
+                    <div class="text-center">
+                        <h6 class="font-normal text-color mb-0">Already have an account?<Link
+                                href="login.html" class="hover-a"> Sign In</Link>
+                        </h6>
+                    </div>
+                </template>
+            </Card>
         </form>
     </GuestLayout>
 </template>

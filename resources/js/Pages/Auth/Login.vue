@@ -89,8 +89,7 @@ const submit = () => {
                         <Button type="submit" loading-icon="pi pi-spinner" fluid :loading="form.processing">Sign In</Button>
                     </div>
                     <div class="text-center">
-                        <h6 class="fw-normal text-dark mb-0">Don’t have an account? <a
-                                href="register.html" class="hover-a "> Create Account</a>
+                        <h6 class="fw-normal text-dark mb-0">Don’t have an account? <Link :href="route('register')" class="hover-a "> Create Account</Link>
                         </h6>
                     </div>
               </template>
