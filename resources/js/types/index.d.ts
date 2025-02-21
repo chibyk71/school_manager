@@ -12,3 +12,11 @@ export type PageProps<
         user: User;
     };
 };
+
+export type Statistic = {
+    stat: number,
+    percentage: number,
+    title: string,
+    active: number,
+    inactive: number
+}

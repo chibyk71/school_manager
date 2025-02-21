@@ -10,13 +10,14 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laratrust\Traits\HasRolesAndPermissions;
 use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 use Spatie\Activitylog\Traits\CausesActivity;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasSettings, CausesActivity;
+    use HasFactory, Notifiable, HasSettings, CausesActivity, HasRolesAndPermissions;
 
     /**
      * The attributes that are mass assignable.

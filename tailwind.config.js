@@ -8,6 +8,7 @@ export default {
         "./storage/framework/views/*.php",
         "./resources/views/**/*.blade.php",
         "./resources/js/**/*.vue",
+        "./resources/js/**/*.ts",
     ],
 
     theme: {
@@ -23,10 +24,13 @@ export default {
             fontFamily: {
                 sans: ["Figtree", ...defaultTheme.fontFamily.sans],
             },
+            colors: {
+                dark: '#202C4B',
+            }
         },
     },
 
     darkMode: "class",
 
-    plugins: [forms, require("tailwindcss-primeui")],
+    plugins: [forms, require("tailwindcss-primeui"), require("@tailwindcss/typography")],
 };

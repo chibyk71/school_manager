@@ -18,7 +18,7 @@ import { ref } from 'vue';
 </script>
 
 <template>
-    <Menubar class="app-header">
+<Menubar class="app-header !border-b fixed w-full top-0 right-0 left-0 overflow-hidden z-30">
         <!-- search input -->
         <template #button="slotProps">
             <IconField>

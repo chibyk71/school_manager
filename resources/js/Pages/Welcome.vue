@@ -1,14 +1,10 @@
 <script setup lang="ts">
-    import { Head } from '@inertiajs/vue3';
-
-    defineProps<{
-        canLogin?: boolean;
-        canRegister?: boolean;
-        laravelVersion: string;
-        phpVersion: string;
-    }>();
+import { Head, Link } from '@inertiajs/vue3';
+import Staff from './Dashboard/Staff.vue';
 </script>
 
 <template>
-    <Head title="Welcome" />
+    <Head title="Dashboard" />
+
+    <Staff />
 </template>

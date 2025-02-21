@@ -77,7 +77,7 @@ const submit = () => {
                             <div class="flex items-center">
                                 <Checkbox required v-model="form.terms" />
                                 <!-- TODO: replace link with actual link for terms page -->
-                                <h6 class="font-normal text-color .l-2 mb-0">I Agree to<Link href="#"
+                                <h6 class="font-normal text-color ml-2 mb-0">I Agree to<Link href="#"
                                         class="text-primary hover:text-primary-emphasis"> Terms & Privacy</Link>
                                 </h6>
                             </div>
@@ -88,7 +88,7 @@ const submit = () => {
                     </div>
                     <div class="text-center">
                         <h6 class="font-normal text-color mb-0">Already have an account?<Link
-                                href="login.html" class="hover-a"> Sign In</Link>
+                                href="/login" class="hover-a"> Sign In</Link>
                         </h6>
                     </div>
                 </template>

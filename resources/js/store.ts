@@ -568,3 +568,99 @@ export const menuItems = ref([
 ]);
 
 export const sidebarCollapsed = ref(false);
+
+export const quicklinksItems = [
+    [
+        {
+            url: "class-time-table.html",
+            sevierity: "bg-green-200/50",
+            icon: "ti ti-calendar",
+            borderClass: "border-green-500",
+            bgClass: "bg-green-500",
+            label: "Calendar"
+        },
+        {
+            url: "fees-group.html",
+            sevierity: "bg-surface-200/50",
+            icon: "ti ti-license",
+            borderClass: "border-surface-500",
+            bgClass: "bg-surface-500",
+            label: "Fees"
+        }
+    ],
+    [
+        {
+            url: "exam-results.html",
+            sevierity: "bg-primary/50",
+            icon: "ti ti-hexagonal-prism",
+            borderClass: "border-primary",
+            bgClass: "bg-primary",
+            label: "Exam Result"
+        },
+        {
+            url: "class-home-work.html",
+            sevierity: "bg-red-200/50",
+            icon: "ti ti-report-money",
+            borderClass: "border-red-500",
+            bgClass: "bg-red-500",
+            label: "Home Works"
+        }
+    ],
+    [
+        {
+            url: "student-attendance.html",
+            sevierity: "bg-yellow-200/50",
+            icon: "ti ti-calendar-share",
+            borderClass: "border-yellow-500",
+            bgClass: "bg-yellow-500",
+            label: "Attendance"
+        },
+        {
+            url: "attendance-report.html",
+            sevierity: "bg-blue-200/50",
+            icon: "ti ti-file-pencil",
+            borderClass: "border-blue-500",
+            bgClass: "bg-blue-500",
+            label: "Reports"
+        }
+    ]
+];
+
+export const filterByTimeOptions = ref([
+    { label: "Today", value: "today" },
+    { label: "This Week", value: "thisWeek" },
+    { label: "This Month", value: "thisMonth" },
+    { label: "This Year", value: "thisYear" },
+]);
+
+export const StudentQuickLinks: {
+    label: string,
+    url: string,
+    border_color: string,
+    icon: string,
+}[] = [
+        {
+            label: "Pay Fees",
+            url: "/student-fees",
+            border_color: "border-primary",
+            icon: "ti ti-report-money"
+        },
+        {
+            label: "Exam Result",
+            url: "student-result.html",
+            border_color: "border-green-500",
+            icon: "ti ti-hexagonal-prism-plus"
+        },
+        {
+            label: "Calendar",
+            url: "student-time-table.html",
+            border_color: "border-yellow-500",
+            icon: "ti ti-calendar"
+        },
+        {
+            label: "Attendance",
+            url: "student-leaves.html",
+            border_color: "border-dark",
+            icon: "ti ti-calendar-share"
+        }
+    ];

@@ -10,8 +10,8 @@
 
         <div class="w-full">
             <div class="login-wrapper w-full overflow-hidden relative flex-wrap block h-screen">
-                <div class="grid lg:grid-cols-2 grid-cols-1">
-                    <div class="">
+                <div class="block lg:grid lg:grid-cols-2">
+                    <div class="hidden lg:block">
                         <div class="login-background relative lg:flex items-center justify-center hidden flex-wrap h-screen">
                             <div>
                                 <Image class="max-w-full block h-auto" src="assets/img/authentication/authentication-02.jpg" alt="Img" />
@@ -35,7 +35,7 @@
                     </div>
                     <div class="">
                         <div class="flex justify-center items-center h-screen overflow-auto flex-wrap ">
-                            <div class="w-8/12 mx-auto p-4">
+                            <div class="w-full lg:w-8/12 mx-auto p-4">
                                 <div>
                                     <div class=" mx-auto mb-5 text-center">
                                         <Image src="assets/img/authentication/authentication-logo.svg"
