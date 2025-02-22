@@ -16,8 +16,7 @@ return new class extends Migration
             $table->foreignId('class_section_id')->constrained()->cascadeOnDelete();
             $table->timestamp('date_effective');
             $table->foreignId('class_period_id')->constrained()->cascadeOnDelete();
-            $table->uuid('shool_id')->index();
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
+            $table->foreignUuid('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->string('name');
             $table->text('description')->nullable();
             $table->uuid('manager')->index();

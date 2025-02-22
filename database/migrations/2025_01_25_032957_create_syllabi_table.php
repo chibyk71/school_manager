@@ -13,9 +13,9 @@ return new class extends Migration {
         Schema::create('syllabi', function (Blueprint $table) {
             $table->id();
             $table->foreignUuid('school_id')->nullable()->constrained('schools')->cascadeOnDelete();
-            $table->foreignUuid('class_level_id')->constrained('class_levels')->cascadeOnDelete();
+            $table->foreignId('class_level_id')->constrained('class_levels')->cascadeOnDelete();
             $table->foreignUuid('subject_id')->constrained('subjects')->cascadeOnDelete();
-            $table->foreignUuid('term_id')->constrained('terms')->cascadeOnDelete();
+            $table->foreignId('term_id')->constrained('terms')->cascadeOnDelete();
             $table->string('topic');
             $table->string('sub_topic')->nullable();
             $table->text('description')->nullable();

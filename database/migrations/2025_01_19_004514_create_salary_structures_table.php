@@ -16,8 +16,7 @@ return new class extends Migration
             $table->foreignId('salary_id')->constrained('salaries')->cascadeOnDelete();
             $table->decimal('amount', 15, 2);
             $table->string('name');
-            $table->string('school_id')->nullable()->index();
-            $table->foreign('school-id')->refrences('id')->on('schools')->cascadeOnDelete();
+            $table->foreignUuid('school_id')->nullable()->refrences('id')->on('schools')->cascadeOnDelete();
             $table->string('currency')->default('NGN');
             $table->timestamp('effective_date')->nullable();
             $table->text('description')->nullable();

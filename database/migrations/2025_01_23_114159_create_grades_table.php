@@ -13,8 +13,7 @@ return new class extends Migration
     {
         Schema::create('grades', function (Blueprint $table) {
             $table->id();
-            $table->uuid('school_id')->index()->nullable();
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
+            $table->foreignUuid('school_id')->nullable()->references('id')->on('schools')->onDelete('cascade');
             $table->foreignId('school_section_id')->nullable()->constrained('school_sections')->onDelete('cascade');
             $table->string('name');
             $table->string('code');

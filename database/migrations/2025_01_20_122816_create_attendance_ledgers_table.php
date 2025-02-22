@@ -13,9 +13,8 @@ return new class extends Migration
     {
         Schema::create('attendance_ledgers', function (Blueprint $table) {
             $table->id();
-            $table->foriegnId('attendance_session_id')->constrained('attendance_sessions')->cascadeOnDelete();
-            $table->uuid('attendable_id')->index();
-            $table->string('attendable_type');
+            $table->foreignId('attendance_session_id')->constrained('attendance_sessions')->cascadeOnDelete();
+            $table->uuidMorphs('attendable');
             $table->enum('status',['present','absent','late','leave','holiday'])->default('absent');
             $table->string('remarks')->nullable();
             $table->timestamps();

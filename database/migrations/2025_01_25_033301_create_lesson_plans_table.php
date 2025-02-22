@@ -14,12 +14,12 @@ return new class extends Migration
         Schema::create('lesson_plans', function (Blueprint $table) {
             $table->id();
             $table->foreignId('class_level_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('subject_id')->constrained()->cascadeOnDelete();
-            $table->foreignuuId('school_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('subject_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuId('school_id')->constrained()->cascadeOnDelete();
             $table->string('topic');
             $table->date('start_date');
             $table->date('end_date');
-            $table->foreignuuId('staff_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuId('staff_id')->constrained()->cascadeOnDelete();
             $table->timestamps();
             $table->softDeletes();
 

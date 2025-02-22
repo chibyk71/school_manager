@@ -14,7 +14,7 @@ return new class extends Migration {
             $table->id();
             $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
             $table->foreignId('class_level_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('subject_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('subject_id')->constrained()->cascadeOnDelete();
             $table->string('title');
             $table->text('description')->nullable();
             $table->foreignId('term_id')->constrained()->cascadeOnDelete();

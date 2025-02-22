@@ -13,8 +13,7 @@ return new class extends Migration
     {
         Schema::create('vehicles', function (Blueprint $table) {
             $table->id();
-            $table->string('school_id')->index();
-            $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
+            $table->foreignUuid('school_id')->references('id')->on('schools')->cascadeOnDelete();
             $table->string('name');
             $table->string('registration_number');
             $table->string('make');
@@ -25,7 +24,6 @@ return new class extends Migration
             $table->string('owner_company_name')->nullable();
             $table->string('owner_phone')->nullable();
             $table->string('owner_email')->nullable();
-            $table->foreignId('vehicle_fuel_type_id')->constrained('vehicle_fuel_types');
             $table->integer('max_fuel_capacity');
             $table->boolean('is_active')->default(true);
             $table->json('options')->nullable();

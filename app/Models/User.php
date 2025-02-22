@@ -6,6 +6,7 @@ namespace App\Models;
 use App\Models\Finance\FeeConcession;
 use App\Models\Transport\Route;
 use App\Models\Transport\Vehicle\Vehicle;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -17,7 +18,7 @@ use Spatie\Activitylog\Traits\CausesActivity;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasSettings, CausesActivity, HasRolesAndPermissions;
+    use HasFactory, Notifiable, HasSettings, CausesActivity, HasRolesAndPermissions, HasUuids;
 
     /**
      * The attributes that are mass assignable.
@@ -26,6 +27,7 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'enrollment_id',
         'email',
         'password',
     ];
@@ -87,5 +89,15 @@ class User extends Authenticatable
     public function vehicles(): BelongsToMany
     {
         return $this->belongsToMany(Vehicle::class, 'route_vehicle', 'user_id', 'vehicle_id')->withPivot('route_id');
+    }
+
+    /**
+     * Get the student associated with the User
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function student()
+    {
+        return $this->hasOne(Student::class, 'user_id', 'id');
     }
 }

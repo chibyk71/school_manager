@@ -25,7 +25,7 @@ return new class extends Migration
             $table->text('description')->nullable(); // Details or notes about the transaction
             $table->date('transaction_date'); // Date of the transaction
             $table->string('reference_number')->nullable(); // Reference number for the transaction
-            $table->foreignId('recorded_by')->nullable()->constrained('users'); // User who recorded the transaction
+            $table->foreignUuid('recorded_by')->nullable()->constrained('users'); // User who recorded the transaction
             $table->timestamps();
         });
     }

@@ -13,15 +13,13 @@ return new class extends Migration
     {
         Schema::create('assessment_results', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('assessment_id')->constrained('assessments')->cascadeOnDelete()->cascadeOnUpdate();
-            $table->uuid('student_id')->index();
-            $table->foreign('student_id')->references('id')->on('student')->cascadeOnDelete();
-            $table->foreignId('subject')->constrained()->cascadeOnUpdate()->cascadeOnUpdate();
+            $table->foreignUuid('assessment_id')->constrained('assessments')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignUuid('student_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('subject')->constrained()->cascadeOnUpdate()->cascadeOnUpdate();
             $table->string('result');
             $table->string('remark')->nullable();
             $table->foreignId('class_section_id')->constrained('class_sections')->cascadeOnDelete()->cascadeOnUpdate();
-            $table->uuid('graded_by')->index();
-            $table->foreign('grade_by')->references('id')->on('staff')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignUuid('grade_by')->references('id')->on('staff')->cascadeOnDelete()->cascadeOnUpdate();
             $table->timestamps();
         });
     }

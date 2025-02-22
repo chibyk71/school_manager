@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('driver_assignments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('vehicle_id')->constrained()->onDelete('cascade');
-            $table->foreignId('staff_id')->constrained()->onDelete('cascade');
+            $table->foreignUuid('staff_id')->constrained()->onDelete('cascade');
             $table->timestamp('effective_date');
             $table->timestamp('unassigned_at')->nullable();
             $table->timestamps();

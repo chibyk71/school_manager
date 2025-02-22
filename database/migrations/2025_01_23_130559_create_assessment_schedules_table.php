@@ -18,9 +18,9 @@ return new class extends Migration
             $table->date('end_date');
             $table->time('start_time');
             $table->time('end_time');
-            $table->foreignId('subject_id')->constrained('subjects')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignUuid('subject_id')->constrained('subjects')->cascadeOnDelete()->cascadeOnUpdate();
             $table->foreignId('class_section_id')->constrained('class_sections')->cascadeOnDelete()->cascadeOnUpdate();
-            $table->foreignId('invigilator_id')->constrained('staff')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignUuid('invigilator_id')->constrained('staff')->cascadeOnDelete()->cascadeOnUpdate();
             $table->timestamps();
         });
     }

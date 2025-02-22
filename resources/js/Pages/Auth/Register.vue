@@ -75,11 +75,11 @@ const submit = () => {
                         </div>
                         <div class="flex items-center mb-3">
                             <div class="flex items-center">
-                                <Checkbox required v-model="form.terms" />
+                                <Checkbox id="terms" required v-model="form.terms" binary />
                                 <!-- TODO: replace link with actual link for terms page -->
-                                <h6 class="font-normal text-color ml-2 mb-0">I Agree to<Link href="#"
+                                <label for="terms" class="font-normal text-color ml-2 mb-0">I Agree to<Link href="#"
                                         class="text-primary hover:text-primary-emphasis"> Terms & Privacy</Link>
-                                </h6>
+                                </label>
                             </div>
                         </div>
                     </div>

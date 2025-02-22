@@ -14,8 +14,7 @@ return new class extends Migration
         Schema::create('notice_recipients', function (Blueprint $table) {
             $table->id();
             $table->foreignId('notice_id')->constrained('notices')->onDelete('cascade');
-            $table->uuid('user_id')->index();
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            $table->foreignUuid('user_id')->references('id')->on('users')->onDelete('cascade');
             $table->boolean('is_read')->default(false);
             $table->timestamps();
         });

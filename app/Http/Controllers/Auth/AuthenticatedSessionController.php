@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\LoginRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -24,17 +25,38 @@ class AuthenticatedSessionController extends Controller
         ]);
     }
 
+
     /**
      * Handle an incoming authentication request.
+     * This method will accept a LoginRequest instance and attempt to authenticate the user,
+     * by checking the credentials against the database column for matching email|enrollment_id and password.
+     * If the credentials are valid, the user will be authenticated and redirected to the intended URL.
      */
     public function store(LoginRequest $request): RedirectResponse
     {
-        
-        $request->authenticate();
+        $request->validate([
+            'email' => 'required|string',  // Accepts either email or username
+            'password' => 'required|string',
+        ]);
 
-        $request->session()->regenerate();
+        // Determine if login input is an email or username
+        $fieldType = filter_var($request->email, FILTER_VALIDATE_EMAIL) ? 'email' : 'enrollment_id';
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        $credentials = [
+            $fieldType => $request->email,
+            'password' => $request->password,
+        ];
+
+        Log::info(json_encode($credentials));
+
+        if (Auth::attempt($credentials)) {
+            $request->session()->regenerate();
+            return redirect()->intended(route('dashboard'));
+        }
+
+        return back()->withErrors([
+            'email' => 'The provided credentials do not match our records.',
+        ]);
     }
 
     /**
@@ -45,7 +67,6 @@ class AuthenticatedSessionController extends Controller
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();
-
         $request->session()->regenerateToken();
 
         return redirect('/');

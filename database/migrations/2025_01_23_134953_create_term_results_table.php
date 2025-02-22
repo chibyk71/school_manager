@@ -13,10 +13,9 @@ return new class extends Migration
     {
         Schema::create('term_results', function (Blueprint $table) {
             $table->id();
-            $table->uuid('student_id')->index();
-            $table->foreign('student_id')->references('id')->on('students')->onDelete('cascade');
+            $table->foreignUuid('student_id')->references('id')->on('students')->onDelete('cascade');
             $table->foreignId('term_id')->constrained()->onDelete('cascade');
-            $table->foreignId('class_id')->constrained()->onDelete('cascade');
+            $table->foreignId('class_level_id')->constrained()->onDelete('cascade');
             $table->decimal('total_score', 5, 2);
             $table->decimal('average_score', 5, 2);
             $table->integer('position');

@@ -17,7 +17,7 @@ return new class extends Migration
             $table->text('body');
             $table->uuid('school_id')->index()->nullable();
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
-            $table->foreignId('sender_id')->constrained('users')->onDelete('cascade');
+            $table->foreignUuid('sender_id')->constrained('users')->onDelete('cascade');
             $table->boolean('is_public')->default(false);
             $table->date('effective_date');
             $table->timestamps();

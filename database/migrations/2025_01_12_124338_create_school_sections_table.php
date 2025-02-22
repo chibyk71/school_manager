@@ -13,11 +13,10 @@ return new class extends Migration
     {
         Schema::create('school_sections', function (Blueprint $table) {
             $table->id();
-            $table->string('school_id')->nullable()->index();
             $table->string('name')->unique();
             $table->timestamps();
 
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
+            $table->foreignUuid('school_id')->nullable()->references('id')->on('schools')->onDelete('cascade');
         });
     }
 
