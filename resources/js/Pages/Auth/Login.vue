@@ -77,7 +77,7 @@ const submit = () => {
 
                     <div class="flex items-center mb-3">
                         <div class="flex items-center">
-                            <Checkbox v-model="form.remember" />
+                            <Checkbox binary v-model="form.remember" />
                             <p class="ml-2 mb-0 ">Remember Me</p>
                         </div>
                         <div class="text-end ml-auto">

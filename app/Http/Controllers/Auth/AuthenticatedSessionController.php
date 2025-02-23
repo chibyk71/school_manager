@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -37,6 +38,7 @@ class AuthenticatedSessionController extends Controller
         $request->validate([
             'email' => 'required|string',  // Accepts either email or username
             'password' => 'required|string',
+            'remember' => 'required|boolean'
         ]);
 
         // Determine if login input is an email or username
@@ -50,7 +52,8 @@ class AuthenticatedSessionController extends Controller
         Log::info(json_encode($credentials));
 
         if (Auth::attempt($credentials)) {
-            $request->session()->regenerate();
+            $user = User::where($fieldType, $credentials[$fieldType])->firstOrFail();
+            Auth::login($user, $request->remember);
             return redirect()->intended(route('dashboard'));
         }
 
