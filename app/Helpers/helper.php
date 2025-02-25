@@ -14,7 +14,7 @@ if (!function_exists('getMergedSettings')) {
     function getMergedSettings(string $key, $model): array
     {
         $tenantSettings = Settings::get($key, []);
-        $schoolSettings = $model? $model::getSetting($key, []): [];
+        $schoolSettings = $model? $model->getSetting($key, []): [];
 
         // Merge settings: Use school-specific if set, otherwise tenant defaults
         return array_replace_recursive($tenantSettings, array_filter($schoolSettings, fn($value) => $value !== null));
@@ -27,7 +27,7 @@ if (!function_exists('GetSchoolModel')) {
      */
     function GetSchoolModel(): ?School {
         return app('schoolManager')->getActiveSchool();
-       
+
         // if there is no school in the request, check if the user is authenticated and belongs to a school
         // if (auth()->check()) {
         //     // check if the user belongs to a school and return that school model instance
@@ -52,7 +52,7 @@ if (!function_exists('SaveOrUpdateSchoolSettings')) {
 }
 
 if (!function_exists('createExcerpt')) {
-    
+
     /**
      * Creates an excerpt from the given content.
      *

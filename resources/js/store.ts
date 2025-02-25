@@ -9,12 +9,7 @@ export const menuItems = ref([
             {
                 title: "Dashboard",
                 icon: "ti ti-layout-dashboard",
-                submenu: [
-                    { title: "Admin Dashboard", link: "index.html" },
-                    { title: "Teacher Dashboard", link: "teacher-dashboard.html" },
-                    { title: "Student Dashboard", link: "student-dashboard.html" },
-                    { title: "Parent Dashboard", link: "parent-dashboard.html" },
-                ],
+                link: "/dashboard",
             },
             {
                 title: "Application",
@@ -29,16 +24,6 @@ export const menuItems = ref([
                     { title: "File Manager", link: "file-manager.html" },
                 ],
             },
-        ],
-    },
-    {
-        header: "Layout",
-        items: [
-            { title: "Default", icon: "ti ti-layout-sidebar", link: "layout-default.html" },
-            { title: "Mini", icon: "ti ti-layout-align-left", link: "layout-mini.html" },
-            { title: "RTL", icon: "ti ti-text-direction-rtl", link: "layout-rtl.html" },
-            { title: "Box", icon: "ti ti-layout-distribute-vertical", link: "layout-box.html" },
-            { title: "Dark", icon: "ti ti-moon", link: "layout-dark.html" },
         ],
     },
     {
@@ -277,70 +262,7 @@ export const menuItems = ref([
     {
         header: "Pages",
         items: [
-            { title: "Profile", icon: "ti ti-user", link: "profile.html" },
-            {
-                title: "Authentication",
-                icon: "ti ti-lock-open",
-                submenu: [
-                    {
-                        title: "Login",
-                        submenu: [
-                            { title: "Cover", link: "login.html" },
-                            { title: "Illustration", link: "login-2.html" },
-                            { title: "Basic", link: "login-3.html" },
-                        ],
-                    },
-                    {
-                        title: "Register",
-                        submenu: [
-                            { title: "Cover", link: "register.html" },
-                            { title: "Illustration", link: "register-2.html" },
-                            { title: "Basic", link: "register-3.html" },
-                        ],
-                    },
-                    {
-                        title: "ForgotPassword",
-                        submenu: [
-                            { title: "Cover", link: "forgot-password.html" },
-                            { title: "Illustration", link: "forgot-password-2.html" },
-                            { title: "Basic", link: "forgot-password-3.html" },
-                        ],
-                    },
-                    {
-                        title: "ResetPassword",
-                        submenu: [
-                            { title: "Cover", link: "reset-password.html" },
-                            { title: "Illustration", link: "reset-password-2.html" },
-                            { title: "Basic", link: "reset-password-3.html" },
-                        ],
-                    },
-                    {
-                        title: "EmailVerification",
-                        submenu: [
-                            { title: "Cover", link: "email-verification.html" },
-                            { title: "Illustration", link: "email-verification-2.html" },
-                            { title: "Basic", link: "email-verification-3.html" },
-                        ],
-                    },
-                    {
-                        title: "2 StepVerification",
-                        submenu: [
-                            { title: "Cover", link: "two-step-verification.html" },
-                            { title: "Illustration", link: "two-step-verification-2.html" },
-                            { title: "Basic", link: "two-step-verification-3.html" },
-                        ],
-                    },
-                    { title: "Lock Screen", link: "lock-screen.html" },
-                ],
-            },
-            {
-                title: "Error Pages",
-                icon: "ti ti-error-404",
-                submenu: [
-                    { title: "404 Error", link: "404-error.html" },
-                    { title: "500 Error", link: "500-error.html" },
-                ],
-            },
+            { title: "Profile", icon: "ti ti-user", link: "/profile" },
             { title: "BlankPage", icon: "ti ti-brand-nuxt", link: "blank-page.html" },
             { title: "Coming Soon", icon: "ti ti-file", link: "coming-soon.html" },
             { title: "UnderMaintenance", icon: "ti ti-moon-2", link: "under-maintenance.html" },
@@ -350,10 +272,10 @@ export const menuItems = ref([
         header: "Settings",
         items: [
             {
-                title: "General Settings",
+                title: "Profile Settings",
                 icon: "ti ti-shield-cog",
                 submenu: [
-                    { title: "Profile Settings", link: "profile-settings.html" },
+                    { title: "General Settings", link: "profile-settings.html" },
                     { title: "Security Settings", link: "security-settings.html" },
                     { title: "Notifications Settings", link: "notifications-settings.html" },
                     { title: "Connected Apps", link: "connected-apps.html" },
