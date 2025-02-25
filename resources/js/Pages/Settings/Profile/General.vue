@@ -3,6 +3,8 @@
     import { Head } from '@inertiajs/vue3';
     import { Badge, Button, Menu, ToggleSwitch } from 'primevue';
     import SettingsRow from '../Partials/SettingsRow.vue';
+import { watch } from 'vue';
+import axios from 'axios';
 
     const props = defineProps<{settings: {
         two_factor: boolean,
@@ -11,7 +13,27 @@
     }}>()
 
 
+    // create an axios request when props.settings.two_factor is changed
+    import { ref } from 'vue';
+    import { debounce } from 'lodash';
 
+    const isRequestPending = ref(false);
+
+    const debouncedRequest = debounce(async (value: boolean) => {
+        if (isRequestPending.value) return;
+        isRequestPending.value = true;
+        try {
+            await axios.post('/settings/profile/general', { two_factor: value });
+        } catch (error) {
+            console.error(error);
+        } finally {
+            isRequestPending.value = false;
+        }
+    }, 300);
+
+    watch(() => props.settings.two_factor, (value) => {
+        debouncedRequest(value);
+    });
 </script>
 
 <template>
@@ -41,19 +63,22 @@
                             <Button size="small" severity="primary" variant="outlined" label="Change Password" />
                         </SettingsRow>
                         <SettingsRow label="Two Factor" description="Receive codes via SMS or email every time you login">
-                            <ToggleSwitch v-model="props.settings?.two_factor" />
+                            <ToggleSwitch v-model="props.settings.two_factor" />
                         </SettingsRow>
+                        <!-- TODO: turn button to link and point href to otp page to verify -->
                         <SettingsRow label="Phone Number Verification" description="The Phone Number associated with the account">
                             <div class="flex items-center flex-wrap gap-x-2">
-                                <Badge value="Verified" severity="success" />
-                                <Button size="small" icon="ti ti-edit" label="Edit" variant="outlined" severity="contrast" />
+                                <Badge value="Verified" severity="success" >
+                                  <template #default></template>
+                                </Badge>
+                                <Button size="small" icon="ti ti-edit" label="Verify" variant="outlined" severity="contrast" />
                             </div>
                         </SettingsRow>
                         <SettingsRow label="Email Address" description="The email address associated with the account">
                             <div class="flex items-center flex-wrap gap-x-2">
                                 <span>[email&#160;protected]</span>
                                 <Badge severity="success" value="Verified" />
-                                <Button size="small" icon="ti ti-edit" label="Edit" variant="outlined" severity="contrast" />
+                                <Button size="small" icon="ti ti-edit" label="Verify" variant="outlined" severity="contrast" />
                             </div>
                         </SettingsRow>
                         <SettingsRow label="Device Management" description="The devices associated with the account">

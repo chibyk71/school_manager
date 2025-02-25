@@ -25,6 +25,7 @@ Route::middleware('auth')->group(function () {
 
     // settings
     Route::get('settings/profile/general', [GeneralController::class, 'index'])->name('profile.setting');
+    Route::post('settings/profile/general', [GeneralController::class, 'update'])->name('profile.setting.update');
 });
 
 require __DIR__.'/auth.php';
