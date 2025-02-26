@@ -7,9 +7,9 @@
 
 <template>
 	<div
-        class="flex justify-between items-center flex-wrap bg-white dark:bg-[--app-header-bg] border rounded p-3 pb-0 mb-3">
+        class="flex flex-row justify-between flex-wrap p-card pt-3 px-4 pb-0 mb-3">
         <div class="mb-3  text-color">
-            <h6>{{ label }}</h6>
+            <h6 class="text-lg font-medium">{{ label }}</h6>
             <p class="dark:text-slate-100">{{ description }}</p>
         </div>
         <div class="mb-3">

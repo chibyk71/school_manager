@@ -586,3 +586,13 @@ export const StudentQuickLinks: {
             icon: "ti ti-calendar-share"
         }
     ];
+
+export const ListOfAcademicYears = (numberofYearsBack: number = 5) => {
+    let cYear = new Date();
+
+    const currentYear = cYear.getFullYear();
+    
+    let XYearsAgo = currentYear - numberofYearsBack;
+
+    return Array.from(Array(numberofYearsBack).keys()).map((x) => `${XYearsAgo + x}/${XYearsAgo + x + 1}`);
+}

@@ -13,7 +13,7 @@ class LocalizationController extends Controller
     {
         // Display Localization settings
         $setting = getMergedSettings('localization', GetSchoolModel());
-        return Inertia::render('Settings.School.Localization', compact('setting'));
+        return Inertia::render('Settings/School/Localization', compact('setting'));
     }
 
     public function store(Request $request)
@@ -24,21 +24,19 @@ class LocalizationController extends Controller
             'date_format' => 'required|string',
             'time_format' => 'required|string',
             'currency' => 'required|string',
-            'currency_symbol' => 'required|string',
             'currency_position' => 'required|string',
             'decimal_separator' => 'required|string',
             'thousands_separator' => 'required|string',
             'language' => 'required|string',
+            'language_switcher' => 'sometimes|boolean',
+            'financial_year' => 'required|date:year',
+            'allowed_file_types' => 'required|array',
+            'allowed_file_types.*' => 'required|string',
+            'max_file_upload_size' => 'required|number'
         ]);
 
-        tenant()->setSetting('localization', $validatedData);
+        GetSchoolModel()->setSetting('localization', $validatedData);
 
-        return redirect()->route('settings.school.localization.index')->with('success', 'Localization settings updated successfully.');
-    }
-    
-    public function delete() {
-        // Delete Localization settings
-        GetSchoolModel()->deleteSetting('localization');
-        return redirect()->route('settings.school.localization.index')->with('success', 'Localization settings deleted successfully.');
+        return redirect()->route('website.localization')->with('success', 'Localization settings updated successfully.');
     }
 }
