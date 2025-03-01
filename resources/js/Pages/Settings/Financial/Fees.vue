@@ -2,12 +2,28 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SettingsLayout from '../Partials/SettingsLayout.vue';
 import SettingsRow from '../Partials/SettingsRow.vue';
-import { Textarea, ToggleSwitch } from 'primevue';
-import { Head } from '@inertiajs/vue3';
+import { Button, Textarea, ToggleSwitch } from 'primevue';
+import { Head, useForm } from '@inertiajs/vue3';
 
-defineProps<{
-    settings: {}
+const props = defineProps<{
+    settings: {
+        allow_offline_payments: boolean,
+        allow_offline_payments_description: string,
+        offline_payment_instructions: string,
+        lock_student_panel: boolean,
+        print_receipt: boolean,
+        receipt_as_single_page: boolean,
+    }
 }>()
+
+const form = useForm({
+    allow_offline_payments: props.settings.allow_offline_payments,
+    allow_offline_payments_description: props.settings.allow_offline_payments_description,
+    offline_payment_instructions: props.settings.offline_payment_instructions,
+    lock_student_panel: props.settings.lock_student_panel,
+    print_receipt: props.settings.print_receipt,
+    receipt_as_single_page: props.settings.receipt_as_single_page,
+})
 </script>
 
 <template>
@@ -23,31 +39,28 @@ defineProps<{
                                 <p>Fees Settings Configuration</p>
                             </div>
                             <div class="mb-3">
-                                <a href="email.html" class="btn btn-outline-light bg-white btn-icon me-2"><i
-                                        class="ti ti-mail-share"></i></a>
-                                <button class="btn btn-light me-2" type="button">Cancel</button>
-                                <button class="btn btn-primary" type="submit">Save</button>
+                                <Button class="" label="Save" :loading="form.processing" type="submit">Save</Button>
                             </div>
                         </div>
                         <div class="block space-y-4">
                             <SettingsRow label="Allow Offline Payments" description="">
-                                <ToggleSwitch />
+                                <ToggleSwitch v-model="form.allow_offline_payments" />
                             </SettingsRow>
 
                             <SettingsRow label="Instructions For Offline Bank Payments" description="Instructions For How Offline Payments To Bank Are To Be Made">
-                                <Textarea rows="3" fluid />
+                                <Textarea rows="3" fluid v-model="form.offline_payment_instructions" />
                             </SettingsRow>
 
                             <SettingsRow label="Lock Student Panel" description="If a student's is to be disabled if they defailt in payment">
-                                <ToggleSwitch />
+                                <ToggleSwitch v-model="form.lock_student_panel" />
                             </SettingsRow>
 
                             <SettingsRow label="Print Receipt" description="If a copy of the receipt is to be made for printing">
-                                <ToggleSwitch />
+                                <ToggleSwitch  v-model="form.print_receipt"/>
                             </SettingsRow>
 
                             <SettingsRow label="Receipt As Single Page" description="Force receipt to fit in one page">
-                                <ToggleSwitch />
+                                <ToggleSwitch v-model="form.receipt_as_single_page" />
                             </SettingsRow>
                         </div>
                     </form>

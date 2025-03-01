@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School\General;
+namespace App\Http\Controllers\Settings\Others;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -14,7 +14,7 @@ class MaintainanceController extends Controller
         // Merge settings: Use school-specific if set, otherwise tenant defaults
         $settings = getMergedSettings('maintenance', GetSchoolModel());
 
-        return Inertia::render('Settings.School.Maintenance', compact('settings'));
+        return Inertia::render('Settings/Others/Maintainance', compact('settings'));
     }
 
     public function store(Request $request)

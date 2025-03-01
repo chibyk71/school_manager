@@ -28,7 +28,7 @@ export const menuItems = ref([
         ],
     },
     {
-        header: "Peoples",
+        header: "User Management",
         items: [
             {
                 title: "Students",
@@ -66,6 +66,9 @@ export const menuItems = ref([
                     { title: "Routine", link: "routine-teachers.html" },
                 ],
             },
+            { title: "Users", icon: "ti ti-users-minus", link: "users.html" },
+            { title: "Roles & Permissions", icon: "ti ti-shield-plus", link: "roles-permission.html" },
+            { title: "DeleteAccount Request", icon: "ti ti-user-question", link: "delete-account.html" },
         ],
     },
     {
@@ -211,14 +214,6 @@ export const menuItems = ref([
         ],
     },
     {
-        header: "User Management",
-        items: [
-            { title: "Users", icon: "ti ti-users-minus", link: "users.html" },
-            { title: "Roles & Permissions", icon: "ti ti-shield-plus", link: "roles-permission.html" },
-            { title: "DeleteAccount Request", icon: "ti ti-user-question", link: "delete-account.html" },
-        ],
-    },
-    {
         header: "Membership",
         items: [
             { title: "MembershipPlans", icon: "ti ti-user-plus", link: "membership-plans.html" },
@@ -273,67 +268,49 @@ export const menuItems = ref([
         header: "Settings",
         items: [
             {
-                title: "Profile Settings",
-                icon: "ti ti-shield-cog",
-                submenu: [
-                    { title: "General Settings", link: "profile-settings.html" },
-                    { title: "Security Settings", link: "security-settings.html" },
-                    { title: "Notifications Settings", link: "notifications-settings.html" },
-                    { title: "Connected Apps", link: "connected-apps.html" },
-                ],
-            },
-            {
                 title: "Website Settings",
                 icon: "ti ti-device-laptop",
                 submenu: [
                     { title: "Company Settings", link: "company-settings.html" },
-                    { title: "Localization", link: "localization.html" },
-                    { title: "Prefixes", link: "prefixes.html" },
-                    { title: "Preferences", link: "preferences.html" },
-                    { title: "Social Authentication", link: "social-authentication.html" },
-                    { title: "Language", link: "language.html" },
+                    { title: "Localization", link: route('website.localization') },
                 ],
             },
-            {
-                title: "App Settings",
-                icon: "ti ti-apps",
-                submenu: [
-                    { title: "Invoice Settings", link: "invoice-settings.html" },
-                    { title: "Custom Fields", link: "custom-fields.html" },
-                ],
-            },
+            // {
+            //     title: "App Settings",
+            //     icon: "ti ti-apps",
+            //     submenu: [
+            //         { title: "Invoice Settings", link: "invoice-settings.html" },
+            //         { title: "Custom Fields", link: "custom-fields.html" },
+            //     ],
+            // },
             {
                 title: "System Settings",
                 icon: "ti ti-file-symlink",
                 submenu: [
-                    { title: "Email Settings", link: "email-settings.html" },
-                    { title: "Email Templates", link: "email-templates.html" },
-                    { title: "SMS Settings", link: "sms-settings.html" },
-                    { title: "OTP", link: "otp-settings.html" },
-                    { title: "GDPR Cookies", link: "gdpr-cookies.html" },
+                    { title: "Email Settings", link: route('system.email') },
+                    { title: "Email Templates", link: route("system.email.template") },
+                    { title: "SMS Settings", link: route("system.sms") },
+                    { title: "OTP", link: route("system.otp") },
+                    { title: "GDPR Cookies", link: route('system.gdpr') },
+                    {title: "Custom Fields", link: route('system.custom-fields')},
                 ],
             },
             {
                 title: "Financial Settings",
                 icon: "ti ti-zoom-money",
                 submenu: [
-                    { title: "Payment Gateways", link: "payment-gateways.html" },
-                    { title: "Tax Rates", link: "tax-rates.html" },
-                ],
-            },
-            {
-                title: "Academic Settings",
-                icon: "ti ti-calendar-repeat",
-                submenu: [
-                    { title: "School Settings", link: "school-settings.html" },
-                    { title: "Religion", link: "religion.html" },
+                    { title: "Payment Gateways", link: route("settings.payment-gate-ways") },
+                    { title: "Tax Rates", link: route("settings.tax") },
+                    {title: "Fees Settings", link: route('settings.fees')},
+                    {title: "Invoice Setting", link: route('settings.invoice')},
                 ],
             },
             {
                 title: "Other Settings",
                 icon: "ti ti-flag-cog",
                 submenu: [
-                    { title: "Storage", link: "storage.html" },
+                    { title: "Storage", link: route('settings.storage') },
+                    {title: "Maintainance", link: "/settings/others/maintainance"},
                     { title: "Ban IP Address", link: "ban-ip-address.html" },
                 ],
             },
@@ -465,27 +442,6 @@ export const menuItems = ref([
         items: [
             { title: "Documentation", icon: "ti ti-file-text", link: "https://preschool.dreamstechnologies.com/documentation/index.html" },
             { title: "Changelog", icon: "ti ti-exchange", link: "https://preschool.dreamstechnologies.com/documentation/changelog.html", badge: "v1.8.3" },
-            {
-                title: "MultiLevel",
-                icon: "ti ti-menu-2",
-                submenu: [
-                    { title: "Multilevel 1" },
-                    {
-                        title: "Multilevel 2",
-                        submenu: [
-                            { title: "Multilevel 2.1" },
-                            {
-                                title: "Multilevel 2.2",
-                                submenu: [
-                                    { title: "Multilevel 2.2.1" },
-                                    { title: "Multilevel 2.2.2" },
-                                ],
-                            },
-                        ],
-                    },
-                    { title: "Multilevel 3" },
-                ],
-            },
         ],
     },
 ]);

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School\General;
+namespace App\Http\Controllers\Settings\Finance;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
