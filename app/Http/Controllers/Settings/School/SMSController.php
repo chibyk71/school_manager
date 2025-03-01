@@ -13,7 +13,7 @@ class SMSController extends Controller
     {
         // Display Payments settings
         $setting = getMergedSettings('sms', GetSchoolModel()); // Fetch SMS settings from the database
-        return Inertia::render('Settings.School.SMS', compact('setting'));
+        return Inertia::render('Settings/System/SMS', compact('setting'));
     }
 
     public function store(Request $request)

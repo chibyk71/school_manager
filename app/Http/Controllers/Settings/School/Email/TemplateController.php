@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Settings\School\Email;
 
 use App\Http\Controllers\Controller;
-use App\Models\Tenant\MailTemplate;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\MailTemplates\Models\MailTemplate;
 // TODO add authorization policies to check for permission and roles
 class TemplateController extends Controller
 {
@@ -27,7 +27,7 @@ class TemplateController extends Controller
             ->get()
             ->groupBy('mailable');
 
-        return Inertia::render('Tenant/Settings/Email/Templates', ['mailTemplates' => $mailTemplates]);
+        return Inertia::render('Settings/System/EmailTemplate', ['mailTemplates' => $mailTemplates]);
     }
 
     /**
@@ -70,7 +70,7 @@ class TemplateController extends Controller
      * this method receives the mailable name and returns the mail template for that mail
      * if there is a customised version for the school, it returns that, if not, it returns the default one
      *
-     * @param  \App\Models\Tenant\MailTemplate  $mailTemplate
+     * @param  MailTemplate $mailTemplate
      * @return \Illuminate\Http\JsonResponse
      */
     public function show()

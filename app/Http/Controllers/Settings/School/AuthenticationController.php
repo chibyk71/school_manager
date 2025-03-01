@@ -25,7 +25,7 @@ class AuthenticationController extends Controller
             'allow_password_reset' => 'required|boolean',
             'enable_email_verification' => 'required|boolean',
             'allow_user_registration' => 'required|boolean',
-            'account_approvel' => 'required|boolean',
+            'account_approval' => 'required|boolean',
             'oAuth_registration' => 'required|boolean',
             'show_terms_on_registration' => 'required|boolean'
         ]);

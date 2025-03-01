@@ -13,7 +13,7 @@ class PaymentsController extends Controller
     {
         // Display Payments settings
         $settings = getMergedSettings('payment', GetSchoolModel()); // Fetch Payments settings from the database
-        return Inertia::render('Settings.School.Payment', compact('settings'));
+        return Inertia::render('Settings/Financial/Payment', compact('settings'));
     }
 
     public function store(Request $request)

@@ -14,7 +14,7 @@ class FeesController extends Controller
         // Merge settings: Use school-specific if set, otherwise tenant defaults
         $settings = getMergedSettings('fees', GetSchoolModel());
 
-        return Inertia::render('Settings.School.Fees', compact('settings'));
+        return Inertia::render('Settings/Financial/Fees', compact('settings'));
     }
 
     public function store(Request $request)

@@ -4,6 +4,8 @@
     import PageHeader from '@/Components/menu/PageHeader.vue';
     import SidePanel from '@/Components/menu/SidePanel.vue';
     import { type ButtonProps } from 'primevue';
+    import DynamicDialog from 'primevue/dynamicdialog';
+
 
     defineProps<{
         title: string,
@@ -26,4 +28,5 @@
             <slot></slot>
         </div>
     </div>
+    <DynamicDialog />
 </template>

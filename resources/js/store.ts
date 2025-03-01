@@ -1,3 +1,4 @@
+import { useDialog } from "primevue";
 import { ref } from "vue";
 
 export let isDarkTheme = ref(false);
@@ -591,8 +592,10 @@ export const ListOfAcademicYears = (numberofYearsBack: number = 5) => {
     let cYear = new Date();
 
     const currentYear = cYear.getFullYear();
-    
+
     let XYearsAgo = currentYear - numberofYearsBack;
 
     return Array.from(Array(numberofYearsBack).keys()).map((x) => `${XYearsAgo + x}/${XYearsAgo + x + 1}`);
 }
+
+// export const Dialog = useDialog();
