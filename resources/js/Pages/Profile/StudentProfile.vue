@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Dashboard from '../Dashboard.vue';
 import { Avatar, Badge, Button, Card, Tab, TabList, TabPanel, TabPanels, Tabs } from 'primevue';
 import Details from './StudentTab/Details.vue';
+import TimeTable from './StudentTab/TimeTable.vue';
 
 
 </script>
@@ -167,6 +168,9 @@ import Details from './StudentTab/Details.vue';
                             <Details />
                         </TabPanel>
                         <TabPanel value="time-table">
+                            <TimeTable />
+                        </TabPanel>
+                        <TabPanel value="leave">
                         </TabPanel>
                     </TabPanels>
                 </Tabs>

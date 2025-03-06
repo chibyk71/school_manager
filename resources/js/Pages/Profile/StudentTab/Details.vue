@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Avatar, Button, Card } from 'primevue';
+
 
 </script>
 
