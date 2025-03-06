@@ -22,126 +22,119 @@ use Inertia\Inertia;
  *  @since   2023-09-12
  */
 
-class RolesController extends Controller
-{
-    public function index()
-    {
-        // 
-        $school = GetSchoolModel();
+ class RolesController extends Controller
+ {
+     public function index()
+     {
+         $school = GetSchoolModel();
 
-        $teams = Team::where('student_id', $school?->id)->get(['id,name']);
+         $roles = Role::where(function ($query) use ($school) {
+             $query->whereNull('school_id');
+             if ($school) {
+                 $query->orWhere('school_id', $school->id);
+             }
+         })->get(['id', 'name']);
 
-        $permissions = Permission::all(['name','id']);
+         return Inertia::render('UserManagement/Roles', ['roles' => $roles]);
+     }
 
-        $roles = Role::where('school_id', $school?->id)->get(['id,name']);
+     public function store(Request $request)
+     {
+         $school = GetSchoolModel();
 
-        return Inertia::render('Settings/School/Roles', [
-            'permissions' => $permissions,
-            'roles' => $roles,
-            'teams' => $teams,
-        ]);
-    }
+         $validated = $request->validate([
+             'name' => 'required|string|unique:roles,name',
+             'display_name' => 'nullable|string',
+             'description' => 'nullable|string',
+         ]);
 
-    public function storeRole(Request $request)
-    {
-        $school = GetSchoolModel();
-        // Save Roles settings
-        $validated = $request->validate([
-            'role' => 'required|string',
-            'permissions' => 'required|array|min:1',
-            'permissions.*' => 'exists:permissions,id',
-            'team' => 'sometimes|string|nullable',
-            'display_name' => 'string|nullable',
-            'description' => 'string|nullable',
-        ]);
+         $role = Role::create([
+             'name' => $validated['name'],
+             'display_name' => $validated['display_name'],
+             'description' => $validated['description'],
+             'school_id' => $school?->id,
+         ]);
 
-        // Create or update the role
-        $role = Role::updateOrCreate(['name' => $validated['name'], 'school_id' => $school?->id], [
-            'display_name' => $request->display_name,
-             'description' => $request->description,
-        ]);
+         return redirect()->route('settings.school.roles.index')->with('success', 'Role created successfully.');
+     }
 
-        // Sync the permissions for the role and team (if provided)
-        $role->syncPermissions($validated['permissions'], $validated['team']);
 
-        return redirect()->route('settings.school.roles.index')->with('success', 'Role created successfully.');
-    }
+     public function update(Request $request, Role $role)
+     {
+         $validated = $request->validate([
+             'name' => 'required|string|unique:roles,name,' . $role->id,
+             'display_name' => 'nullable|string',
+             'description' => 'nullable|string',
+             'permissions' => 'array',
+         ]);
 
-    // create a function to assign or remove role from user
-    public function manageUserRole(Request $request) {
-        // Validate the request data
-        $validated = $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'role_id' => 'required|exists:roles,id',
-            'team_id' => 'nullable|exists:teams,id',
-        ]);
+         $role->update([
+             'name' => $validated['name'],
+             'display_name' => $validated['display_name'],
+             'description' => $validated['description'],
+         ]);
 
-        $user = User::find($validated['user_id']);
+         if ($request->has('permissions')) {
+             $role->permissions()->sync($validated['permissions']);
+         }
 
-        // Check if the user belongs to the currently active tenant before managing the role
-        if (!$user || !$user->belongsToSchool()) {
-            return redirect()->route('settings.school.roles.index')->with('error', 'You can only manage roles for users of the current tenant.');
-        }
+         return redirect()->route('settings.school.roles.index')->with('success', 'Role updated successfully.');
+     }
 
-        if ($user->hasRole($validated['role_id'], $validated['team_id'] ?? null)) {
-            $user->removeRole($validated['role_id'], $validated['team_id'] ?? null);
-            $message = 'Role removed from user successfully.';
-        } else {
-            $user->addRole($validated['role_id'], $validated['team_id'] ?? null);
-            $message = 'Role assigned to user successfully.';
-        }
+     public function destroy(Role $role)
+     {
+         if ($role->users()->count() > 0) {
+             return redirect()->route('settings.school.roles.index')->with('error', 'Cannot delete a role with assigned users.');
+         }
 
-        return redirect()->route('settings.school.roles.index')->with('success', $message);
-    }
+         $role->delete();
 
-    // create a function to add permision to user
-    public function manageUserPermission(Request $request) {
-        // Validate the request data
-        $validated = $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'permission_id' => 'required|exists:permissions,id',
-            'team_id' => 'nullable|exists:teams,id',
-        ]);
+         return redirect()->route('settings.school.roles.index')->with('success', 'Role deleted successfully.');
+     }
 
-        $user = User::find($validated['user_id']);
-        $team = Team::find($validated['team_id']);
+     /**
+      * Assign permissions to a role
+      */
+     public function assignPermissions(Request $request, Role $role)
+     {
+         $validated = $request->validate([
+             'permissions' => 'required|array',
+             'permissions.*' => 'exists:permissions,id',
+         ]);
 
-        // Check if the user belongs to the same school as the team
-        if ($team && $user->school_id !== $team->school_id) {
-            return redirect()->route('settings.school.roles.index')->with('error', 'User does not belong to the same school as the team.');
-        }
+         $role->permissions()->syncWithoutDetaching($validated['permissions']);
 
-        if ($user->hasPermission($validated['permission_id'], $validated['team_id'] ?? null)) {
-            $user->removePermissions($validated['permission_id'], $validated['team_id'] ?? null);
-            $message = 'Permission removed from user successfully.';
-        } else {
-            $user->givePermissions($validated['permission_id'], $validated['team_id'] ?? null);
-            $message = 'Permission added to user successfully.';
-        }
+         return redirect()->route('settings.school.roles.index')->with('success', 'Permissions assigned successfully.');
+     }
 
-        return redirect()->route('settings.school.roles.index')->with('success', $message);
-    }
+     /**
+      * Remove specific permissions from a role
+      */
+     public function removePermissions(Request $request, Role $role)
+     {
+         $validated = $request->validate([
+             'permissions' => 'required|array',
+             'permissions.*' => 'exists:permissions,id',
+         ]);
 
-    public function update(Request $request)
-    {
-        // Update Roles settings
-        $request->validate([
-            'name' => 'required|string',
-            'permissions' => 'required|array|min:1',
-        ]);
+         $role->permissions()->detach($validated['permissions']);
 
-        $role = Role::find($request->id);
-        $role->update(['name' => $request->name]);
-        $role->syncPermissions($request->permissions);
+         return redirect()->route('settings.school.roles.index')->with('success', 'Permissions removed successfully.');
+     }
 
-        return redirect()->route('settings.school.roles.index')->with('success', 'Role updated successfully.');
-    }
+     /**
+      * Sync role permissions (replace all assigned permissions)
+      */
+     public function syncPermissions(Request $request, Role $role)
+     {
+         $validated = $request->validate([
+             'permissions' => 'array',
+             'permissions.*' => 'exists:permissions,id',
+         ]);
 
-    public function destroy(Request $request, Role $role)
-    {
-        // Delete Roles settings
-        $role->delete();
+         $role->permissions()->sync($validated['permissions'] ?? []);
 
-        return redirect()->route('settings.school.roles.index')->with('success', 'Role deleted successfully.');
-    }
-}
+         return redirect()->route('settings.school.roles.index')->with('success', 'Permissions updated successfully.');
+     }
+ }
+

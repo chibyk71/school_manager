@@ -292,7 +292,7 @@ export const menuItems = ref([
                     { title: "SMS Settings", link: route("system.sms") },
                     { title: "OTP", link: route("system.otp") },
                     { title: "GDPR Cookies", link: route('system.gdpr') },
-                    {title: "Custom Fields", link: route('system.custom-fields')},
+                    {title: "Custom Fields", link: route('website.custom_field')},
                 ],
             },
             {
@@ -302,7 +302,7 @@ export const menuItems = ref([
                     { title: "Payment Gateways", link: route("settings.payment-gate-ways") },
                     { title: "Tax Rates", link: route("settings.tax") },
                     {title: "Fees Settings", link: route('settings.fees')},
-                    {title: "Invoice Setting", link: route('settings.invoice')},
+                    {title: "Invoice Setting", link: route("website.invoice")},
                 ],
             },
             {
@@ -555,3 +555,13 @@ export const ListOfAcademicYears = (numberofYearsBack: number = 5) => {
 }
 
 // export const Dialog = useDialog();
+
+export const StudentMenu = ref([
+    { label: 'Collect Fees', icon: 'ti ti-money-alt' },
+    { label: 'View Student', icon: 'ti ti-menu' },
+    { label: 'Edit', icon: 'ti ti-edit-circle' },
+    { label: 'Login Details', icon: 'ti ti-lock' },
+    { label: 'Disable', icon: 'ti ti-toggle-right' },
+    { label: 'Promote Student', icon: 'ti ti-arrow-ramp-right-2' },
+    { label: 'Delete', icon: 'ti ti-trash-x' }
+])

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { Link } from '@inertiajs/vue3';
-import { Button, Breadcrumb, type ButtonProps } from 'primevue';
+import { Button, Breadcrumb, type ButtonProps, ButtonEmits } from 'primevue';
 
 defineProps<{
     title: string,
@@ -9,7 +9,7 @@ defineProps<{
         label?: string,
         url?: string
     }[],
-    buttons?: ButtonProps[]
+    buttons?: Array<(ButtonProps & Partial<ButtonEmits>)>
 }>()
 </script>
 
