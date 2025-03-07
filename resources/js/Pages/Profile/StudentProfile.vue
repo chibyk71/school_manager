@@ -4,6 +4,10 @@ import Dashboard from '../Dashboard.vue';
 import { Avatar, Badge, Button, Card, Tab, TabList, TabPanel, TabPanels, Tabs } from 'primevue';
 import Details from './StudentTab/Details.vue';
 import TimeTable from './StudentTab/TimeTable.vue';
+import LeaveAndAttendance from './StudentTab/Leave.vue';
+import Fees from './StudentTab/Fees.vue';
+import ExamResult from './StudentTab/ExamResult.vue';
+import Library from './StudentTab/Library.vue';
 
 
 </script>
@@ -14,7 +18,7 @@ import TimeTable from './StudentTab/TimeTable.vue';
         <div class="grid grid-cols-12 gap-4">
 
             <!-- Student Information -->
-            <div class="xxl:col-span-3 xl:col-span-4 col-span-12 space-y-4 theiaStickySidebar">
+            <div class="xxl:col-span-3 xl:col-span-4 col-span-12 space-y-4">
                 <Card class="">
                     <!-- Basic Information -->
                     <template #content>
@@ -171,6 +175,16 @@ import TimeTable from './StudentTab/TimeTable.vue';
                             <TimeTable />
                         </TabPanel>
                         <TabPanel value="leave">
+                            <LeaveAndAttendance />
+                        </TabPanel>
+                        <TabPanel value="fees">
+                            <Fees />
+                        </TabPanel>
+                        <TabPanel value="exam">
+                            <ExamResult />
+                        </TabPanel>
+                        <TabPanel value="library">
+                            <Library />
                         </TabPanel>
                     </TabPanels>
                 </Tabs>

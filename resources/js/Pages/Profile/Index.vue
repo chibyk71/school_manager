@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import StudentProfile from './StudentProfile.vue';
+import StaffProfile from './StaffProfile.vue';
 
 
 </script>
 
 <template>
-    <StudentProfile />
+    <StaffProfile />
 </template>

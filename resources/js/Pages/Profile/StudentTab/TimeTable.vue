@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import { Avatar, Card, Select } from 'primevue';
 import { ref } from 'vue';
+import TimeTableItem from '../Partials/TimeTableItem.vue';
 
 const schedules = ref([
   {
@@ -288,7 +289,10 @@ const schedules = ref([
   }
 ]);
 
-const color = ref(['bg-primary-200/30', 'bg-red-200/30', 'bg-yellow-200/30', 'bg-sky-200/30', 'bg-green-200/30']);
+defineProps<{
+    role?: 'teacher'|'student'
+}>()
+
 </script>
 
 <template>
@@ -330,24 +334,14 @@ const color = ref(['bg-primary-200/30', 'bg-red-200/30', 'bg-yellow-200/30', 'bg
                     <div class="mb-3">
                         <h6>{{ day }}</h6>
                     </div>
-                    <div v-for="{ time, subject, teacherName, teacherImage} in sessions" :class="color[Math.floor(Math.random() * 5)]" class="rounded p-3 mb-4">
-                        <p class="flex items-center text-nowrap mb-1">
-                            <i class="ti ti-clock mr-1"></i>{{ time }}</p>
-                        <p class="text-dark">Subject : {{ subject }}</p>
-                        <div class="bg-surface-0 rounded p-1 mt-3">
-                            <Link href="teacher-details.html" class="text-muted flex items-center gap-x-2">
-                                <Avatar :image="teacherImage" />
-                                {{ teacherName }}
-                            </Link>
-                        </div>
-                    </div>
+                    <TimeTableItem v-for="session in sessions" :type="role ?? 'student'" v-bind="session" />
                 </div>
             </div>
         </template>
         <template #header>
             <div class="flex items-center justify-between flex-wrap p-4 pb-0 border-b mb-2">
                 <h4 class="p-card-title">Exams & Results</h4>
-                <Select :options="['This Year', 'Last Year']" model-value="This Year" />
+                <Select size="small" :options="['This Year', 'Last Year']" model-value="This Year" />
             </div>
         </template>
     </Card>
