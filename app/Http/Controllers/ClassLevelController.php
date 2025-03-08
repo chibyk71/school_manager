@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ClassLevel;
 use App\Http\Requests\StoreClassLevelRequest;
 use App\Http\Requests\UpdateClassLevelRequest;
+use Inertia\Inertia;
 
 class ClassLevelController extends Controller
 {
@@ -13,7 +14,7 @@ class ClassLevelController extends Controller
      */
     public function index()
     {
-        //
+        return Inertia::render('Academic/ClassLevels');
     }
 
     /**

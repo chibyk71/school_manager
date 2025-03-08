@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\School;
 use App\Http\Requests\StoreSchoolRequest;
 use App\Http\Requests\UpdateSchoolRequest;
+use Inertia\Inertia;
 
 class SchoolController extends Controller
 {
@@ -13,7 +14,7 @@ class SchoolController extends Controller
      */
     public function index()
     {
-        //
+        return Inertia::render('Academic/School');
     }
 
     /**

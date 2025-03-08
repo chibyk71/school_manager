@@ -340,7 +340,7 @@ defineProps<{
         </template>
         <template #header>
             <div class="flex items-center justify-between flex-wrap p-4 pb-0 border-b mb-2">
-                <h4 class="p-card-title">Exams & Results</h4>
+                <h4 class="p-card-title">TimeTables</h4>
                 <Select size="small" :options="['This Year', 'Last Year']" model-value="This Year" />
             </div>
         </template>

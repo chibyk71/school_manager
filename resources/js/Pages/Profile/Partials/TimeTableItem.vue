@@ -27,7 +27,7 @@ const color = ref(['bg-primary-200/30', 'bg-red-200/30', 'bg-yellow-200/30', 'bg
         <p class="flex items-center text-nowrap mb-1">
             <i class="ti ti-clock mr-1"></i>{{ time }}
         </p>
-        <p class="text-dark">Subject : {{ subject }}</p>
+        <p class="text-dark text-nowrap">Subject : {{ subject }}</p>
         <div class="bg-surface-0 rounded p-1 mt-3">
             <Link href="teacher-details.html" class="text-muted flex items-center gap-x-2">
             <Avatar :image="teacherImage" />

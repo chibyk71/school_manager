@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\SchoolSection;
 use App\Http\Requests\StoreSchoolSectionRequest;
 use App\Http\Requests\UpdateSchoolSectionRequest;
+use Inertia\Inertia;
 
 class SchoolSectionController extends Controller
 {
@@ -13,7 +14,7 @@ class SchoolSectionController extends Controller
      */
     public function index()
     {
-        //
+        return Inertia::render('Academic/Section');
     }
 
     /**

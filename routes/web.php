@@ -1,11 +1,17 @@
 <?php
 
+use App\Http\Controllers\ClassLevelController;
+use App\Http\Controllers\ClassSectionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\SchoolController;
+use App\Http\Controllers\SchoolSectionController;
 use App\Http\Controllers\Settings\PermissionController;
 use App\Http\Controllers\Settings\School\RolesController;
 use App\Http\Controllers\StudentController;
+use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\TeacherController;
+use App\Http\Controllers\TimeTableController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -34,6 +40,18 @@ Route::middleware('auth')->group(function () {
     Route::get('/students', [StudentController::class, 'index'])->name('student.index');
 
     Route::get('/teachers', [TeacherController::class, 'index'])->name('teacher.index');
+
+    Route::get('/schools', [SchoolController::class, 'index'])->name('school.index');
+
+    Route::get('school-sections', [SchoolSectionController::class, 'index'])->name('sections.index');
+
+    Route::get('class-levels', [ClassLevelController::class, 'index'])->name('class-level.index');
+
+    Route::get('class-sections', [ClassSectionController::class, 'index'])->name('class-level.index');
+
+    Route::get('subjects', [SubjectController::class, 'index'])->name('class-level.index');
+
+    Route::get('time-table', [TimeTableController::class, 'index'])->name('user');
 });
 
 require __DIR__.'/auth.php';
