@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Resource\Assignment;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class AssignmentController extends Controller
 {
@@ -12,7 +13,7 @@ class AssignmentController extends Controller
      */
     public function index()
     {
-        //
+        return Inertia::render('Academic/Homework');
     }
 
     /**

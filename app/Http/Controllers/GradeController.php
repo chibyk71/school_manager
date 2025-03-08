@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Academic\Grade;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class GradeController extends Controller
 {
@@ -12,7 +13,7 @@ class GradeController extends Controller
      */
     public function index()
     {
-        //
+        return Inertia::render('Academic/Exam/Grades');
     }
 
     /**

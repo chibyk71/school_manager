@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\ClassLevelController;
 use App\Http\Controllers\ClassSectionController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\GradeController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SchoolController;
 use App\Http\Controllers\SchoolSectionController;
@@ -51,7 +53,13 @@ Route::middleware('auth')->group(function () {
 
     Route::get('subjects', [SubjectController::class, 'index'])->name('class-level.index');
 
-    Route::get('time-table', [TimeTableController::class, 'index'])->name('user');
+    Route::get('time-table', [TimeTableController::class, 'index'])->name('timetables.index');
+
+    Route::get('exam/schedules', [App\Http\Controllers\Exam\ScheduleController::class, 'index'])->name('exam.schedules.index');
+
+    Route::get('exam/grades', [GradeController::class, 'index'])->name('exam.grades');
+
+    Route::get('assignments', [AssignmentController::class, 'index'])->name('assignment.index');
 });
 
 require __DIR__.'/auth.php';
