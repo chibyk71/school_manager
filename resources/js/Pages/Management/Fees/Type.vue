@@ -6,7 +6,7 @@ import { Card, Column, DataTable } from 'primevue';
 </script>
 
 <template>
-    <AuthenticatedLayout title="Fee Concession" :crumb="[{ label: 'Dashboard' }, { label: 'Fees Collection' }, { label: 'Fees Concession' }]" :buttons="[{icon:'ti ti-refresh', severity:'secondary'},{ label: 'Add Sections', icon: 'ti ti-school' }]">
+    <AuthenticatedLayout title="Fee Types" :crumb="[{ label: 'Dashboard' }, { label: 'Fees Collection' }, { label: 'Fees Type' }]" :buttons="[{icon:'ti ti-refresh', severity:'secondary'},{ label: 'Add Fee Type', icon: 'ti ti-plus-circle' }]">
 
         <!-- Guardians List -->
         <Card>
@@ -16,11 +16,7 @@ import { Card, Column, DataTable } from 'primevue';
                     <Column header="ID" />
                     <Column header="Name"></Column>
                     <Column header="Description" />
-                    <Column header="Type"></Column>
-                    <Column header="Amount"></Column>
-                    <Column header="Fee Type"></Column>
-                    <Column header="Start Date"></Column>
-                    <Column header="End Date"></Column>
+                    <Column header="Fee Group" />
                     <Column header="Status"></Column>
                     <Column header="Action" />
                 </DataTable>

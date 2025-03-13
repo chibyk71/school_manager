@@ -5,6 +5,7 @@ use App\Http\Controllers\ClassLevelController;
 use App\Http\Controllers\ClassSectionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GradeController;
+use App\Http\Controllers\NoticeController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SchoolController;
 use App\Http\Controllers\SchoolSectionController;
@@ -60,6 +61,12 @@ Route::middleware('auth')->group(function () {
     Route::get('exam/grades', [GradeController::class, 'index'])->name('exam.grades');
 
     Route::get('assignments', [AssignmentController::class, 'index'])->name('assignment.index');
+
+    Route::get('announcement/notice', [NoticeController::class, 'index'])->name('notice.index');
+
+    Route::get('reports', function () {
+        return Inertia::render('Communication/Event');
+    });
 });
 
 require __DIR__.'/auth.php';

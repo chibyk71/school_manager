@@ -157,10 +157,8 @@ import { ref } from 'vue';
                 </div>
 
                 <!-- Profile -->
-                <div class="">
-                    <Button :rounded="true" @click="(e) => $refs.profile?.toggle(e)" class="" variant="text" aria-label="Profile">
-                        <Avatar image="assets/img/profiles/avatar-27.jpg" shape="circle" size="large"></Avatar>
-                    </Button>
+                <div class="mb-0 pb-0">
+                    <Avatar @click="(e) => $refs.profile?.toggle(e)" class="w-10 h-[42px]" image="assets/img/profiles/avatar-27.jpg" shape="circle"></Avatar>
                     <Menu ref="profile" :popup="true" :model="[{name:'My Profile', value:'profile'},{name:'Settings', value:'settings'},{name:'Logout', value:'logout'}]" placeholder="Profile">
 
                         <template #start>

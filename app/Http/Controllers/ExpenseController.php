@@ -2,18 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Communication\Notice;
+use App\Models\Finance\Expense;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
 
-class NoticeController extends Controller
+class ExpenseController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
-        return Inertia::render('Communication/Notice');
+        //
     }
 
     /**
@@ -35,7 +34,7 @@ class NoticeController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Notice $notice)
+    public function show(Expense $expense)
     {
         //
     }
@@ -43,7 +42,7 @@ class NoticeController extends Controller
     /**
      * Show the form for editing the specified resource.
      */
-    public function edit(Notice $notice)
+    public function edit(Expense $expense)
     {
         //
     }
@@ -51,7 +50,7 @@ class NoticeController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Notice $notice)
+    public function update(Request $request, Expense $expense)
     {
         //
     }
@@ -59,7 +58,7 @@ class NoticeController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Notice $notice)
+    public function destroy(Expense $expense)
     {
         //
     }

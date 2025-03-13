@@ -26,7 +26,9 @@ const inputSlotPass = {
     hint: props.hint,
 }
 
-const model = defineModel({ default: props.default_value ?? ''})
+const model = defineModel<string>()
+
+model.value = props.default_value ?? ''
 </script>
 
 <template>
@@ -35,6 +37,6 @@ const model = defineModel({ default: props.default_value ?? ''})
         <slot name="input" v-bind="inputSlotPass">
             <InputText v-model="model" :id :invalid fluid :name />
         </slot>
-        <Message severity="error" v-if="invalid"> {{ error }}</Message>
+        <Message severity="error" v-if="invalid || hint"> {{ error ?? hint }}</Message>
     </div>
 </template>

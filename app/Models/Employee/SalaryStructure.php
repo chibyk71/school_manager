@@ -15,6 +15,8 @@ class SalaryStructure extends Model
     use HasFactory, LogsActivity, HasConfig, SoftDeletes;
 
     protected $fillable = [
+        // todo add role to migration file
+        'role_id',
         'salary_id',
         'amount',
         'currency',
