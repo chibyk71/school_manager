@@ -5,7 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\School;
 use App\Http\Requests\StoreSchoolRequest;
 use App\Http\Requests\UpdateSchoolRequest;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
+/**
+ * Only Admins or those with permission to manage this feature should be allowed to access this controller.
+*/
 
 class SchoolController extends Controller
 {
@@ -14,7 +18,13 @@ class SchoolController extends Controller
      */
     public function index()
     {
-        return Inertia::render('Academic/School');
+        Gate::authorize('viewAny');
+
+        $schools = School::all();
+
+        return Inertia::render('Academic/School', [
+            'schools' => $schools
+        ]);
     }
 
     /**

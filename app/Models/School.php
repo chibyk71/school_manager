@@ -20,8 +20,14 @@ class School extends Model
     protected $fillable = [
         'name',
         'slug',
+        'email',
+        'phone_one',
+        'phone_two',
+        'logo',
         'data',
     ];
+
+    // TODO: i want to make it that when create the model, the slug will be generated automatically, if not already present, and any extra data passed will be stored in the data column
 
     protected $casts = [
         'data' => 'array',

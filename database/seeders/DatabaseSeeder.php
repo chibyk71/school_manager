@@ -32,17 +32,17 @@ class DatabaseSeeder extends Seeder
             'email' => 'test@example.com',
         ]);
 
-        $this->call(SMSTableSeeder::class);
-        $this->call(ApplicationTableSeeder::class);
-        $this->call(RolesTableSeeder::class);
-        $this->call(EmailTableSeeder::class);
-        $this->call(SMTPTableSeeder::class);
-        $this->call(TemplateTableSeeder::class);
-        $this->call(BrandingTableSeeder::class);
-        $this->call(FeesTableSeeder::class);
-        $this->call(LocalizationTableSeeder::class);
-        $this->call(ContactTableSeeder::class);
-        $this->call(MaintenanceTableSeeder::class);
-        $this->call(UserManagementTableSeeder::class);
+        // $this->call(SMSTableSeeder::class);
+        // $this->call(ApplicationTableSeeder::class);
+        // $this->call(RolesTableSeeder::class);
+        // $this->call(EmailTableSeeder::class);
+        // $this->call(SMTPTableSeeder::class);
+        // $this->call(TemplateTableSeeder::class);
+        // $this->call(BrandingTableSeeder::class);
+        // $this->call(FeesTableSeeder::class);
+        // $this->call(LocalizationTableSeeder::class);
+        // $this->call(ContactTableSeeder::class);
+        // $this->call(MaintenanceTableSeeder::class);
+        // $this->call(UserManagementTableSeeder::class);
     }
 }
