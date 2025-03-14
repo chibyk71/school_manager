@@ -17,7 +17,12 @@ class SchoolFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'name' => $this->faker->company(),
+            'email' => $this->faker->companyEmail(),
+            'logo' => 'https://via.placeholder.com/150',
+            'phone_one' => $this->faker->phoneNumber(),
+            'phone_two' => $this->faker->phoneNumber(),
+            'slug' => $this->faker->slug(),
         ];
     }
 }

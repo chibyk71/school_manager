@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\ClassLevel;
 use App\Models\Transport\Vehicle\Vehicle;
+use App\Traits\BelongsToSections;
+use App\Traits\HasAddress;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,14 +15,17 @@ use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 class School extends Model
 {
     /** @use HasFactory<\Database\Factories\SchoolFactory> */
-    use HasFactory, HasSettings, HasUuids;
+    use HasFactory, HasSettings, HasUuids, HasAddress, BelongsToSections;
 
-    protected $fillable = [];
+    protected $fillable = [
+        'name',
+        'slug',
+        'data',
+    ];
 
-    public function schoolSections()
-    {
-        return $this->hasMany(SchoolSection::class);
-    }
+    protected $casts = [
+        'data' => 'array',
+    ];
 
     public function classLevels()
     {

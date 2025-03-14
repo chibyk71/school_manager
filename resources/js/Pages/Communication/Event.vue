@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import FullCalendarComponent from '@fullcalendar/vue3';
-import { Card } from 'primevue';
+import dayGridPlugin from "@fullcalendar/daygrid"
+import { Avatar, AvatarGroup, Card, Select } from 'primevue';
 
 const $ = Date;
 
@@ -18,18 +19,22 @@ const $ = Date;
                 <Card>
                     <template #content>
                         <FullCalendarComponent :options="{
+                            plugins: [dayGridPlugin],
+                            initialView: 'dayGridMonth',
                             events: [
                                 {
                                     title: 'Summer Vacation',
                                     className: 'progress-danger',
                                     backgroundColor: '#FDE9ED',
-                                    start: new Date($.now() - 168000000).toJSON().slice(0, 10)
+                                    start: new Date($.now() - 168000000).toJSON().slice(0, 10),
+                                    textColor: '#FF0000'
                                 },
                                 {
                                     title: 'Parents, Teacher Meet',
                                     className: 'progress-info',
                                     backgroundColor: '#E7F1FC',
-                                    start: new Date($.now() + 338000000).toJSON().slice(0, 10)
+                                    start: new Date($.now() + 338000000).toJSON().slice(0, 10),
+                                    end: new Date($.now() + 338040000).toJSON().slice(0, 10)
                                 },
                                 {
                                     title: 'Admission Camp',
@@ -56,7 +61,7 @@ const $ = Date;
                                         // var myModal = new bootstrap.Modal(document.getElementById('add_event'));
                                         // myModal.show();
                                         console.log('clicked');
-                                        
+
                                     }
                                 }
                             }
@@ -67,177 +72,47 @@ const $ = Date;
             <!-- /Event Calendar -->
 
             <!-- Event List -->
-            <div class="col-xl-4 xxl:col-span-3 col-span-12 theiaStickySidebar">
-                <div class="d-flex align-items-center justify-content-between">
-                    <h5 class="mb-3">Events</h5>
-                    <div class="dropdown mb-3">
-                        <a href="javascript:void(0);" class="btn btn-outline-light dropdown-toggle"
-                            data-bs-toggle="dropdown">All
-                            Category
-                        </a>
-                        <ul class="dropdown-menu p-3">
-                            <li>
-                                <a href="events.html#" class="dropdown-item rounded-1 d-flex align-items-center">
-                                    <i class="ti ti-circle-filled fs-8 text-warning me-2"></i>Celebration
-                                </a>
-                            </li>
-                            <li>
-                                <a href="events.html#" class="dropdown-item rounded-1 d-flex align-items-center">
-                                    <i class="ti ti-circle-filled fs-8 text-success me-2"></i>Training
-                                </a>
-                            </li>
-                            <li>
-                                <a href="events.html#" class="dropdown-item rounded-1 d-flex align-items-center">
-                                    <i class="ti ti-circle-filled fs-8 text-info me-2"></i>Meeting
-                                </a>
-                            </li>
-                            <li>
-                                <a href="events.html#" class="dropdown-item rounded-1 d-flex align-items-center">
-                                    <i class="ti ti-circle-filled fs-8 text-danger me-2"></i>Holidays
-                                </a>
-                            </li>
-                            <li>
-                                <a href="events.html#" class="dropdown-item rounded-1 d-flex align-items-center">
-                                    <i class="ti ti-circle-filled fs-8 text-pending me-2"></i>Camp
-                                </a>
-                            </li>
-                        </ul>
-                    </div>
+            <div class="xl:col-span-4 xxl:col-span-3 col-span-12">
+                <div class="flex items-center justify-between mb-3">
+                    <h5 class="">Events</h5>
+                    <Select fluid :options="['All Category', 'Celebration', 'Training', 'Meeting', 'Holidays', 'Camp']" model-value="All Category" />
                 </div>
 
                 <!-- Event Item -->
-                <div class="border-start border-info border-3 shadow-sm p-3 mb-3 bg-white">
-                    <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
-                        <span class="avatar p-1 me-3 bg-primary-transparent flex-shrink-0">
-                            <i class="ti ti-users-group text-info fs-20"></i>
-                        </span>
-                        <div class="flex-fill">
-                            <h6 class="mb-1">Parents, Teacher Meet</h6>
-                            <p class="fs-12"><i class="ti ti-calendar me-1"></i>15 July 2024</p>
+                <div v-for="i in 2" class="border-blue-300 border-l-4 shadow-sm p-3 mb-3 bg-white">
+                    <div class="flex items-center mb-3 pb-3 border-bottom">
+                        <Avatar icon="ti ti-users-group" class="bg-primary-300/50 mr-2"></Avatar>
+                        <div class="flex-1">
+                            <h6 class="">Parents, Teacher Meet</h6>
+                            <p class="text-xs"><i class="ti ti-calendar mr-1"></i>15 July 2024</p>
                         </div>
                     </div>
-                    <div class="d-flex align-items-center justify-content-between">
-                        <p class="mb-0 fs-12"><i class="ti ti-clock me-1"></i>09:10AM - 10:50PM</p>
-                        <div class="avatar-list-stacked avatar-group-sm">
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-01.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-07.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-02.jpg" class="rounded" alt="img">
-                            </span>
-                        </div>
+                    <div class="flex items-center justify-between">
+                        <p class="mb-0 text-xs"><i class="ti ti-clock mr-1"></i>09:10AM - 10:50PM</p>
+                        <AvatarGroup>
+                            <Avatar image="assets/img/parents/parent-01.jpg" shape="circle" />
+                            <Avatar image="assets/img/parents/parent-02.jpg" shape="circle" />
+                            <Avatar image="assets/img/parents/parent-03.jpg" shape="circle" />
+                        </AvatarGroup>
                     </div>
                 </div>
                 <!-- /Event Item -->
 
                 <!-- Event Item -->
-                <div class="border-start border-danger border-3 shadow-sm p-3 mb-3 bg-white">
-                    <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
-                        <span class="avatar p-1 me-2 bg-danger-transparent flex-shrink-0">
-                            <i class="ti ti-vacuum-cleaner fs-24"></i>
-                        </span>
-                        <div class="flex-fill">
+                <div v-for="i in 2" class="border-l-4 border-red-400 shadow-sm p-3 mb-3 bg-white">
+                    <div class="flex items-center mb-3 pb-3 border-bottom">
+                        <Avatar icon="ti ti-vacuum-cleaner" class="bg-red-300/50 mr-2"></Avatar>
+                        <div class="flex-1">
                             <h6 class="mb-1">Summer Vacation</h6>
-                            <p class="fs-12"><i class="ti ti-calendar me-1"></i>07 July 2024 - 08 July 2024</p>
+                            <p class="text-xs"><i class="ti ti-calendar mr-1"></i>07 July 2024 - 08 July 2024</p>
                         </div>
                     </div>
-                    <div class="d-flex align-items-center justify-content-between">
-                        <p class="fs-12 mb-0"><i class="ti ti-clock me-1"></i>09:10 AM - 10:50 PM</p>
-                        <div class="avatar-list-stacked avatar-group-sm">
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-11.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-13.jpg" class="rounded" alt="img">
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <!-- /Event Item -->
-
-                <!-- Event Item -->
-                <div class="border-start border-info border-3 shadow-sm p-3 mb-3 bg-white">
-                    <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
-                        <span class="avatar p-1 me-2 bg-info-transparent flex-shrink-0">
-                            <i class="ti ti-user-edit fs-20"></i>
-                        </span>
-                        <div class="flex-fill">
-                            <h6 class="mb-1">Staff Meeting</h6>
-                            <p class="fs-12"><i class="ti ti-calendar me-1"></i>10 July 2024</p>
-                        </div>
-                    </div>
-                    <div class="d-flex align-items-center justify-content-between">
-                        <p class="fs-12 mb-0"><i class="ti ti-clock me-1"></i>09:10AM - 10:50PM</p>
-                        <div class="avatar-list-stacked avatar-group-sm">
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-05.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-06.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-07.jpg" class="rounded" alt="img">
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <!-- /Event Item -->
-
-                <!-- Event Item -->
-                <div class="border-start border-secondary border-3 shadow-sm p-3 mb-3 bg-white">
-                    <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
-                        <span class="avatar p-1 me-2 bg-secondary-transparent flex-shrink-0">
-                            <i class="ti ti-campfire fs-20"></i>
-                        </span>
-                        <div class="flex-fill">
-                            <h6 class="mb-1">Admission Camp</h6>
-                            <p class="fs-12"><i class="ti ti-calendar me-1"></i>10 July 2024</p>
-                        </div>
-                    </div>
-                    <div class="d-flex align-items-center justify-content-between">
-                        <p class="fs-12 mb-0"><i class="ti ti-clock me-1"></i>09:10AM - 10:50PM</p>
-                        <div class="avatar-list-stacked avatar-group-sm">
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-04.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-05.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/parents/parent-10.jpg" class="rounded" alt="img">
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <!-- /Event Item -->
-
-                <!-- Event Item -->
-                <div class="border-start border-success border-3 shadow-sm p-3 mb-4 bg-white">
-                    <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
-                        <span class="avatar p-1 me-2 bg-success-transparent flex-shrink-0">
-                            <i class="ti ti-clipboard-heart fs-20"></i>
-                        </span>
-                        <div class="flex-fill">
-                            <h6 class="mb-1">Activity Training</h6>
-                            <p class="fs-12"><i class="ti ti-calendar me-1"></i>26 July 2024</p>
-                        </div>
-                    </div>
-                    <div class="d-flex align-items-center justify-content-between">
-                        <p class="fs-12 mb-0"><i class="ti ti-clock me-1"></i>09:10AM - 10:50PM</p>
-                        <div class="avatar-list-stacked avatar-group-sm">
-                            <span class="avatar border-0">
-                                <img src="assets/img/teachers/teacher-02.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/teachers/teacher-05.jpg" class="rounded" alt="img">
-                            </span>
-                            <span class="avatar border-0">
-                                <img src="assets/img/teachers/teacher-06.jpg" class="rounded" alt="img">
-                            </span>
-                        </div>
+                    <div class="flex items-center justify-between">
+                        <p class="text-xs mb-0"><i class="ti ti-clock mr-1"></i>09:10 AM - 10:50 PM</p>
+                        <AvatarGroup>
+                            <Avatar image="assets/img/parents/parent-04.jpg" shape="circle" />
+                            <Avatar image="assets/img/parents/parent-05.jpg" shape="circle" />
+                        </AvatarGroup>
                     </div>
                 </div>
                 <!-- /Event Item -->

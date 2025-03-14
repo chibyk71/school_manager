@@ -14,7 +14,12 @@ return new class extends Migration
         Schema::create('schools', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('name')->unique();
+            $table->string('slug')->unique();
+            $table->string('phone_one');
+            $table->string('phone_two')->nullable();
             $table->string('email')->unique();
+            $table->string('logo')->nullable();
+            $table->json('data')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

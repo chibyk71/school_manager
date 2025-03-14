@@ -14,8 +14,9 @@ return new class extends Migration
         Schema::create('school_sections', function (Blueprint $table) {
             $table->id();
             $table->string('name')->unique();
+            $table->string('display_name')->nullable();
+            $table->text('description')->nullable();
             $table->timestamps();
-
             $table->foreignUuid('school_id')->nullable()->references('id')->on('schools')->onDelete('cascade');
         });
     }
