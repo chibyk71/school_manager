@@ -5,6 +5,7 @@ import { computed, defineProps } from 'vue';
 
 const props = defineProps<Field & {
     error?: string;
+    required?: boolean
 }>()
 
 const invalid = computed(() => !!props.error)
@@ -24,6 +25,7 @@ const inputSlotPass = {
     options: props.options,
     value: props.default_value,
     hint: props.hint,
+    required: props.required
 }
 
 const model = defineModel<string>()
@@ -33,9 +35,9 @@ model.value = props.default_value ?? ''
 
 <template>
     <div class="mb-3">
-        <label :for="id">{{ label }}</label>
+        <label :for="id">{{ label }} <span v-if="required" class="text-red-500 text-sm">*</span></label>
         <slot name="input" v-bind="inputSlotPass">
-            <InputText v-model="model" :id :invalid fluid :name />
+            <InputText :type="field_type?? 'text'" v-model="model" :required="required" :id :invalid fluid :name />
         </slot>
         <Message severity="error" v-if="invalid || hint"> {{ error ?? hint }}</Message>
     </div>

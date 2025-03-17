@@ -554,8 +554,6 @@ export const ListOfAcademicYears = (numberofYearsBack: number = 5) => {
     return Array.from(Array(numberofYearsBack).keys()).map((x) => `${XYearsAgo + x}/${XYearsAgo + x + 1}`);
 }
 
-// export const Dialog = useDialog();
-
 export const StudentMenu = ref([
     { label: 'Collect Fees', icon: 'ti ti-money-alt' },
     { label: 'View Student', icon: 'ti ti-menu' },

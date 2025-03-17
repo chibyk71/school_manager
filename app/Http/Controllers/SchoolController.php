@@ -18,7 +18,7 @@ class SchoolController extends Controller
      */
     public function index()
     {
-        Gate::authorize('viewAny');
+        // Gate::authorize('viewAny', School::class);
 
         $schools = School::all();
 
@@ -28,19 +28,16 @@ class SchoolController extends Controller
     }
 
     /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
      * Store a newly created resource in storage.
-     */
+    */
     public function store(StoreSchoolRequest $request)
     {
-        //
+        Gate::authorize('create', School::class);
+
+        // validate the request data
+        $validated = $request->validated();
+
+        School::create($validated);
     }
 
     /**
@@ -52,19 +49,11 @@ class SchoolController extends Controller
     }
 
     /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(School $school)
-    {
-        //
-    }
-
-    /**
      * Update the specified resource in storage.
      */
     public function update(UpdateSchoolRequest $request, School $school)
     {
-        //
+        $school->update($request->validated());
     }
 
     /**
@@ -72,6 +61,6 @@ class SchoolController extends Controller
      */
     public function destroy(School $school)
     {
-        //
+        $school->delete();
     }
 }

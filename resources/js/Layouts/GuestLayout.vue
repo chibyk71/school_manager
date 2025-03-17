@@ -1,5 +1,5 @@
 <script setup lang="ts">
-    import { Button, Card, IconField, Image, InputChips, InputIcon, InputText } from 'primevue';
+    import { Button, Card, DynamicDialog, IconField, Image, InputChips, InputIcon, InputText } from 'primevue';
     import '../../css/auth.postcss';
     import { Link } from '@inertiajs/vue3';
 </script>
@@ -55,4 +55,5 @@
 
     </div>
     <!-- /Main Wrapper -->
+     <DynamicDialog />
 </template>

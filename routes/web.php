@@ -45,6 +45,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/teachers', [TeacherController::class, 'index'])->name('teacher.index');
 
     Route::get('/schools', [SchoolController::class, 'index'])->name('school.index');
+    Route::post('school', [SchoolController::class, 'store'])->name('school.store');
+    Route::post('school/{school}', [SchoolController::class, 'update'])->name('school.update');
+    Route::delete('school/{school}', [SchoolController::class, 'destroy'])->name('school.destroy');
 
     Route::get('school-sections', [SchoolSectionController::class, 'index'])->name('sections.index');
 

@@ -3,7 +3,7 @@
     import Navbar from '@/Components/menu/Navbar.vue';
     import PageHeader from '@/Components/menu/PageHeader.vue';
     import SidePanel from '@/Components/menu/SidePanel.vue';
-    import { ButtonEmits, type ButtonProps } from 'primevue';
+    import { ButtonEmits, ConfirmDialog, Toast, type ButtonProps } from 'primevue';
     import DynamicDialog from 'primevue/dynamicdialog';
 
 
@@ -29,4 +29,6 @@
         </div>
     </div>
     <DynamicDialog />
+    <ConfirmDialog></ConfirmDialog>
+    <Toast></Toast>
 </template>

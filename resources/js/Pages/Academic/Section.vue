@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Card, Column, DataTable } from 'primevue';
 
+defineProps<{
+    sections: [];
+}>()
 
 </script>
 
