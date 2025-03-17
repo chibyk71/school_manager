@@ -14,7 +14,11 @@ class SchoolSectionController extends Controller
      */
     public function index()
     {
-        return Inertia::render('Academic/Section');
+        $schoolSections = SchoolSection::all();
+
+        return Inertia::render('Academic/Section', [
+            "sections" => $schoolSections
+        ]);
     }
 
     /**

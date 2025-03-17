@@ -6,6 +6,35 @@ declare module 'ziggy-js' {
     "profile.edit": [],
     "profile.update": [],
     "profile.destroy": [],
+    "roles.index": [],
+    "permission": [
+        {
+            "name": "role",
+            "required": true,
+            "binding": "id"
+        }
+    ],
+    "student.index": [],
+    "teacher.index": [],
+    "school.index": [],
+    "school.store": [],
+    "school.update": [
+        {
+            "name": "school",
+            "required": true,
+            "binding": "id"
+        }
+    ],
+    "school.destroy": [],
+    "sections.index": [],
+    "class-level.index": [],
+    "class-section.index": [],
+    "subject.index": [],
+    "timetables.index": [],
+    "exam.schedules.index": [],
+    "exam.grades": [],
+    "assignment.index": [],
+    "notice.index": [],
     "register": [],
     "login": [],
     "password.request": [],

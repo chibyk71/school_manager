@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\School;
 use App\Http\Requests\StoreSchoolRequest;
 use App\Http\Requests\UpdateSchoolRequest;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 /**
  * Only Admins or those with permission to manage this feature should be allowed to access this controller.
-*/
+ */
 
 class SchoolController extends Controller
 {
@@ -29,23 +31,15 @@ class SchoolController extends Controller
 
     /**
      * Store a newly created resource in storage.
-    */
+     */
     public function store(StoreSchoolRequest $request)
     {
-        Gate::authorize('create', School::class);
+        // Gate::authorize('create', School::class);
 
         // validate the request data
         $validated = $request->validated();
 
         School::create($validated);
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(School $school)
-    {
-        //
     }
 
     /**
@@ -59,8 +53,16 @@ class SchoolController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(School $school)
+    public function destroy(Request $request, $id = null)
     {
-        $school->delete();
+        if ($request->has('ids')) {
+            // Delete multiple resources
+            $deleted = School::whereIn('id', $request->ids)->delete();
+
+            return back()->with([
+                'message' => $deleted ? 'Resources deleted successfully' : 'Failed to delete resources'
+            ])->setStatusCode($deleted ? 200 : 400);
+        }
     }
+
 }

@@ -45,17 +45,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/teachers', [TeacherController::class, 'index'])->name('teacher.index');
 
     Route::get('/schools', [SchoolController::class, 'index'])->name('school.index');
-    Route::post('school', [SchoolController::class, 'store'])->name('school.store');
-    Route::post('school/{school}', [SchoolController::class, 'update'])->name('school.update');
-    Route::delete('school/{school}', [SchoolController::class, 'destroy'])->name('school.destroy');
+    Route::post('/school', [SchoolController::class, 'store'])->name('school.store');
+    Route::post('/school/{school}', [SchoolController::class, 'update'])->name('school.update');
+    Route::delete('schools/', [SchoolController::class, 'destroy'])->name('school.destroy');
 
     Route::get('school-sections', [SchoolSectionController::class, 'index'])->name('sections.index');
 
     Route::get('class-levels', [ClassLevelController::class, 'index'])->name('class-level.index');
 
-    Route::get('class-sections', [ClassSectionController::class, 'index'])->name('class-level.index');
+    Route::get('class-sections', [ClassSectionController::class, 'index'])->name('class-section.index');
 
-    Route::get('subjects', [SubjectController::class, 'index'])->name('class-level.index');
+    Route::get('subjects', [SubjectController::class, 'index'])->name('subject.index');
 
     Route::get('time-table', [TimeTableController::class, 'index'])->name('timetables.index');
 

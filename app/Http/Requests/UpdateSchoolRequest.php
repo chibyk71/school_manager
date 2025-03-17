@@ -25,7 +25,8 @@ class UpdateSchoolRequest extends FormRequest
             'name'=> 'required|string',
             'slug' => 'required|unique:schools,slug',
             'logo' => 'nullable|string',
-            'phone_one' => 'required|string|max:13',
+            'email' => 'required|email|unique:schools,email',
+            'phone_one' => 'required|string|max:15',
             'phone_two' => 'nullable|string'
         ];
     }

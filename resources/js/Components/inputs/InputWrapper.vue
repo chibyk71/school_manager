@@ -39,6 +39,6 @@ model.value = props.default_value ?? ''
         <slot name="input" v-bind="inputSlotPass">
             <InputText :type="field_type?? 'text'" v-model="model" :required="required" :id :invalid fluid :name />
         </slot>
-        <Message severity="error" v-if="invalid || hint"> {{ error ?? hint }}</Message>
+        <Message variant="simple" severity="error" v-if="invalid || hint"> {{ error ?? hint }}</Message>
     </div>
 </template>
