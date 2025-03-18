@@ -48,7 +48,7 @@ export function useDeleteResource() {
                     });
                     toast.add({ severity: 'success', summary: 'Success', detail: 'Resource(s) deleted successfully.', life: 3000 });
                     // Refresh the page after delete
-                    router.visit(window.location.href, { replace: true });
+                    router.visit(window.location.href, { replace: true, preserveScroll: true });
                 } catch (error) {
                     console.error('Error deleting resource(s):', error);
                     toast.add({ severity: 'error', summary: 'Error', detail: 'Resource(s) not deleted.', life: 3000 });

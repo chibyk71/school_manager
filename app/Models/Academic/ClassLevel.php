@@ -3,6 +3,7 @@
 namespace App\Models\Academic;
 
 use App\Models\SchoolSection;
+use App\Traits\BelongsToSections;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -18,8 +19,8 @@ class ClassLevel extends Model
         return $this->belongsTo(SchoolSection::class);
     }
 
-    public function classLevels()
+    public function classSections()
     {
-        return $this->hasMany(ClassLevel::class);
+        return $this->hasMany(ClassSection::class);
     }
 }

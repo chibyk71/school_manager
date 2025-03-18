@@ -26,14 +26,14 @@ class SchoolSectionSeeder extends Seeder
             "description" => "Elementary education, usually covering grades 1-6."
         ],
         [
-            "name" => "junior_high_school",
+            "name" => "junior_secondary_school",
             "display_name" => "Junior Secondary School",
             "description" => "Intermediate education, often covering grades 7-9."
         ],
         [
-            "name" => "high_school",
+            "name" => "senior_secondary_school",
             "display_name" => "Senior Secondary School",
-            "description" => "Secondary education, typically covering grades 9-12."
+            "description" => "Secondary education, typically covering grades 10-12."
         ],
         [
             "name" => "vocational_school",

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\School;
 use App\Models\User;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Database\Seeders\Settings\ApplicationTableSeeder;
@@ -31,6 +32,17 @@ class DatabaseSeeder extends Seeder
             'name' => 'Test User',
             'email' => 'test@example.com',
         ]);
+
+        School::factory()->create([
+            'name' => 'Test School',
+            'email' => 'test@example.com',
+            'phone_one' => '123-456-7890',
+            'slug' => 'test',
+            'logo' => 'test.png',
+        ]);
+
+        $this->call(SchoolSectionSeeder::class);
+        $this->call(ClassLevelSeeder::class);
 
         // $this->call(SMSTableSeeder::class);
         // $this->call(ApplicationTableSeeder::class);
