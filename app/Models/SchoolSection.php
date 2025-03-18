@@ -22,11 +22,6 @@ class SchoolSection extends Model
         'display_name',
     ];
 
-    public function school()
-    {
-        return $this->belongsTo(School::class);
-    }
-
     /**
      * The staffs that belong to the SchoolSection
      *

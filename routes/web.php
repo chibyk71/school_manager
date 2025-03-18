@@ -50,6 +50,9 @@ Route::middleware('auth')->group(function () {
     Route::delete('schools/', [SchoolController::class, 'destroy'])->name('school.destroy');
 
     Route::get('school-sections', [SchoolSectionController::class, 'index'])->name('sections.index');
+    Route::post('school-sections', [SchoolSectionController::class, 'store'])->name('sections.store');
+    Route::post('school-sections/{schoolSection}', [SchoolSectionController::class, 'update'])->name('sections.update');
+    Route::delete('school-sections/', [SchoolSectionController::class, 'destroy'])->name('sections.destroy');
 
     Route::get('class-levels', [ClassLevelController::class, 'index'])->name('class-level.index');
 

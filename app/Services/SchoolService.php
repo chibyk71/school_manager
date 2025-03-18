@@ -24,7 +24,7 @@ class SchoolService
     protected function getSchoolFromSession()
     {
         $schoolId = session('active_school_id');
-        return $schoolId ? School::find($schoolId) : null;
+        return $schoolId ? School::find($schoolId) : School::first();
     }
 
     public function createSchool(array $data): School

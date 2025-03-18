@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateSchoolSectionRequest extends FormRequest
 {
@@ -11,7 +12,7 @@ class UpdateSchoolSectionRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -22,7 +23,13 @@ class UpdateSchoolSectionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'name' => [
+            'required',
+            Rule::unique('school_sections', 'name')->ignore($this->route('schoolSection')),
+            ],
+            'display_name' => 'nullable|string',
+            'description' => 'nullable|string',
+            'school_id' => 'sometimes|exists:schools,id',
         ];
     }
 }

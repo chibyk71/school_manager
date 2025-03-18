@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\SchoolSection;
 use App\Http\Requests\StoreSchoolSectionRequest;
 use App\Http\Requests\UpdateSchoolSectionRequest;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class SchoolSectionController extends Controller
@@ -14,7 +15,7 @@ class SchoolSectionController extends Controller
      */
     public function index()
     {
-        $schoolSections = SchoolSection::all();
+        $schoolSections = SchoolSection::with('school:id,name')->get();
 
         return Inertia::render('Academic/Section', [
             "sections" => $schoolSections
@@ -22,19 +23,27 @@ class SchoolSectionController extends Controller
     }
 
     /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
      * Store a newly created resource in storage.
      */
     public function store(StoreSchoolSectionRequest $request)
     {
-        //
+        try {
+            $validated = $request->validated();
+
+            $schoolSection = SchoolSection::create($validated);
+
+            if ($validated['school_id']) {
+                $schoolSection->school()->associate($validated['school_id']);
+                $schoolSection->save();
+            }
+
+            // return redirect()->route('sections.index');
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to create school section.',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -46,26 +55,37 @@ class SchoolSectionController extends Controller
     }
 
     /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(SchoolSection $schoolSection)
-    {
-        //
-    }
-
-    /**
      * Update the specified resource in storage.
      */
     public function update(UpdateSchoolSectionRequest $request, SchoolSection $schoolSection)
     {
-        //
+        try {
+            $validated = $request->validated();
+            $schoolSection->update($validated);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to update school section.',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(SchoolSection $schoolSection)
+    public function destroy(Request $request)
     {
-        //
+        $ids = $request->input('ids', []);
+
+        if (!empty($ids)) {
+            try {
+                SchoolSection::destroy($ids);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'error' => 'Failed to delete school sections.',
+                    'message' => $e->getMessage()
+                ], 500);
+            }
+        }
     }
 }
