@@ -88,4 +88,10 @@ class SchoolSectionController extends Controller
             }
         }
     }
+
+    public function options(Request $request) {
+        if ($request->isJson()) {
+            return SchoolSection::paginate($request->page, ['id', 'name']);
+        }
+    }
 }

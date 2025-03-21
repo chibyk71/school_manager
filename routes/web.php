@@ -16,6 +16,7 @@ use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TimeTableController;
 use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -26,6 +27,26 @@ Route::get('/', function () {
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
     ]);
+});
+
+Route::get('/options', function (Request $request) {
+    $id = $request->resource;
+    logger($request);
+
+    switch ($id) {
+        case 'school-section':
+            $model = app(\App\Models\SchoolSection::class);
+            break;
+
+        default:
+            return response()->json(['error' => 'Invalid resource'], 500);
+    }
+
+    if (!isset($model)) {
+        return response()->json(['error' => 'Model not found'], 504);
+    }
+
+    return response()->json($model->paginate(50, ['id', 'name']), 200);
 });
 
 Route::middleware('auth')->group(function () {
@@ -74,6 +95,7 @@ Route::middleware('auth')->group(function () {
         return Inertia::render('Communication/Event');
     });
 });
+
 
 require __DIR__.'/auth.php';
 

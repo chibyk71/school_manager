@@ -1,5 +1,6 @@
 import { useDialog } from "primevue";
 import { ref } from "vue";
+import { FilterMatchMode } from '@primevue/core/api';
 
 export let isDarkTheme = ref(false);
 
@@ -563,3 +564,5 @@ export const StudentMenu = ref([
     { label: 'Promote Student', icon: 'ti ti-arrow-ramp-right-2' },
     { label: 'Delete', icon: 'ti ti-trash-x' }
 ])
+
+export const FilterModes = FilterMatchMode

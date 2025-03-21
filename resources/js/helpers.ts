@@ -1,6 +1,7 @@
 import axios from "axios";
 import { useConfirm, useToast } from "primevue";
-import { router } from '@inertiajs/vue3';
+import { InertiaForm, router } from '@inertiajs/vue3';
+import { reactive, ref } from "vue";
 
 export const getClass = (cls: string) => {
     const documentStyle = getComputedStyle(document.documentElement);
@@ -26,8 +27,8 @@ export function useDeleteResource() {
         }
 
         confirm.require({
-            message: ids.length > 1 
-                ? `Are you sure you want to delete ${ids.length} records?` 
+            message: ids.length > 1
+                ? `Are you sure you want to delete ${ids.length} records?`
                 : 'Do you want to delete this record?',
             header: "Delete Confirmation",
             icon: 'pi pi-info-circle',
@@ -44,7 +45,7 @@ export function useDeleteResource() {
             accept: async () => {
                 try {
                     await axios.delete(url || route(`${resource}.destroy`), {
-                        data: {ids}
+                        data: { ids }
                     });
                     toast.add({ severity: 'success', summary: 'Success', detail: 'Resource(s) deleted successfully.', life: 3000 });
                     // Refresh the page after delete
@@ -54,6 +55,7 @@ export function useDeleteResource() {
                     toast.add({ severity: 'error', summary: 'Error', detail: 'Resource(s) not deleted.', life: 3000 });
                 }
             },
+
             reject: () => {
                 toast.add({ severity: 'warn', summary: 'Cancelled', detail: 'You cancelled the deletion.', life: 3000 });
             }
@@ -62,3 +64,82 @@ export function useDeleteResource() {
 
     return { deleteResource };
 }
+
+export const fetchSelectOptionsFromDB = (resource: string, page?: number) => {
+    try {
+        const res = axios.get(`options`, { params: { resource } })
+            .then(({ data }) => {
+                return data.data
+            });
+        return res
+    } catch (error) {
+        console.error('Error fetching options:', error);
+        throw error;
+    }
+};
+
+export const useSubmitForm = () => {
+    const toast = useToast();
+
+    /**
+     * Submits an Inertia form to the server and handles the response.
+     * @param {InertiaForm<{}>} form - The form to be submitted.
+     * @param {string} resource - The resource name.
+     * @param {string|number} [id] - The ID of the resource to be updated or created.
+     * @returns {Promise<void>}
+     */
+    const submitForm = async (form: InertiaForm<{}>, resource: string, id?: string | number) => {
+        const routeName = id ? `${resource}.update` : `${resource}.store`;
+        form.post(route(routeName, id), {
+            onSuccess: ({ props }) => {
+                if (props.message) {
+                    toast.add({ severity: 'success', summary: 'Success', detail: props.message, life: 3000 });
+                }
+            },
+            onError: ({ errors }) => {
+                if (errors)
+                    toast.add({ severity: 'error', summary: 'Error', detail: errors, life: 3000 });
+            }
+        });
+    };
+
+    return { submitForm };
+};
+
+/**
+ * Returns a reactive object containing methods to manage modals.
+ *
+ * @returns {{
+ *  items: string[],
+ *  open: (id: string) => void,
+ *  close: (id?: string) => void,
+ *  closeAll: () => void,
+ *  prepend: (id: string) => void
+ * }}
+ */
+export const modals = reactive({
+    items: [] as string[],
+    open: (id: string) => {
+        modals.items.push(id);
+        console.log('opened');
+
+    },
+    close(id?: string) {
+        if (id) {
+            const index = this.items.indexOf(id);
+            if (index > -1) {
+                console.debug('[useModals] Close modal:', id);
+                this.items.splice(index, 1);
+            }
+        } else {
+            console.debug('[useModals] Close current modal');
+            this.items.shift();
+        }
+    },
+    closeAll() {
+        this.items = []
+    },
+    prepend(id: string) {
+        this.items.unshift(id)
+    }
+});
