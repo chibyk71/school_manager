@@ -12,7 +12,7 @@ class ClassLevel extends Model
     /** @use HasFactory<\Database\Factories\ClassLevelFactory> */
     use HasFactory;
 
-    protected $fillable = ['name', 'school_section_id'];
+    protected $fillable = ['name','description','display_name', 'school_section_id'];
 
     public function schoolSection()
     {

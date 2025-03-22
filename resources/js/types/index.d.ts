@@ -13,6 +13,10 @@ export type PageProps<
     auth: {
         user: User;
     };
+    flash: {
+        error:string,
+        success: string
+    }
 };
 
 export type Statistic = {

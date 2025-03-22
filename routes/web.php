@@ -9,6 +9,7 @@ use App\Http\Controllers\NoticeController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SchoolController;
 use App\Http\Controllers\SchoolSectionController;
+use App\Http\Controllers\SelectOptionsController;
 use App\Http\Controllers\Settings\PermissionController;
 use App\Http\Controllers\Settings\School\RolesController;
 use App\Http\Controllers\StudentController;
@@ -29,25 +30,7 @@ Route::get('/', function () {
     ]);
 });
 
-Route::get('/options', function (Request $request) {
-    $id = $request->resource;
-    logger($request);
-
-    switch ($id) {
-        case 'school-section':
-            $model = app(\App\Models\SchoolSection::class);
-            break;
-
-        default:
-            return response()->json(['error' => 'Invalid resource'], 500);
-    }
-
-    if (!isset($model)) {
-        return response()->json(['error' => 'Model not found'], 504);
-    }
-
-    return response()->json($model->paginate(50, ['id', 'name']), 200);
-});
+Route::get('/options', [SelectOptionsController::class, '__invoke'])->name('options');
 
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, '__invoke'])->name('dashboard');
@@ -74,8 +57,11 @@ Route::middleware('auth')->group(function () {
     Route::post('school-sections', [SchoolSectionController::class, 'store'])->name('sections.store');
     Route::post('school-sections/{schoolSection}', [SchoolSectionController::class, 'update'])->name('sections.update');
     Route::delete('school-sections/', [SchoolSectionController::class, 'destroy'])->name('sections.destroy');
-
+    
     Route::get('class-levels', [ClassLevelController::class, 'index'])->name('class-level.index');
+    Route::post('class-levels', [ClassLevelController::class, 'store'])->name('class-level.store');
+    Route::post('class-levels/{classLevel}', [ClassLevelController::class, 'update'])->name('class-level.update');
+    Route::delete('class-levels/', [ClassLevelController::class, 'destroy'])->name('class-level.destroy');
 
     Route::get('class-sections', [ClassSectionController::class, 'index'])->name('class-section.index');
 

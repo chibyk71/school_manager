@@ -11,7 +11,7 @@ class StoreClassLevelRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -22,7 +22,10 @@ class StoreClassLevelRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'name' => 'required',
+            'display_name' => 'required',
+            'description' => 'nullable',
+            'school_section_id' => 'required|exists:school_sections,id'
         ];
     }
 }

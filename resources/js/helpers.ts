@@ -44,12 +44,17 @@ export function useDeleteResource() {
             },
             accept: async () => {
                 try {
-                    await axios.delete(url || route(`${resource}.destroy`), {
+                    axios.delete(url || route(`${resource}.destroy`), {
                         data: { ids }
+                    }).then(({data, status}) => {
+                        if (status !== 200) {
+                            toast.add({ severity: 'error', summary: 'Error', detail: data.message || 'Resource(s) not deleted.', life: 3000 });
+                        }else{
+                            toast.add({ severity: 'success', summary: 'Success', detail: data.message || 'Resource(s) deleted successfully.', life: 3000 });
+                            // Refresh the page after delete
+                            router.visit(window.location.href, { replace: true, preserveScroll: true });
+                        }
                     });
-                    toast.add({ severity: 'success', summary: 'Success', detail: 'Resource(s) deleted successfully.', life: 3000 });
-                    // Refresh the page after delete
-                    router.visit(window.location.href, { replace: true, preserveScroll: true });
                 } catch (error) {
                     console.error('Error deleting resource(s):', error);
                     toast.add({ severity: 'error', summary: 'Error', detail: 'Resource(s) not deleted.', life: 3000 });
@@ -88,15 +93,18 @@ export const useSubmitForm = () => {
      * @param {string|number} [id] - The ID of the resource to be updated or created.
      * @returns {Promise<void>}
      */
-    const submitForm = async (form: InertiaForm<{}>, resource: string, id?: string | number) => {
+    const submitForm = async (form: InertiaForm<{}>, resource: string, id?: string | number, callbacks?:{onSuccess?: (props: any) => void, onError?: (errors: any) => void}) => {
         const routeName = id ? `${resource}.update` : `${resource}.store`;
         form.post(route(routeName, id), {
             onSuccess: ({ props }) => {
-                if (props.message) {
-                    toast.add({ severity: 'success', summary: 'Success', detail: props.message, life: 3000 });
+                callbacks?.onSuccess?.(props);
+                if (props.flash.success) {
+                    toast.add({ severity: 'success', summary: 'Success', detail: props.flash.success, life: 3000 });
                 }
             },
-            onError: ({ errors }) => {
+            onError: (errors) => {
+                console.error('Error submitting form:', errors);
+                callbacks?.onError?.(errors)
                 if (errors)
                     toast.add({ severity: 'error', summary: 'Error', detail: errors, life: 3000 });
             }

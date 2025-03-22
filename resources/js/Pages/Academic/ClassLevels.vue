@@ -21,10 +21,10 @@ const selectedClassLevels = ref([]),
     });
 
 const form = useForm({
-    name: null,
-    display_name: null,
-    description: null,
-    school_section: null
+    name: '',
+    display_name: '',
+    description: '',
+    school_section_id: ''
 });
 
 const filters = ref({
@@ -77,18 +77,18 @@ const { deleteResource } = useDeleteResource();
     </AuthenticatedLayout>
 
     <ModalWrapper id="class-level" resource="class-level" header="create Class Level" :form="form" modal>
-        <InputWrapper required label="Name" name="name" field_type="text" />
-        <InputWrapper label="Display Name" name="display_name" field_type="text" />
+        <InputWrapper required label="Name" v-model="form.name" :error="form.errors.name" name="name" field_type="text" />
+        <InputWrapper label="Display Name" v-model="form.display_name" :error="form.errors.display_name" name="display_name" field_type="text" />
 
-        <InputWrapper label="School Section" name="school_section_id" field_type="text">
+        <InputWrapper label="School Section" :error="form.errors.school_section_id" name="school_section_id" field_type="text">
             <template #input="{invalid}">
-                <Select option-label="name" option-value="id" :invalid :options="schoolsections" fluid />
+                <Select option-label="name" v-model="form.school_section_id" option-value="id" :invalid :options="schoolsections" fluid />
             </template>
         </InputWrapper>
 
-        <InputWrapper label="Description" name="description" field_type="text">
+        <InputWrapper :error="form.errors.description" label="Description" name="description" field_type="text">
             <template #input="{invalid}">
-                <Textarea :invalid fluid  rows="3"/>
+                <Textarea v-model="form.description" :invalid fluid  rows="3"/>
             </template>
         </InputWrapper>
     </ModalWrapper>

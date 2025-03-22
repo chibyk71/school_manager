@@ -25,7 +25,6 @@ const {submitForm} = useSubmitForm()
         :modal="modal"
         :header="props.header"
         :footer="props.footer"
-        :closable="props.closable"
         :maximizable="props.maximizable"
         block-scroll
         class="w-full sm:w-3/4 md:w-2/4"
@@ -38,7 +37,9 @@ const {submitForm} = useSubmitForm()
         </template>
         <template #header></template>
         <template #maximizeicon></template>
-        <template #closeicon></template>
+        <template #closeicon>
+            <Button icon="pi pi-times" class="p-button-text" text secondary rounded @click="modals.close()" />
+        </template>
         <slot></slot>
     </Dialog>
 </template>

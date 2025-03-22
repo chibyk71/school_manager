@@ -29,35 +29,15 @@ class ClassLevelController extends Controller
     }
 
     /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
      * Store a newly created resource in storage.
      */
     public function store(StoreClassLevelRequest $request)
     {
-        //
-    }
+        $validated = $request->validated();
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(ClassLevel $classLevel)
-    {
-        //
-    }
+        ClassLevel::create($validated);
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(ClassLevel $classLevel)
-    {
-        //
+        return redirect()->back()->with(['success' => 'Class level created successfully']);
     }
 
     /**
@@ -65,14 +45,25 @@ class ClassLevelController extends Controller
      */
     public function update(UpdateClassLevelRequest $request, ClassLevel $classLevel)
     {
-        //
+        $validated = $request->validated();
+
+        $classLevel->update($validated);
+
+        return redirect()->back()->with(['success' => 'Class level updated successfully']);
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(ClassLevel $classLevel)
+    public function destroy(Request $request)
     {
-        //
+        if ($request->has('ids')) {
+            // Delete multiple resources
+            $deleted = ClassLevel::whereIn('id', $request->ids)->delete();
+
+            return response()->json(['message' => 'Class levels deleted successfully']);
+        }
+
+        return response()->json(['message' => 'No class levels were deleted']);
     }
 }

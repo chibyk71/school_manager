@@ -11,7 +11,7 @@ class UpdateClassLevelRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -22,7 +22,10 @@ class UpdateClassLevelRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'name' => ['required', 'string', 'max:255'],
+            'display_name' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:255'],
+            'school_section_id' => ['required', 'integer', 'exists:school_sections,id'],
         ];
     }
 }
