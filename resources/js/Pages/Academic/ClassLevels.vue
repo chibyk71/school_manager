@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import InputWrapper from '@/Components/inputs/InputWrapper.vue';
 import ModalWrapper from '@/Components/Modals/ModalWrapper.vue';
-import { fetchSelectOptionsFromDB, modals, useDeleteResource } from '@/helpers';
+import { fetchSelectOptionsFromDB, modals, openEditModal, useDeleteResource } from '@/helpers';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { FilterModes } from '@/store';
 import { useForm } from '@inertiajs/vue3';
@@ -20,7 +20,13 @@ const selectedClassLevels = ref([]),
         schoolsections.value = await fetchSelectOptionsFromDB('school-section');
     });
 
-const form = useForm({
+const form = useForm<{
+    [x:string]: any;
+    name: string;
+    display_name: string;
+    description: string;
+    school_section_id: string;
+}>({
     name: '',
     display_name: '',
     description: '',
@@ -32,7 +38,6 @@ const filters = ref({
 })
 
 const { deleteResource } = useDeleteResource();
-
 </script>
 
 <template>
@@ -54,7 +59,7 @@ const { deleteResource } = useDeleteResource();
                     <Column header="Action">
                         <template #body="slotProps">
                             <div class="flex items-center gap-x-3">
-                                <Button @click="" severity="secondary" icon="ti ti-edit" class="p-button-sm" />
+                                <Button @click="openEditModal(slotProps.data,form, 'class-level')" severity="secondary" icon="ti ti-edit" class="p-button-sm" />
                                 <Button @click="deleteResource('class-level',[slotProps.data.id])" severity="danger" icon="ti ti-trash" class="p-button-sm" />
                             </div>
                         </template>

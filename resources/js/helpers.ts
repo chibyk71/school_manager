@@ -95,12 +95,15 @@ export const useSubmitForm = () => {
      */
     const submitForm = async (form: InertiaForm<{}>, resource: string, id?: string | number, callbacks?:{onSuccess?: (props: any) => void, onError?: (errors: any) => void}) => {
         const routeName = id ? `${resource}.update` : `${resource}.store`;
+        console.log(routeName, id);
+        
         form.post(route(routeName, id), {
             onSuccess: ({ props }) => {
                 callbacks?.onSuccess?.(props);
                 if (props.flash.success) {
                     toast.add({ severity: 'success', summary: 'Success', detail: props.flash.success, life: 3000 });
                 }
+                modals.close();
             },
             onError: (errors) => {
                 console.error('Error submitting form:', errors);
@@ -126,15 +129,13 @@ export const useSubmitForm = () => {
  * }}
  */
 export const modals = reactive({
-    items: [] as string[],
-    open: (id: string) => {
-        modals.items.push(id);
-        console.log('opened');
-
+    items: [] as { id: string, data?: any }[],
+    open: (id: string, data?: any) => {
+        modals.items.push({ id, data });
     },
     close(id?: string) {
         if (id) {
-            const index = this.items.indexOf(id);
+            const index = this.items.findIndex(item => item.id === id);
             if (index > -1) {
                 console.debug('[useModals] Close modal:', id);
                 this.items.splice(index, 1);
@@ -145,9 +146,37 @@ export const modals = reactive({
         }
     },
     closeAll() {
-        this.items = []
+        this.items = [];
     },
-    prepend(id: string) {
-        this.items.unshift(id)
+    prepend(id: string, data?: any) {
+        this.items.unshift({ id, data });
+    },
+    getData(id: string) {
+        const modal = this.items.find(item => item.id === id);
+        return modal?.data;
     }
 });
+
+type ResourceData = {[x:string]:any, id:string|number};
+
+/**
+ * Populates the given form with the resource data and opens the modal with the given id.
+ *
+ * @param {ResourceData} resource - The resource data to populate the form with.
+ * @param {InertiaForm<{}>} form - The form to populate.
+ * @param {string} modalId - The id of the modal to open.
+ */
+export const openEditModal = (resource: ResourceData, form: InertiaForm<{}>, modalId: string) => {
+    modals.open(modalId, {resource_id: resource.id});
+    setTimeout(() => {
+        populateForm(resource, form);
+    }, 50);
+};
+
+const populateForm = (data: ResourceData, form: InertiaForm<{[x:string]:any}>) => {
+    Object.keys(form).forEach((key) => {
+        if (key in data) {
+            form[key] = data[key as keyof typeof data];
+        }
+    });
+};
