@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('name')->unique()->index();
             $table->string('display_name')->nullable();
             $table->string('description')->nullable();
-            $table->unique(['school_section_id', 'name']);
+            $table->unique(['school_section_id', 'name','display_name']);
             $table->timestamps();
         });
     }

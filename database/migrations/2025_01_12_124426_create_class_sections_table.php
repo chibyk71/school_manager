@@ -15,6 +15,9 @@ return new class extends Migration
             $table->id();
             $table->foreignId('class_level_id')->constrained()->cascadeOnDelete();
             $table->string('name')->index();
+            $table->string('room')->nullable()->unique();
+            $table->integer('capacity')->default(0);
+            $table->enum('status', ['active', 'inactive'])->default('active');
             $table->unique(['class_level_id', 'name']);
             $table->timestamps();
         });

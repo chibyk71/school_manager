@@ -1,5 +1,5 @@
 import { useDialog } from "primevue";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { FilterMatchMode } from '@primevue/core/api';
 
 export let isDarkTheme = ref(false);
@@ -566,3 +566,13 @@ export const StudentMenu = ref([
 ])
 
 export const FilterModes = FilterMatchMode
+
+export const useSelectedResources = () => {
+    const selectedResources = ref<{ [x: string]: any; id: string | number }[]>([]);
+    const selectedResourceIds = computed(() => selectedResources.value.map(resource => resource.id));
+
+    return {
+        selectedResources,
+        selectedResourceIds,
+    };
+};

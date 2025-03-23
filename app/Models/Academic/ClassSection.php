@@ -2,6 +2,7 @@
 
 namespace App\Models\Academic;
 
+use App\Models\Academic\Student;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,8 +15,24 @@ class ClassSection extends Model
 
     protected $fillable = [
         'class_level_id',
-        'name'
+        'name',
+        'capacity',
+        'status',
     ];
+
+    protected $appends = [
+        'no_students',
+    ];
+
+    /**
+     * Get the number of students in the ClassSection
+     *
+     * @return int
+     */
+    public function getNoStudentsAttribute(): int
+    {
+        return $this->students()->count();
+    }
 
     /**
      * Get the ClassLevel that owns the ClassSection

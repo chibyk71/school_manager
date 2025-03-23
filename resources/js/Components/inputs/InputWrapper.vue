@@ -28,7 +28,7 @@ const inputSlotPass = {
     required: props.required
 }
 
-const model = defineModel<string>()
+const model = defineModel<string|null>()
 
 model.value = props.default_value ?? ''
 </script>

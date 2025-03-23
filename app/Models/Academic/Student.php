@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\Academic;
 
 use App\Models\Academic\ClassSection;
 use App\Models\Misc\AttendanceLedger;

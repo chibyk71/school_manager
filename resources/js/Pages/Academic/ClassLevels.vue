@@ -5,8 +5,8 @@ import { fetchSelectOptionsFromDB, modals, openEditModal, useDeleteResource } fr
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { FilterModes } from '@/store';
 import { useForm } from '@inertiajs/vue3';
-import { Button, Card, Column, DataTable, Dialog, IconField, InputIcon, InputText, Select, Textarea } from 'primevue';
-import { computed, onMounted, ref } from 'vue';
+import { Button, Card, Column, DataTable, Dialog, IconField, InputIcon, InputText, Menu, Select, Textarea } from 'primevue';
+import { ComponentPublicInstance, computed, onMounted, ref } from 'vue';
 
 defineProps<{
     classLevels: []
@@ -37,6 +37,7 @@ const filters = ref({
     global: { value: null, matchMode: FilterModes.CONTAINS },
 })
 
+const moreMenu = ref<(Element | ComponentPublicInstance | null)[]>([]);
 const { deleteResource } = useDeleteResource();
 </script>
 
@@ -61,6 +62,11 @@ const { deleteResource } = useDeleteResource();
                             <div class="flex items-center gap-x-3">
                                 <Button @click="openEditModal(slotProps.data,form, 'class-level')" severity="secondary" icon="ti ti-edit" class="p-button-sm" />
                                 <Button @click="deleteResource('class-level',[slotProps.data.id])" severity="danger" icon="ti ti-trash" class="p-button-sm" />
+                                <Button @click="moreMenu[slotProps.index]?.toggle($event)" icon="ti ti-more-horizontal" class="p-button-sm" severity="secondary" />
+                                <Menu :ref="(e)=>moreMenu[slotProps.index] = e" :model="[{
+                                    label: 'Class Section',
+                                    url:route('class-section.index',slotProps.data.id) 
+                                }]"></Menu>
                             </div>
                         </template>
                     </Column>

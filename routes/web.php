@@ -63,7 +63,10 @@ Route::middleware('auth')->group(function () {
     Route::post('class-levels/{classLevel}', [ClassLevelController::class, 'update'])->name('class-level.update');
     Route::delete('class-levels/', [ClassLevelController::class, 'destroy'])->name('class-level.destroy');
 
-    Route::get('class-sections', [ClassSectionController::class, 'index'])->name('class-section.index');
+    Route::get('class-level/{classLevel?}/class-sections', [ClassSectionController::class, 'index'])->name('class-section.index');
+    Route::post('class-section/', [ClassSectionController::class, 'store'])->name('class-section.store');
+    Route::post('class-section/{classSection}', [ClassSectionController::class, 'update'])->name('class-section.update');
+    Route::delete('class-section/', [ClassSectionController::class, 'destroy'])->name('class-section.destroy');
 
     Route::get('subjects', [SubjectController::class, 'index'])->name('subject.index');
 

@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ClassSection;
 use App\Http\Requests\StoreClassSectionRequest;
 use App\Http\Requests\UpdateClassSectionRequest;
+use App\Models\Academic\ClassLevel;
+use App\Models\Academic\ClassSection;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class ClassSectionController extends Controller
@@ -12,17 +14,20 @@ class ClassSectionController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(?ClassLevel $classLevel = null)
     {
-        return Inertia::render('Academic/ClassSections');
-    }
+        // if class level is not null, return the class level display name and id, with the class sections of the class level
+        if ($classLevel) {
+            return Inertia::render('Academic/ClassSections', [
+                'classLevel' => $classLevel->only('id', 'display_name'),
+                'classSections' => $classLevel->classSections()->with('students')->get(),
+            ]);
+        }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
+        // if class level is null, return all class sections with their class levels and students
+        return Inertia::render('Academic/ClassSections', [
+            'classSections' => ClassSection::with('classLevel', 'students')->get(),
+        ]);
     }
 
     /**
@@ -30,23 +35,9 @@ class ClassSectionController extends Controller
      */
     public function store(StoreClassSectionRequest $request)
     {
-        //
-    }
+        ClassSection::create($request->validated());
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(ClassSection $classSection)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(ClassSection $classSection)
-    {
-        //
+        return back()->with(['success' => 'Class Section created successfully']);
     }
 
     /**
@@ -54,14 +45,26 @@ class ClassSectionController extends Controller
      */
     public function update(UpdateClassSectionRequest $request, ClassSection $classSection)
     {
-        //
+        $classSection->update($request->validated());
+
+        return back()->with(['success' => 'Class Section updated successfully']);
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(ClassSection $classSection)
+    public function destroy(Request $request)
     {
-        //
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'exists:class_sections,id',
+        ]);
+
+        try {
+            ClassSection::destroy($request->ids);
+            return response()->json(['message' => 'Class Section(s) deleted successfully']);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to delete Class Section(s)', 'details' => $e->getMessage()], 500);
+        }
     }
 }
