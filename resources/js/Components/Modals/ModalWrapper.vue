@@ -2,7 +2,7 @@
 import { modals, useSubmitForm } from '@/helpers';
 import { InertiaForm } from '@inertiajs/vue3';
 import { Button, Dialog, DialogProps, DialogSlots } from 'primevue';
-import { computed, ref, watch, watchEffect } from 'vue';
+import { computed } from 'vue';
 
 const props = defineProps<DialogProps & {
     id: string,
@@ -31,7 +31,10 @@ const resource_id = computed(() => props.resource_id ?? modalData.value?.['resou
                 <Button label="Cancel" severity="secondary" @click="modals.close()" >
                   <template #loadingicon="slotProps"></template>
                 </Button>
-                <Button label="Submit" :loading="form?.processing" @click="submitForm(form!, resource, resource_id)" />
+                <Button label="Submit" :loading="form?.processing" @click="submitForm(form!, resource, resource_id, {
+                    onSuccess: (props) => $emit('success', props),
+                    onError: (errors) => $emit('error', errors),
+                })" />
             </div>
         </template>
         <template #header></template>

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Subject;
+use App\Models\Academic\Subject;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 

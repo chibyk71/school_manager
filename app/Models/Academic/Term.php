@@ -26,7 +26,6 @@ class Term extends Model
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
-        'status' => 'boolean',
         'options' => 'array',
     ];
 

@@ -25,7 +25,7 @@ class UpdateTermRequest extends FormRequest
             'name' => 'sometimes',
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date',
-            'status' => 'required|in:success,pending,success',
+            'status' => 'required|in:active,pending,completed',
         ];
     }
 }

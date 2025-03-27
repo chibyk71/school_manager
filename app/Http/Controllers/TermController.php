@@ -6,6 +6,7 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\Http\Requests\StoreTermRequest;
 use App\Http\Requests\UpdateTermRequest;
+use Illuminate\Support\Carbon;
 
 class TermController extends Controller
 {
@@ -19,7 +20,17 @@ class TermController extends Controller
             $academicSession = AcademicSession::currentSession();
         }
 
-        $terms = $academicSession->terms;
+        $terms = $academicSession->terms->map(function ($term) {
+            return [
+            'id' => $term->id,
+            'name' => $term->name,
+            'start_date' => $term->start_date,
+            'start_date_human' => Carbon::parse($term->start_date)->translatedFormat('F j, Y'),
+            'end_date' => $term->end_date,
+            'end_date_human' => Carbon::parse($term->end_date)->translatedFormat('F j, Y'),
+            'status' => $term->status,
+            ];
+        });
         // return a json response
         return response()->json($terms);
     }

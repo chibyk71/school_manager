@@ -59,7 +59,7 @@ const dialog = useDialog();
                             <Button @click="openEditModal(slotProps.data,form, 'academic-session')" icon="ti ti-edit" size="small" />
                             <Button @click="deleteResource('academic-session', [slotProps.data.id])" icon="ti ti-trash" size="small" severity="danger" />
                             <Button icon="ti ti-dots" severity="secondary" size="small" @click="(e)=>moreMenu[slotProps.index]?.toggle(e)" />
-                            <Menu popup :model="[{label:'View Semesters', command: () => dialog.open(Semesters, { data: {session: slotProps.data.name, session_id: slotProps.data.id}, props: {header: 'Semesters'} }) },]" :ref="(e) => moreMenu[slotProps.index] = e" />
+                            <Menu popup :model="[{label:'View Semesters', command: () => dialog.open(Semesters, { data: {session: slotProps.data.name, session_id: slotProps.data.id}, props: {header: 'Semesters', maximizable: true} }) },]" :ref="(e) => moreMenu[slotProps.index] = e" />
                         </div>
                       </template>
                     </Column>

@@ -75,7 +75,7 @@ class AcademicSessionController extends Controller
 
         $academicSession->update($validated);
 
-        return redirect()->route('academic-sessions.index')->with('success', 'Academic Session updated successfully');
+        return redirect()->route('academic-session.index')->with('success', 'Academic Session updated successfully');
 
     }
 
