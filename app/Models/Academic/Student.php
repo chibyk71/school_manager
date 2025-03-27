@@ -3,7 +3,10 @@
 namespace App\Models\Academic;
 
 use App\Models\Academic\ClassSection;
+use App\Models\Guardian;
 use App\Models\Misc\AttendanceLedger;
+use App\Models\SchoolSection;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;

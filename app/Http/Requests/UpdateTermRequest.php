@@ -11,7 +11,7 @@ class UpdateTermRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -22,7 +22,10 @@ class UpdateTermRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'name' => 'sometimes',
+            'start_date' => 'sometimes|date',
+            'end_date' => 'sometimes|date',
+            'status' => 'required|in:success,pending,success',
         ];
     }
 }

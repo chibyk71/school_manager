@@ -11,7 +11,7 @@ class StoreTermRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -22,7 +22,11 @@ class StoreTermRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'name' => 'required',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date',
+            'status' => 'required|in:pending,active,completed',
+            'academic_session_id' => 'required|exists:academic_sessions,id'
         ];
     }
 }

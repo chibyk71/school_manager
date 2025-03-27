@@ -57,7 +57,7 @@ Route::middleware('auth')->group(function () {
     Route::post('school-sections', [SchoolSectionController::class, 'store'])->name('sections.store');
     Route::post('school-sections/{schoolSection}', [SchoolSectionController::class, 'update'])->name('sections.update');
     Route::delete('school-sections/', [SchoolSectionController::class, 'destroy'])->name('sections.destroy');
-    
+
     Route::get('class-levels', [ClassLevelController::class, 'index'])->name('class-level.index');
     Route::post('class-levels', [ClassLevelController::class, 'store'])->name('class-level.store');
     Route::post('class-levels/{classLevel}', [ClassLevelController::class, 'update'])->name('class-level.update');
@@ -67,6 +67,16 @@ Route::middleware('auth')->group(function () {
     Route::post('class-section/', [ClassSectionController::class, 'store'])->name('class-section.store');
     Route::post('class-section/{classSection}', [ClassSectionController::class, 'update'])->name('class-section.update');
     Route::delete('class-section/', [ClassSectionController::class, 'destroy'])->name('class-section.destroy');
+
+    Route::get('academic-sessions', [App\Http\Controllers\AcademicSessionController::class, 'index'])->name('academic-session.index');
+    Route::post('academic-session', [App\Http\Controllers\AcademicSessionController::class, 'store'])->name('academic-session.store');
+    Route::post('academic-session/{academicSession}', [App\Http\Controllers\AcademicSessionController::class, 'update'])->name('academic-session.update');
+    Route::delete('academic-session/', [App\Http\Controllers\AcademicSessionController::class, 'destroy'])->name('academic-session.destroy');
+
+    Route::get('terms/{academicSession?}', [App\Http\Controllers\TermController::class, 'index'])->name('term.index');
+    Route::post('term', [App\Http\Controllers\TermController::class, 'store'])->name('term.store');
+    Route::post('term/{term}', [App\Http\Controllers\TermController::class, 'update'])->name('term.update');
+    Route::delete('term/', [App\Http\Controllers\TermController::class, 'destroy'])->name('term.destroy');
 
     Route::get('subjects', [SubjectController::class, 'index'])->name('subject.index');
 

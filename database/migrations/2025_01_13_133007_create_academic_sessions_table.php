@@ -17,10 +17,9 @@ return new class extends Migration
             $table->date('start_date');
             $table->date('end_date');
             $table->boolean('is_current')->default(false);
-            $table->string('school_id')->index();
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
+            $table->foreignUuid('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->timestamps();
-
+            $table->softDeletes();
             $table->unique(['name', 'school_id']);
         });
     }
