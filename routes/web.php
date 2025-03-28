@@ -53,10 +53,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/school/{school}', [SchoolController::class, 'update'])->name('school.update');
     Route::delete('schools/', [SchoolController::class, 'destroy'])->name('school.destroy');
 
-    Route::get('school-sections', [SchoolSectionController::class, 'index'])->name('sections.index');
-    Route::post('school-sections', [SchoolSectionController::class, 'store'])->name('sections.store');
-    Route::post('school-sections/{schoolSection}', [SchoolSectionController::class, 'update'])->name('sections.update');
-    Route::delete('school-sections/', [SchoolSectionController::class, 'destroy'])->name('sections.destroy');
+    Route::get('school-sections', [SchoolSectionController::class, 'index'])->name('school-section.index');
+    Route::post('school-section', [SchoolSectionController::class, 'store'])->name('school-section.store');
+    Route::post('school-section/{schoolSection}', [SchoolSectionController::class, 'update'])->name('school-section.update');
+    Route::delete('school-section/', [SchoolSectionController::class, 'destroy'])->name('school-section.destroy');
 
     Route::get('class-levels', [ClassLevelController::class, 'index'])->name('class-level.index');
     Route::post('class-levels', [ClassLevelController::class, 'store'])->name('class-level.store');
@@ -79,6 +79,9 @@ Route::middleware('auth')->group(function () {
     Route::delete('term/', [App\Http\Controllers\TermController::class, 'destroy'])->name('term.destroy');
 
     Route::get('subjects', [SubjectController::class, 'index'])->name('subject.index');
+    Route::post('subject', [SubjectController::class, 'store'])->name('subject.store');
+    Route::post('subject/{subject}', [SubjectController::class, 'update'])->name('subject.update');
+    Route::delete('subject/', [SubjectController::class, 'destroy'])->name('subject.destroy');
 
     Route::get('time-table', [TimeTableController::class, 'index'])->name('timetables.index');
 

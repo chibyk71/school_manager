@@ -16,9 +16,9 @@ trait BelongsToSections
     /**
      * Attach one or more school sections to the model.
      */
-    public function attachSections(array|int $sectionIds)
+    public function attachSections(array $sectionIds)
     {
-        return $this->schoolSections()->attach($sectionIds);
+        return $this->schoolSections()->syncWithoutDetaching($sectionIds);
     }
 
     /**

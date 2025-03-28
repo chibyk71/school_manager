@@ -17,19 +17,27 @@ class SubjectController extends Controller
     }
 
     /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
      * Store a newly created resource in storage.
      */
     public function store(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'name' => 'required|string',
+            'description' => 'nullable|string',
+            'code' => 'required|string',
+            'credit' => 'nullable|numeric',
+            'is_elective' => 'required|boolean',
+            'school_section_ids' => 'required|array',
+            'school_section_ids.*' => 'required|exists:school_sections,id'
+        ]);
+
+        try {
+            $subject = Subject::create($validated);
+            $subject->attachSections($validated['school_section_ids']);
+            return redirect()->route('subject.index')->with('success', 'Subject created.');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'An error occurred while creating the subject. Please try again.'])->withInput();
+        }
     }
 
     /**
