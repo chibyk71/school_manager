@@ -25,6 +25,8 @@ class Subject extends Model
         'options'
     ];
 
+    protected $appends = ['status'];
+
     protected $casts = [
         'is_elective' => 'boolean',
         'options' => 'json'
@@ -37,5 +39,11 @@ class Subject extends Model
             ->logAll()
             ->logExcept(['updated_at'])
             ->logOnlyDirty();
+    }
+
+    // Define the accessor for 'status'
+    public function getStatusAttribute()
+    {
+        return $this->trashed() ? 'archived' : 'active';
     }
 }

@@ -17,11 +17,11 @@ const type = computed(()=> props.field_type ?? props.type)
 <template>
     <InputWrapper :label :name :error :field_type :hint :placeholder>
         <template #input="slotProps">
-            <Password v-if="type === 'password'" v-bind="slotProps" :feedback="false" toggle-mask fluid />
+            <Password v-if="type === 'password'" v-bind="slotProps" :feedback="false" toggle-mask fluid v-model="model" />
 
-            <Select v-else-if="type === 'select'" option-label="label" option-value="value" v-bind="slotProps" fluid/>
+            <Select v-model="model" v-else-if="type === 'select'" option-label="label" option-value="value" v-bind="slotProps" fluid/>
 
-            <Textarea v-else-if="type === 'textarea'" v-bind="slotProps" fluid rows="3" />
+            <Textarea v-model="model" v-else-if="type === 'textarea'" v-bind="slotProps" fluid rows="3" />
 
             <div class="flex items-center gap-4 flex-wrap" v-else-if="type === 'checkbox' || type === 'radio'">
                 <div class="flex item-center gap-3" v-for="({label, value}, index) in slotProps.options">
@@ -33,7 +33,7 @@ const type = computed(()=> props.field_type ?? props.type)
 
             <InputText v-else v-bind="slotProps" fluid v-model="model" />
         </template>
-    
+
     </InputWrapper>
-    
+
 </template>

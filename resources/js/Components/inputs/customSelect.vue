@@ -1,13 +1,13 @@
 <template>
     <template v-if="multiple">
         <MultiSelect size="small" fluid display="chip" :loading="loading" ref="select" :option-label="optionLabel" :option-value="optionValue"
-            @focus="onFocus" @input="onInput" :options="options" v-model="modelValue" @keydown.enter="onEnter"
+            @focus="onFocus" @input="onInput" :options="options" v-model="model" @keydown.enter="onEnter"
             :invalid="invalid" :placeholder="placeholder" v-bind="$attrs" multiple>
         </MultiSelect>
     </template>
     <template v-else>
         <Select fluid :loading="loading" ref="select" :option-label="optionLabel" :option-value="optionValue"
-            @focus="onFocus" @input="onInput" :options="options" v-model="modelValue" @keydown.enter="onEnter"
+            @focus="onFocus" @input="onInput" :options="options" v-model="model" @keydown.enter="onEnter"
             :invalid="invalid" :placeholder="placeholder" v-bind="$attrs">
         </Select>
     </template>
@@ -17,7 +17,7 @@
 import { Select, MultiSelect } from 'primevue';
 import { ref, watch, onBeforeUnmount } from 'vue';
 
-const modelValue = defineModel('model')
+const model = defineModel();
 
 const props = defineProps<{
     optionLabel?: string,

@@ -18,7 +18,12 @@ trait BelongsToSections
      */
     public function attachSections(array $sectionIds)
     {
-        return $this->schoolSections()->syncWithoutDetaching($sectionIds);
+        // Validate that all sectionIds are valid (optional)
+        if (empty($sectionIds)) {
+            return; // or throw an exception
+        }
+
+        $this->schoolSections()->attach($sectionIds);
     }
 
     /**

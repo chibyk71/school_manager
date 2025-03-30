@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import CustomSelect from '@/Components/inputs/customSelect.vue';
 import InputWrapper from '@/Components/inputs/InputWrapper.vue';
+import AssignTeacherSubjectClass from '@/Components/Modals/Create/AssignTeacherSubjectClass.vue';
 import ModalWrapper from '@/Components/Modals/ModalWrapper.vue';
-import { modals } from '@/helpers';
+import { modals, openEditModal, useDeleteResource } from '@/helpers';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useSelectedResources } from '@/store';
 import { useForm } from '@inertiajs/vue3';
-import { Card, Column, DataTable, Select, Textarea } from 'primevue';
+import { Badge, Button, Card, Column, DataTable, Select, Textarea, useDialog } from 'primevue';
 
 const form = useForm({
     name: '',
@@ -15,28 +17,68 @@ const form = useForm({
     status: '',
     description: '',
 })
+
+const props = defineProps({
+    subjects: []
+})
+
+const { deleteResource } = useDeleteResource(),
+    { selectedResourceIds, selectedResources } = useSelectedResources(),
+    dialog = useDialog();
 </script>
 
 <template>
-    <AuthenticatedLayout title="Subjects" :crumb="[{ label: 'Dashboard' }, { label: 'Academic' }, { label: 'Subjects' }]" :buttons="[{ label: 'Add Subjects', icon: 'ti ti-school', onClick: () => modals.open('subjects') }]">
+    <AuthenticatedLayout title="Subjects" :crumb="[{ label: 'Dashboard' }, { label: 'Academic' }, { label: 'Subjects' }]" :buttons="[{label:'Delete Selected', icon:'ti ti-trash', severity:'danger', onClick: ()=> deleteResource('subject', selectedResourceIds), class: selectedResourceIds.length < 1? 'hidden': ''},{ label: 'Add Subjects', icon: 'ti ti-school', onClick: () => modals.open('subjects') }]">
 
         <!-- Guardians List -->
         <Card>
             <template #content>
-                <DataTable>
+                <DataTable v-model:selection="selectedResources" :value="subjects" :paginator="true" :rows="10" :rowsPerPageOptions="[5, 10, 20, 50]">
                     <Column selection-mode="multiple" />
-                    <Column header="ID" />
-                    <Column header="Name"></Column>
-                    <Column header="Code"></Column>
-                    <Column header="Type">
+                    <Column header="ID" >
+                      <template #body="slotProps">
+                        {{ slotProps.index + 1 }}
+                      </template>
+                    </Column>
+                    <Column header="Name" field="name" sortable>
+                      <template #body="slotProps"><span class="capitalize">{{ slotProps.data.name }}</span></template>
+                    </Column>
+                    <Column header="Code" field="code" sortable></Column>
+                    <Column header="Type" sortable>
                       <template #body="slotProps">
                         <span v-if="slotProps.data.is_elective">Elective</span>
                         <span v-else>Core</span>
                       </template>
                     </Column>
-                    <Column header="School Section"></Column>
-                    <Column header="Status"></Column>
-                    <Column header="Action" />
+                    <Column header="School Section" sortable>
+                        <template #body="slotProps">
+                            <div class="flex">
+                                <Badge v-if="slotProps.data.school_sections.length > 0" severity="secondary" :value="slotProps.data.school_sections[0].display_name" />
+                                <template v-if="slotProps.data.school_sections.length > 1">
+                                    <span class="text-xs text-gray-500 ml-2">+{{ slotProps.data.school_sections.length - 1 }}</span>
+                                </template>
+                                <template v-else>
+                                    <span class="text-xs text-gray-500 ml-2">No School Section</span>
+                                </template>
+                            </div>
+                        </template>
+                    </Column>
+                    <Column header="Status">
+                      <template #body="slotProps">
+                        <Badge v-if="slotProps.data.status == 'active'" severity="success" :value="slotProps.data.status" />
+                        <Badge v-else severity="danger" :value="slotProps.data.status" />
+                      </template>
+                    </Column>
+                    <Column header="Action" >
+                      <template #body="slotProps">
+                        <div class="flex items-center gap-x-2">
+                            <Button icon="ti ti-trash" @click="deleteResource('subject', [slotProps.data.id])" severity="danger" />
+                            <Button icon="ti ti-edit" @click="openEditModal(slotProps.data, form, 'subjects')" />
+                            <!-- assign teacher and class to subject -->
+                            <Button v-tooltip="'Assign Teacher and Class'" icon="ti ti-users" @click="dialog.open(AssignTeacherSubjectClass, { data: {subject_id: slotProps.data.id},props: {modal:true, header: 'Assign Teacher and Class', maximizable: true,} })" />
+                        </div>
+                      </template>
+                    </Column>
                 </DataTable>
             </template>
         </Card>
