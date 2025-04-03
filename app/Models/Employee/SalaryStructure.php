@@ -38,7 +38,7 @@ class SalaryStructure extends Model
         return $this->belongsTo(Salary::class);
     }
 
-    public function getActivityLogOptions() {
+    public function getActivityLogOptions(): LogOptions {
         return LogOptions::defaults()
             ->logOnly([
                 'salary_id',

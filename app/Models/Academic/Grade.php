@@ -23,7 +23,8 @@ class Grade extends Model
         'remark'
     ];
 
-    public function getActivityLogOptions() {
+    public function getActivityLogOptions(): LogOptions
+    {
         return LogOptions::defaults()
             ->logOnly(['name', 'code', 'min_score', 'max_score', 'remark'])
             ->logOnlyDirty();

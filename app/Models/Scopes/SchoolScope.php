@@ -20,7 +20,7 @@ class SchoolScope implements Scope
             return;
         }
 
-        $builder->where($model->qualifyColumn(BelongsToSchool::$schoolIdColumn), $currentlyInitializedSchool);
+        $builder->where($model->qualifyColumn($model::getSchoolIdColumn()), $currentlyInitializedSchool);
     }
 
     public function extend(Builder $builder)

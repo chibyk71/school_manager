@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\School;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
 
@@ -92,5 +93,48 @@ if (! function_exists('array_get')) {
     function array_get($array, $key, $default = null)
     {
         return Arr::get($array, $key, $default);
+    }
+    
+}
+
+
+    
+if (!function_exists('modelClassFromName')) {
+    /**
+     * Get an instance of a model class from its name.
+     *
+     * @param string $name
+     * @return \Illuminate\Database\Eloquent\Model|null
+     */
+    function modelClassFromName(string $name): ?Model
+    {
+        $baseNamespace = 'App\\Models\\';
+        $modelsPath = app_path('Models');
+
+        // Convert to StudlyCase
+        $className = Str::studly($name);
+
+        // Scan all PHP files in Models directory recursively
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($modelsPath));
+
+        foreach ($iterator as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                // Get the relative path from Models directory
+                $relativePath = str_replace($modelsPath . DIRECTORY_SEPARATOR, '', $file->getPathname());
+
+                // Convert to namespace format (replace slashes with \ and remove .php)
+                $modelNamespace = $baseNamespace . str_replace(['/', '\\', '.php'], ['\\', '\\', ''], $relativePath);
+
+                // Check if the class exists and is a Model
+                if (class_exists($modelNamespace) && is_subclass_of($modelNamespace, Model::class)) {
+                    // Match the last part of the namespace with the given name
+                    if (class_basename($modelNamespace) === $className) {
+                        return new $modelNamespace;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 }

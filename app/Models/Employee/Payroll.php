@@ -54,9 +54,10 @@ class Payroll extends Model
         return 'salary';
     }
 
-    public function getActivitylogOptions() {
+    public function getActivitylogOptions(): LogOptions {
         return LogOptions::defaults()
             ->logOnly(['staff_id', 'salary_id', 'bonus', 'deduction', 'net_salary', 'payment_date', 'description', 'status'])
-            ->useLogName('payroll');
+            ->useLogName('payroll')
+            ->logOnlyDirty();
     }
 }

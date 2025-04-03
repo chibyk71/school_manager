@@ -29,11 +29,12 @@ class Feedback extends Model
         'category'// "Complaint", "Suggestion", "Appreciation"
     ];
 
-    public function getActivityLogOptions() {
+    public function getActivityLogOptions(): LogOptions
+    {
         return LogOptions::defaults()
-        ->logAll()
-        ->logOnlyDirty()
-        ->logExcept(['updated_at']);
+            ->logAll()
+            ->logOnlyDirty()
+            ->logExcept(['updated_at']);
     }
 
     public function feedbackable()

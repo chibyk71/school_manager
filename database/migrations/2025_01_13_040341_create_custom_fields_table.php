@@ -27,7 +27,7 @@ return new class extends Migration
             $table->string('cast_as')->nullable();
             $table->boolean('has_options')->default(0);
             $table->string('model_type');
-            $table->unsignedBigInteger('entity_id')->nullable();
+            $table->uuid('school_id')->index()->nullable();
             $table->timestamps();
         });
 

@@ -47,10 +47,10 @@ class Notice extends Model
         return $this->belongsToMany('App\Models\User', 'notice_recipients', 'notice_id', 'user_id')->withPivot(['seen'])->withTimestamps();
     }
 
-    public function getActivityLogOptions() {
+    public function getActivityLogOptions(): LogOptions {
         return LogOptions::defaults()
-        ->logAll()
-        ->logExcept(['updated_at'])
-        ->logOnlyDirty();
+            ->logAll()
+            ->logExcept(['updated_at'])
+            ->logOnlyDirty();
     }
 }

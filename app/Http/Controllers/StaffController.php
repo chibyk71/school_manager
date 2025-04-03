@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Staff;
 use App\Http\Requests\StoreStaffRequest;
 use App\Http\Requests\UpdateStaffRequest;
+use App\Models\Employee\Staff;
 
 class StaffController extends Controller
 {
@@ -13,15 +13,9 @@ class StaffController extends Controller
      */
     public function index()
     {
-        //
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
+        return inertia('HRM/Staffs', [
+            'staffs'=> Staff::with('user:id,name,email,enrollment_id')->paginate(50),
+        ]);
     }
 
     /**
@@ -29,7 +23,8 @@ class StaffController extends Controller
      */
     public function store(StoreStaffRequest $request)
     {
-        //
+        $validated = $request->validated();
+        
     }
 
     /**

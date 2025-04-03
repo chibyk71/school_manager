@@ -62,7 +62,7 @@ export interface Field {
     placeholder?: string; // Placeholder text for input fields.
     classes?: string; // Additional CSS classes for styling.
     field_type: InputTypeHTMLAttribute | 'select' | 'textarea'; // Specifies the type of input.
-    options?: {label: string, value: string | number}[]; // Available options for select, radio, or checkbox fields.
+    options?: {label: string, value: string}[]; // Available options for select, radio, or checkbox fields.
     default_value?: any; // Default value for the field.
     description?: string; // Longer description for the field.
     hint?: string; // Tooltip or hint for the field.

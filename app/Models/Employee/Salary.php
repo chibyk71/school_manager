@@ -44,7 +44,7 @@ class Salary extends Model
     public function getActivityLogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['*'])
+            ->logOnly(['department_role_id', 'effective_date', 'school_id', 'options'])
             ->logOnlyDirty();
     }
 }

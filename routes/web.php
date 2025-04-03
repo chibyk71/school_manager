@@ -11,6 +11,7 @@ use App\Http\Controllers\SchoolController;
 use App\Http\Controllers\SchoolSectionController;
 use App\Http\Controllers\SelectOptionsController;
 use App\Http\Controllers\Settings\PermissionController;
+use App\Http\Controllers\Settings\School\General\CustomFieldController;
 use App\Http\Controllers\Settings\School\RolesController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
@@ -83,7 +84,24 @@ Route::middleware('auth')->group(function () {
     Route::post('subject/{subject}', [SubjectController::class, 'update'])->name('subject.update');
     Route::delete('subject/', [SubjectController::class, 'destroy'])->name('subject.destroy');
 
-    Route::get('time-table', [TimeTableController::class, 'index'])->name('timetables.index');
+    // Route::get('users', [App\Http\Controllers\UserController::class, 'index'])->name('user.index');
+    // Route::post('user', [App\Http\Controllers\UserController::class, 'store'])->name('user.store');
+    // Route::post('user/{user}', [App\Http\Controllers\UserController::class, 'update'])->name('user.update');
+    // Route::delete('user/', [App\Http\Controllers\UserController::class, 'destroy'])->name('user.destroy');
+    // Route::get('user/{user}/permissions', [App\Http\Controllers\UserController::class, 'permissions'])->name('user.permissions');
+    // Route::post('user/{user}/permissions', [App\Http\Controllers\UserController::class, 'updatePermissions'])->name('user.permissions.update');
+
+    Route::get('staff', [App\Http\Controllers\StaffController::class, 'index'])->name('staff.index');
+    Route::post('staff', [App\Http\Controllers\StaffController::class, 'store'])->name('staff.store');
+    Route::post('staff/{staff}', [App\Http\Controllers\StaffController::class, 'update'])->name('staff.update');
+    Route::delete('staff', [App\Http\Controllers\StaffController::class, 'destroy'])->name('staff.destroy');
+
+    Route::get('custom-fields', [CustomFieldController::class, 'index'])->name('custom-field.index');
+    Route::post('custom-field', [CustomFieldController::class, 'store'])->name('custom-field.store');
+    Route::post('custom-field/{customField}', [CustomFieldController::class, 'update'])->name('custom-field.update');
+    Route::delete('custom-field/', [CustomFieldController::class, 'destroy'])->name('custom-field.destroy');
+
+    Route::get('time-table', action: [TimeTableController::class, 'index'])->name('timetables.index');
 
     Route::get('exam/schedules', [App\Http\Controllers\Exam\ScheduleController::class, 'index'])->name('exam.schedules.index');
 

@@ -11,7 +11,7 @@ class StoreStaffRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -22,7 +22,10 @@ class StoreStaffRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'user_id' => 'required|exists:users,id',
+            'department_role_id' => 'required|exists:department_roles,id',
+            'school_section_ids' => 'required|array',
+            'school_section_ids.*' => 'nullable,numbers'
         ];
     }
 }

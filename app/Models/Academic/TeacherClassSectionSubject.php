@@ -12,9 +12,9 @@ class TeacherClassSectionSubject extends Pivot
 {
     use LogsActivity, HasConfig;
 
-    protected static $incrementing = true;
+    public $incrementing = true;
 
-    protected static $primaryKey = 'id';
+    protected $primaryKey = 'id';
 
     protected $fillable = [
         'teacher_id',
@@ -22,11 +22,11 @@ class TeacherClassSectionSubject extends Pivot
         'subject_id',
     ];
 
-    protected static $appends = [
+    protected $appends = [
         'role'
     ];
 
-    protected static $table = 'teacher_class_section_subjects';
+    protected $table = 'teacher_class_section_subjects';
 
     public function getActivitylogOptions(): LogOptions
     {

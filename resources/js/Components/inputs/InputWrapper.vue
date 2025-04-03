@@ -35,10 +35,12 @@ model.value = props.default_value ?? ''
 
 <template>
     <div class="mb-3">
-        <label :for="id">{{ label }} <span v-if="required" class="text-red-500 text-sm">*</span></label>
+        <label :for="id">{{ label }} <span v-if="required" class="text-red-500 text-sm">*</span> 
+            <span v-if="hint" class="text-gray-400 text-sm" :title="hint"><i class="ti ti-info-circle"></i></span>
+        </label>
         <slot name="input" v-bind="inputSlotPass">
             <InputText :type="field_type?? 'text'" v-model="model" :required="required" :id :invalid fluid :name />
         </slot>
-        <Message variant="simple" severity="error" v-if="invalid || hint"> {{ error ?? hint }}</Message>
+        <Message variant="simple" severity="error" v-if="invalid"> {{ error ?? hint }}</Message>
     </div>
 </template>
