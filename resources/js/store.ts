@@ -1,5 +1,5 @@
 import { useDialog } from "primevue";
-import { computed, ref } from "vue";
+import { computed, reactive, ref, VueElementConstructor } from "vue";
 import { FilterMatchMode } from '@primevue/core/api';
 
 export let isDarkTheme = ref(false);

@@ -5,6 +5,7 @@
     import SidePanel from '@/Components/menu/SidePanel.vue';
     import { ButtonEmits, ConfirmDialog, Toast, type ButtonProps } from 'primevue';
     import DynamicDialog from 'primevue/dynamicdialog';
+import ResourceDialogWrapper from '@/Components/Modals/ResourceDialogWrapper.vue';
 
 
     defineProps<{
@@ -29,6 +30,7 @@
         </div>
     </div>
     <DynamicDialog />
+    <ResourceDialogWrapper />
     <ConfirmDialog></ConfirmDialog>
     <Toast></Toast>
 </template>

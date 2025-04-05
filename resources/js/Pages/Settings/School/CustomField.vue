@@ -3,14 +3,13 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SettingsLayout from '../Partials/SettingsLayout.vue';
 import { Button, Column, DataTable, ToggleSwitch, useDialog } from 'primevue';
 import { FilterModes, useSelectedResources } from '@/store';
-import CustomFields from '@/Components/Modals/CustomFields.vue';
-import { useDeleteResource } from '@/helpers';
+import { modals, useDeleteResource } from '@/helpers';
 
 const filter = {
     group: {value: null, modes: FilterModes.CONTAINS}
 }
 
-const props = defineProps({
+const { settings, resources } = defineProps({
     settings: [],
     resources: []
 })
@@ -22,10 +21,7 @@ const dialog = useDialog(),
 </script>
 
 <template>
-    <AuthenticatedLayout title="Custom Field" :crumb="[{ label: 'Setting' }, { label: 'School' }, { label: 'Custom Field' }]" :buttons="[{label: 'Delete Selected', severity: 'danger', class: selectedResources.length < 1? 'hidden': '', onClick: () => deleteResource('custom-field', selectedResourceIds)},{label: 'Add Field', icon: 'ti ti-plus', onClick: ()=> dialog.open(CustomFields,{
-        data: {resources},
-        props: {header: 'Create Custom Field', contentClass: 'overflow-hidden relative'}
-    })}]">
+    <AuthenticatedLayout title="Custom Field" :crumb="[{ label: 'Setting' }, { label: 'School' }, { label: 'Custom Field' }]" :buttons="[{label: 'Delete Selected', severity: 'danger', class: selectedResources.length < 1? 'hidden': '', onClick: () => deleteResource('custom-field', selectedResourceIds)},{label: 'Add Field', icon: 'ti ti-plus', onClick: ()=> modals.open('custom-field',{ 'resources': resources})}]">
         <SettingsLayout>
             <template #left>
             </template>
@@ -58,7 +54,7 @@ const dialog = useDialog(),
                               <template #body="slotProps">
                                 <div class="flex items-center gap-x-2">
                                     <Button icon="ti ti-trash" @click="()=> deleteResource('custom-field', slotProps.data.id)" severity="danger" size="small" />
-                                    <Button icon="ti ti-edit" severity="secondary" size="small"/>
+                                    <Button icon="ti ti-edit" @click="()=> modals.open('custom-field',{resource_data:slotProps.data})" severity="secondary" size="small"/>
                                 </div>
                               </template>
                             </Column>
