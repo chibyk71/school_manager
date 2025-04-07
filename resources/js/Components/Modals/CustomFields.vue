@@ -10,7 +10,7 @@ import ModalWrapper from './ModalWrapper.vue';
 const props = defineProps<{
     resource_data?: Field & { required?: boolean },
     resources: Array<string>,
-    resource_id?: string | number
+    resource_id?: string | number,
 }>();
 
 const form = useForm<Field & { required?: boolean, resource: string }>({
@@ -28,6 +28,7 @@ const form = useForm<Field & { required?: boolean, resource: string }>({
     category: props.resource_data?.category ?? '', // Grouping of fields into categories.
 });
 
+
 const optionable = ref(['select', 'radio', 'checkbox']);
 const hasOptions = computed(() => {
     return optionable.value.includes(form.field_type);
@@ -38,7 +39,7 @@ const hasOptions = computed(() => {
 <template>
     <ModalWrapper :form id="custom-field" resource="custom-field" header="Create Custom Field">
         <PerfectScrollbar>
-            <form action="" method="post" class="h-full overflow-hidden relative pb-5">
+            <form action="" method="post" class="h-full overflow-hidden relative mb-5">
                 <InputWrapper label="Resource" name="resource" field_type="select" required>
                     <template #input="slotProps">
                         <Select fluid v-model="form.resource" v-bind="slotProps" :options="props.resources" />
@@ -89,12 +90,12 @@ const hasOptions = computed(() => {
                 <InputWrapper field_type="text" label="Default Value" v-model="form.default_value" name='default_value'
                     :error="form.errors.default_value" hint="Default value for the field" />
 
-                <div class="flex items-center justify-between mb-4 mr-3">
+                <div class="flex items-center justify-between mb-10 mr-3">
                     <div class="status-title">
                         <h5>Required</h5>
                         <p>Make the field required by toggle </p>
                     </div>
-                    <ToggleSwitch id="required" name="required" class="self-end" binary v-model="form.required" />
+                    <ToggleSwitch id="required" name="required" class="self-end" v-model="form.required" />
                 </div>
             </form>
         </PerfectScrollbar>
@@ -103,6 +104,6 @@ const hasOptions = computed(() => {
 
 <style>
 .ps {
-    max-height: 80vh;
+    max-height: 75vh;
 }
 </style>

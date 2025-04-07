@@ -17,6 +17,7 @@ const { settings, resources } = defineProps({
 const dialog = useDialog(),
     { deleteResource } = useDeleteResource(),
     { selectedResourceIds, selectedResources } = useSelectedResources();
+console.log(settings);
 
 </script>
 

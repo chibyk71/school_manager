@@ -5,29 +5,25 @@ namespace App\Http\Controllers\Settings\School\General;
 use App\Http\Controllers\Controller;
 use App\Models\CustomField;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class CustomFieldController extends Controller
 {
     public function index()
     {
-        $customizableResources = ['Staff','Guardian','Student','Certificate','Result'];
+        $customizableResources = ['Staff', 'Guardian', 'Student', 'Certificate', 'Result'];
 
-        $settings = CustomField::where('entity_id', GetSchoolModel()->id)
-            ->when(request()->has('resource'), function ($query) {
-                $query->where('model_type', modelClassFromName(request('resource'))::class);
-            })->get()
-            ->map(function ($item) {
-                $item->resource = class_basename($item->model_type); // Add resource property with model name
-                $item->required = in_array('required', $item->rules?? []);
-                return $item;
-            });
+        $settings = CustomField::when(request()->has('resource'), function ($query) {
+                $query->where('model_type', request('resource'));
+            })->get();
 
         return Inertia::render('Settings/School/CustomField', [
             'settings' => $settings,
             'resources' => $customizableResources
         ]);
     }
+
 
     public function store(Request $request)
     {
