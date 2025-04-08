@@ -29,6 +29,7 @@ return new class extends Migration
             $table->string('model_type');
             $table->uuid('school_id')->index()->nullable();
             $table->timestamps();
+            $table->unique(['name', 'model_type', 'school_id'], 'custom_fields_unique_name_model_type_school_id');
         });
 
         Schema::create('custom_field_responses', function (Blueprint $table) {
