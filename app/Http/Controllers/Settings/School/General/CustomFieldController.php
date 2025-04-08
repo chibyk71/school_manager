@@ -29,13 +29,11 @@ class CustomFieldController extends Controller
     {
         $validated = $this->validateRequest($request);
 
-        if (empty($validated['resource'])) {
+        if (empty($validated['model_type'])) {
             return back()->withErrors(['error' => 'Resource is required'])->withInput();
         }
 
         try {
-            $validated['model_type'] = modelClassFromName($validated['resource'])::class;
-
             // Ensure 'rules' is an array
             $validated['rules'] = isset($validated['rules']) && is_array($validated['rules']) ? $validated['rules'] : [];
 
@@ -61,13 +59,11 @@ class CustomFieldController extends Controller
     {
         $validated = $this->validateRequest($request);
 
-        if (empty($validated['resource'])) {
+        if (empty($validated['model_type'])) {
             return back()->withErrors(['error' => 'Resource is required'])->withInput();
         }
 
         try {
-            $validated['model_type'] = modelClassFromName($validated['resource'])::class;
-
             // Ensure 'rules' is an array
             $validated['rules'] = isset($validated['rules']) && is_array($validated['rules']) ? $validated['rules'] : [];
 
@@ -92,7 +88,7 @@ class CustomFieldController extends Controller
     private function validateRequest(Request $request)
     {
         return $request->validate([
-            'name' => 'required|string|max:255|unique:custom_fields,name',
+            'name' => 'required|string|max:255|unique:custom_fields,name,' . ($request->route('customField')->id ?? 'NULL') . ',id',
             'label' => 'required|string|max:255',
             'placeholder' => 'nullable|string|max:255',
             'rules' => 'nullable',
@@ -105,7 +101,7 @@ class CustomFieldController extends Controller
             'hint' => 'nullable|string|max:255',
             'sort' => 'nullable|integer',
             'category' => 'nullable|string|max:255',
-            'resource' => 'required|string'
+            'model_type' => 'required|string'
         ]);
     }
 

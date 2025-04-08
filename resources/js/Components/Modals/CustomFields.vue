@@ -4,7 +4,7 @@ import { useForm } from '@inertiajs/vue3';
 import { InputChips, Select, ToggleSwitch } from 'primevue';
 import { Field } from '@/types';
 import InputWrapper from '../inputs/InputWrapper.vue';
-import { computed, ref } from 'vue';
+import { computed, inject, ref } from 'vue';
 import ModalWrapper from './ModalWrapper.vue';
 
 const props = defineProps<{
@@ -13,8 +13,8 @@ const props = defineProps<{
     resource_id?: string | number,
 }>();
 
-const form = useForm<Field & { required?: boolean, resource: string }>({
-    resource: '',
+const form = useForm<Field & { required?: boolean, model_type: string }>({
+    model_type: '',
     field_type: props.resource_data?.field_type ?? 'text', // Specifies the type of input.
     required: props.resource_data?.required ?? false,
     name: props.resource_data?.name ?? '', // The unique identifier for the custom field.
@@ -28,6 +28,7 @@ const form = useForm<Field & { required?: boolean, resource: string }>({
     category: props.resource_data?.category ?? '', // Grouping of fields into categories.
 });
 
+const resources: Array<string> = (inject('data') as any)?.value?.resources ?? props.resources ?? [];
 
 const optionable = ref(['select', 'radio', 'checkbox']);
 const hasOptions = computed(() => {
@@ -42,7 +43,7 @@ const hasOptions = computed(() => {
             <form action="" method="post" class="h-full overflow-hidden relative mb-5">
                 <InputWrapper label="Resource" name="resource" field_type="select" required>
                     <template #input="slotProps">
-                        <Select fluid v-model="form.resource" v-bind="slotProps" :options="props.resources" />
+                        <Select fluid v-model="form.model_type" v-bind="slotProps" :options="resources" />
                     </template>
                 </InputWrapper>
                 <InputWrapper required label="Field Label" field_type="text" v-model="form.label" name='label'

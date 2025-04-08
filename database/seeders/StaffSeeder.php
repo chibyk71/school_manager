@@ -12,26 +12,6 @@ class StaffSeeder extends Seeder
     {
         $fields = [
             [
-                'name' => 'first_name',
-                'label' => 'First Name',
-                'placeholder' => 'Enter staff member\'s first name',
-                'field_type' => 'text',
-                'description' => 'Staff member\'s given name.',
-                'sort' => 1,
-                'category' => 'Personal Information',
-                'model_type' => 'Staff',
-            ],
-            [
-                'name' => 'last_name',
-                'label' => 'Last Name',
-                'placeholder' => 'Enter staff member\'s last name',
-                'field_type' => 'text',
-                'description' => 'Staff member\'s surname.',
-                'sort' => 2,
-                'category' => 'Personal Information',
-                'model_type' => 'Staff',
-            ],
-            [
                 'name' => 'gender',
                 'label' => 'Gender',
                 'placeholder' => 'Select gender',
@@ -61,16 +41,6 @@ class StaffSeeder extends Seeder
                 'description' => 'Government-issued ID number.',
                 'sort' => 5,
                 'category' => 'Personal Information',
-                'model_type' => 'Staff',
-            ],
-            [
-                'name' => 'email',
-                'label' => 'Email Address',
-                'placeholder' => 'Enter email address',
-                'field_type' => 'email',
-                'description' => 'Primary email for communication.',
-                'sort' => 6,
-                'category' => 'Contact Details',
                 'model_type' => 'Staff',
             ],
             [
@@ -374,4 +344,3 @@ class StaffSeeder extends Seeder
         }
     }
 }
-

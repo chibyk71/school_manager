@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SettingsLayout from '../Partials/SettingsLayout.vue';
-import { Button, Column, DataTable, ToggleSwitch, useDialog } from 'primevue';
+import { Button, Column, DataTable, IconField, InputIcon, InputText, ToggleSwitch, useDialog } from 'primevue';
 import { FilterModes, useSelectedResources } from '@/store';
 import { modals, useDeleteResource } from '@/helpers';
 
@@ -35,9 +35,9 @@ console.log(settings);
                         </div>
                     </div>
                     <div class="block">
-                        <DataTable v-model:selection="selectedResources" :filter="filter" :value="settings">
+                        <DataTable v-model:selection="selectedResources" :filter="filter" :value="settings" :globalFilterFields="['label', 'model_type', 'field_type', 'category']" :paginator="true" :rows="10" selectionMode="multiple" dataKey="id" class="w-full">
                             <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-                            <Column field="resource" header="Resource"></Column>
+                            <Column field="model_type" header="Resource"></Column>
                             <Column field="label" header="Label"></Column>
                             <Column field="field_type" header="Type"></Column>
                             <Column field="required" header="Required">
@@ -55,10 +55,18 @@ console.log(settings);
                               <template #body="slotProps">
                                 <div class="flex items-center gap-x-2">
                                     <Button icon="ti ti-trash" @click="()=> deleteResource('custom-field', slotProps.data.id)" severity="danger" size="small" />
-                                    <Button icon="ti ti-edit" @click="()=> modals.open('custom-field',{resource_data:slotProps.data})" severity="secondary" size="small"/>
+                                    <Button icon="ti ti-edit" @click="()=> modals.open('custom-field',{resource_data:slotProps.data, resources})" severity="secondary" size="small"/>
                                 </div>
                               </template>
                             </Column>
+                            <template #header>
+                                <div class="flex justify-end items-center">
+                                    <IconField>
+                                        <InputIcon class="ti ti-search" />
+                                        <InputText v-model="filter.group.value" :placeholder="'Search'" class="w-full" />
+                                    </IconField>
+                                </div>
+                            </template>
                         </DataTable>
                     </div>
                 </div>
