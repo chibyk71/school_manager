@@ -45,17 +45,19 @@ export function useDeleteResource() {
             },
             accept: async () => {
                 try {
-                    axios.delete(url || route(`${resource}.destroy`), {
-                        data: { ids }
-                    }).then(({data, status}) => {
-                        if (status !== 200) {
-                            toast.add({ severity: 'error', summary: 'Error', detail: data.message || 'Resource(s) not deleted.', life: 3000 });
-                        }else{
-                            toast.add({ severity: 'success', summary: 'Success', detail: data.message || 'Resource(s) deleted successfully.', life: 3000 });
-                            // Refresh the page after delete
-                            router.visit(window.location.href, { replace: true, preserveScroll: true });
-                        }
-                    });
+                    const normalizedIds = Array.isArray(ids) ? ids : [ids];
+                    const requestData = { data: { ids: normalizedIds } };
+
+                    axios.delete(url || route(`${resource}.destroy`), requestData)
+                        .then(({ data, status }) => {
+                            if (status !== 200) {
+                                toast.add({ severity: 'error', summary: 'Error', detail: data.message || 'Resource(s) not deleted.', life: 3000 });
+                            } else {
+                                toast.add({ severity: 'success', summary: 'Success', detail: data.message || 'Resource(s) deleted successfully.', life: 3000 });
+                                // Refresh the page after delete
+                                router.visit(window.location.href, { replace: true, preserveScroll: true });
+                            }
+                        });
                 } catch (error) {
                     console.error('Error deleting resource(s):', error);
                     toast.add({ severity: 'error', summary: 'Error', detail: 'Resource(s) not deleted.', life: 3000 });
@@ -94,7 +96,7 @@ export const useSubmitForm = () => {
      * @param {string|number} [id] - The ID of the resource to be updated or created.
      * @returns {Promise<void>}
      */
-    const submitForm = async (form: InertiaForm<{}>, resource: string, id?: string | number, callbacks?:{onSuccess?: (props: any) => void, onError?: (errors: any) => void}) => {
+    const submitForm = async (form: InertiaForm<{}>, resource: string, id?: string | number, callbacks?: { onSuccess?: (props: any) => void, onError?: (errors: any) => void }) => {
         const routeName = id ? `${resource}.update` : `${resource}.store`;
         console.log(routeName, id);
 
@@ -130,8 +132,8 @@ export const useSubmitForm = () => {
  * }}
  */
 export const modals = reactive({
-    items: [] as { id: string, data?: {[x:string]:any, resource_data?:ResourceData} }[],
-    open: (id: string, data?:{[x:string]:any; resource_data?:ResourceData} ) => {
+    items: [] as { id: string, data?: { [x: string]: any, resource_data?: ResourceData } }[],
+    open: (id: string, data?: { [x: string]: any; resource_data?: ResourceData }) => {
         modals.items.push({ id, data });
     },
     close(id?: string) {
@@ -156,9 +158,9 @@ export const modals = reactive({
     }
 });
 
-export type ResourceData = {[x:string]:any, id:string|number};
+export type ResourceData = { [x: string]: any, id: string | number };
 
-export const populateForm = (data: ResourceData, form: InertiaForm<{[x:string]:any}>) => {
+export const populateForm = (data: ResourceData, form: InertiaForm<{ [x: string]: any }>) => {
     Object.keys(form).forEach((key) => {
         if (key in data) {
             form[key] = data[key as keyof typeof data];

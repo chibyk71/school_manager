@@ -15,8 +15,8 @@ class CustomFieldController extends Controller
         $customizableResources = ['Staff', 'Guardian', 'Student', 'Certificate', 'Result'];
 
         $settings = CustomField::when(request()->has('resource'), function ($query) {
-                $query->where('model_type', request('resource'));
-            })->get();
+            $query->where('model_type', request('resource'));
+        })->get();
 
         return Inertia::render('Settings/School/CustomField', [
             'settings' => $settings,
@@ -108,19 +108,19 @@ class CustomFieldController extends Controller
     public function destroy(Request $request, CustomField $customField = null)
     {
         try {
-            if ($request->has('ids') && is_array($request->input('ids'))) {
-                // Delete multiple custom fields by IDs
-                CustomField::whereIn('id', $request->input('ids'))->delete();
-                return back()->with('success', 'Selected custom fields deleted successfully.');
-            } elseif ($customField) {
-                // Delete a single custom field by route model binding
-                $customField->delete();
-                return back()->with('success', 'Custom field deleted successfully.');
+            if ($request->filled('ids') && is_array($request->input('ids'))) {
+                // Bulk delete custom fields by IDs
+                CustomField::withoutFallback()
+                    ->whereIn('id', $request->input('ids'))
+                    ->delete();
+
+                return response()->json(['success' => true, 'message' => 'Selected custom fields deleted successfully.']);
             } else {
-                return back()->withErrors(['error' => 'No valid custom field(s) specified for deletion.']);
+                return response()->json(['success' => false, 'error' => 'No valid custom field(s) specified for deletion.'], 400);
             }
         } catch (\Exception $e) {
-            return back()->withErrors(['error' => 'An error occurred: ' . $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'An error occurred while deleting custom field(s).'], 500);
         }
     }
+
 }

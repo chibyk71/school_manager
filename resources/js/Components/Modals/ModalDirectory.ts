@@ -1,5 +1,5 @@
 import { reactive, type DefineComponent, ref } from "vue";
-import CustomFields from "./CustomFields.vue";
+import CustomFields from "./Create/CustomFields.vue";
 import AssignTeacherSubjectClass from "./Create/AssignTeacherSubjectClass.vue";
 
 export  const ModalComponentDirectory = ref<Record<any, any>>({

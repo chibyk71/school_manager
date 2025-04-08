@@ -3,9 +3,9 @@
 import { useForm } from '@inertiajs/vue3';
 import { InputChips, Select, ToggleSwitch } from 'primevue';
 import { Field } from '@/types';
-import InputWrapper from '../inputs/InputWrapper.vue';
+import InputWrapper from '../../inputs/InputWrapper.vue';
 import { computed, inject, ref } from 'vue';
-import ModalWrapper from './ModalWrapper.vue';
+import ModalWrapper from '../ModalWrapper.vue';
 
 const props = defineProps<{
     resource_data?: Field & { required?: boolean },

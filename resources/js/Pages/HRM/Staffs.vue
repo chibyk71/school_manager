@@ -2,6 +2,21 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Column, DataTable } from 'primevue';
 
+const props = defineProps<{
+    staffs: {
+        id: number;
+        enrollment_id: string;
+        name: string;
+        department: string;
+        role: string;
+        phone: string;
+        email: string;
+        enrollment_date: string;
+        [x:string]: any
+    }[];
+}>()
+
+console.log(props.staffs);
 
 </script>
 
