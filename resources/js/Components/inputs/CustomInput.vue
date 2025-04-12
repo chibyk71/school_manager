@@ -7,19 +7,19 @@ import InputWrapper from './InputWrapper.vue';
 const props = defineProps<{
     icon?: string,
     error?: string,
-}& Field & (InputHTMLAttributes & { type: InputTypeHTMLAttribute|'select'|'textarea', required?: boolean })>()
+}& Field & { required?: boolean }>()
 
 const model = defineModel<any>();
 
-const type = computed(()=> props.field_type ?? props.type)
+const type = computed(()=> props.field_type)
 </script>
 
 <template>
-    <InputWrapper :label :name :error :field_type :hint :placeholder>
+    <InputWrapper v-bind="props">
         <template #input="slotProps">
             <Password v-if="type === 'password'" v-bind="slotProps" :feedback="false" toggle-mask fluid v-model="model" />
 
-            <Select v-model="model" v-else-if="type === 'select'" option-label="label" option-value="value" v-bind="slotProps" fluid/>
+            <Select v-model="model" v-else-if="type === 'select'" v-bind="slotProps" fluid/>
 
             <Textarea v-model="model" v-else-if="type === 'textarea'" v-bind="slotProps" fluid rows="3" />
 

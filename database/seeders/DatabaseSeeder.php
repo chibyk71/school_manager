@@ -43,6 +43,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call(SchoolSectionSeeder::class);
         $this->call(ClassLevelSeeder::class);
+        $this->call(DepartmentSeeder::class);
 
         // $this->call(SMSTableSeeder::class);
         // $this->call(ApplicationTableSeeder::class);

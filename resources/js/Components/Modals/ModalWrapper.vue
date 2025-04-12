@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { modals, populateForm, ResourceData, useSubmitForm } from '@/helpers';
 import { InertiaForm } from '@inertiajs/vue3';
-import { Button, Dialog, DialogProps, DialogSlots } from 'primevue';
+import { Button, Dialog, DialogProps, DialogSlots, ProgressSpinner } from 'primevue';
 import { inject, watch } from 'vue';
 import { computed } from 'vue';
 
@@ -10,6 +10,7 @@ const props = defineProps<DialogProps & {
     form?: InertiaForm<{}>,
     resource: string,
     resource_data?: ResourceData,
+    loading?: boolean
 }>()
 
 defineSlots<DialogSlots>()
@@ -22,10 +23,7 @@ const modalData = computed(() => {
 });
 
 const resourceData = computed(() => {
-    const resource = modalData.value?.resource_data ?? {};
-    console.log('resourceData', resource);
-
-    return resource;
+    return modalData.value?.resource_data ?? {};
 });
 
 const isvisible = computed(() => modals.items[0]?.id == props.id);
@@ -50,13 +48,13 @@ watch(() => resourceData.value, (newVal) => {
 </script>
 
 <template>
-    <Dialog :pt="{ content: { class: 'overflow-y-hidden' } }" :visible="isvisible" :modal="modal" :header
+    <Dialog :pt="{ content: { class: 'overflow-y-hidden relative' } }" :visible="isvisible" :modal="modal" :header
         :footer="props.footer" :maximizable="props.maximizable" block-scroll class="w-full sm:w-3/4 md:w-2/4">
         <template #footer>
             <div class="flex items-center justify-end gap-x-2.5">
                 <Button label="Cancel" severity="secondary" @click="modals.close()">
                 </Button>
-                <Button v-if='!!form' label="Submit" :loading="form?.processing" @click="submitForm(form!, resource, resource_id, {
+                <Button v-if='!!form && !loading' label="Submit" :loading="form?.processing" @click="submitForm(form!, resource, resource_id, {
                     onSuccess: (props) => $emit('success', props),
                     onError: (errors) => $emit('error', errors),
                 })" />
@@ -67,6 +65,19 @@ watch(() => resourceData.value, (newVal) => {
         <template #closeicon>
             <Button icon="pi pi-times" class="p-button-text" text secondary rounded @click="modals.close()" />
         </template>
-        <slot></slot>
+        <div class="relative top-0 left-0 flex items-center justify-center z-50 h-[50vh] w-full" v-if="loading">
+            <ProgressSpinner />
+        </div>
+        <PerfectScrollbar>
+            <div class="mb-6">
+                <slot></slot>
+            </div>
+        </PerfectScrollbar>
     </Dialog>
 </template>
+
+<style scoped>
+    .ps {
+        max-height: 75vh;
+    }
+</style>

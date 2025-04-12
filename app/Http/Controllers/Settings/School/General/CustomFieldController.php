@@ -24,6 +24,22 @@ class CustomFieldController extends Controller
         ]);
     }
 
+    public function json (String $resource)
+    {
+        $customFields = CustomField::where('model_type', $resource)
+            ->get()
+            ->groupBy('category')
+            ->map(function ($fields, $category) {
+            return [
+                'category' => $category,
+                'count' => $fields->count(),
+                'fields' => $fields
+            ];
+            })
+            ->values();
+
+        return response()->json($customFields);
+    }
 
     public function store(Request $request)
     {

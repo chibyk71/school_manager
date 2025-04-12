@@ -97,6 +97,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('staff', [App\Http\Controllers\StaffController::class, 'destroy'])->name('staff.destroy');
 
     Route::get('custom-fields', [CustomFieldController::class, 'index'])->name('custom-field.index');
+    Route::get('custom-field/{resourse}/json', [CustomFieldController::class, 'json'])->name('custom-field.json');
     Route::post('custom-field', [CustomFieldController::class, 'store'])->name('custom-field.store');
     Route::post('custom-field/{customField}', [CustomFieldController::class, 'update'])->name('custom-field.update');
     Route::delete('custom-field/', [CustomFieldController::class, 'destroy'])->name('custom-field.destroy');

@@ -103,7 +103,7 @@ const hasOptions = computed(() => {
     </ModalWrapper>
 </template>
 
-<style>
+<style scoped>
 .ps {
     max-height: 75vh;
 }

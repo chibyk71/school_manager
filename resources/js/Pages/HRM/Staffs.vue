@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { modals } from '@/helpers';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Column, DataTable } from 'primevue';
 
@@ -16,12 +17,10 @@ const props = defineProps<{
     }[];
 }>()
 
-console.log(props.staffs);
-
 </script>
 
 <template>
-    <AuthenticatedLayout title="Staffs" :crumb="[{label:'Dashboard'},{label:'HRM'},{label:'Staffs'}]" :button="[{label:'Add Staff', icon:'ti ti-plus-circle'}]">
+    <AuthenticatedLayout title="Staffs" :crumb="[{label:'Dashboard'},{label:'HRM'},{label:'Staffs'}]" :buttons="[{label:'Add Staff', icon:'ti ti-plus', onClick: ()=> modals.open('add-staff')}]">
         <DataTable>
             <Column selection-mode="multiple" />
             <Column header="ID" />
