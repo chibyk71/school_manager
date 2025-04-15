@@ -5,6 +5,7 @@ namespace Database\Seeders\Settings;
 use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class RolesTableSeeder extends Seeder
 {
@@ -13,322 +14,313 @@ class RolesTableSeeder extends Seeder
      */
     public function run(): void
     {
-        // Define default roles and their permissions
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        // Truncate the roles table
+        Role::truncate();
+        Db::statement('SET FOREIGN_KEY_CHECKS=1;');
+        // Truncate the role_user table
+        DB::table('role_user')->truncate();
+        // Truncate the permission_role table
+        DB::table('permission_role')->truncate();
+
+
         $roles = [
-            'Principal' => ['manage_users', 'manage_roles', 'manage_permissions'],
-            'Teacher' => [
-                // Dashboard and UI
-                'view-dashboard',
-                'view-sidebar',
-
-                // Class and Subject Management
-                'view-assigned-classes',
-                'assign-homework',
-                'view-homework',
-                'create-homework',
-                'update-homework',
-                'delete-homework',
-                'upload-study-material',
-                'view-study-material',
-                'view-class-routines',
-                'view-syllabus',
-                'view-lesson-plans',
-
-                // Attendance and Behavior
-                'view-attendance-records',
-                'mark-attendance',
-                'update-attendance',
-                'view-behavior-records',
-                'create-behavior-record',
-                'update-behavior-record',
-
-                // Exam and Grading
-                'view-exam-schedules',
-                'mark-exam-attendance',
-                'view-marks-registers',
-                'add-marks',
-                'update-marks',
-                'view-grade-management',
-                'generate-marksheet-reports',
-
-                // Communication and Notifications
-                'view-notice-boards',
-                'participate-in-forum',
-                'send-email-sms-notifications',
-
-                // Library
-                'access-library-catalog',
-                'issue-book',
-                'return-book',
-
-                // Virtual Classroom and Integrations
-                'oversee-virtual-classes',
-                'handle-virtual-classroom-integrations',
+            [
+                'name' => 'teacher',
+                'display_name' => 'Teacher',
+                'description' => 'Handles subject teaching and class responsibilities',
             ],
-            'Student' => [
-                // Dashboard and UI
-                'view-dashboard',
-                'view-sidebar',
-
-                // Academic Information
-                'view-study-material',
-                'view-class-routines',
-                'view-syllabus',
-                'view-assigned-homework',
-                'submit-homework',
-                'view-lesson-plans',
-                'view-topics',
-
-                // Attendance and Behavior
-                'view-attendance-records',
-                'view-behavior-records',
-
-                // Exams and Grades
-                'view-exam-schedules',
-                'view-marks-registers',
-                'view-grade-management',
-                'download-marksheets',
-                'view-seat-plans',
-
-                // Library
-                'search-library-catalog',
-                'borrow-book',
-                'return-book',
-
-                // Communication and Notifications
-                'view-notice-boards',
-                'receive-email-sms-notifications',
-                'participate-in-forum',
-
-                // Virtual Classroom and Integrations
-                'access-virtual-classes',
-                'submit-online-exam',
-
-                // Certificates and IDs
-                'view-id-card',
-                'view-certificate-records',
-                'request-certificate',
-
-                // Miscellaneous
-                'view-download-center',
-                'access-shared-content-lists',
+            [
+                'name' => 'assistant-teacher',
+                'display_name' => 'Assistant Teacher',
+                'description' => 'Supports the lead teacher in classroom activities',
             ],
-            'Librarian' => [
-                // Dashboard and UI
-                'view-dashboard',
-                'view-sidebar',
-            
-                // Library Management
-                'view-library-records',
-                'add-book',
-                'update-book',
-                'delete-book',
-                'view-library-members',
-                'add-library-member',
-                'update-library-member',
-                'delete-library-member',
-                'issue-book',
-                'return-book',
-            
-                // Communication and Notifications
-                'view-notice-boards',
-                'send-email-sms-notifications', // Optional, if librarians send notifications about overdue books.
-            
-                // Reports and Analysis
-                'generate-library-reports', // Optional, if your system supports library analytics.
-            
-                // Inventory and Categories (if managing library-specific inventory)
-                'view-inventory-categories',
-                'create-inventory-category',
-                'update-inventory-category',
-                'delete-inventory-category',
+            [
+                'name' => 'hod',
+                'display_name' => 'Head of Department (HOD)',
+                'description' => 'Leads a subject department and coordinates teachers',
             ],
-            'Administrator' => [
-                // Dashboard and Sidebar
-                'view-dashboard',
-                'view-sidebar',
-                
-                // Visitor and Log Management
-                'view-visitor-book',
-                'add-visitor-entry',
-                'update-visitor-entry',
-                'delete-visitor-entry',
-                'view-phone-call-log',
-                'add-phone-call-log-entry',
-                'update-phone-call-log-entry',
-                'delete-phone-call-log-entry',
-                
-                // Student and Staff Management
-                'view-student-information',
-                'add-student',
-                'update-student',
-                'delete-student',
-                'view-staff-directory',
-                'add-staff',
-                'update-staff',
-                'delete-staff',
-                
-                // Academic Scheduling
-                'view-class-routines',
-                'create-class-routine',
-                'update-class-routine',
-                'delete-class-routine',
-                'view-exam-schedules',
-                'create-exam-schedule',
-                'update-exam-schedule',
-                'delete-exam-schedule',
-                
-                // Attendance Management
-                'view-attendance-records',
-                'mark-attendance',
-                'update-attendance',
-                'delete-attendance',
-                
-                // Fees Management
-                'view-fees-groups-types',
-                'create-fees-invoice',
-                'update-fees-invoice',
-                'delete-fees-invoice',
-                'view-fees-invoices',
-                
-                // Reports and Logs
-                'view-student-promotion-records',
-                'generate-student-reports',
-                'view-behavior-records',
-                'create-behavior-record',
-                'update-behavior-record',
-                'delete-behavior-record',
-                
-                // Leave Management
-                'view-leave-requests',
-                'apply-for-leave',
-                
-                // Miscellaneous
-                'view-notice-boards',
-                'send-email-sms-notifications',
-                'view-download-center',
-                'upload-content',
-                'delete-content',
+            [
+                'name' => 'subject-coordinator',
+                'display_name' => 'Subject Coordinator',
+                'description' => 'Coordinates subject implementation across multiple classes',
             ],
-            'Receptionist' => [
-                // Dashboard and Sidebar
-                'view-dashboard',
-                'view-sidebar',
-            
-                // Visitor Management
-                'view-visitor-book',
-                'add-visitor-entry',
-                'update-visitor-entry',
-                'delete-visitor-entry',
-            
-                // Phone Call Logs
-                'view-phone-call-log',
-                'add-phone-call-log-entry',
-                'update-phone-call-log-entry',
-                'delete-phone-call-log-entry',
-            
-                // Complaints
-                'view-complaints',
-                'create-complaint',
-                'update-complaint',
-            
-                // Admission Queries
-                'view-admission-queries',
-                'create-admission-query',
-                'update-admission-query',
-            
-                // General Communication
-                'view-notice-boards',
-                'send-email-sms-notifications',
-            
-                // Leave Requests
-                'apply-for-leave',
+            [
+                'name' => 'class-teacher',
+                'display_name' => 'Class Teacher',
+                'description' => 'In charge of a specific class, including academic and behavioral monitoring',
             ],
-            'Parent' => [
-                // Dashboard and Sidebar
-                'view-dashboard',
-                'view-sidebar',
-            
-                // Student Information
-                'view-student-information',
-            
-                // Attendance
-                'view-attendance-records',
-            
-                // Homework and Study Material
-                'view-homework',
-                'view-study-material',
-            
-                // Behavior Records
-                'view-behavior-records',
-            
-                // Exam and Performance
-                'view-exam-schedules',
-                'view-marks-registers',
-                'view-grade-management',
-                'generate-marksheet-reports',
-            
-                // Fees and Payments
-                'view-fees-invoices',
-                'manage-bank-payments',
-            
-                // Communication
-                'view-notice-boards',
-                'send-email-sms-notifications',
-            
-                // Virtual Classroom and Chat
-                'oversee-virtual-classes',
-                'view-chat-settings',
+            [
+                'name' => 'lesson-planner',
+                'display_name' => 'Lesson Planner',
+                'description' => 'Responsible for preparing curriculum schedules and lesson plans',
             ],
-            'Accountant' => [
-                // Dashboard and Sidebar
-                'view-dashboard',
-                'view-sidebar',
-            
-                // Fees Management
-                'view-fees-groups-types',
-                'create-fees-group',
-                'update-fees-group',
-                'delete-fees-group',
-                'view-fees-invoices',
-                'create-fees-invoice',
-                'update-fees-invoice',
-                'delete-fees-invoice',
-                'manage-bank-payments',
-                'view-carry-forward-balances',
-            
-                // Financial Reports
-                'view-profit-loss',
-                'view-income-expense',
-                'generate-fees-reports',
-                'generate-accounts-reports',
-            
-                // Transactions and Refunds
-                'manage-transactions',
-                'process-refunds',
-            
-                // Inventory (Optional, if accountants handle inventory-related transactions)
-                'view-inventory-categories',
-                'create-inventory-category',
-                'update-inventory-category',
-                'delete-inventory-category',
-                'view-items',
-                'add-item',
-                'update-item',
-                'delete-item',
-            
-                // Wallet Management
-                'view-wallet',
-            ]            
+            [
+                'name' => 'exam-officer',
+                'display_name' => 'Exam Officer',
+                'description' => 'Manages school examination logistics and records',
+            ],
+            [
+                'name' => 'librarian',
+                'display_name' => 'Librarian',
+                'description' => 'Manages the school library and resources',
+            ],
+            [
+                'name' => 'lab-assistant',
+                'display_name' => 'Lab Assistant',
+                'description' => 'Supports science experiments and maintains laboratory materials',
+            ],
+            [
+                'name' => 'principal',
+                'display_name' => 'Principal',
+                'description' => 'The head of the school, responsible for overall administration and academic leadership',
+            ],
+            [
+                'name' => 'vice_principal_academic',
+                'display_name' => 'Vice Principal (Academic)',
+                'description' => 'Assists the Principal with academic matters',
+            ],
+            [
+                'name' => 'vice_principal_admin',
+                'display_name' => 'Vice Principal (Administration)',
+                'description' => 'Assists the Principal with administrative matters',
+            ],
+            [
+                'name' => 'school_secretary',
+                'display_name' => 'School Secretary',
+                'description' => 'Responsible for administrative tasks and record-keeping in the Principal\'s office',
+            ],
+            [
+                'name' => 'assistant_secretary',
+                'display_name' => 'Assistant Secretary',
+                'description' => 'Assists the School Secretary with administrative tasks',
+            ],
+            [
+                'name' => 'administrative_officer',
+                'display_name' => 'Administrative Officer',
+                'description' => 'Handles various administrative duties within the school',
+            ],
+            [
+                'name' => 'records_officer',
+                'display_name' => 'Records Officer',
+                'description' => 'Responsible for managing and maintaining school records',
+            ],
+            [
+                'name' => 'pa_to_principal',
+                'display_name' => 'Personal Assistant to the Principal',
+                'description' => 'Provides administrative and secretarial support to the Principal',
+            ],
+            [
+                'name' => 'bursar',
+                'display_name' => 'Bursar',
+                'description' => 'Head of the Bursary/Accounts Department, responsible for managing school finances',
+            ],
+            [
+                'name' => 'accountant',
+                'display_name' => 'Accountant',
+                'description' => 'Responsible for financial record-keeping and reporting',
+            ],
+            [
+                'name' => 'assistant_accountant',
+                'display_name' => 'Assistant Accountant',
+                'description' => 'Assists the Accountant with financial tasks',
+            ],
+            [
+                'name' => 'accounts_clerk',
+                'display_name' => 'Accounts Clerk',
+                'description' => 'Provides clerical support to the Bursary/Accounts Department',
+            ],
+            [
+                'name' => 'head_guidance_counseling',
+                'display_name' => 'Head of Guidance and Counseling Unit',
+                'description' => 'Leads the school\'s guidance and counseling services',
+            ],
+            [
+                'name' => 'counselor',
+                'display_name' => 'Counselor',
+                'description' => 'Provides guidance and counseling services to students',
+            ],
+            [
+                'name' => 'examinations_officer',
+                'display_name' => 'Examinations Officer',
+                'description' => 'Responsible for organizing and managing school examinations',
+            ],
+            [
+                'name' => 'assistant_librarian',
+                'display_name' => 'Assistant Librarian',
+                'description' => 'Assists the School Librarian with library duties',
+            ],
+            [
+                'name' => 'library_assistant',
+                'display_name' => 'Library Assistant',
+                'description' => 'Provides support in the school library',
+            ],
+            [
+                'name' => 'head_ict_mis',
+                'display_name' => 'Head of ICT/MIS Department',
+                'description' => 'Leads the school\'s Information and Communication Technology and Management Information Systems',
+            ],
+            [
+                'name' => 'ict_officer',
+                'display_name' => 'ICT Officer',
+                'description' => 'Responsible for managing and maintaining the school\'s ICT infrastructure',
+            ],
+            [
+                'name' => 'systems_administrator',
+                'display_name' => 'Systems Administrator',
+                'description' => 'Responsible for the school\'s computer systems and networks',
+            ],
+            [
+                'name' => 'it_technician',
+                'display_name' => 'IT Technician',
+                'description' => 'Provides technical support for the school\'s IT equipment',
+            ],
+            [
+                'name' => 'head_student_affairs',
+                'display_name' => 'Head of Student Affairs/Welfare',
+                'description' => 'Leads the department responsible for student welfare and discipline',
+            ],
+            [
+                'name' => 'welfare_officer',
+                'display_name' => 'Welfare Officer',
+                'description' => 'Responsible for the well-being and welfare of students',
+            ],
+            [
+                'name' => 'discipline_master',
+                'display_name' => 'Discipline Master/Mistress',
+                'description' => 'Responsible for maintaining student discipline',
+            ],
+            [
+                'name' => 'boarding_house_master',
+                'display_name' => 'Boarding House Master/Mistress',
+                'description' => 'Responsible for the management and supervision of the boarding house',
+            ],
+            [
+                'name' => 'assistant_boarding_master',
+                'display_name' => 'Assistant Boarding House Master/Mistress',
+                'description' => 'Assists the Boarding House Master/Mistress',
+            ],
+            [
+                'name' => 'warden',
+                'display_name' => 'Warden',
+                'description' => 'Supervises students within the boarding house',
+            ],
+            [
+                'name' => 'matron',
+                'display_name' => 'Matron',
+                'description' => 'Responsible for the care and well-being of female students in the boarding house',
+            ],
+            [
+                'name' => 'caretaker_boarding',
+                'display_name' => 'Boarding House Caretaker',
+                'description' => 'Provides general support and maintenance in the boarding house',
+            ],
+            [
+                'name' => 'head_security',
+                'display_name' => 'Head of Security',
+                'description' => 'Responsible for the overall security of the school premises',
+            ],
+            [
+                'name' => 'security_officer',
+                'display_name' => 'Security Officer',
+                'description' => 'Responsible for maintaining security and order within the school',
+            ],
+            [
+                'name' => 'security_guard',
+                'display_name' => 'Security Guard',
+                'description' => 'Patrols the school premises and ensures security',
+            ],
+            [
+                'name' => 'head_maintenance',
+                'display_name' => 'Head of Maintenance Department',
+                'description' => 'Responsible for overseeing the maintenance of school facilities',
+            ],
+            [
+                'name' => 'electrician',
+                'display_name' => 'Electrician',
+                'description' => 'Responsible for electrical repairs and maintenance',
+            ],
+            [
+                'name' => 'groundskeeper',
+                'display_name' => 'Groundskeeper',
+                'description' => 'Responsible for maintaining the school grounds',
+            ],
+            [
+                'name' => 'transport_officer',
+                'display_name' => 'Transport Officer',
+                'description' => 'Responsible for managing school transportation (if applicable)',
+            ],
+            [
+                'name' => 'school_driver',
+                'display_name' => 'School Driver',
+                'description' => 'Responsible for driving school vehicles (if applicable)',
+            ],
+            [
+                'name' => 'catering_manager',
+                'display_name' => 'Catering Manager',
+                'description' => 'Responsible for managing the school\'s catering services (if applicable)',
+            ],
+            [
+                'name' => 'cook',
+                'display_name' => 'Cook',
+                'description' => 'Responsible for preparing meals in the school cafeteria (if applicable)',
+            ],
+            [
+                'name' => 'kitchen_staff',
+                'display_name' => 'Kitchen Staff',
+                'description' => 'Assists with food preparation and kitchen duties (if applicable)',
+            ],
+            [
+                'name' => 'public_relations_officer',
+                'display_name' => 'Public Relations Officer',
+                'description' => 'Responsible for managing the school\'s public image and communication',
+            ],
+            [
+                'name' => 'information_officer',
+                'display_name' => 'Information Officer',
+                'description' => 'Responsible for disseminating information within and outside the school',
+            ],
+            [
+                'name' => 'patron_club_society',
+                'display_name' => 'Patron/Matron of Club/Society',
+                'description' => 'Teacher assigned to oversee and guide a specific student club or society',
+            ],
+            [
+                'name' => 'super-admin',
+                'display_name' => 'Super Admin',
+                'description' => 'Has full system access across all schools and modules',
+            ],
+            [
+                'name' => 'school-owner',
+                'display_name' => 'School Owner',
+                'description' => 'Owner or proprietor of the school with administrative oversight',
+            ],
+            [
+                'name' => 'it-support',
+                'display_name' => 'IT Support',
+                'description' => 'Manages and supports the school management software and tech systems',
+            ],
+            [
+                'name' => 'auditor',
+                'display_name' => 'Auditor',
+                'description' => 'Inspects records and operations for compliance and accuracy',
+            ],
         ];
 
-        // Create roles and assign permissions
-        foreach ($roles as $roleName => $permissions) {
-            $role = Role::updateOrCreate(['name' => $roleName]);
 
-            foreach ($permissions as $permissionName) {
-                $permission = Permission::firstOrCreate(['name' => $permissionName]);
-                $role->givePermissionTo($permission);
+        // Create roles and assign permissions
+        foreach ($roles as $roleData) {
+            $role = Role::updateOrCreate(['name' => $roleData['name']], [
+                'display_name' => $roleData['display_name'],
+                'description' => $roleData['description'],
+            ]);
+
+            // Assign permissions if permissions are defined for the role
+            if (isset($roleData['permissions'])) {
+                foreach ($roleData['permissions'] as $permissionName) {
+                    $permission = Permission::firstOrCreate(['name' => $permissionName]);
+                    $role->givePermissionTo($permission);
+                }
             }
         }
     }

@@ -28,26 +28,26 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        // User::factory()->create([
+        //     'name' => 'Test User',
+        //     'email' => 'test@example.com',
+        // ]);
 
-        School::factory()->create([
-            'name' => 'Test School',
-            'email' => 'test@example.com',
-            'phone_one' => '123-456-7890',
-            'slug' => 'test',
-            'logo' => 'test.png',
-        ]);
+        // School::factory()->create([
+        //     'name' => 'Test School',
+        //     'email' => 'test@example.com',
+        //     'phone_one' => '123-456-7890',
+        //     'slug' => 'test',
+        //     'logo' => 'test.png',
+        // ]);
 
-        $this->call(SchoolSectionSeeder::class);
-        $this->call(ClassLevelSeeder::class);
-        $this->call(DepartmentSeeder::class);
+        // $this->call(SchoolSectionSeeder::class);
+        // $this->call(ClassLevelSeeder::class);
+        // $this->call(DepartmentSeeder::class);
 
         // $this->call(SMSTableSeeder::class);
         // $this->call(ApplicationTableSeeder::class);
-        // $this->call(RolesTableSeeder::class);
+        $this->call(RolesTableSeeder::class);
         // $this->call(EmailTableSeeder::class);
         // $this->call(SMTPTableSeeder::class);
         // $this->call(TemplateTableSeeder::class);

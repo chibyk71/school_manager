@@ -19,6 +19,7 @@ class LaratrustSetupTables extends Migration
             $table->string('name')->unique();
             $table->string('display_name')->nullable();
             $table->string('description')->nullable();
+            $table->foreignUuid('school_id')->nullable()->references('id')->on('schools')->onDelete('cascade');
             $table->timestamps();
         });
 
@@ -37,6 +38,8 @@ class LaratrustSetupTables extends Migration
             $table->string('name')->unique();
             $table->string('display_name')->nullable();
             $table->string('description')->nullable();
+            $table->foreignUuid('school_id')->nullable()->references('id')->on('schools')->onDelete('cascade');
+            $table->foreignUuid('department_id')->nullable()->references('id')->on('departments')->onDelete('cascade');
             $table->timestamps();
         });
 
