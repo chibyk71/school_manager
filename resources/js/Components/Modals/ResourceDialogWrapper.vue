@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { modals } from '@/helpers';
 import { ModalComponentDirectory } from './ModalDirectory';
-import { computed, provide } from 'vue';
+import { computed, defineAsyncComponent, provide } from 'vue';
 
 const modal = computed(() => {
     return modals.items[0]
@@ -14,8 +14,9 @@ provide('data', modalData);
 
 const modalComponent = computed(() => {
     const directory = ModalComponentDirectory.value;
-    return modalId.value && directory[modalId.value] ? directory[modalId.value] : undefined;
+    return modalId.value && directory[modalId.value] ? defineAsyncComponent(directory[modalId.value]) : undefined;
 });
+
 </script>
 <template>
     <component

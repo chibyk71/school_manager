@@ -27,10 +27,9 @@ const form = useForm({
         <PerfectScrollbar>
             <form action="" method="post" class="h-full overflow-hidden relative mb-5">
                 <div class="p-4">
-                    <h2 class="text-lg font-semibold">Create a new department</h2>
                     <p class="text-sm text-gray-500">Fill in the details below to create a new department.</p>
                 </div>
-                <div class="p-4">
+                <div class="px-4 pt-2">
                     <InputWrapper label="Department Name" field_type="text" v-model="form.name" name='name'
                         hint="The name of the department" :error="form.errors.name" />
                     <InputWrapper label="Department Category" field_type="text" v-model="form.category" name='code'

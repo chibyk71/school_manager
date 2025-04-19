@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useDeleteResource } from '@/helpers';
+import { modals, useDeleteResource } from '@/helpers';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { FilterModes, useSelectedResources } from '@/store';
 import { Badge, Button, Column, DataTable, IconField, InputIcon, InputText } from 'primevue';
@@ -34,7 +34,7 @@ const { deleteResource } = useDeleteResource()
 </script>
 
 <template>
-    <AuthenticatedLayout title="Departments" :crumb="[{label:'Dashboard'},{label:'HRM'},{label:'Departments'}]" :buttons="[{label:'Add Department', icon:'ti ti-plus-circle'}, {label:'Delete', icon:'ti ti-trash', onClick:()=>{deleteResource('department', selectedResourceIds)}, severity:'danger', class: !selectedResourceIds.length? 'hidden':''}]">
+    <AuthenticatedLayout title="Departments" :crumb="[{label:'Dashboard'},{label:'HRM'},{label:'Departments'}]" :buttons="[{label:'Add Department', icon:'ti ti-plus-circle', onClick:()=>{modals.open('department')}}, {label:'Delete', icon:'ti ti-trash', onClick:()=>{deleteResource('department', selectedResourceIds)}, severity:'danger', class: !selectedResourceIds.length? 'hidden':''}]">
         <DataTable v-model:selection="selectedResources" :filters="filters" :globalFilterFields="globalFilterFields" :value="departments" dataKey="id" :paginator="true" :rows="10" :rowsPerPageOptions="[5, 10, 25]" :showGridlines="true" :selectionMode="'multiple'">
             <Column selection-mode="multiple" />
             <Column header="S/N" >
@@ -59,8 +59,8 @@ const { deleteResource } = useDeleteResource()
             <Column header="Action" >
               <template #body="slotProps">
                 <div class="flex gap-2">
-                    <Button icon="pi pi-pencil" class="p-button-rounded p-button-info" />
-                    <Button icon="pi pi-trash" class="p-button-rounded p-button-danger" />
+                    <Button icon="pi pi-pencil" @click="modals.open('department', {resource_data:slotProps.data})" severity="info" size="small" rounded />
+                    <Button icon="pi pi-trash" @click="deleteResource('department', [slotProps.data.id])" rounded severity="danger" size="small" />
                 </div>
               </template>
             </Column>
