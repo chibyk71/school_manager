@@ -102,6 +102,15 @@ Route::middleware('auth')->group(function () {
     Route::post('custom-field/{customField}', [CustomFieldController::class, 'update'])->name('custom-field.update');
     Route::delete('custom-field/', [CustomFieldController::class, 'destroy'])->name('custom-field.destroy');
 
+    Route::get('departments', [App\Http\Controllers\DepartmentController::class, 'index'])->name('department.index');
+    Route::post('department', [App\Http\Controllers\DepartmentController::class, 'store'])->name('department.store');
+    Route::post('department/{department}', [App\Http\Controllers\DepartmentController::class, 'update'])->name('department.update');
+    Route::delete('department', [App\Http\Controllers\DepartmentController::class, 'destroy'])->name('department.destroy');
+    Route::get('department/{department}/roles', [App\Http\Controllers\DepartmentController::class, 'roles'])->name('department.roles');
+    Route::post('department/{department}/roles', [App\Http\Controllers\DepartmentController::class, 'updateRoles'])->name('department.roles.update');
+    Route::get('department/{department}/users', [App\Http\Controllers\DepartmentController::class, 'users'])->name('department.users');
+    Route::post('department/{department}/users', [App\Http\Controllers\DepartmentController::class, 'updateUsers'])->name('department.users.update');
+
     Route::get('time-table', action: [TimeTableController::class, 'index'])->name('timetables.index');
 
     Route::get('exam/schedules', [App\Http\Controllers\Exam\ScheduleController::class, 'index'])->name('exam.schedules.index');

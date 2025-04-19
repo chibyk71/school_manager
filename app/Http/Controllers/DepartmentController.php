@@ -13,7 +13,10 @@ class DepartmentController extends Controller
      */
     public function index()
     {
-        //
+        $departments = Department::with('roles')->get();
+        return inertia('HRM/Department', [
+            'departments' => $departments,
+        ]);
     }
 
     /**

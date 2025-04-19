@@ -6,6 +6,7 @@ use App\Traits\BelongsToSchool;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
+use Illuminate\Support\Facades\Schema;
 
 class SchoolScope implements Scope
 {
@@ -18,21 +19,26 @@ class SchoolScope implements Scope
 
     public function apply(Builder $builder, Model $model)
     {
-        // Get the current school ID
         $schoolId = GetSchoolModel()?->id;
         if (!$schoolId) {
             return;
         }
 
-        // Get the table name and school_id column from the model
         $table = $model->getTable();
-        $schoolIdColumn = $model::getSchoolIdColumn();  // Default is usually 'school_id'
+        $schoolIdColumn = $model::getSchoolIdColumn();  // e.g., 'school_id' or 'entity_id'
+        $groupByColumns = 'name';
 
-        // Ensure group by columns are properly formatted for SQL (e.g. name, category, etc.)
-        $groupByColumns = 'name';  // You can extend this if you want to group by more columns
+        // Check if 'sort' column exists in the table
+        $hasSort = Schema::hasColumn($table, 'sort');
 
-        // Apply window function logic using ROW_NUMBER() and fallback priority
-        $builder->fromSub(function ($subQuery) use ($schoolId, $table, $schoolIdColumn, $groupByColumns) {
+        // Dynamically build ORDER BY clause for ROW_NUMBER()
+        $orderByForRowNumber = "({$schoolIdColumn} IS NOT NULL AND {$schoolIdColumn} = ?) DESC";
+        if ($hasSort) {
+            $orderByForRowNumber .= ", sort ASC";
+        }
+        $orderByForRowNumber .= ", id ASC";
+
+        $builder->fromSub(function ($subQuery) use ($schoolId, $table, $schoolIdColumn, $groupByColumns, $orderByForRowNumber) {
             $subQuery->selectRaw("
             *,
             CASE
@@ -42,21 +48,24 @@ class SchoolScope implements Scope
             END AS priority,
             ROW_NUMBER() OVER (
                 PARTITION BY {$groupByColumns}
-                ORDER BY
-                    ({$schoolIdColumn} IS NOT NULL AND {$schoolIdColumn} = ?) DESC,
-                    sort ASC, id ASC
+                ORDER BY {$orderByForRowNumber}
             ) AS row_num
-        ", [$schoolId, $schoolId])  // Bind parameters for school ID
+        ", [$schoolId, $schoolId])
                 ->from($table)
                 ->where(function ($query) use ($schoolId, $schoolIdColumn) {
                     $query->whereNull($schoolIdColumn)
                         ->orWhere($schoolIdColumn, $schoolId);
                 });
-        }, "{$table}_fallback")  // Alias for the subquery
-            ->where('row_num', 1)  // Move the filter for row_num to the outer query
-            ->orderBy('priority')  // Sort by priority, custom school entries first
-            ->orderBy('sort')  // Add additional ordering (e.g., by `sort` field)
-            ->orderBy('id');  // Finally, by `id`
+        }, "{$table}_fallback")
+            ->where('row_num', 1)
+            ->orderBy('priority');
+
+        // Apply outer sort only if column exists
+        if ($hasSort) {
+            $builder->orderBy('sort');
+        }
+
+        $builder->orderBy('id');
     }
 
 
