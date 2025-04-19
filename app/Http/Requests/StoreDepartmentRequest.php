@@ -11,7 +11,14 @@ class StoreDepartmentRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        // Check if the user has permission to create a department
+        // You can customize this logic based on your authorization system
+        // For example, you might check if the user has a specific role or permission
+        // auth()->user()->ability(
+        //     ['super-admin', 'hr-manager'],
+        //     ['create-department']
+        // );
+        return true;
     }
 
     /**
@@ -22,7 +29,11 @@ class StoreDepartmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'name' => ['required', 'string', 'max:255'],
+            'category' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'effective_date' => ['nullable', 'date'],
+            'school_id' => ['nullable', 'exists:schools,id'],
         ];
     }
 }

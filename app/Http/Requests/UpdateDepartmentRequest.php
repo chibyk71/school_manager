@@ -22,7 +22,11 @@ class UpdateDepartmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'name' => ['required', 'string', 'max:255'],
+            'category' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'effective_date' => ['nullable', 'date'],
+            'school_id' => ['nullable', 'exists:schools,id'],
         ];
     }
 }

@@ -2,8 +2,8 @@
 import { modals, useDeleteResource } from '@/helpers';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { FilterModes, useSelectedResources } from '@/store';
-import { Badge, Button, Column, DataTable, IconField, InputIcon, InputText } from 'primevue';
-import { ref } from 'vue';
+import { Badge, Button, Column, DataTable, IconField, InputIcon, InputText, Menu, MenuMethods } from 'primevue';
+import { onMounted, ref, useTemplateRef, watch } from 'vue';
 
 const props = defineProps<{departments:[]}>();
 
@@ -31,6 +31,7 @@ const { selectedResourceIds, selectedResources } = useSelectedResources();
 
 const { deleteResource } = useDeleteResource()
 
+const menuRefs = ref<(MenuMethods| null)[]>([]);
 </script>
 
 <template>
@@ -61,6 +62,8 @@ const { deleteResource } = useDeleteResource()
                 <div class="flex gap-2">
                     <Button icon="pi pi-pencil" @click="modals.open('department', {resource_data:slotProps.data})" severity="info" size="small" rounded />
                     <Button icon="pi pi-trash" @click="deleteResource('department', [slotProps.data.id])" rounded severity="danger" size="small" />
+                    <Button severity="secondary" icon="ti ti-dots" size="small" rounded @click="menuRefs[slotProps.index]?.toggle($event)" />
+                    <Menu popup :ref="(el) => menuRefs[slotProps.index] = (el as unknown as MenuMethods)" :model="[{label: 'Assign Positions', icon:'ti ti-users'},{label: 'Assign HoD', icon: 'ti ti-user'}]" />
                 </div>
               </template>
             </Column>
