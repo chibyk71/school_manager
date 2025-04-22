@@ -106,7 +106,8 @@ Route::middleware('auth')->group(function () {
     Route::post('department', [App\Http\Controllers\DepartmentController::class, 'store'])->name('department.store');
     Route::post('department/{department}', [App\Http\Controllers\DepartmentController::class, 'update'])->name('department.update');
     Route::delete('department', [App\Http\Controllers\DepartmentController::class, 'destroy'])->name('department.destroy');
-    Route::get('department/{department}/roles', [App\Http\Controllers\DepartmentController::class, 'assignRole'])->name('department.roles');
+    Route::get('department/{department}/roles', [App\Http\Controllers\DepartmentController::class, 'roles'])->name('department.roles');
+    Route::post('department/{department}/roles', [App\Http\Controllers\DepartmentController::class, 'assignRole']);
     Route::get('department/{department}/users', [App\Http\Controllers\DepartmentController::class, 'users'])->name('department.users');
 
     Route::get('time-table', action: [TimeTableController::class, 'index'])->name('timetables.index');

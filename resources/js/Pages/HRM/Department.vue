@@ -63,7 +63,7 @@ const menuRefs = ref<(MenuMethods| null)[]>([]);
                     <Button icon="pi pi-pencil" @click="modals.open('department', {resource_data:slotProps.data})" severity="info" size="small" rounded />
                     <Button icon="pi pi-trash" @click="deleteResource('department', [slotProps.data.id])" rounded severity="danger" size="small" />
                     <Button severity="secondary" icon="ti ti-dots" size="small" rounded @click="menuRefs[slotProps.index]?.toggle($event)" />
-                    <Menu popup :ref="(el) => menuRefs[slotProps.index] = (el as unknown as MenuMethods)" :model="[{label: 'Assign Positions', icon:'ti ti-users'},{label: 'Assign HoD', icon: 'ti ti-user'}]" />
+                    <Menu popup :ref="(el) => menuRefs[slotProps.index] = (el as unknown as MenuMethods)" :model="[{label: 'Assign Positions', icon:'ti ti-users', command: () => modals.open('department-role', {department:slotProps.data})},{label: 'Assign HoD', icon: 'ti ti-user'}]" />
                 </div>
               </template>
             </Column>

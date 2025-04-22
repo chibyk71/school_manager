@@ -87,9 +87,14 @@ class DepartmentController extends Controller
     // get roles in department
     public function roles(Department $department)
     {
-        $roles = $department->roles()->get();
+        $roles = $department->roles()->get(['roles.id', 'roles.name', 'roles.display_name']);
+        $roles->transform(function ($item) {
+            $item->name = !empty($item->display_name) ? $item->display_name : $item->name;
+            unset($item->display_name);
+            return $item;
+        });
         return response()->json([
-            'roles' => $roles,
+            'data' => $roles,
         ]);
     }
 }
