@@ -69,11 +69,14 @@ class DepartmentController extends Controller
     // assign role to department
     public function assignRole(Department $department)
     {
-        $roleId = request('role_ids');
-        $department->roles()->sync([$roleId]);
-        return response()->json([
-            'message' => 'Role assigned successfully.',
-        ]);
+        $roleIds = request('roles', []); // Accept multiple role IDs as an array
+        if (!is_array($roleIds)) {
+            return back()->with('error', 'Invalid input. Please provide an array of role IDs.');
+        }
+
+        $department->roles()->sync($roleIds); // Sync roles with the department
+        return back()
+            ->with('success', 'Roles assigned successfully.');
     }
 
     // get users in department

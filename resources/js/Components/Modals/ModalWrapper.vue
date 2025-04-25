@@ -10,10 +10,13 @@ const props = defineProps<DialogProps & {
     form?: InertiaForm<{}>,
     resource: string,
     resource_data?: ResourceData,
-    loading?: boolean
+    loading?: boolean,
+    route?: string,
 }>()
 
-defineSlots<DialogSlots>()
+defineSlots<DialogSlots & {
+    submitbtn: { form: InertiaForm<{}> | undefined; resource: string; resource_id: string | undefined };
+}>()
 
 const modalData = computed(() => {
     const injectedData = (inject('data') as { value: ResourceData | null })?.value;
@@ -43,8 +46,6 @@ watch(() => resourceData.value, (newVal) => {
     { deep: true, immediate: true }
 )
 
-
-
 </script>
 
 <template>
@@ -54,10 +55,12 @@ watch(() => resourceData.value, (newVal) => {
             <div class="flex items-center justify-end gap-x-2.5">
                 <Button label="Cancel" severity="secondary" @click="modals.close()">
                 </Button>
-                <Button v-if='!!form && !loading' label="Submit" :loading="form?.processing" @click="submitForm(form!, resource, resource_id, {
-                    onSuccess: (props) => $emit('success', props),
-                    onError: (errors) => $emit('error', errors),
-                })" />
+                <slot name="submitbtn" :form="props.form" :resource="props.resource" :resource_id="resource_id">
+                    <Button v-if='!!form && !loading' label="Submit" :loading="form?.processing" @click="submitForm(form!, resource, resource_id, {
+                        onSuccess: (props) => $emit('success', props),
+                        onError: (errors) => $emit('error', errors),
+                    }, props.route)" />
+                </slot>
             </div>
         </template>
         <template #header></template>

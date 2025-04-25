@@ -96,11 +96,10 @@ export const useSubmitForm = () => {
      * @param {string|number} [id] - The ID of the resource to be updated or created.
      * @returns {Promise<void>}
      */
-    const submitForm = async (form: InertiaForm<{}>, resource: string, id?: string | number, callbacks?: { onSuccess?: (props: any) => void, onError?: (errors: any) => void }) => {
-        const routeName = id ? `${resource}.update` : `${resource}.store`;
-        console.log(routeName, id);
+    const submitForm = async (form: InertiaForm<{}>, resource: string, id?: string | number, callbacks?: { onSuccess?: (props: any) => void, onError?: (errors: any) => void }, customRoute?: string) => {
+        const routeName = customRoute || route(id ? `${resource}.update` : `${resource}.store`, id);
 
-        form.post(route(routeName, id), {
+        form.post(customRoute || routeName, {
             onSuccess: ({ props }) => {
                 callbacks?.onSuccess?.(props);
                 if (props.flash.success) {
@@ -110,9 +109,10 @@ export const useSubmitForm = () => {
             },
             onError: (errors) => {
                 console.error('Error submitting form:', errors);
-                callbacks?.onError?.(errors)
-                if (errors)
+                callbacks?.onError?.(errors);
+                if (errors) {
                     toast.add({ severity: 'error', summary: 'Error', detail: errors, life: 3000 });
+                }
             }
         });
     };

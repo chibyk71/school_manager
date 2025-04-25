@@ -32,6 +32,12 @@ class SelectOptionsController extends Controller
             case 'student':
                 $model = app(\App\Models\Academic\Student::class);
                 break;
+            case 'role':
+                $model = app(\App\Models\Role::class);
+                break;
+            case 'department':
+                $model = app(\App\Models\Employee\Department::class);
+                break;
 
             default:
                 return response()->json(['error' => 'Invalid resource'], 500);
@@ -41,7 +47,7 @@ class SelectOptionsController extends Controller
             return response()->json(['error' => 'Model not found'], 504);
         }
         $data = $model->get(['id', 'name', 'display_name']);
-        $data->getCollection()->transform(function ($item) {
+        $data->transform(function ($item) {
             $item->name = !empty($item->display_name) ? $item->display_name : $item->name;
             unset($item->display_name);
             return $item;
