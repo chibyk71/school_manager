@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Employee\Department;
 use App\Http\Requests\StoreDepartmentRequest;
 use App\Http\Requests\UpdateDepartmentRequest;
+use Laratrust\Laratrust;
+use Laratrust\LaratrustFacade;
 
 class DepartmentController extends Controller
 {
@@ -13,6 +15,8 @@ class DepartmentController extends Controller
      */
     public function index()
     {
+        permitted('view-any-department');
+
         $departments = Department::with('roles')->get();
         return inertia('HRM/Department', [
             'departments' => $departments,
@@ -24,6 +28,8 @@ class DepartmentController extends Controller
      */
     public function store(StoreDepartmentRequest $request)
     {
+        permitted('create-department');
+
         $validated = $request->validated();
         $department = Department::create($validated);
 
@@ -36,6 +42,14 @@ class DepartmentController extends Controller
      */
     public function show(Department $department)
     {
+        // confirm if they are permitted to view the department
+        if (!LaratrustFacade::ability('admin', 'view-department')) {
+            return response()->json([
+                'message' => 'You are not authorized to view this department.',
+            ], 403);
+        }
+        // Load the roles relationship with only the necessary columns
+        // You can also use 'roles:id,display_name' if you want to load only specific columns
         $department->load('roles:id,display_name');
         return response()->json([
             'department' => $department,

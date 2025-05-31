@@ -3,6 +3,7 @@
 use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Laratrust\LaratrustFacade;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
 
 if (!function_exists('getMergedSettings')) {
@@ -35,6 +36,27 @@ if (!function_exists('GetSchoolModel')) {
         //     return auth()->user()->school;
         // }
 
+    }
+}
+
+if (!function_exists('permitted')) {
+    /**
+     * Check if the current user has the specified permission(s) and abort if not authorized.
+     *
+     * This function uses Laratrust to verify if the user has the required permission(s).
+     * If the user does not have the required permission(s), it aborts the request with a 403 status code.
+     *
+     * @param string|array $permissions The permission(s) to check. Can be a single permission as a string or multiple permissions as an array.
+     *  @throws \Symfony\Component\HttpKernel\Exception\HttpException
+     * @return void
+     */
+    function permitted(string|array $permissions): void
+    {
+        // Check if the user has the required permission(s) using Laratrust
+        if (!LaratrustFacade::hasPermission($permissions)) {
+            // Abort the request with a 403 Forbidden status if the user is not authorized
+            abort(403, 'Unauthorized action.');
+        }
     }
 }
 
@@ -94,11 +116,11 @@ if (! function_exists('array_get')) {
     {
         return Arr::get($array, $key, $default);
     }
-    
+
 }
 
 
-    
+
 if (!function_exists('modelClassFromName')) {
     /**
      * Get an instance of a model class from its name.
