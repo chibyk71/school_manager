@@ -27,24 +27,14 @@ return new class extends Migration
             $table->string('cast_as')->nullable();
             $table->boolean('has_options')->default(0);
             $table->string('model_type');
-            $table->uuid('school_id')->index()->nullable();
+            $table->foreignUuid('school_id')->references('schools')->cascadeOnDelete()->cascadeOnUpdate()->index()->nullable();
             $table->timestamps();
             $table->unique(['name', 'model_type', 'school_id'], 'custom_fields_unique_name_model_type_school_id');
-        });
-
-        Schema::create('custom_field_responses', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('custom_field_id');
-            $table->morphs('model');
-            $table->text('value')->nullable();
-            $table->timestamps();
-            $table->foreign('custom_field_id')->references('id')->on('custom_fields')->onDelete('cascade');
         });
     }
 
     public function down()
     {
-        Schema::dropIfExists('custom_field_responses');
         Schema::dropIfExists('custom_fields');
     }
 };

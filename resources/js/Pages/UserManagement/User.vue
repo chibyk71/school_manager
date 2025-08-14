@@ -74,7 +74,7 @@ const filter = { global: { value: null, matchMode: FilterModes.CONTAINS } };
                         <template #input="slotProps">
                         <IconField>
                             <InputIcon class="ti ti-search" />
-                            <InputText v-model="filter.global.value" v-bind="slotProps" placeholder="Search" />
+                            <InputText v-model="filter.global.value" v-bind="slotProps" placeholder="Search" name="search" />
                         </IconField>
                         </template>
                     </InputWrapper>

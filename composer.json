@@ -20,7 +20,7 @@
         "santigarcor/laratrust": "^8.3",
         "spatie/laravel-activitylog": "^4.9",
         "spatie/laravel-database-mail-templates": "^3.7",
-        "spykapp/laravel-custom-fields": "^1.0",
+        "spatie/laravel-schemaless-attributes": "^2.5",
         "tightenco/ziggy": "^2.0"
     },
     "require-dev": {
