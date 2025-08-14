@@ -2,18 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Academic\Student;
+use App\Traits\HasSchemalessAttributes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use SpykApp\LaravelCustomFields\Traits\HasCustomFields;
-use SpykApp\LaravelCustomFields\Traits\LoadCustomFields;
 
 class Guardian extends Model
 {
     /** @use HasFactory<\Database\Factories\GuardianFactory> */
-    use HasFactory, HasCustomFields, LoadCustomFields, SoftDeletes;
+    use HasFactory, HasSchemalessAttributes, SoftDeletes;
 
     protected $fillable = [
         'user_id',
