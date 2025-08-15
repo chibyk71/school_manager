@@ -4,6 +4,7 @@ import SettingsLayout from '../Partials/SettingsLayout.vue';
 import { Button, Column, DataTable, IconField, InputIcon, InputText, ToggleSwitch, useDialog } from 'primevue';
 import { FilterModes, useSelectedResources } from '@/store';
 import { modals, useDeleteResource } from '@/helpers';
+import TableData from '@/Components/misc/TableData.vue';
 
 const filter = {
     group: {value: null, modes: FilterModes.CONTAINS}
@@ -13,6 +14,7 @@ const { settings, resources } = defineProps({
     settings: [],
     resources: []
 })
+
 
 const dialog = useDialog(),
     { deleteResource } = useDeleteResource(),
@@ -34,7 +36,7 @@ const dialog = useDialog(),
                         </div>
                     </div>
                     <div class="block">
-                        <DataTable v-model:selection="selectedResources" :filter="filter" :value="settings" :globalFilterFields="['label', 'model_type', 'field_type', 'category']" :paginator="true" :rows="10" selectionMode="multiple" dataKey="id" class="w-full">
+                        <!-- <DataTable v-model:selection="selectedResources" :filter="filter" :value="settings" :globalFilterFields="['label', 'model_type', 'field_type', 'category']" :paginator="true" :rows="10" selectionMode="multiple" dataKey="id" class="w-full">
                             <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
                             <Column field="model_type" header="Resource"></Column>
                             <Column field="label" header="Label"></Column>
@@ -66,7 +68,10 @@ const dialog = useDialog(),
                                     </IconField>
                                 </div>
                             </template>
-                        </DataTable>
+                        </DataTable> -->
+
+                        <TableData :global-filter-fields="['label, resource']" :rows="settings" :endpoint="''" :columns="[{ field: 'label', header: 'Label' }, { field: 'model_type', header: 'Resource' }, { field: 'field_type', header: 'Field Type' }, { field: 'category', header: 'Group' }]" class="mt-4">
+                        </TableData>
                     </div>
                 </div>
             </template>

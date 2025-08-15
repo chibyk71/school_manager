@@ -14,7 +14,7 @@ export type PageProps<
         user: User;
     };
     flash: {
-        error:string,
+        error: string,
         success: string
     }
 };
@@ -62,7 +62,7 @@ export interface Field {
     placeholder?: string; // Placeholder text for input fields.
     classes?: string; // Additional CSS classes for styling.
     field_type: InputTypeHTMLAttribute | 'select' | 'textarea'; // Specifies the type of input.
-    options?: {label: string, value: string}[]; // Available options for select, radio, or checkbox fields.
+    options?: { label: string, value: string }[]; // Available options for select, radio, or checkbox fields.
     default_value?: any; // Default value for the field.
     description?: string; // Longer description for the field.
     hint?: string; // Tooltip or hint for the field.
@@ -76,11 +76,11 @@ export interface Field {
 export type CustomField = {
     id: number,
     rules?: string[]; // Laravel validation rules (e.g., 'required', 'email').
-  created_at?: string; // ISO date string
-  updated_at?: string; // ISO date string
-  cast_as?: string | null; // e.g., "string", "integer", "boolean"
-  entity_id?: number | string | null; // ID of the related entity
-  model_type?: string | null; // Laravel morph type
+    created_at?: string; // ISO date string
+    updated_at?: string; // ISO date string
+    cast_as?: string | null; // e.g., "string", "integer", "boolean"
+    entity_id?: number | string | null; // ID of the related entity
+    model_type?: string | null; // Laravel morph type
 } & Field;
 
 export interface Category {
@@ -88,3 +88,29 @@ export interface Category {
     fields: CustomField[];
 }
 
+// types/datatable.ts
+
+import type { FilterMatchMode } from '@primevue/core/api';
+
+export type ColumnFilterType =
+    | 'text'        // standard InputText
+    | 'dropdown'    // single select Dropdown
+    | 'multiselect' // multi select
+    | 'date'        // Calendar
+    | 'number'      // numeric input
+    | 'custom';     // any other custom component
+
+export interface ColumnDefinition<T = Record<string, unknown>> {
+    field: keyof T | string;           // field in your data object
+    header: string;                    // column header text
+    sortable?: boolean;                // enable sorting
+    matchMode?: FilterMatchMode | string; // PrimeVue match mode
+    filterType?: ColumnFilterType;     // type of filter UI
+    filterOptions?: any[];             // options for dropdown/multiselect
+    filterPlaceholder?: string;        // placeholder text for filter
+    bodyClass?: string;                 // CSS class for body cells
+    headerClass?: string;               // CSS class for header
+    style?: Record<string, string>;     // inline styles
+    width?: string;                     // fixed width
+    render?: (rowData: T) => any;       // custom cell rendering
+}

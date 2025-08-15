@@ -1,7 +1,8 @@
 <template>
-    <DataTable :value="rows" :lazy="true" :loading="loading" :paginator="true" :rows="perPage"
+    <DataTable :value="rows" :alwaysShowPaginator="false" :loading="loading" :paginator="true" :rows="perPage"
         :totalRecords="totalRecords" :first="(currentPage - 1) * perPage" :selectionMode="selectionMode"
-        v-model:selection="selectedRows" @page="onPage" @sort="onSort" dataKey="id">
+        v-model:selection="selectedRows" @page="onPage" @sort="onSort" dataKey="id"
+        :rowsPerPageOptions="[5, 10, 20, 50]" :globalFilterFields="props.globalFilterFields">
         <!-- Table Header -->
         <template #header>
             <div class="flex justify-between items-center flex-wrap gap-2">
@@ -9,24 +10,24 @@
                 <div class="flex gap-2">
                     <Button v-for="action in bulkActions" :key="action.label" :label="action.label" :icon="action.icon"
                         :disabled="!selectedRows.length" size="small" @click="action.action(selectedRows)" />
+                    <Button label="Delete All" severity="danger" icon="pi pi-trash" :disabled="!selectedRows.length"
+                        size="small" @click="() => deleteResource('custom-field', selectedRows.map(row => row.id))" />
                 </div>
 
                 <!-- Search -->
                 <IconField>
                     <InputIcon><i class="pi pi-search" /></InputIcon>
-                    <InputText v-model="filters.global" placeholder="Search..." @input="debouncedSearch" />
+                    <InputText v-model="filters.global.value" placeholder="Search..." @input="debouncedSearch" />
                 </IconField>
             </div>
         </template>
 
-        <!-- Dynamic Columns -->
-        <Column v-for="col in columns" :key="col.field" :field="col.field" :header="col.header" :sortable="col.sortable"
-            :style="col.style">
-            <template #body="slotProps">
-                <slot :name="'col-' + col.field" v-bind="slotProps">
-                    {{ slotProps.data[col.field] }}
-                </slot>
-            </template>
+        <!-- Multi Select -->
+        <Column selectionMode="multiple" headerStyle="width: 3rem" />
+
+        <!-- Auto Columns -->
+        <Column v-for="col in columns" :key="col.field" :field="col.field" :header="col.header"
+            :sortable="col.sortable ?? true" :filter="true" :filterPlaceholder="`Filter by ${col.header}`" :style="col.style">
         </Column>
 
         <!-- Empty Template -->
@@ -35,17 +36,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import axios from 'axios';
 import debounce from "lodash/debounce";
-import { Column, DataTable, IconField, InputIcon, InputText } from 'primevue';
-
-interface ColumnConfig {
-    field: string;
-    header: string;
-    sortable?: boolean;
-    style?: string;
-}
+import { Button, Column, DataTable, IconField, InputIcon, InputText } from 'primevue';
+import { FilterMatchMode } from '@primevue/core/api';
+import { useDeleteResource } from '@/helpers';
+import type { ColumnDefinition } from '@/types';
 
 interface BulkAction {
     label: string;
@@ -55,22 +52,29 @@ interface BulkAction {
 
 const props = defineProps<{
     endpoint: string;
-    columns: ColumnConfig[];
+    columns: ColumnDefinition[];
     params?: Record<string, any>;
     selectionMode?: 'single' | 'multiple';
     bulkActions?: BulkAction[];
+    rows?: any[];
+    globalFilterFields: string[];
 }>();
 
 // State
-const rows = ref<any[]>([]);
+const rows = ref<any[]>(props.rows ?? []);
 const totalRecords = ref(0);
 const loading = ref(false);
 const perPage = ref(10);
-const currentPage = ref(1);
+const currentPage = ref(rows.value.length > 0 ? 1 : 0);
 const sortField = ref('');
 const sortOrder = ref<1 | -1 | 0>(0);
-const filters = ref({ global: '' });
+// Filters
+const filters = ref<Record<string, { value: null | any; matchMode: string }>>({
+    global: { value: null, matchMode: FilterMatchMode.CONTAINS },
+});
 const selectedRows = ref<any[]>([]);
+
+const { deleteResource } = useDeleteResource();
 
 // Fetch data from Laravel API
 const fetchData = async () => {
@@ -114,6 +118,17 @@ const debouncedSearch = debounce(() => {
     fetchData();
 }, 500);
 
-// Init load
-fetchData();
+onMounted(() => {
+    // Initial fetch
+    if (rows.value.length < 1) {
+        fetchData();
+    }
+
+    props.columns.forEach(col => {
+        filters.value[col.field] = {
+            value: null,
+            matchMode: col.matchMode || FilterMatchMode.CONTAINS
+        };
+    });
+});
 </script>
