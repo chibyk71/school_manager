@@ -6,15 +6,14 @@ use App\Models\Misc\AttendanceLedger;
 use App\Models\SchoolSection;
 use App\Models\User;
 use App\Traits\BelongsToSections;
+use App\Traits\HasSchemalessAttributes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use SpykApp\LaravelCustomFields\Traits\HasCustomFields;
-use SpykApp\LaravelCustomFields\Traits\LoadCustomFields;
 
 class Staff extends Model
 {
     /** @use HasFactory<\Database\Factories\StaffFactory> */
-    use HasFactory, HasCustomFields, LoadCustomFields, BelongsToSections;
+    use HasFactory, HasSchemalessAttributes, BelongsToSections;
 
     protected $fillable = [
         'user_id',
@@ -48,5 +47,5 @@ class Staff extends Model
     public function attendance() {
         return $this->morphMany(AttendanceLedger::class, 'attendable');
     }
-    
+
 }

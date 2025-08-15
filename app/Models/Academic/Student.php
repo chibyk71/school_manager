@@ -7,18 +7,17 @@ use App\Models\Guardian;
 use App\Models\Misc\AttendanceLedger;
 use App\Models\SchoolSection;
 use App\Models\User;
+use App\Traits\HasSchemalessAttributes;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use SpykApp\LaravelCustomFields\Traits\HasCustomFields;
-use SpykApp\LaravelCustomFields\Traits\LoadCustomFields;
 
 class Student extends Model
 {
     /** @use HasFactory<\Database\Factories\StudentFactory> */
-    use HasFactory, HasCustomFields, LoadCustomFields, HasUuids;
+    use HasFactory, HasSchemalessAttributes, HasUuids;
 
     protected $fillable = [
         'user_id',
@@ -68,5 +67,5 @@ class Student extends Model
     public function attendance() {
         return $this->morphMany(AttendanceLedger::class, 'attendable');
     }
-    
+
 }
