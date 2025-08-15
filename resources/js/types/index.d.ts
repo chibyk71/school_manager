@@ -67,11 +67,20 @@ export interface Field {
     description?: string; // Longer description for the field.
     hint?: string; // Tooltip or hint for the field.
     category?: string; // Grouping of fields into categories.
+    sort?: number;
+    extra_attributes?: Record<string, any> | null; // flexible extra data
+    field_options?: Record<string, any> | null; // advanced settings
+    has_options?: boolean;
 }
 
 export type CustomField = {
     id: number,
     rules?: string[]; // Laravel validation rules (e.g., 'required', 'email').
+  created_at?: string; // ISO date string
+  updated_at?: string; // ISO date string
+  cast_as?: string | null; // e.g., "string", "integer", "boolean"
+  entity_id?: number | string | null; // ID of the related entity
+  model_type?: string | null; // Laravel morph type
 } & Field;
 
 export interface Category {
