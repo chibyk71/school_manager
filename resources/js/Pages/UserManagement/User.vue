@@ -70,11 +70,11 @@ const filter = { global: { value: null, matchMode: FilterModes.CONTAINS } };
             </Column>
             <template #header>
                 <div class="flex items-center justify-end">
-                    <InputWrapper label="" name="search" field_type="text">
+                    <InputWrapper label="" name="search" field_type="text" placeholder="Search">
                         <template #input="slotProps">
                         <IconField>
                             <InputIcon class="ti ti-search" />
-                            <InputText v-model="filter.global.value" v-bind="slotProps" placeholder="Search" name="search" />
+                            <InputText v-model="filter.global.value" v-bind="slotProps" />
                         </IconField>
                         </template>
                     </InputWrapper>

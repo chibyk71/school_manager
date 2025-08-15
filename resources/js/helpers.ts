@@ -167,3 +167,18 @@ export const populateForm = (data: ResourceData, form: InertiaForm<{ [x: string]
         }
     });
 };
+
+
+/**
+ * Formats a given date into a string representation in the format 'MM/DD/YYYY'.
+ *
+ * @param {Date} value - The date to be formatted.
+ * @return {string} The formatted date string.
+ */
+export const formatDate = (value: Date) => {
+    return value.toLocaleDateString('en-US', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+};
