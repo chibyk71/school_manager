@@ -2,7 +2,7 @@
     <DataTable :value="rows" :alwaysShowPaginator="false" :loading="loading" :paginator="true" :rows="perPage"
         :totalRecords="totalRecords" :first="(currentPage - 1) * perPage" :selectionMode="selectionMode"
         v-model:selection="selectedRows" @page="onPage" @sort="onSort" dataKey="id"
-        :rowsPerPageOptions="[5, 10, 20, 50]" :globalFilterFields="props.globalFilterFields">
+        :rowsPerPageOptions="[5, 10, 20, 50]" :globalFilterFields="props.globalFilterFields" :lazy="true">
         <!-- Table Header -->
         <template #header>
             <div class="flex justify-between items-center flex-wrap gap-2">
@@ -27,7 +27,8 @@
 
         <!-- Auto Columns -->
         <Column v-for="col in columns" :key="col.field" :field="col.field" :header="col.header"
-            :sortable="col.sortable ?? true" :filter="true" :filterPlaceholder="`Filter by ${col.header}`" :style="col.style">
+            :sortable="col.sortable ?? true" :filter="true" :filterPlaceholder="`Filter by ${col.header}`"
+            :style="col.style">
         </Column>
 
         <!-- Empty Template -->
@@ -36,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import axios from 'axios';
 import debounce from "lodash/debounce";
 import { Button, Column, DataTable, IconField, InputIcon, InputText } from 'primevue';
@@ -65,7 +66,7 @@ const rows = ref<any[]>(props.rows ?? []);
 const totalRecords = ref(0);
 const loading = ref(false);
 const perPage = ref(10);
-const currentPage = ref(rows.value.length > 0 ? 1 : 0);
+const currentPage = ref(1);
 const sortField = ref('');
 const sortOrder = ref<1 | -1 | 0>(0);
 // Filters
@@ -80,13 +81,14 @@ const { deleteResource } = useDeleteResource();
 const fetchData = async () => {
     loading.value = true;
     try {
+        const sortOrderStr = sortOrder.value === 1 ? 'asc' : sortOrder.value === -1 ? 'desc' : null;
         const { data } = await axios.get(props.endpoint, {
             params: {
                 page: currentPage.value,
                 per_page: perPage.value,
                 sort_field: sortField.value,
-                sort_order: sortOrder.value,
-                search: filters.value.global,
+                sort_order: sortOrderStr,
+                search: filters.value.global.value,
                 ...props.params,
             },
         });
@@ -120,9 +122,7 @@ const debouncedSearch = debounce(() => {
 
 onMounted(() => {
     // Initial fetch
-    if (rows.value.length < 1) {
-        fetchData();
-    }
+    fetchData();
 
     props.columns.forEach(col => {
         filters.value[col.field] = {
@@ -131,4 +131,10 @@ onMounted(() => {
         };
     });
 });
+
+// Note: If you want server-side column filtering, add v-model:filters="filters" to DataTable,
+// watch the filters, and send them in fetchData params.
+// For example:
+// watch(filters, debouncedSearch, { deep: true });
+// And in params: { ...filters: filters.value } (adjust as needed for backend).
 </script>
