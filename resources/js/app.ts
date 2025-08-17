@@ -9,6 +9,7 @@ import PrimeVue from 'primevue/config';
 import { PerfectScrollbarPlugin } from 'vue3-perfect-scrollbar';
 import 'vue3-perfect-scrollbar/style.css';
 import { DialogService, Tooltip, ToastService, ConfirmationService } from 'primevue';
+import Aura from '@primeuix/themes/aura';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -24,7 +25,16 @@ createInertiaApp({
             .use(plugin)
             .use(ZiggyVue)
             .use(PrimeVue, {
-                theme: 'none',
+                theme: {
+                    preset: Aura,
+                    options: {
+                        darkModeSelector: '.dark',
+                    },
+                    cssLayer: {
+                        name: 'primevue',
+                        order: 'theme, base, primevue'
+                    }
+                }
             })
             .use(PerfectScrollbarPlugin)
             .use(ToastService)

@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Settings\School\General;
 use App\Http\Controllers\Controller;
 use App\Models\CustomField;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use App\Support\ColumnDefinitionHelper;
 
 class CustomFieldController extends Controller
 {
@@ -20,7 +20,8 @@ class CustomFieldController extends Controller
 
         return Inertia::render('Settings/School/CustomField', [
             'settings' => $settings,
-            'resources' => $customizableResources
+            'resources' => $customizableResources,
+            'columns' => ColumnDefinitionHelper::fromModel(new CustomField())
         ]);
     }
 

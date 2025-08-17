@@ -2,7 +2,8 @@
     <DataTable :value="rows" :alwaysShowPaginator="false" :loading="loading" :paginator="true" :rows="perPage"
         :totalRecords="totalRecords" :first="(currentPage - 1) * perPage" :selectionMode="selectionMode"
         v-model:selection="selectedRows" @page="onPage" @sort="onSort" dataKey="id"
-        :rowsPerPageOptions="[5, 10, 20, 50]" :globalFilterFields="props.globalFilterFields" :lazy="true">
+        :rowsPerPageOptions="[5, 10, 20, 50]" :globalFilterFields="props.globalFilterFields" :lazy="true"
+        v-model:filters="filters" filterDisplay="menu">
         <!-- Table Header -->
         <template #header>
             <div class="flex justify-between items-center flex-wrap gap-2">
@@ -26,9 +27,14 @@
         <Column selectionMode="multiple" headerStyle="width: 3rem" />
 
         <!-- Auto Columns -->
-        <Column v-for="col in columns" :key="col.field" :field="col.field" :header="col.header"
-            :sortable="col.sortable ?? true" :filter="true" :filterPlaceholder="`Filter by ${col.header}`"
-            :style="col.style">
+        <Column v-for="col in columns" :key="col.field" :field="col.field" :header="col.header" :filter="true" :filterPlaceholder="`Filter by ${col.header}`" :style="col.style">
+            <template #body="{ data }">
+                {{ data[col.field] }}
+            </template>
+
+            <template #filter="{ filterModel, filterCallback }">
+                <InputText v-model="filterModel.value" type="text" @input="filterCallback()" placeholder="Search by {{ col.header }}" />
+            </template>
         </Column>
 
         <!-- Empty Template -->
@@ -44,6 +50,7 @@ import { Button, Column, DataTable, IconField, InputIcon, InputText } from 'prim
 import { FilterMatchMode } from '@primevue/core/api';
 import { useDeleteResource } from '@/helpers';
 import type { ColumnDefinition } from '@/types';
+import { filter } from 'lodash';
 
 interface BulkAction {
     label: string;
@@ -120,16 +127,20 @@ const debouncedSearch = debounce(() => {
     fetchData();
 }, 500);
 
-onMounted(() => {
-    // Initial fetch
+// Initial fetch
+if (!props.rows || props.rows.length === 0) {
+    currentPage.value++;
     fetchData();
+}
 
+onMounted(() => {
     props.columns.forEach(col => {
         filters.value[col.field] = {
             value: null,
             matchMode: col.matchMode || FilterMatchMode.CONTAINS
         };
     });
+
 });
 
 // Note: If you want server-side column filtering, add v-model:filters="filters" to DataTable,

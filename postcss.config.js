@@ -1,8 +1,10 @@
+import autoprefixer from "autoprefixer";
+
 export default {
 	plugins: {
-		'postcss-import': {},
+		// 'postcss-import': {},
 		// 'tailwindcss/nesting': {},
-		tailwindcss: {},
-		autoprefixer: {}
+		"@tailwindcss/postcss": {},
+        autoprefixer: {},
 	}
 };
