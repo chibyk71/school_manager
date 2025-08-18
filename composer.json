@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "abbasudo/laravel-purity": "^3.3",
         "farhanshares/laravel-mediaman": "^0.10.0",
         "ichtrojan/laravel-otp": "*",
         "inertiajs/inertia-laravel": "^2.0",

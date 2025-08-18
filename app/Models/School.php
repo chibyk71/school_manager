@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Abbasudo\Purity\Traits\Filterable;
+use Abbasudo\Purity\Traits\Sortable;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\ClassLevel;
 use App\Models\Transport\Vehicle\Vehicle;
@@ -15,7 +17,7 @@ use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 class School extends Model
 {
     /** @use HasFactory<\Database\Factories\SchoolFactory> */
-    use HasFactory, HasSettings, HasUuids, HasAddress, BelongsToSections;
+    use HasFactory, HasSettings, HasUuids, HasAddress, BelongsToSections, Filterable, Sortable;
 
     protected $fillable = [
         'name',
