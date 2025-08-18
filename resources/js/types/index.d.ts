@@ -98,6 +98,7 @@ export type ColumnFilterType =
     | 'multiselect' // multi select
     | 'date'        // Calendar
     | 'number'      // numeric input
+    | 'boolean'     // checkbox
     | 'custom';     // any other custom component
 
 export interface ColumnDefinition<T = Record<string, unknown>> {

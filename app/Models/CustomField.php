@@ -3,13 +3,14 @@
 namespace App\Models;
 
 use App\Traits\BelongsToSchool;
+use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class CustomField extends Model
 { 
     /** @use HasFactory<\Database\Factories\CustomFieldFactory> */
-    use HasFactory, BelongsToSchool;
+    use HasFactory, BelongsToSchool, HasTableQuery;
 
     protected $fillable = [
         'name',
@@ -37,7 +38,8 @@ class CustomField extends Model
         'classes' => 'array',
         'options' => 'array',
         'extra_attributes' => 'array',
-        'field_options' => 'array'
+        'field_options' => 'array',
+        'has_options' => 'boolean',
     ];
 
     protected $table = 'custom_fields';

@@ -90,7 +90,7 @@ class ColumnDefinitionHelper
             'boolean' => 'boolean',
             'datetime', 'date', 'timestamp' => 'date',
             'integer', 'float', 'decimal', 'double' => 'numeric',
-            'enum' => 'enum',
+            'enum' => 'dropdown',
             default => 'text',
         };
     }
