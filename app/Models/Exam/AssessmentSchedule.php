@@ -5,7 +5,7 @@ namespace App\Models\Exam;
 use App\Models\Academic\ClassSection;
 use App\Models\Academic\Subject;
 use App\Models\Employee\Staff;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 
 class AssessmentSchedule extends Model
 {

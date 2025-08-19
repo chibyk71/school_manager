@@ -2,14 +2,14 @@
 
 namespace App\Models\Student;
 
+use App\Models\Model;
 use App\Traits\BelongsToSchool;
-use Illuminate\Database\Eloquent\Model;
 use SpykApp\LaravelCustomFields\Traits\HasCustomFields;
 use SpykApp\LaravelCustomFields\Traits\LoadCustomFields;
 
 class Admission extends Model
 {
-    use BelongsToSchool, HasCustomFields, LoadCustomFields;
+    use BelongsToSchool;
 
     protected $table = 'admissions';
 

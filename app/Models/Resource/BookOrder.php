@@ -2,12 +2,12 @@
 
 namespace App\Models\Resource;
 
-use App\Models\Student;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Academic\Student;
+use App\Models\Model;
 
 class BookOrder extends Model
 {
-    
+
     protected $fillable = [
         'book_list_id',
         'student_id',

@@ -2,10 +2,10 @@
 
 namespace App\Models\Misc;
 
+use App\Models\Model;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasConfig;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 

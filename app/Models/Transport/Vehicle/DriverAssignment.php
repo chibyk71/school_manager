@@ -2,7 +2,7 @@
 
 namespace App\Models\Transport\Vehicle;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 

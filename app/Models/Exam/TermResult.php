@@ -2,12 +2,10 @@
 
 namespace App\Models\Exam;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 
 class TermResult extends Model
 {
-    
-
     protected $fillable = [
         'student_id',
         'term_id',

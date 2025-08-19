@@ -3,10 +3,11 @@
 namespace App\Models;
 
 use App\Models\Academic\ClassLevel;
+use App\Models\Academic\Student;
 use App\Models\Employee\Staff;
 use App\Traits\BelongsToSchool;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+
 
 //? this model could also be used as the team model
 

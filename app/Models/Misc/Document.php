@@ -2,8 +2,8 @@
 
 namespace App\Models\Misc;
 
+use App\Models\Model;
 use App\Traits\HasConfig;
-use Illuminate\Database\Eloquent\Model;
 
 class Document extends Model
 {

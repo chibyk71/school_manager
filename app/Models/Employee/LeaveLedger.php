@@ -3,7 +3,7 @@
 namespace App\Models\Employee;
 
 use App\Models\Configuration\LeaveType;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 
 class LeaveLedger extends Model
 {
@@ -25,5 +25,5 @@ class LeaveLedger extends Model
     {
         return $this->belongsTo(Staff::class, 'staff_id');
     }
-    
+
 }

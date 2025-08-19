@@ -5,7 +5,7 @@ namespace App\Models\Calendar;
 use App\Models\Academic\Term;
 use App\Models\Configuration\EventType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Arr;
 use Spatie\Activitylog\LogOptions;
@@ -77,7 +77,7 @@ class Event extends Model
     {
         return Arr::get($this->options, $option);
     }
-    
+
     public function getStartDateAttribute($value)
     {
         return $value ? date('Y-m-d', strtotime($value)) : null;

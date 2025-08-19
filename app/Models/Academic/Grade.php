@@ -4,7 +4,7 @@ namespace App\Models\Academic;
 
 use App\Models\SchoolSection;
 use App\Traits\BelongsToSchool;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 use App\Models\School;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;

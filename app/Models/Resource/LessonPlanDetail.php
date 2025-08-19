@@ -2,8 +2,8 @@
 
 namespace App\Models\Resource;
 
+use App\Models\Model;
 use FarhanShares\MediaMan\Traits\HasMedia;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class LessonPlanDetail extends Model
@@ -32,7 +32,7 @@ class LessonPlanDetail extends Model
         'evaluation' => 'array',
         'resources' => 'array'
     ];
-    
+
 
     public function lessonPlan()
     {

@@ -11,7 +11,7 @@ use App\Traits\BelongsToSections;
 use App\Traits\HasAddress;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+
 use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 
 class School extends Model

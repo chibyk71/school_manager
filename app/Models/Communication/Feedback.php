@@ -4,8 +4,7 @@ namespace App\Models\Communication;
 
 use App\Traits\BelongsToSchool;
 use App\Traits\BelongsToSections;
-use App\Traits\HasConfig;
-use Illuminate\Database\Eloquent\Model;
+use App\Traits\HasConfig;use App\Models\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -49,7 +48,7 @@ class Feedback extends Model
 
     public function handledBy()
     {
-        return $this->belongsTo('App\Models\User', 'handled_by');   
+        return $this->belongsTo('App\Models\User', 'handled_by');
     }
 
     public function scopeHandled($query)

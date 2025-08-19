@@ -3,12 +3,12 @@
 namespace App\Models\Exam;
 
 use App\Models\Academic\Term;
+use App\Models\Model;
 use App\Models\SchoolSection;
 use App\Traits\BelongsToSchool;
 use App\Traits\BelongsToSections;
 use App\Traits\HasConfig;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -53,5 +53,5 @@ class Assessment extends Model
     {
         return $this->belongsTo(Term::class);
     }
-    
+
 }

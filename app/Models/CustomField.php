@@ -5,7 +5,7 @@ namespace App\Models;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+
 
 class CustomField extends Model
 { 

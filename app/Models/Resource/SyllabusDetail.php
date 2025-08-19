@@ -2,7 +2,7 @@
 
 namespace App\Models\Resource;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 
 class SyllabusDetail extends Model
 {

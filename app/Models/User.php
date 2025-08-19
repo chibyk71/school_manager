@@ -3,6 +3,10 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+use Abbasudo\Purity\Traits\Filterable;
+use Abbasudo\Purity\Traits\Sortable;
+use App\Models\Academic\Student;
 use App\Models\Finance\FeeConcession;
 use App\Models\Transport\Route;
 use App\Models\Transport\Vehicle\Vehicle;
@@ -18,7 +22,7 @@ use Spatie\Activitylog\Traits\CausesActivity;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasSettings, CausesActivity, HasRolesAndPermissions, HasUuids;
+    use HasFactory, Notifiable, HasSettings, CausesActivity, HasRolesAndPermissions, HasUuids, Filterable, Sortable;
 
     /**
      * The attributes that are mass assignable.

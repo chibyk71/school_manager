@@ -2,7 +2,7 @@
 
 namespace App\Models\Finance;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 
 /**
  * This Model represent the data stored from expenses made by the school

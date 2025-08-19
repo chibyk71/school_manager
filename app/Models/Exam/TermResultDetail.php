@@ -3,8 +3,8 @@
 namespace App\Models\Exam;
 
 use App\Models\Academic\Grade;
-use App\Models\Tenant\Subject;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Academic\Subject;
+use App\Models\Model;
 
 class TermResultDetail extends Model
 {

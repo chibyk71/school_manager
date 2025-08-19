@@ -3,14 +3,13 @@
 namespace App\Models\Employee;
 
 use App\Traits\HasConfig;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;use App\Models\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * this model is used to add custom salary to employees different from what is defined in their salary structure
  *  it is used to add bonuses, allowances, overtime, deductions, etc.
- * 
+ *
  */
 class SalaryAddon extends Model
 {

@@ -3,8 +3,7 @@
 namespace App\Models\Configuration;
 
 use App\Models\Employee\LeaveAllocation;
-use App\Models\Employee\LeaveRequest;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Employee\LeaveRequest;use App\Models\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 

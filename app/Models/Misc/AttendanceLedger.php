@@ -2,7 +2,7 @@
 
 namespace App\Models\Misc;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 
 class AttendanceLedger extends Model
 {
@@ -24,5 +24,5 @@ class AttendanceLedger extends Model
     public function attendanceSession()
     {
         return $this->belongsTo(AttendanceSession::class);
-    }   
+    }
 }

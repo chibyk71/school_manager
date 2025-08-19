@@ -4,9 +4,9 @@ namespace App\Models\Exam;
 
 use App\Models\Academic\ClassSection;
 use App\Models\Academic\Grade;
+use App\Models\Academic\Student;
 use App\Models\Employee\Staff;
-use App\Models\Student;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 

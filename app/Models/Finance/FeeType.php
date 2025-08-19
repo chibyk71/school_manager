@@ -2,9 +2,9 @@
 
 namespace App\Models\Finance;
 
+use App\Models\Model;
 use App\Models\School;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;

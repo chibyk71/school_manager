@@ -2,7 +2,7 @@
 
 namespace App\Models\Academic;
 
-use App\Models\Staff;
+use App\Models\Employee\Staff;
 use App\Traits\HasConfig;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Spatie\Activitylog\LogOptions;

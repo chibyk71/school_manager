@@ -4,9 +4,9 @@ namespace App\Models\Resource;
 
 use App\Models\Academic\ClassLevel;
 use App\Models\Academic\Subject;
+use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use FarhanShares\MediaMan\Traits\HasMedia;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 

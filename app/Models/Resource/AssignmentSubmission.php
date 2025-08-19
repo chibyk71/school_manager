@@ -3,8 +3,8 @@
 namespace App\Models\Resource;
 
 use App\Models\Employee\Staff;
+use App\Models\Model;
 use FarhanShares\MediaMan\Traits\HasMedia;
-use Illuminate\Database\Eloquent\Model;
 
 class AssignmentSubmission extends Model
 {

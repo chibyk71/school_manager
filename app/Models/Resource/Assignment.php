@@ -3,10 +3,10 @@
 namespace App\Models\Resource;
 
 use App\Models\Employee\Staff;
+use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasConfig;
 use FarhanShares\MediaMan\Traits\HasMedia;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -39,7 +39,7 @@ class Assignment extends Model
 
     public function getTypeAttribute()
     {
-        return $this->configs()->name;
+        return $this->configs()->pluck('name');
     }
 
     public function teacher()

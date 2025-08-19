@@ -2,9 +2,9 @@
 
 namespace App\Models\Resource;
 
+use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use FarhanShares\MediaMan\Traits\HasMedia;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\Traits\LogsActivity;
 

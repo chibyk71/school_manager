@@ -5,7 +5,7 @@ namespace App\Models\Academic;
 use App\Models\SchoolSection;
 use App\Traits\BelongsToSections;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 
 class ClassLevel extends Model
 {

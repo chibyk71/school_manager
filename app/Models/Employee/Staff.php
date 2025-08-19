@@ -7,8 +7,7 @@ use App\Models\SchoolSection;
 use App\Models\User;
 use App\Traits\BelongsToSections;
 use App\Traits\HasSchemalessAttributes;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;use App\Models\Model;
 
 class Staff extends Model
 {

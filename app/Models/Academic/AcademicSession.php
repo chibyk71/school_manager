@@ -5,7 +5,7 @@ namespace App\Models\Academic;
 use App\Models\School;
 use App\Traits\BelongsToSchool;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class AcademicSession extends Model

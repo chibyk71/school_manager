@@ -2,10 +2,10 @@
 
 namespace App\Models\Finance;
 
+use App\Models\Model;
 use App\Models\User;
 use App\Traits\HasTransaction;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 

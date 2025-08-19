@@ -2,8 +2,7 @@
 
 namespace App\Models\Communication;
 
-use App\Traits\HasConfig;
-use Illuminate\Database\Eloquent\Model;
+use App\Traits\HasConfig;use App\Models\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 

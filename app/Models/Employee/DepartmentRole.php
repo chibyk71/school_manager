@@ -2,9 +2,9 @@
 
 namespace App\Models\Employee;
 
+use App\Models\Model;
 use App\Models\SchoolSection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\Traits\LogsActivity;
 

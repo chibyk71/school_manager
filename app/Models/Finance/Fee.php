@@ -4,14 +4,14 @@ namespace App\Models\Finance;
 
 use App\Models\Academic\ClassSection;
 use App\Models\Academic\Term;
+use App\Models\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 /**
  * This Model Represent the individual fees to be paid. grouped by fee_type,
  * each school will create a fee structure, with a n amount payable, affected users or group,
  * and a description.
  *
- * 
+ *
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
  */

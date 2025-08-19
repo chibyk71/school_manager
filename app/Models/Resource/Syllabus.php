@@ -2,15 +2,15 @@
 
 namespace App\Models\Resource;
 
+use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use FarhanShares\MediaMan\Traits\HasMedia;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class Syllabus extends Model
 {
     use HasMedia, BelongsToSchool, LogsActivity;
-    
+
     protected $table = 'syllabi';
 
     protected $fillable = [

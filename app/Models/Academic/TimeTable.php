@@ -7,7 +7,7 @@ use App\Traits\BelongsToSections;
 use App\Traits\HasConfig;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -38,7 +38,7 @@ class TimeTable extends Model
             ->logExcept(['updated_at'])
             ->logOnlyDirty();
     }
-    
+
     public function getOption(string $option)
     {
         return array_get($this->options, $option);
