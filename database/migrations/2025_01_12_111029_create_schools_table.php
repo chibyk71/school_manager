@@ -6,9 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('schools', function (Blueprint $table) {
@@ -20,14 +17,14 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->string('logo')->nullable();
             $table->json('data')->nullable();
+            $table->enum('tenancy_type', ['private', 'government', 'community'])->default('private');
+            $table->uuid('parent_id')->nullable(); // For branches under a parent school
+            $table->foreign('parent_id')->references('id')->on('schools')->onDelete('set null');
             $table->timestamps();
             $table->softDeletes();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('schools');

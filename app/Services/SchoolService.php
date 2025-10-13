@@ -1,4 +1,4 @@
-<?php 
+<?php
 
 namespace App\Services;
 
@@ -14,55 +14,80 @@ class SchoolService
     public function setActiveSchool($school)
     {
         $this->activeSchool = $school;
+        session(['active_school_id' => $school->id]);
     }
 
     public function getActiveSchool()
     {
-        return $this->activeSchool ?: $this->getSchoolFromSession();
+        return $this->activeSchool ?? $this->getSchoolFromSession();
     }
 
     protected function getSchoolFromSession()
     {
         $schoolId = session('active_school_id');
-        return $schoolId ? School::find($schoolId) : School::first();
+        return $schoolId ? School::findOrFail($schoolId) : null;
     }
 
     public function createSchool(array $data): School
     {
-        // Create the school record
-        $school = School::create([
-            'name' => $data['name'],
-            'domain' => $data['domain'],
-        ]);
-    
-        // Check if the user already exists
-        $admin = User::where('email', $data['email'])->first();
-    
-        if ($admin) {
-            // User exists: Assign the admin role to the user for this school
-            $admin->assignRole('admin', $school->id);
-    
-            // Notify the user about the admin assignment
-            $admin->notify(new MadeAdminOfSchoolNotification($school));
-    
-            // Return school along with a message
-            throw new \Exception("User with email {$data['email']} already exists and has been assigned as the admin of this school.", 409);
-        } else {
-            // User doesn't exist: Create a new admin user
+        // Validate required fields
+        if (empty($data['name']) || empty($data['email']) || empty($data['admin_name']) || empty($data['admin_password'])) {
+            throw new \InvalidArgumentException('Missing required fields for school creation.');
+        }
+
+        // Start a transaction for atomicity
+        return \DB::transaction(function () use ($data) {
+            // Create the school
+            $school = School::create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'phone_one' => $data['phone_one'] ?? null,
+                'phone_two' => $data['phone_two'] ?? null,
+                'tenancy_type' => $data['tenancy_type'] ?? 'private',
+                'parent_id' => $data['parent_id'] ?? null,
+                'data' => $data['extra_data'] ?? [],
+            ]);
+
+            // Check if admin user exists
+            $admin = User::where('email', $data['email'])->first();
+
+            if ($admin) {
+                // Assign admin role to existing user
+                $admin->assignRole('admin', $school->id);
+                $admin->notify(new MadeAdminOfSchoolNotification($school));
+                throw new \Exception("User with email {$data['email']} already exists and has been assigned as admin.", 409);
+            }
+
+            // Create new admin user
             $admin = User::create([
                 'name' => $data['admin_name'],
                 'email' => $data['email'],
                 'password' => Hash::make($data['admin_password']),
             ]);
-    
-            // Assign admin role and associate with the school
+
+            // Assign admin role and associate with school
             $admin->assignRole('admin', $school->id);
-        }
-    
-        return $school;
+            $admin->schools()->attach($school->id);
+            $admin->notify(new MadeAdminOfSchoolNotification($school));
+
+            return $school;
+        });
     }
 
-    public function assignAdmin(array $user, School $school) {
-        $admin = User::createOrFirst(['email'=> $user['email']], ['first_name'=>$user]);
+    public function assignAdmin(array $userData, School $school): User
+    {
+        $admin = User::firstOrCreate(
+            ['email' => $userData['email']],
+            [
+                'name' => $userData['name'],
+                'password' => Hash::make($userData['password'] ?? Str::random(12)),
+            ]
+        );
+
+        $admin->assignRole('admin', $school->id);
+        $admin->schools()->attach($school->id);
+        $admin->notify(new MadeAdminOfSchoolNotification($school));
+
+        return $admin;
     }
 }

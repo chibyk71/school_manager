@@ -84,7 +84,7 @@
                 <template v-if="col.filterType === 'boolean'">
                     <label for="verified-filter" class="font-bold"> Verified </label>
                     <Checkbox v-model="filterModel.value" :indeterminate="filterModel.value === null" binary
-                        inputId="verified-filter" />
+                        :inputId="`${col.field}-filter`" />
                 </template>
             </template>
         </Column>

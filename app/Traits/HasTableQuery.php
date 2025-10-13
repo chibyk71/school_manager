@@ -26,7 +26,7 @@ trait HasTableQuery
 
     /**
      * Columns that should be used, when preforming global search on a model
-     * 
+     *
      * @var array<string>
      */
     protected array $globalFilterFields = [];
@@ -79,7 +79,8 @@ trait HasTableQuery
         if ($search) {
             $query->where(function (Builder $q) use ($columns, $search) {
                 foreach ($columns as $col) {
-                    if ($col['hidden']) continue; // skip hidden
+                    if ($col['hidden'])
+                        continue; // skip hidden
 
                     if ($col['filterable'] && $col['filterType'] === 'text') {
                         if ($col['relation'] && method_exists($this, $col['relation'])) {
@@ -97,7 +98,7 @@ trait HasTableQuery
         // Column filters
         $query->filter();
 
-           // ✅ Apply sorting using Purity (handles multi-column + direction)
+        // ✅ Apply sorting using Purity (handles multi-column + direction)
         // If no sort provided, fallback to a safe default
         if ($request->has('sort')) {
             $query->sort();

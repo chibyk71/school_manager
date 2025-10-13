@@ -1,8 +1,10 @@
+<!-- app/Helpers/helper.php -->
 <?php
 
 use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Laratrust\LaratrustFacade;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
 

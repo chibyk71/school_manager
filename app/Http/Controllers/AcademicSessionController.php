@@ -6,7 +6,6 @@ use App\Models\Academic\AcademicSession;
 use App\Http\Requests\StoreAcademicSessionRequest;
 use App\Http\Requests\UpdateAcademicSessionRequest;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class AcademicSessionController extends Controller
