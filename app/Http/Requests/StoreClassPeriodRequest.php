@@ -11,18 +11,37 @@ class StoreClassPeriodRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true; // Authorization handled in controller via permitted()
     }
 
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, mixed>
      */
     public function rules(): array
     {
+        $school = GetSchoolModel();
         return [
-            //
+            'order' => [
+                'required',
+                'integer',
+                'min:1',
+                'unique:class_periods,order,NULL,id,school_id,' . $school->id,
+            ],
+            'is_break' => 'required|boolean',
+            'duration' => 'required|numeric|min:0.1',
         ];
+    }
+
+    /**
+     * Prepare the data for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        $school = GetSchoolModel();
+        if ($school && !$this->has('school_id')) {
+            $this->merge(['school_id' => $school->id]);
+        }
     }
 }

@@ -13,12 +13,13 @@ return new class extends Migration
     {
         Schema::create('class_periods', function (Blueprint $table) {
             $table->id();
-            $table->string('school_id')->nullable()->index();
-            $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
-            $table->unsignedMediumInteger('order');
-            $table->boolean('is-break')->default(false);
-            $table->decimal('duration');
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->unsignedMediumInteger('order')->index();
+            $table->boolean('is_break')->default(false);
+            $table->decimal('duration', 5, 2); // e.g., 1.50 hours
+            $table->softDeletes();
             $table->timestamps();
+            $table->unique(['school_id', 'order'], 'class_periods_unique'); // Ensure unique order per school
         });
     }
 
