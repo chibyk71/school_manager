@@ -19,6 +19,7 @@ return new class extends Migration
             $table->morphs('configurable');
             $table->string('color')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 
