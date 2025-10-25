@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('school_users', function (Blueprint $table) {
             $table->id();
-            $table->string('school_id')->index();
-            $table->string('user_id')->index();
+            $table->uuid('school_id')->index();
+            $table->uuid('user_id')->index();
             $table->timestamps();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');

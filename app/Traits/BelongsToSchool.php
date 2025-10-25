@@ -5,71 +5,74 @@ namespace App\Traits;
 use App\Models\School;
 use App\Models\Scopes\SchoolScope;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Log;
 
+/**
+ * Trait to associate models with a specific school.
+ *
+ * Provides a `school` relationship, auto-assigns `school_id` on creation,
+ * and applies a global `SchoolScope` for filtering with fallback to global records.
+ */
 trait BelongsToSchool
 {
     /**
-     * Trait BelongsToSchool
+     * Get the column name used for the school ID.
      *
-     * This trait provides functionality for models that belong to a specific school.
-     * It includes methods for defining relationships, handling automatic assignment
-     * of the school ID during model creation, and retrieving records with a fallback
-     * mechanism for global (null school_id) entries.
-     *
-     * Methods:
-     * - getSchoolIdColumn(): Returns the name of the column used to store the school ID.
-     * - school(): Defines the "belongs to" relationship with the School model.
-     * - bootBelongsToSchool(): Boot method to add a global scope for filtering by school
-     *   and automatically assign the current school ID when creating a new model instance.
-     * - withSchoolFallback(): Retrieves records for the current school or falls back to
-     *   global entries (null school_id), grouping by a specified column and returning
-     *   distinct entries.
-     *
-     * Usage:
-     * - Include this trait in models that need to be associated with a school.
-     * - Ensure the model has a `school_id` column or equivalent, as defined by
-     *   the `getSchoolIdColumn` method.
-     *
-     * Example:
-     * ```php
-     * use App\Traits\BelongsToSchool;
-     *
-     * class Student extends Model
-     * {
-     *     use BelongsToSchool;
-     * }
-     *
-     * // Automatically assigns the current school ID when creating a new student.
-     * $student = Student::create(['name' => 'John Doe']);
-     *
-     * // Retrieve distinct students grouped by name, considering the current school
-     * // and falling back to global entries.
-     * $students = Student::withSchoolFallback('name');
-     * ```
+     * @return string The school ID column name (default: 'school_id').
      */
     public static function getSchoolIdColumn(): string
     {
         return 'school_id';
     }
 
+    /**
+     * Define the "belongs to" relationship with the School model.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
     public function school()
     {
         return $this->belongsTo(School::class, static::getSchoolIdColumn());
     }
 
+    /**
+     * Boot the trait by adding the SchoolScope and auto-assigning school_id.
+     *
+     * @return void
+     * @throws \Exception If no active school is found during creation.
+     */
     protected static function bootBelongsToSchool(): void
     {
         static::addGlobalScope(new SchoolScope);
 
         static::creating(function ($model) {
-            $schoolIdColumn = static::getSchoolIdColumn();
-            if (!$model->getAttribute($schoolIdColumn) && !$model->relationLoaded('school')) {
-                $currentSchool = GetSchoolModel();
-                if ($currentSchool) {
+            try {
+                $schoolIdColumn = static::getSchoolIdColumn();
+                if (!$model->getAttribute($schoolIdColumn) && !$model->relationLoaded('school')) {
+                    $currentSchool = GetSchoolModel();
+                    if (!$currentSchool) {
+                        throw new \Exception('No active school found during model creation.');
+                    }
                     $model->setAttribute($schoolIdColumn, $currentSchool->id);
                     $model->setRelation('school', $currentSchool);
                 }
+            } catch (\Exception $e) {
+                Log::error('Failed to assign school_id in BelongsToSchool: ' . $e->getMessage());
+                throw $e;
             }
         });
+    }
+
+    /**
+     * Scope to retrieve records with fallback to global entries.
+     *
+     * @param Builder $builder The query builder instance.
+     * @param string|array $groupByColumns Columns to group by for fallback.
+     * @return Builder
+     */
+    public function scopeWithSchoolFallback(Builder $builder, string|array $groupByColumns = 'name'): Builder
+    {
+        return $builder->withoutGlobalScope(SchoolScope::class)
+            ->addGlobalScope(new SchoolScope($groupByColumns));
     }
 }

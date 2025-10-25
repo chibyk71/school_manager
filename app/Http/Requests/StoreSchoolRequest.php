@@ -2,70 +2,47 @@
 
 namespace App\Http\Requests;
 
-use App\Models\School;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Gate;
 
 class StoreSchoolRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
+     *
+     * @return bool
      */
-    public function authorize(): bool
+    public function authorize()
     {
-        return Gate::allows('create', School::class);
+        return auth()->user()->hasPermissionTo('create-school');
     }
 
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array
      */
-    public function rules(): array
+    public function rules()
     {
         return [
             'name' => 'required|string|max:255',
-            'slug' => 'nullable|string|unique:schools,slug|max:255',
-            'email' => 'required|email|unique:schools,email|max:255',
-            'phone_one' => 'required|string|max:15',
-            'phone_two' => 'nullable|string|max:15',
-            'logo' => 'nullable|string|max:2048', // Assuming logo is a URL or path
-            'tenancy_type' => 'required|in:private,government,community',
-            'parent_id' => 'nullable|uuid|exists:schools,id',
-            'data' => 'nullable|array',
+            'slug' => 'nullable|string|max:255|unique:schools,slug',
+            'email' => 'required|email|max:255|unique:schools,email',
+            'phone_one' => 'nullable|string|max:20|regex:/^([0-9\s\-\+\(\)]*)$/',
+            'phone_two' => 'nullable|string|max:20|regex:/^([0-9\s\-\+\(\)]*)$/',
+            'type' => 'required|string|in:private,government,community',
+            'logo' => 'nullable|string',
             'admin_name' => 'required|string|max:255',
+            'admin_email' => 'required|email|max:255|unique:users,email',
             'admin_password' => 'required|string|min:8',
-        ];
-    }
-
-    /**
-     * Prepare the data for validation.
-     */
-    protected function prepareForValidation(): void
-    {
-        // Ensure tenancy_type is lowercase
-        if ($this->has('tenancy_type')) {
-            $this->merge([
-                'tenancy_type' => strtolower($this->input('tenancy_type')),
-            ]);
-        }
-    }
-
-    /**
-     * Get custom attributes for validator errors.
-     *
-     * @return array<string, string>
-     */
-    public function attributes(): array
-    {
-        return [
-            'name' => 'school name',
-            'phone_one' => 'primary phone',
-            'phone_two' => 'secondary phone',
-            'tenancy_type' => 'school type',
-            'parent_id' => 'parent school',
-            'admin_name' => 'admin name',
-            'admin_password' => 'admin password',
+            'address' => 'required|array',
+            'address.address' => 'required|string|max:255',
+            'address.city' => 'required|string|max:255',
+            'address.lga' => 'nullable|string|max:255',
+            'address.state' => 'required|string|max:255',
+            'address.country' => 'required|string|max:255',
+            'address.postal_code' => 'nullable|string|max:20',
+            'address.phone_number' => 'nullable|string|max:20',
+            'extra_data' => 'nullable|array',
         ];
     }
 }
