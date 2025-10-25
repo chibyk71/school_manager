@@ -8,27 +8,38 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * Creates the lesson_plans table with school scoping and soft delete support.
+     *
+     * @return void
      */
     public function up(): void
     {
         Schema::create('lesson_plans', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('class_level_id')->constrained()->cascadeOnDelete();
-            $table->foreignUuid('subject_id')->constrained()->cascadeOnDelete();
-            $table->foreignUuId('school_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade');
+            $table->foreignId('class_level_id')->constrained('class_levels')->onDelete('cascade');
+            $table->foreignUuid('subject_id')->constrained('subjects')->onDelete('cascade');
+            $table->foreignId('sylabus_detail_id')->nullable()->constrained('sylabus_details')->onDelete('set null');
             $table->string('topic');
-            $table->date('start_date');
-            $table->date('end_date');
-            $table->foreignUuId('staff_id')->constrained()->cascadeOnDelete();
+            $table->date('date');
+            $table->text('objective');
+            $table->json('material')->nullable();
+            $table->json('assessment')->nullable();
+            $table->foreignUuid('staff_id')->constrained('staff')->onDelete('cascade');
             $table->timestamps();
             $table->softDeletes();
-
-            $table->unique(['class_level_id', 'subject_id', 'school_id', 'topic']);
+            $table->index('deleted_at');
+            $table->unique(['school_id', 'class_level_id', 'subject_id', 'topic', 'date']);
         });
     }
 
     /**
      * Reverse the migrations.
+     *
+     * Drops the lesson_plans table.
+     *
+     * @return void
      */
     public function down(): void
     {

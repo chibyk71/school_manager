@@ -8,28 +8,41 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * Creates the lesson_plan_details table with school scoping and soft delete support.
+     *
+     * @return void
      */
     public function up(): void
     {
         Schema::create('lesson_plan_details', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('lesson_plan_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade');
+            $table->foreignId('lesson_plan_id')->constrained('lesson_plans')->onDelete('cascade');
             $table->string('title');
             $table->string('sub_title')->nullable();
             $table->text('objective')->nullable();
             $table->json('activity');
             $table->json('teaching_method')->nullable();
             $table->json('evaluation')->nullable();
-            $table->json('resources')->nullable(); // This should be an array of resources used in the lesson plan eg ['book', 'whiteboard', 'chalk']
-            $table->integer('duration'); // This should be in minutes
+            $table->json('resources')->nullable();
+            $table->integer('duration');
             $table->text('remarks')->nullable();
-            $table->enum('status', ['published', 'draft', 'archived'])->default('draft'); // This should be an enum of 'draft', 'published', 'archived'
+            $table->enum('status', ['draft', 'pending_approval', 'published', 'rejected', 'archived'])->default('draft');
             $table->timestamps();
+            $table->softDeletes();
+            $table->index('deleted_at');
+            $table->index('school_id');
+            $table->index('lesson_plan_id');
         });
     }
 
     /**
      * Reverse the migrations.
+     *
+     * Drops the lesson_plan_details table.
+     *
+     * @return void
      */
     public function down(): void
     {
