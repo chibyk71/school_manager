@@ -13,12 +13,14 @@ return new class extends Migration
     {
         Schema::create('leave_ledgers', function (Blueprint $table) {
             $table->id();
-            $table->uuid('staff_id')->index();
-            $table->foreign('staff_id')->references('id')->on('staff')->onDelete('cascade');
-            $table->foreignId('leave_type_id')->constrained('leave_types')->onDelete('cascade');
-            $table->foreignId('academic_session_id')->constrained('academic_sessions')->onDelete('cascade');
-            $table->integer('encashed_days')->default(0);
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete()->index();
+            $table->foreignId('leave_type_id')->constrained('leave_types')->cascadeOnDelete()->index();
+            $table->foreignId('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete()->index();
+            $table->unsignedInteger('encashed_days')->default(0);
             $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['school_id', 'user_id', 'leave_type_id', 'academic_session_id'], 'leave_ledgers_unique');
         });
     }
 

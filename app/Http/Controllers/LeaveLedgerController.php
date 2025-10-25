@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreLeaveAllocationRequest;
-use App\Http\Requests\UpdateLeaveAllocationRequest;
+use App\Http\Requests\StoreLeaveLedgerRequest;
+use App\Http\Requests\UpdateLeaveLedgerRequest;
 use App\Models\Academic\AcademicSession;
 use App\Models\Configuration\LeaveType;
-use App\Models\Employee\LeaveAllocation;
+use App\Models\Employee\LeaveLedger;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -14,12 +14,12 @@ use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 /**
- * Controller for managing LeaveAllocation resources.
+ * Controller for managing LeaveLedger resources.
  */
-class LeaveAllocationController extends Controller
+class LeaveLedgerController extends Controller
 {
     /**
-     * Display a listing of leave allocations with dynamic querying.
+     * Display a listing of leave ledger entries with dynamic querying.
      *
      * @param Request $request
      * @param AcademicSession|null $academicSession
@@ -27,7 +27,7 @@ class LeaveAllocationController extends Controller
      */
     public function index(Request $request, ?AcademicSession $academicSession = null)
     {
-        Gate::authorize('viewAny', LeaveAllocation::class); // Policy-based authorization
+        Gate::authorize('viewAny', LeaveLedger::class); // Policy-based authorization
 
         try {
             // Define extra fields for table query
@@ -59,7 +59,7 @@ class LeaveAllocationController extends Controller
             ];
 
             // Build query
-            $query = LeaveAllocation::with([
+            $query = LeaveLedger::with([
                 'leaveType:id,name',
                 'academicSession:id,name',
                 'user:id,first_name,last_name',
@@ -67,38 +67,38 @@ class LeaveAllocationController extends Controller
               ->when($request->boolean('with_trashed'), fn($q) => $q->withTrashed());
 
             // Apply dynamic table query (search, filter, sort, paginate)
-            $allocations = $query->tableQuery($request, $extraFields);
+            $ledgerEntries = $query->tableQuery($request, $extraFields);
 
             if ($request->wantsJson()) {
-                return response()->json($allocations);
+                return response()->json($ledgerEntries);
             }
 
-            return Inertia::render('HRM/LeaveAllocations', [
+            return Inertia::render('HRM/LeaveLedgers', [
                 'academicSession' => $academicSession ? $academicSession->only('id', 'name') : null,
-                'allocations' => $allocations,
+                'ledgerEntries' => $ledgerEntries,
                 'leaveTypes' => LeaveType::select('id', 'name')->get(),
                 'academicSessions' => AcademicSession::select('id', 'name')->get(),
                 'users' => User::select('id', 'first_name', 'last_name')->get(),
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to fetch leave allocations: ' . $e->getMessage());
+            Log::error('Failed to fetch leave ledger entries: ' . $e->getMessage());
             return $request->wantsJson()
-                ? response()->json(['error' => 'Failed to fetch leave allocations'], 500)
-                : redirect()->back()->with(['error' => 'Failed to fetch leave allocations']);
+                ? response()->json(['error' => 'Failed to fetch leave ledger entries'], 500)
+                : redirect()->back()->with(['error' => 'Failed to fetch leave ledger entries']);
         }
     }
 
     /**
-     * Show the form for creating a new leave allocation.
+     * Show the form for creating a new leave ledger entry.
      *
      * @return \Inertia\Response
      */
     public function create()
     {
-        Gate::authorize('create', LeaveAllocation::class); // Policy-based authorization
+        Gate::authorize('create', LeaveLedger::class); // Policy-based authorization
 
         try {
-            return Inertia::render('HRM/LeaveAllocationCreate', [
+            return Inertia::render('HRM/LeaveLedgerCreate', [
                 'leaveTypes' => LeaveType::select('id', 'name')->get(),
                 'academicSessions' => AcademicSession::select('id', 'name')->get(),
                 'users' => User::select('id', 'first_name', 'last_name')->get(),
@@ -110,75 +110,75 @@ class LeaveAllocationController extends Controller
     }
 
     /**
-     * Store a newly created leave allocation in storage.
+     * Store a newly created leave ledger entry in storage.
      *
-     * @param StoreLeaveAllocationRequest $request
+     * @param StoreLeaveLedgerRequest $request
      * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
      */
-    public function store(StoreLeaveAllocationRequest $request)
+    public function store(StoreLeaveLedgerRequest $request)
     {
-        Gate::authorize('create', LeaveAllocation::class); // Policy-based authorization
+        Gate::authorize('create', LeaveLedger::class); // Policy-based authorization
 
         try {
             $validated = $request->validated();
             $school = GetSchoolModel();
             $validated['school_id'] = $school->id; // Ensure school_id is set
 
-            $allocation = LeaveAllocation::create($validated);
+            $ledgerEntry = LeaveLedger::create($validated);
 
             return $request->wantsJson()
-                ? response()->json(['message' => 'Leave allocation created successfully'], 201)
-                : redirect()->route('leave-allocations.index')->with(['success' => 'Leave allocation created successfully']);
+                ? response()->json(['message' => 'Leave ledger entry created successfully'], 201)
+                : redirect()->route('leave-ledgers.index')->with(['success' => 'Leave ledger entry created successfully']);
         } catch (\Exception $e) {
-            Log::error('Failed to create leave allocation: ' . $e->getMessage());
+            Log::error('Failed to create leave ledger entry: ' . $e->getMessage());
             return $request->wantsJson()
-                ? response()->json(['error' => 'Failed to create leave allocation'], 500)
-                : redirect()->back()->with(['error' => 'Failed to create leave allocation'])->withInput();
+                ? response()->json(['error' => 'Failed to create leave ledger entry'], 500)
+                : redirect()->back()->with(['error' => 'Failed to create leave ledger entry'])->withInput();
         }
     }
 
     /**
-     * Display the specified leave allocation.
+     * Display the specified leave ledger entry.
      *
      * @param Request $request
-     * @param LeaveAllocation $leaveAllocation
+     * @param LeaveLedger $leaveLedger
      * @return \Illuminate\Http\JsonResponse
      */
-    public function show(Request $request, LeaveAllocation $leaveAllocation)
+    public function show(Request $request, LeaveLedger $leaveLedger)
     {
-        Gate::authorize('view', $leaveAllocation); // Policy-based authorization
+        Gate::authorize('view', $leaveLedger); // Policy-based authorization
 
         try {
-            $leaveAllocation->load([
+            $leaveLedger->load([
                 'leaveType:id,name',
                 'academicSession:id,name',
                 'user:id,first_name,last_name',
             ]);
-            return response()->json(['leave_allocation' => $leaveAllocation]);
+            return response()->json(['leave_ledger' => $leaveLedger]);
         } catch (\Exception $e) {
-            Log::error('Failed to fetch leave allocation: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to fetch leave allocation'], 500);
+            Log::error('Failed to fetch leave ledger entry: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to fetch leave ledger entry'], 500);
         }
     }
 
     /**
-     * Show the form for editing the specified leave allocation.
+     * Show the form for editing the specified leave ledger entry.
      *
-     * @param LeaveAllocation $leaveAllocation
+     * @param LeaveLedger $leaveLedger
      * @return \Inertia\Response
      */
-    public function edit(LeaveAllocation $leaveAllocation)
+    public function edit(LeaveLedger $leaveLedger)
     {
-        Gate::authorize('update', $leaveAllocation); // Policy-based authorization
+        Gate::authorize('update', $leaveLedger); // Policy-based authorization
 
         try {
-            $leaveAllocation->load([
+            $leaveLedger->load([
                 'leaveType:id,name',
                 'academicSession:id,name',
                 'user:id,first_name,last_name',
             ]);
-            return Inertia::render('HRM/LeaveAllocationEdit', [
-                'leaveAllocation' => $leaveAllocation,
+            return Inertia::render('HRM/LeaveLedgerEdit', [
+                'leaveLedger' => $leaveLedger,
                 'leaveTypes' => LeaveType::select('id', 'name')->get(),
                 'academicSessions' => AcademicSession::select('id', 'name')->get(),
                 'users' => User::select('id', 'first_name', 'last_name')->get(),
@@ -190,68 +190,68 @@ class LeaveAllocationController extends Controller
     }
 
     /**
-     * Update the specified leave allocation in storage.
+     * Update the specified leave ledger entry in storage.
      *
-     * @param UpdateLeaveAllocationRequest $request
-     * @param LeaveAllocation $leaveAllocation
+     * @param UpdateLeaveLedgerRequest $request
+     * @param LeaveLedger $leaveLedger
      * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
      */
-    public function update(UpdateLeaveAllocationRequest $request, LeaveAllocation $leaveAllocation)
+    public function update(UpdateLeaveLedgerRequest $request, LeaveLedger $leaveLedger)
     {
-        Gate::authorize('update', $leaveAllocation); // Policy-based authorization
+        Gate::authorize('update', $leaveLedger); // Policy-based authorization
 
         try {
             $validated = $request->validated();
-            $leaveAllocation->update($validated);
+            $leaveLedger->update($validated);
 
             return $request->wantsJson()
-                ? response()->json(['message' => 'Leave allocation updated successfully'])
-                : redirect()->route('leave-allocations.index')->with(['success' => 'Leave allocation updated successfully']);
+                ? response()->json(['message' => 'Leave ledger entry updated successfully'])
+                : redirect()->route('leave-ledgers.index')->with(['success' => 'Leave ledger entry updated successfully']);
         } catch (\Exception $e) {
-            Log::error('Failed to update leave allocation: ' . $e->getMessage());
+            Log::error('Failed to update leave ledger entry: ' . $e->getMessage());
             return $request->wantsJson()
-                ? response()->json(['error' => 'Failed to update leave allocation'], 500)
-                : redirect()->back()->with(['error' => 'Failed to update leave allocation'])->withInput();
+                ? response()->json(['error' => 'Failed to update leave ledger entry'], 500)
+                : redirect()->back()->with(['error' => 'Failed to update leave ledger entry'])->withInput();
         }
     }
 
     /**
-     * Remove the specified leave allocation(s) from storage.
+     * Remove the specified leave ledger entry(s) from storage.
      *
      * @param Request $request
      * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
      */
     public function destroy(Request $request)
     {
-        Gate::authorize('delete', LeaveAllocation::class); // Policy-based authorization
+        Gate::authorize('delete', LeaveLedger::class); // Policy-based authorization
 
         try {
             $request->validate([
                 'ids' => 'required|array',
-                'ids.*' => 'exists:leave_allocations,id',
+                'ids.*' => 'exists:leave_ledgers,id',
             ]);
 
             $forceDelete = $request->boolean('force');
             $ids = $request->input('ids');
             $deleted = $forceDelete
-                ? LeaveAllocation::whereIn('id', $ids)->forceDelete()
-                : LeaveAllocation::whereIn('id', $ids)->delete();
+                ? LeaveLedger::whereIn('id', $ids)->forceDelete()
+                : LeaveLedger::whereIn('id', $ids)->delete();
 
-            $message = $deleted ? 'Leave allocation(s) deleted successfully' : 'No leave allocations were deleted';
+            $message = $deleted ? 'Leave ledger entry(s) deleted successfully' : 'No leave ledger entries were deleted';
 
             return $request->wantsJson()
                 ? response()->json(['message' => $message])
-                : redirect()->route('leave-allocations.index')->with(['success' => $message]);
+                : redirect()->route('leave-ledgers.index')->with(['success' => $message]);
         } catch (\Exception $e) {
-            Log::error('Failed to delete leave allocations: ' . $e->getMessage());
+            Log::error('Failed to delete leave ledger entries: ' . $e->getMessage());
             return $request->wantsJson()
-                ? response()->json(['error' => 'Failed to delete leave allocation(s)'], 500)
-                : redirect()->back()->with(['error' => 'Failed to delete leave allocation(s)']);
+                ? response()->json(['error' => 'Failed to delete leave ledger entry(s)'], 500)
+                : redirect()->back()->with(['error' => 'Failed to delete leave ledger entry(s)']);
         }
     }
 
     /**
-     * Restore a soft-deleted leave allocation.
+     * Restore a soft-deleted leave ledger entry.
      *
      * @param Request $request
      * @param int $id
@@ -259,15 +259,15 @@ class LeaveAllocationController extends Controller
      */
     public function restore(Request $request, $id)
     {
-        $leaveAllocation = LeaveAllocation::withTrashed()->findOrFail($id);
-        Gate::authorize('restore', $leaveAllocation); // Policy-based authorization
+        $leaveLedger = LeaveLedger::withTrashed()->findOrFail($id);
+        Gate::authorize('restore', $leaveLedger); // Policy-based authorization
 
         try {
-            $leaveAllocation->restore();
-            return response()->json(['message' => 'Leave allocation restored successfully']);
+            $leaveLedger->restore();
+            return response()->json(['message' => 'Leave ledger entry restored successfully']);
         } catch (\Exception $e) {
-            Log::error('Failed to restore leave allocation: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to restore leave allocation'], 500);
+            Log::error('Failed to restore leave ledger entry: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to restore leave ledger entry'], 500);
         }
     }
 }

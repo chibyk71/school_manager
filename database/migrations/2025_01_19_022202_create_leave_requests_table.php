@@ -13,22 +13,21 @@ return new class extends Migration
     {
         Schema::create('leave_requests', function (Blueprint $table) {
             $table->id();
-            $table->uuid('staff_id')->index();
-            $table->foreign('staff_id')->references('id')->on('staff')->onDelete('cascade');
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete()->index();
+            $table->foreignId('leave_type_id')->constrained('leave_types')->cascadeOnDelete()->index();
             $table->text('reason')->nullable();
             $table->date('start_date');
             $table->date('end_date');
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
-            $table->uuid('approved_by')->nullable();
-            $table->foreign('approved_by')->references('id')->on('users')->onDelete('cascade');
+            $table->foreignId('approved_by')->nullable()->constrained('users')->cascadeOnDelete()->index();
             $table->timestamp('approved_at')->nullable();
-            $table->uuid('rejected_by')->nullable();
-            $table->foreign('rejected_by')->references('id')->on('users')->onDelete('cascade');
+            $table->foreignId('rejected_by')->nullable()->constrained('users')->cascadeOnDelete()->index();
             $table->timestamp('rejected_at')->nullable();
             $table->text('rejected_reason')->nullable();
-            $table->uuid('school_id')->index();
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['school_id', 'user_id', 'leave_type_id', 'start_date', 'end_date'], 'leave_requests_unique');
         });
     }
 

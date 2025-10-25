@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class UpdateLeaveAllocationRequest extends FormRequest
+class StoreLeaveLedgerRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,10 +23,10 @@ class UpdateLeaveAllocationRequest extends FormRequest
     {
         $school = GetSchoolModel();
         return [
-            'user_id' => 'sometimes|exists:users,id',
-            'leave_type_id' => 'sometimes|exists:leave_types,id',
-            'no_of_days' => 'sometimes|integer|min:1',
-            'academic_session_id' => 'sometimes|exists:academic_sessions,id',
+            'user_id' => 'required|exists:users,id',
+            'leave_type_id' => 'required|exists:leave_types,id',
+            'academic_session_id' => 'required|exists:academic_sessions,id',
+            'encashed_days' => 'required|integer|min:0',
         ];
     }
 
