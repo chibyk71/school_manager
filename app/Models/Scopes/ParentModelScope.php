@@ -7,24 +7,62 @@ namespace App\Scopes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
+use Illuminate\Support\Facades\Log;
 
+/**
+ * Global scope to filter models based on their relationship to a primary model.
+ *
+ * Applies a whereHas constraint to ensure models are associated with the active school's primary model.
+ * Provides a `withoutParentModel` macro to disable the scope.
+ */
 class ParentModelScope implements Scope
 {
-    public function apply(Builder $builder, Model $model)
+    /**
+     * Apply the scope to a given Eloquent query builder.
+     *
+     * @param Builder $builder The query builder instance.
+     * @param Model $model The Eloquent model instance.
+     * @return void
+     * @throws \Exception If no active school is found or relationship is invalid.
+     */
+    public function apply(Builder $builder, Model $model): void
     {
-        $currentlyInitializedSchool = GetSchoolModel()->id;
+        try {
+            $school = GetSchoolModel();
+            if (!$school) {
+                Log::warning('No active school found for ParentModelScope.');
+                return;
+            }
 
-        if (! $currentlyInitializedSchool ) {
-            return;
+            $relationship = method_exists($model, 'getRelationshipToPrimaryModel')
+                ? $model->getRelationshipToPrimaryModel()
+                : null;
+
+            if (!$relationship || !method_exists($model, $relationship)) {
+                throw new \Exception("Invalid or undefined relationship to primary model in " . get_class($model));
+            }
+
+            $builder->whereHas($relationship, function (Builder $query) use ($school) {
+                $query->where('id', $school->id);
+            });
+        } catch (\Exception $e) {
+            Log::error('Failed to apply ParentModelScope: ' . $e->getMessage());
+            throw $e;
         }
-
-        $builder->whereHas($builder->getModel()->getRelationshipToPrimaryModel());
     }
 
-    public function extend(Builder $builder)
+    /**
+     * Extend the query builder with additional macros.
+     *
+     * Adds a `withoutParentModel` macro to disable this scope.
+     *
+     * @param Builder $builder The query builder instance.
+     * @return void
+     */
+    public function extend(Builder $builder): void
     {
         $builder->macro('withoutParentModel', function (Builder $builder) {
-            return $builder->withoutGlobalScope($this::class);
+            return $builder->withoutGlobalScope(static::class);
         });
     }
 }

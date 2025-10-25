@@ -12,15 +12,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('fee_types', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('description')->nullable();
-            $table->string('color')->nullable();
-            $table->uuid('school_id')->nullable()->index();
-            $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
-            $table->json('options')->nullable();
+            $table->id()->comment('Primary key for the fee type');
+            $table->foreignId('school_id')->constrained('schools')->onDelete('cascade')->comment('The school associated with this fee type');
+            $table->string('name')->comment('Name of the fee type (e.g., Tuition, Sports)');
+            $table->string('description')->nullable()->comment('Optional description of the fee type');
+            $table->string('color')->nullable()->comment('Color code for UI display (e.g., #FF0000)');
+            $table->json('options')->nullable()->comment('Additional configuration options for the fee type');
             $table->timestamps();
-            $table->softDeletes();
+            $table->softDeletes()->comment('Soft delete column for recoverable deletion');
+            $table->index(['school_id', 'name'])->comment('Index for efficient querying by school and name');
         });
     }
 

@@ -13,18 +13,18 @@ return new class extends Migration
     {
         Schema::create('terms', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
-            $table->foreignId('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete()->index();
+            $table->string('name')->index();
+            $table->text('description')->nullable();
             $table->date('start_date')->nullable();
             $table->date('end_date')->nullable();
-            $table->text('description')->nullable();
+            $table->enum('status', ['active', 'pending', 'inactive'])->default('pending');
             $table->string('color')->nullable();
-            $table->boolean('status')->default(0);
             $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();
-
-            $table->unique(['name', 'academic_session_id']);
+            $table->unique(['school_id', 'academic_session_id', 'name'], 'terms_unique');
         });
     }
 

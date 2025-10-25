@@ -5,118 +5,156 @@ namespace App\Http\Controllers\Settings\School\Email;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Inertia\Response;
 use Spatie\MailTemplates\Models\MailTemplate;
-// TODO add authorization policies to check for permission and roles
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Controller for managing email template settings for schools.
+ */
 class TemplateController extends Controller
 {
     /**
-     * Display a listing of the Mail Templates.
-     * there are mails with school_id, that is a customised version for that school,
-     * so we have to group the mails by the mailable column to get distinct mails
-     * and then we have to check if there is a customised version for the school
-     * if there is, we have to show that, if not, we have to show the default one
+     * Display a listing of the mail templates.
      *
-     * @return Response
+     * @param Request $request
+     * @return \Inertia\Response
+     *
+     * @throws \Exception If template retrieval fails.
      */
-    public function index(): Response
+    public function index()
     {
-        $schoolId = GetSchoolModel()?->id;
-        $mailTemplates = MailTemplate::whereIn('school_id', [$schoolId, null])
-            ->orderBy('school_id')
-            ->get()
-            ->groupBy('mailable');
+        try {
+            $schoolId = GetSchoolModel()?->id;
+            $mailTemplates = MailTemplate::whereIn('school_id', [$schoolId, null])
+                ->orderBy('school_id', 'desc') // Prioritize school-specific templates
+                ->get()
+                ->groupBy('mailable');
 
-        return Inertia::render('Settings/System/EmailTemplate', ['mailTemplates' => $mailTemplates]);
+            return Inertia::render('Settings/System/EmailTemplate', ['mailTemplates' => $mailTemplates]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch mail templates: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Failed to load mail templates.');
+        }
     }
 
     /**
-     * Store a newly created Mail Template in storage.
+     * Store a newly created mail template in storage.
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param Request $request
      * @return \Illuminate\Http\JsonResponse
+     *
+     * @throws \Illuminate\Validation\ValidationException If validation fails.
+     * @throws \Exception If template save fails.
      */
     public function store(Request $request)
     {
-        //fetch the mail template from the request input
-        $validated = $request->validate([
-            'mailable' => 'required|string',
-            'subject' => 'required|string',
-            'body' => 'required|string',
-        ]);
+        try {
+            $this->authorize('manage-email-templates'); // Add authorization check
 
-        //check if the mail template is customised for the school and create if not
-        $schoolId = GetSchoolModel()?->id;
-        $mailTemplateModel = MailTemplate::firstOrCreate(
-            [
-                'mailable' => $validated['mailable'],
-                'school_id' => $schoolId,
-            ],
-            [
-                'subject' => $validated['subject'],
-                'body' => $validated['body'],
-            ]
-        );
+            $validated = $request->validate([
+                'mailable' => 'required|string',
+                'subject' => 'required|string',
+                'body' => 'required|string',
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'data' => ['mailTemplate' => $mailTemplateModel],
-            'message' => 'Mail template saved successfully'
-        ]);
+            $schoolId = GetSchoolModel()?->id;
+            $mailTemplateModel = MailTemplate::firstOrCreate(
+                [
+                    'mailable' => $validated['mailable'],
+                    'school_id' => $schoolId,
+                ],
+                [
+                    'subject' => $validated['subject'],
+                    'body' => $validated['body'],
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'data' => ['mailTemplate' => $mailTemplateModel],
+                'message' => 'Mail template saved successfully',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['success' => false, 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            Log::error('Failed to save mail template: ' . $e->getMessage());
+            return response()->json(['success' => false, 'error' => 'Failed to save mail template'], 500);
+        }
     }
 
     /**
-     * Display the specified resource.
-     * this method receives the mailable name and returns the mail template for that mail
-     * if there is a customised version for the school, it returns that, if not, it returns the default one
+     * Display the specified mail template.
      *
-     * @param  MailTemplate $mailTemplate
+     * @param Request $request
      * @return \Illuminate\Http\JsonResponse
+     *
+     * @throws \Illuminate\Validation\ValidationException If validation fails.
+     * @throws \Exception If template retrieval fails.
      */
-    public function show()
+    public function show(Request $request)
     {
-        //fetch the mail template from the request input
-        $validated = request()->validate([
-            'mailable' => 'required|string',
-        ]);
+        try {
+            $this->authorize('manage-email-templates'); // Add authorization check
 
-        //check if the mail template is customised for the school and return that if it is
-        $schoolId = GetSchoolModel()?->id;
-        $mailTemplateModel = MailTemplate::where('mailable', $validated['mailable'])
-            ->where('school_id', $schoolId)
-            ->orWhereNull('school_id')
-            ->orderBy('school_id')
-            ->first();
+            $validated = $request->validate([
+                'mailable' => 'required|string',
+            ]);
 
-        $mergeTags = $mailTemplateModel?->getVariables();
-        
+            $schoolId = GetSchoolModel()?->id;
+            $mailTemplateModel = MailTemplate::where('mailable', $validated['mailable'])
+                ->whereIn('school_id', [$schoolId, null])
+                ->orderBy('school_id', 'desc')
+                ->first();
 
-        return response()->json([
-            'success' => true,
-            'data' => ['mailTemplate' => $mailTemplateModel, 'mergeTags'=>$mergeTags],
-            'message' => 'Mail template fetched successfully'
-        ]);
+            if (!$mailTemplateModel) {
+                return response()->json(['success' => false, 'error' => 'Mail template not found'], 404);
+            }
+
+            $mergeTags = $mailTemplateModel->getVariables();
+
+            return response()->json([
+                'success' => true,
+                'data' => ['mailTemplate' => $mailTemplateModel, 'mergeTags' => $mergeTags],
+                'message' => 'Mail template fetched successfully',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['success' => false, 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch mail template: ' . $e->getMessage());
+            return response()->json(['success' => false, 'error' => 'Failed to fetch mail template'], 500);
+        }
     }
 
     /**
-     * Remove the specified resource from storage.
-     * This method will be used to reset to the default setting
+     * Remove the specified mail template from storage.
+     *
+     * @param MailTemplate $mailTemplate
+     * @return \Illuminate\Http\JsonResponse
+     *
+     * @throws \Exception If template deletion fails.
      */
     public function destroy(MailTemplate $mailTemplate)
     {
-        //check if the mail template is customised for the school and delete that if it is
-        $schoolId = GetSchoolModel()?->id;
-        $mailTemplateModel = MailTemplate::where('mailable', $mailTemplate->mailable)
-            ->where('school_id', $schoolId)
-            ->first();
+        try {
+            $this->authorize('manage-email-templates'); // Add authorization check
 
-        if ($mailTemplateModel) {
-            $mailTemplateModel->delete();
+            $schoolId = GetSchoolModel()?->id;
+            $mailTemplateModel = MailTemplate::where('mailable', $mailTemplate->mailable)
+                ->where('school_id', $schoolId)
+                ->first();
+
+            if ($mailTemplateModel) {
+                $mailTemplateModel->delete();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Mail template deleted successfully',
+                ]);
+            }
+
+            return response()->json(['success' => false, 'error' => 'Mail template not found'], 404);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete mail template: ' . $e->getMessage());
+            return response()->json(['success' => false, 'error' => 'Failed to delete mail template'], 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Mail template deleted successfully'
-        ]);
     }
 }

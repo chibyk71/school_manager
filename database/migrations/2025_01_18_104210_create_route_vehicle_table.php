@@ -3,6 +3,11 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use App\Models\School;
+use App\Models\Transport\Route;
+use App\Models\Transport\RouteVehicle;
+use App\Models\Transport\Vehicle;
+use App\Models\User;
 
 return new class extends Migration
 {
@@ -15,10 +20,11 @@ return new class extends Migration
             $table->id();
             $table->foreignId('route_id')->constrained('routes')->cascadeOnDelete();
             $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
-            $table->string('user_id')->index();
-            $table->foreign('user_id')->references('id')->on('users')->cascadeOnDelete();
+            $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete();
             $table->string('status')->default('active');
             $table->timestamps();
+            $table->softDeletes();
+            $table->index(['route_id', 'vehicle_id', 'user_id']);
         });
     }
 

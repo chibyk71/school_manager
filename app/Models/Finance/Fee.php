@@ -5,51 +5,164 @@ namespace App\Models\Finance;
 use App\Models\Academic\ClassSection;
 use App\Models\Academic\Term;
 use App\Models\Model;
+use App\Models\School;
+use App\Traits\BelongsToSchool;
+use App\Traits\HasTableQuery;
+use App\Traits\HasTransaction;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
 /**
- * This Model Represent the individual fees to be paid. grouped by fee_type,
- * each school will create a fee structure, with a n amount payable, affected users or group,
- * and a description.
+ * Fee model representing individual fees to be paid, grouped by fee type.
+ * Each fee is associated with a school, term, and optional branch.
  *
- *
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
+ * @property int $id
+ * @property int $school_id
+ * @property int|null $branch_id
+ * @property int $fee_type_id
+ * @property int $term_id
+ * @property int $recorded_by
+ * @property string|null $description
+ * @property float $amount
+ * @property \Carbon\Carbon $due_date
+ * @property \Carbon\Carbon $created_at
+ * @property \Carbon\Carbon $updated_at
+ * @property \Carbon\Carbon|null $deleted_at
  */
 class Fee extends Model
 {
-    /** @use HasFactory<\Database\Factories\Finance\FeeFactory> */
-    use HasFactory;
+    use HasFactory, BelongsToSchool, HasTableQuery, HasTransaction, LogsActivity, SoftDeletes;
 
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<string>
+     */
     protected $fillable = [
-        'term_id',
+        'school_id',
+        'branch_id',
         'fee_type_id',
-        'amount',
+        'term_id',
+        'recorded_by',
         'description',
-        'due_date'
+        'amount',
+        'due_date',
     ];
 
-    protected $cast = [
+    /**
+     * The attributes that should be hidden for arrays and JSON responses.
+     *
+     * @var array<string>
+     */
+    protected $hidden = [
+        'deleted_at',
+        'created_at',
+        'updated_at',
+    ];
+
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
         'amount' => 'decimal:2',
-        'due_date' => 'date'
+        'due_date' => 'date',
     ];
 
-    public function fee_type()
+    /**
+     * Columns used for global search on the model.
+     *
+     * @var array<string>
+     */
+    protected array $globalFilterFields = [
+        'description',
+    ];
+
+    /**
+     * Columns that should never be searchable, sortable, or filterable.
+     *
+     * @var array<string>
+     */
+    protected array $hiddenTableColumns = [
+        'deleted_at',
+        'created_at',
+        'updated_at',
+    ];
+
+    /**
+     * Get the activity log options for the model.
+     *
+     * @return LogOptions
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['amount', 'description', 'due_date', 'fee_type_id', 'term_id'])
+            ->logOnlyDirty()
+            ->useLogName('fee')
+            ->setDescriptionForEvent(fn(string $eventName) => "Fee {$eventName} for school ID {$this->school_id}");
+    }
+
+    /**
+     * Get the fee type associated with this fee.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function feeType()
     {
         return $this->belongsTo(FeeType::class);
     }
 
+    /**
+     * Get the term associated with this fee.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
     public function term()
     {
         return $this->belongsTo(Term::class);
     }
 
-     /**
-     * The classSections that belong to the FeeType
+    /**
+     * Get the class sections associated with this fee.
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
     public function classSections()
     {
         return $this->belongsToMany(ClassSection::class, 'fee_class_section', 'fee_id', 'class_section_id');
+    }
+
+    /**
+     * Get the transaction type for fees.
+     *
+     * @return string
+     */
+    public function getTransactionType(): string
+    {
+        return 'income';
+    }
+
+    /**
+     * Get the category for the transaction.
+     *
+     * @return string
+     */
+    public function getCategory(): string
+    {
+        return $this->feeType->name ?? 'fee';
+    }
+
+    /**
+     * Get the amount for the transaction.
+     *
+     * @return float
+     */
+    public function getAmount(): float
+    {
+        return $this->amount;
     }
 }

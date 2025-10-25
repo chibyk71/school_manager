@@ -6,16 +6,25 @@ use App\Models\Academic\ClassLevel;
 use App\Models\Academic\Student;
 use App\Models\Employee\Staff;
 use App\Traits\BelongsToSchool;
+use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
-
-//? this model could also be used as the team model
-
+/**
+ * Model representing a school section (e.g., primary, secondary).
+ */
 class SchoolSection extends Model
 {
     /** @use HasFactory<\Database\Factories\SchoolSectionFactory> */
-    use HasFactory, BelongsToSchool;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity;
 
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
     protected $fillable = [
         'school_id',
         'name',
@@ -24,21 +33,69 @@ class SchoolSection extends Model
     ];
 
     /**
-     * The staffs that belong to the SchoolSection
+     * The attributes that should be cast.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'school_id' => 'string',
+    ];
+
+/**
+     * The attributes used for global filtering.
+     *
+     * @var array<string>
+     */
+    protected array $globalFilterFields = ['name', 'description'];
+
+    /**
+     * The attributes hidden from table queries.
+     *
+     * @var array<string>
+     */
+    protected array $hiddenTableColumns = ['school_id', 'created_at', 'updated_at'];
+
+    /**
+     * Get the activity log options for the model.
+     *
+     * @return LogOptions
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logAll()
+            ->logExcept(['updated_at'])
+            ->logOnlyDirty()
+            ->useLogName('school_section');
+    }
+
+    /**
+     * The staff members associated with the school section.
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
     public function staffs()
     {
-        return $this->belongsToMany(Staff::class, 'staff_school_setion _pivot');
+        return $this->belongsToMany(Staff::class, 'staff_school_section_pivot');
     }
 
+    /**
+     * The class levels belonging to the school section.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
     public function classLevels()
     {
         return $this->hasMany(ClassLevel::class);
     }
 
-    public function students() {
+    /**
+     * The students associated with the school section through class levels.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasManyThrough
+     */
+    public function students()
+    {
         return $this->hasManyThrough(Student::class, ClassLevel::class);
     }
 }

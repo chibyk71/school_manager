@@ -1,31 +1,85 @@
 <?php
 
-namespace App\Http\Controllers\Settings\System;
+namespace App\Http\Controllers\Settings\School;
 
 use App\Http\Controllers\Controller;
+use App\Models\School;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Log;
 
+/**
+ * Controller for managing OTP settings in a single-tenant school system.
+ */
 class OtpController extends Controller
 {
+    /**
+     * Display the OTP settings.
+     *
+     * Retrieves OTP settings for the active school and renders the view.
+     *
+     * @return \Inertia\Response The Inertia response with settings data.
+     *
+     * @throws \Exception If settings retrieval fails or no active school is found.
+     */
     public function index()
     {
-        $setting = getMergedSettings('opt', GetSchoolModel());
+        try {
+            permitted('manage-settings');
 
-        return Inertia::render('Settings/System/OTP', compact('setting'));
+            $school = GetSchoolModel();
+            if (!$school) {
+                abort(403, 'No active school found.');
+            }
+
+            $setting = getMergedSettings('otp', $school);
+
+            return Inertia::render('Settings/School/OTP', [
+                'setting' => $setting,
+            ], 'resources/js/Pages/Settings/School/OTP.vue');
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch OTP settings: ' . $e->getMessage());
+            return redirect()->route('dashboard')->with('error', 'Failed to load OTP settings.');
+        }
     }
 
+    /**
+     * Store or update OTP settings.
+     *
+     * Validates and saves OTP settings for the active school.
+     *
+     * @param Request $request The incoming HTTP request.
+     * @return \Illuminate\Http\RedirectResponse Redirects on success.
+     *
+     * @throws \Illuminate\Validation\ValidationException If validation fails.
+     * @throws \Exception If settings storage fails.
+     */
     public function store(Request $request)
     {
-        // Save OTP settings
-        $validated = $request->validate([
-            'otp_type' => 'required|string',
-            'limit' => 'required|number|max:10|min:4',
-            "eol" => 'required|numbermax:60|min:1'
-        ]);
+        try {
+            permitted('manage-settings');
 
-        GetSchoolModel()->setSetting('otp',$validated);
+            $school = GetSchoolModel();
+            if (!$school) {
+                abort(403, 'No active school found.');
+            }
 
-        return back()->with('success', "OTP settings updated successfully.");
+            $validated = $request->validate([
+                'otp_type' => 'required|string|in:email,sms',
+                'limit' => 'required|numeric|min:4|max:10',
+                'eol' => 'required|numeric|min:1|max:60',
+            ]);
+
+            SaveOrUpdateSchoolSettings('otp', $validated, $school);
+
+            return redirect()
+                ->route('settings.otp.index')
+                ->with('success', 'OTP settings updated successfully.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return redirect()->back()->withErrors($e->errors())->withInput();
+        } catch (\Exception $e) {
+            Log::error('Failed to save OTP settings: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Failed to save OTP settings: ' . $e->getMessage());
+        }
     }
 }

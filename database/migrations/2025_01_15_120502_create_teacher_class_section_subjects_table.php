@@ -13,11 +13,15 @@ return new class extends Migration
     {
         Schema::create('teacher_class_section_subjects', function (Blueprint $table) {
             $table->id();
-            $table->string('teacher_id')->index();
-            $table->foreign('teacher_id')->references('id')->on('staff')->cascadeOnDelete()->cascadeOnUpdate();
-            $table->foreignId('class_section_id')->constrained('class_sections')->cascadeOnDelete();
-            $table->foreignUuid('subject_id')->nullable()->constrained('subjects')->cascadeOnDelete();
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('teacher_id')->constrained('staff')->cascadeOnDelete()->index();
+            $table->foreignId('class_section_id')->constrained('class_sections')->cascadeOnDelete()->index();
+            $table->uuid('subject_id')->index();
+            $table->string('role')->nullable();
             $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['teacher_id', 'class_section_id', 'subject_id'], 'teacher_class_section_subject_unique');
+            $table->foreign('subject_id')->references('id')->on('subjects')->cascadeOnDelete();
         });
     }
 

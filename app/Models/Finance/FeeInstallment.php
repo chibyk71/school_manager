@@ -3,47 +3,108 @@
 namespace App\Models\Finance;
 
 use App\Models\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Spatie\Activitylog\LogOptions;
+use App\Traits\BelongsToSchool;
+use App\Traits\HasTableQuery;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
 /**
- * This Model is used to create payment plans for fees, its sytores installment settings for a fee.
- * payments will be tracked using the payment model.
+ * FeeInstallment model for creating payment plans for fees, storing installment settings for a fee.
+ *
  * @property int $id
+ * @property int $school_id
  * @property int $fee_id
  * @property int $no_of_installment
+ * @property float|null $initial_amount_payable
  * @property \Carbon\Carbon $due_date
- * @property float $initial_amount_payable
- * @property array $options
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
+ * @property array|null $options
+ * @property \Illuminate\Support\Carbon $created_at
+ * @property \Illuminate\Support\Carbon $updated_at
+ * @property \Illuminate\Support\Carbon|null $deleted_at
  */
 class FeeInstallment extends Model
 {
     /** @use HasFactory<\Database\Factories\Finance\FeeInstallmentFactory> */
-    use HasFactory, LogsActivity;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes;
 
-    public function  getActivityLogOptions()
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<string>
+     */
+    protected $fillable = [
+        'school_id',
+        'fee_id',
+        'no_of_installment',
+        'initial_amount_payable',
+        'due_date',
+        'options',
+    ];
+
+    /**
+     * The attributes that should be hidden for arrays and JSON responses.
+     *
+     * @var array<string>
+     */
+    protected $hidden = [
+        'deleted_at',
+        'created_at',
+        'updated_at',
+    ];
+
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'initial_amount_payable' => 'decimal:2',
+        'due_date' => 'date',
+        'options' => 'array',
+    ];
+
+    /**
+     * Columns used for global search on the model.
+     *
+     * @var array<string>
+     */
+    protected array $globalFilterFields = [
+        'no_of_installment',
+    ];
+
+    /**
+     * Columns that should never be searchable, sortable, or filterable.
+     *
+     * @var array<string>
+     */
+    protected array $hiddenTableColumns = [
+        'deleted_at',
+        'created_at',
+        'updated_at',
+        'options',
+    ];
+
+    /**
+     * Get the activity log options for the model.
+     *
+     * @return LogOptions
+     */
+    public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-        ->LogOnlyDirty()
-        ->useLogName('Fee Installment')
-        ->logExcept(['updated_at']);
+            ->useLogName('fee_installment')
+            ->logOnly(['fee_id', 'no_of_installment', 'initial_amount_payable', 'due_date', 'school_id'])
+            ->logOnlyDirty()
+            ->setDescriptionForEvent(fn(string $eventName) => "Fee installment {$eventName} for school ID {$this->school_id}");
     }
 
-    protected $fillable = [
-        'fee_id', // fee that has instalment enanbled
-        'no_of_installment', // numbet of times that installments can be paid, ammount payable for each installment is calculated by dividing the total fee amount by this number
-        'due_date', // the date by which the installment is to be paid
-        'initial_amount_payable', // The first amount to be paid before installment starts
-        'options'
-    ];
-
-    protected $casts = [
-        'options' => 'array',
-        'due_date' => 'date'
-    ];
-
+    /**
+     * Get the fee associated with this installment.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
     public function fee()
     {
         return $this->belongsTo(Fee::class);

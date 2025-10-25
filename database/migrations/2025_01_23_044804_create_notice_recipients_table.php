@@ -13,10 +13,12 @@ return new class extends Migration
     {
         Schema::create('notice_recipients', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('notice_id')->constrained('notices')->onDelete('cascade');
-            $table->foreignUuid('user_id')->references('id')->on('users')->onDelete('cascade');
+            $table->foreignId('notice_id')->constrained('notices')->cascadeOnDelete();
+            $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete();
             $table->boolean('is_read')->default(false);
             $table->timestamps();
+            $table->softDeletes();
+            $table->index(['notice_id', 'user_id']);
         });
     }
 

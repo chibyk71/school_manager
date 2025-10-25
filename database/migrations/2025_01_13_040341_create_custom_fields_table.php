@@ -6,11 +6,14 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up()
     {
         Schema::create('custom_fields', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            $table->string('name')->index();
             $table->string('label')->nullable();
             $table->string('placeholder')->nullable();
             $table->json('rules')->nullable();
@@ -20,21 +23,35 @@ return new class extends Migration
             $table->text('default_value')->nullable();
             $table->text('description')->nullable();
             $table->string('hint')->nullable();
-            $table->integer('sort')->default(0);
-            $table->string('category')->nullable();
+            $table->integer('sort')->default(0)->index();
+            $table->string('category')->nullable()->index();
             $table->json('extra_attributes')->nullable();
             $table->json('field_options')->nullable();
             $table->string('cast_as')->nullable();
-            $table->boolean('has_options')->default(0);
-            $table->string('model_type');
-            $table->foreignUuid('school_id')->references('schools')->cascadeOnDelete()->cascadeOnUpdate()->index()->nullable();
+            $table->boolean('has_options')->default(false);
+            $table->string('model_type')->index();
+            $table->foreignUuid('school_id')->nullable()->constrained('schools')->cascadeOnDelete()->cascadeOnUpdate()->index();
             $table->timestamps();
-            $table->unique(['name', 'model_type', 'school_id'], 'custom_fields_unique_name_model_type_school_id');
+            $table->softDeletes();
+            $table->unique(['name', 'model_type', 'school_id'], 'custom_fields_unique');
+        });
+
+        Schema::create('custom_field_responses', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('custom_field_id')->constrained('custom_fields')->cascadeOnDelete();
+            $table->morphs('model');
+            $table->text('value')->nullable();
+            $table->timestamps();
+            $table->index(['model_type', 'model_id']);
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down()
     {
+        Schema::dropIfExists('custom_field_responses');
         Schema::dropIfExists('custom_fields');
     }
 };

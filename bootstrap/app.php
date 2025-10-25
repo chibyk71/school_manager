@@ -16,6 +16,10 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
+        $middleware->alias([
+            'school' => \App\Http\Middleware\SetSchoolContext::class,
+        ]);
+
         //
     })
     ->withExceptions(function (Exceptions $exceptions) {

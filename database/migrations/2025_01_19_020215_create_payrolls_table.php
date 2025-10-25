@@ -13,10 +13,9 @@ return new class extends Migration
     {
         Schema::create('payrolls', function (Blueprint $table) {
             $table->id();
-            $table->foreignUuid('staff_id')->references('id')->on('staff')->onDelete('cascade');
-            $table->uuid('school_id')->index();
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
-            $table->foreignId('salary_id')->constrained('salaries')->onDelete('cascade');
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete()->index();
+            $table->foreignId('salary_id')->constrained('salaries')->cascadeOnDelete()->index();
             $table->decimal('bonus', 15, 2)->nullable();
             $table->decimal('deduction', 15, 2)->nullable();
             $table->decimal('net_salary', 15, 2);
@@ -24,6 +23,8 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->enum('status', ['paid', 'unpaid'])->default('unpaid');
             $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['school_id', 'user_id', 'salary_id', 'payment_date'], 'payrolls_unique');
         });
     }
 

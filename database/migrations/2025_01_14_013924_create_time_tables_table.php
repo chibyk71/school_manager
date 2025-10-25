@@ -3,7 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use PHPUnit\Framework\Constraint\Constraint;
 
 return new class extends Migration
 {
@@ -14,13 +13,15 @@ return new class extends Migration
     {
         Schema::create('time_tables', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('title');
-            $table->foreignId('term_id')->constrained()->cascadeOnDelete();
-            $table->boolean('status')->default(true);
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('term_id')->constrained('terms')->cascadeOnDelete()->index();
+            $table->string('title')->index();
             $table->dateTime('effective_date');
+            $table->enum('status', ['active', 'draft', 'inactive'])->default('draft');
             $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();
+            $table->unique(['school_id', 'term_id', 'title'], 'time_tables_unique');
         });
     }
 

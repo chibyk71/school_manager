@@ -13,14 +13,16 @@ return new class extends Migration
     {
         Schema::create('subjects', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('name');
-            $table->string('code');
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->string('name')->index();
+            $table->string('code')->index();
             $table->string('description')->nullable();
-            $table->string('credit')->nullable();
+            $table->decimal('credit', 5, 2)->nullable();
             $table->boolean('is_elective')->default(false);
             $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();
+            $table->unique(['school_id', 'code'], 'subjects_unique');
         });
     }
 
