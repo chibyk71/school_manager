@@ -4,15 +4,31 @@ namespace App\Models\Academic;
 
 use App\Models\School;
 use App\Traits\BelongsToSchool;
+use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use App\Models\Model;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
+/**
+ * Class AcademicSession
+ *
+ * Represents an academic session for a school, such as a school year or semester.
+ * Supports multi-tenancy by associating with a specific school via the BelongsToSchool trait.
+ *
+ * @package App\Models\Academic
+ */
 class AcademicSession extends Model
 {
     /** @use HasFactory<\Database\Factories\AcademicSessionFactory> */
-    use HasFactory, BelongsToSchool  /** TODO:SoftDeletes*/;
+    use HasFactory, BelongsToSchool, SoftDeletes, HasTableQuery, LogsActivity;
 
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<string>
+     */
     protected $fillable = [
         'name',
         'start_date',
@@ -21,17 +37,43 @@ class AcademicSession extends Model
         'school_id',
     ];
 
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
     protected $casts = [
         'is_current' => 'boolean',
         'start_date' => 'date',
         'end_date' => 'date',
     ];
 
-    public function terms() {
-        return $this->hasMany(Term::class);
+    /**
+     * Get the terms associated with this academic session.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function terms()
+    {
+        return $this->hasMany(Term::class, 'academic_session_id', 'id');
     }
 
-    public function currentSession () {
-        return $this->first()->where('is_current', true);
+    /**
+     * Get the current academic session for the active school.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeCurrentSession($query)
+    {
+        return $query->where('is_current', true);
+    }
+
+     public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->useLogName('academic_session')
+            ->logAll()
+            ->logExcept(['updated_at'])
+            ->logOnlyDirty();
     }
 }
