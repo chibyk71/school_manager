@@ -8,6 +8,8 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * @return void
      */
     public function up(): void
     {
@@ -15,20 +17,26 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->uuid('school_id')->index()->nullable();
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
-            $table->foreignId('term_id')->constrained()->nullable()->cascadeOnDelete();
+            $table->foreignId('term_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('assessment_type_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->integer('weight');
             $table->integer('max_score');
-            $table->date('date_effective');
-            $table->date('date_due');
-            $table->timestamp('date_published');
+            $table->date('date_effective')->index();
+            $table->date('date_due')->index();
+            $table->timestamp('published_at')->nullable()->index();
             $table->text('instruction')->nullable();
             $table->timestamps();
+
+            // Composite index for common queries
+            $table->index(['school_id', 'term_id', 'date_effective']);
         });
     }
 
     /**
      * Reverse the migrations.
+     *
+     * @return void
      */
     public function down(): void
     {
