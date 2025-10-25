@@ -13,13 +13,15 @@ return new class extends Migration
     {
         Schema::create('class_sections', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('class_level_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('class_level_id')->constrained('class_levels')->cascadeOnDelete()->index();
             $table->string('name')->index();
             $table->string('room')->nullable()->unique();
             $table->integer('capacity')->default(0);
             $table->enum('status', ['active', 'inactive'])->default('active');
-            $table->unique(['class_level_id', 'name']);
+            $table->softDeletes();
             $table->timestamps();
+            $table->unique(['school_id', 'class_level_id', 'name'], 'class_sections_unique');
         });
     }
 
