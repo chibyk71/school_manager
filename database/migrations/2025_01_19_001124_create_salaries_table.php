@@ -13,11 +13,14 @@ return new class extends Migration
     {
         Schema::create('salaries', function (Blueprint $table) {
             $table->id();
-            $table->string('school_id')->nullable();
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
-            $table->foreignId('department_role_id')->nullable()->constrained('department_roles')->onDelete('cascade');
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('department_role_id')->constrained('department_roles')->cascadeOnDelete()->index();
+            $table->decimal('base_salary', 15, 2);
+            $table->date('effective_date');
+            $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();
+            $table->unique(['school_id', 'department_role_id', 'effective_date'], 'salaries_unique');
         });
     }
 

@@ -13,15 +13,17 @@ return new class extends Migration
     {
         Schema::create('salary_structures', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('salary_id')->constrained('salaries')->cascadeOnDelete();
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('salary_id')->constrained('salaries')->cascadeOnDelete()->index();
+            $table->foreignId('department_role_id')->constrained('department_roles')->cascadeOnDelete()->index();
             $table->decimal('amount', 15, 2);
-            $table->string('name');
-            $table->foreignUuid('school_id')->nullable()->refrences('id')->on('schools')->cascadeOnDelete();
             $table->string('currency')->default('NGN');
-            $table->timestamp('effective_date')->nullable();
+            $table->date('effective_date')->nullable();
+            $table->string('name');
             $table->text('description')->nullable();
             $table->timestamps();
             $table->softDeletes();
+            $table->unique(['school_id', 'salary_id', 'department_role_id', 'name', 'effective_date'], 'salary_structures_unique');
         });
     }
 
