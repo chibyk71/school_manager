@@ -13,13 +13,23 @@ return new class extends Migration
     {
         Schema::create('departments', function (Blueprint $table) {
             $table->id();
-            $table->string('name')->unique();
-            $table->string('description')->nullable();
-            $table->string('school_id')->nullable()->index();
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
-            $table->timestamp('effective_date')->nullable();
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->string('name');
+            $table->string('category')->nullable();
+            $table->text('description')->nullable();
+            $table->date('effective_date')->nullable();
             $table->timestamps();
             $table->softDeletes();
+            $table->unique(['school_id', 'name'], 'departments_school_name_unique');
+        });
+
+        Schema::create('department_user', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('department_id')->constrained('departments')->cascadeOnDelete()->index();
+            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete()->index();
+            $table->timestamps();
+            $table->unique(['department_id', 'user_id'], 'department_user_unique');
         });
     }
 
@@ -28,6 +38,7 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::dropIfExists('department_user');
         Schema::dropIfExists('departments');
     }
 };

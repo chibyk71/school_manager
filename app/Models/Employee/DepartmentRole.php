@@ -3,36 +3,150 @@
 namespace App\Models\Employee;
 
 use App\Models\Model;
+use App\Models\School;
 use App\Models\SchoolSection;
+use App\Traits\BelongsToSchool;
+use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
+/**
+ * DepartmentRole model representing a pivot between Department, Role, and optionally SchoolSection.
+ *
+ * @property int $id
+ * @property string $school_id
+ * @property int $department_id
+ * @property string $role_id
+ * @property int|null $school_section_id
+ * @property string $name
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property \Illuminate\Support\Carbon|null $deleted_at
+ */
 class DepartmentRole extends Model
 {
-    /** @use HasFactory<\Database\Factories\Employee\DepartmentRoleFactory> */
-    use HasFactory, LogsActivity, SoftDeletes;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery;
 
+    /**
+     * The table associated with the model.
+     *
+     * @var string
+     */
+    protected $table = 'department_role';
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<string>
+     */
     protected $fillable = [
-        'name',
+        'school_id',
         'department_id',
+        'role_id',
         'school_section_id',
+        'name',
     ];
 
-    public function department()
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
+    protected $casts = [
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
+    ];
+
+    /**
+     * Columns that should never be searchable, sortable, or filterable.
+     *
+     * @var array<string>
+     */
+    protected array $hiddenTableColumns = [
+        'school_id',
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
+    /**
+     * Columns used for global search on the model.
+     *
+     * @var array<string>
+     */
+    protected array $globalFilterFields = [
+        'name',
+        'department.name',
+        'role.name',
+        'school_section.name',
+    ];
+
+    /**
+     * Configure activity logging options.
+     *
+     * @return LogOptions
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->useLogName('department_role')
+            ->logFillable()
+            ->logOnlyDirty()
+            ->setDescriptionForEvent(fn(string $eventName) => "Department role '{$this->name}' was {$eventName}");
+    }
+
+    /**
+     * Get the school associated with the department role.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function school(): BelongsTo
+    {
+        return $this->belongsTo(School::class);
+    }
+
+    /**
+     * Get the department associated with the department role.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
     }
 
-    public function schoolSection()
+    /**
+     * Get the role associated with the department role.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function role(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Role::class);
+    }
+
+    /**
+     * Get the school section associated with the department role.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function schoolSection(): BelongsTo
     {
         return $this->belongsTo(SchoolSection::class);
     }
 
-    public function getActivitylogOptions(): \Spatie\Activitylog\LogOptions
+    /**
+     * Get the staff members associated with the department role.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function staff(): HasMany
     {
-        return \Spatie\Activitylog\LogOptions::defaults()
-            ->logOnly(['name', 'department_id', 'school_section_id'])
-            ->useLogName('Department Role');
+        return $this->hasMany(Staff::class, 'department_role_id');
     }
 }

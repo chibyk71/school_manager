@@ -13,10 +13,14 @@ return new class extends Migration
     {
         Schema::create('department_role', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('department_id')->constrained('departments')->cascadeOnDelete();
-            $table->foreignId('role_id')->constrained('roles')->cascadeOnDelete();
-            $table->foreignId('school_section_id')->nullable()->constrained('school_sections')->cascadeOnDelete();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('department_id')->constrained('departments')->cascadeOnDelete()->index();
+            $table->foreignUuid('role_id')->constrained('roles')->cascadeOnDelete()->index();
+            $table->foreignId('school_section_id')->nullable()->constrained('school_sections')->cascadeOnDelete()->index();
+            $table->string('name');
             $table->timestamps();
+            $table->softDeletes();
+            $table->unique(['school_id', 'department_id', 'role_id', 'school_section_id'], 'department_role_unique');
         });
     }
 
