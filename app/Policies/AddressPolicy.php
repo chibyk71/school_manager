@@ -5,7 +5,11 @@ namespace App\Policies;
 use App\Models\Address;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
+use Laratrust\LaratrustFacade;
 
+/**
+ * Policy for Address model authorization.
+ */
 class AddressPolicy
 {
     /**
@@ -13,7 +17,7 @@ class AddressPolicy
      */
     public function viewAny(User $user): bool
     {
-        return false;
+        return LaratrustFacade::hasPermission(['view-address', 'manage-address']);
     }
 
     /**
@@ -21,7 +25,7 @@ class AddressPolicy
      */
     public function view(User $user, Address $address): bool
     {
-        return false;
+        return LaratrustFacade::hasPermission(['view-address', 'manage-address']);
     }
 
     /**
@@ -29,7 +33,7 @@ class AddressPolicy
      */
     public function create(User $user): bool
     {
-        return false;
+        return LaratrustFacade::hasPermission(['create-address', 'manage-address']);
     }
 
     /**
@@ -37,7 +41,7 @@ class AddressPolicy
      */
     public function update(User $user, Address $address): bool
     {
-        return false;
+        return LaratrustFacade::hasPermission(['update-address', 'manage-address']);
     }
 
     /**
@@ -45,22 +49,6 @@ class AddressPolicy
      */
     public function delete(User $user, Address $address): bool
     {
-        return false;
-    }
-
-    /**
-     * Determine whether the user can restore the model.
-     */
-    public function restore(User $user, Address $address): bool
-    {
-        return false;
-    }
-
-    /**
-     * Determine whether the user can permanently delete the model.
-     */
-    public function forceDelete(User $user, Address $address): bool
-    {
-        return false;
+        return LaratrustFacade::hasPermission(['delete-address', 'manage-address']);
     }
 }

@@ -3,7 +3,13 @@
 namespace App\Traits;
 
 use App\Models\Address;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
+/**
+ * Trait for models that can have multiple addresses.
+ */
 trait HasAddress
 {
     /**
@@ -11,7 +17,7 @@ trait HasAddress
      *
      * @return \Illuminate\Database\Eloquent\Relations\MorphMany
      */
-    public function addresses()
+    public function addresses(): MorphMany
     {
         return $this->morphMany(Address::class, 'addressable');
     }
@@ -21,7 +27,7 @@ trait HasAddress
      *
      * @return \App\Models\Address|null
      */
-    public function primaryAddress()
+    public function primaryAddress(): ?Address
     {
         return $this->addresses()->where('is_primary', true)->first();
     }
@@ -29,18 +35,34 @@ trait HasAddress
     /**
      * Add a new address to the model.
      *
-     * @param array $data
-     * @param bool $isPrimary
+     * @param array $data The address data.
+     * @param bool $isPrimary Whether the address is primary.
      * @return \App\Models\Address
+     *
+     * @throws \Illuminate\Validation\ValidationException If validation fails.
      */
-    public function addAddress(array $data, $isPrimary = false)
+    public function addAddress(array $data, bool $isPrimary = false): Address
     {
+        $validator = Validator::make($data, [
+            'address' => 'required|string|max:255',
+            'city' => 'required|string|max:255',
+            'state' => 'required|string|max:255',
+            'postal_code' => 'nullable|string|max:20',
+            'country_id' => 'required|exists:countries,id',
+        ]);
+
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+
         if ($isPrimary) {
-            // Unset the current primary address
             $this->unsetPrimaryAddress();
         }
 
-        return $this->addresses()->create(array_merge($data, ['is_primary' => $isPrimary]));
+        return $this->addresses()->create(array_merge($data, [
+            'is_primary' => $isPrimary,
+            'school_id' => $this->school_id ?? GetSchoolModel()?->id,
+        ]));
     }
 
     /**
@@ -48,7 +70,7 @@ trait HasAddress
      *
      * @return void
      */
-    public function unsetPrimaryAddress()
+    public function unsetPrimaryAddress(): void
     {
         $this->addresses()->where('is_primary', true)->update(['is_primary' => false]);
     }
@@ -64,12 +86,32 @@ trait HasAddress
     }
 
     /**
-     * Delete all addresses for the model.
+     * Delete all addresses for the model (soft delete).
      *
      * @return void
      */
-    public function deleteAllAddresses()
+    public function deleteAllAddresses(): void
     {
         $this->addresses()->delete();
+    }
+
+    /**
+     * Restore all soft-deleted addresses for the model.
+     *
+     * @return void
+     */
+    public function restoreAllAddresses(): void
+    {
+        $this->addresses()->withTrashed()->restore();
+    }
+
+    /**
+     * Permanently delete all addresses for the model.
+     *
+     * @return void
+     */
+    public function forceDeleteAllAddresses(): void
+    {
+        $this->addresses()->withTrashed()->forceDelete();
     }
 }
