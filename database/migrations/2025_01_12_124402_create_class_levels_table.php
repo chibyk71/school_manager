@@ -13,12 +13,14 @@ return new class extends Migration
     {
         Schema::create('class_levels', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_section_id')->constrained()->cascadeOnDelete();
-            $table->string('name')->unique()->index();
+            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignId('school_section_id')->constrained('school_sections')->cascadeOnDelete()->index();
+            $table->string('name')->index();
             $table->string('display_name')->nullable();
-            $table->string('description')->nullable();
-            $table->unique(['school_section_id', 'name','display_name']);
+            $table->text('description')->nullable();
+            $table->softDeletes(); // Added for soft deletion
             $table->timestamps();
+            $table->unique(['school_id', 'school_section_id', 'name'], 'class_levels_unique'); // Unique constraint scoped to school and section
         });
     }
 

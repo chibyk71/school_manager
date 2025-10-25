@@ -5,65 +5,156 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreClassLevelRequest;
 use App\Http\Requests\UpdateClassLevelRequest;
 use App\Models\Academic\ClassLevel;
+use App\Models\SchoolSection;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
+/**
+ * Controller for managing ClassLevel resources.
+ */
 class ClassLevelController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Display a listing of class levels with dynamic querying.
+     *
+     * @param Request $request
+     * @return \Inertia\Response|\Illuminate\Http\JsonResponse
      */
     public function index(Request $request)
     {
-        // return Inertia::render('Academic/ClassLevels'); or json response is json is requested
-        $classLevels = ClassLevel::with('schoolSection:id,name')->get(['id', 'name', 'display_name', 'description', 'school_section_id']);
+        permitted('class-levels.view', $request->wantsJson()); // Check permission
 
+        try {
+            // Define extra fields for table query (e.g., related school section name)
+            $extraFields = [
+                [
+                    'field' => 'school_section_name',
+                    'relation' => 'schoolSection',
+                    'relatedField' => 'name',
+                    'filterable' => true,
+                    'sortable' => true,
+                    'filterType' => 'text',
+                ],
+            ];
 
-        if ($request->wantsJson()) {
-            return response()->json($classLevels);
+            // Apply dynamic table query (search, filter, sort, paginate)
+            $classLevels = ClassLevel::with('schoolSection:id,name')
+                ->tableQuery($request, $extraFields);
+
+            if ($request->wantsJson()) {
+                return response()->json($classLevels);
+            }
+
+            return Inertia::render('Academic/ClassLevels', [
+                'classLevels' => $classLevels,
+                'schoolSections' => SchoolSection::select('id', 'name')->get(), // For dropdowns in UI
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch class levels: ' . $e->getMessage());
+            return $request->wantsJson()
+                ? response()->json(['error' => 'Failed to fetch class levels'], 500)
+                : redirect()->back()->with(['error' => 'Failed to fetch class levels']);
         }
-
-        return Inertia::render('Academic/ClassLevels', [
-            'classLevels' => $classLevels
-        ]);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Store a newly created class level in storage.
+     *
+     * @param StoreClassLevelRequest $request
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
      */
     public function store(StoreClassLevelRequest $request)
     {
-        $validated = $request->validated();
+        permitted('class-levels.create', $request->wantsJson()); // Check permission
 
-        ClassLevel::create($validated);
+        try {
+            $validated = $request->validated();
+            $school = GetSchoolModel();
+            $validated['school_id'] = $school->id; // Ensure school_id is set
+            ClassLevel::create($validated);
 
-        return redirect()->back()->with(['success' => 'Class level created successfully']);
+            return $request->wantsJson()
+                ? response()->json(['message' => 'Class level created successfully'], 201)
+                : redirect()->back()->with(['success' => 'Class level created successfully']);
+        } catch (\Exception $e) {
+            Log::error('Failed to create class level: ' . $e->getMessage());
+            return $request->wantsJson()
+                ? response()->json(['error' => 'Failed to create class level'], 500)
+                : redirect()->back()->with(['error' => 'Failed to create class level']);
+        }
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update the specified class level in storage.
+     *
+     * @param UpdateClassLevelRequest $request
+     * @param ClassLevel $classLevel
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
      */
     public function update(UpdateClassLevelRequest $request, ClassLevel $classLevel)
     {
-        $validated = $request->validated();
+        permitted('class-levels.update', $request->wantsJson()); // Check permission
 
-        $classLevel->update($validated);
+        try {
+            $validated = $request->validated();
+            $classLevel->update($validated);
 
-        return redirect()->back()->with(['success' => 'Class level updated successfully']);
+            return $request->wantsJson()
+                ? response()->json(['message' => 'Class level updated successfully'])
+                : redirect()->back()->with(['success' => 'Class level updated successfully']);
+        } catch (\Exception $e) {
+            Log::error('Failed to update class level: ' . $e->getMessage());
+            return $request->wantsJson()
+                ? response()->json(['error' => 'Failed to update class level'], 500)
+                : redirect()->back()->with(['error' => 'Failed to update class level']);
+        }
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Remove the specified class level(s) from storage.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
      */
     public function destroy(Request $request)
     {
-        if ($request->has('ids')) {
-            // Delete multiple resources
-            $deleted = ClassLevel::whereIn('id', $request->ids)->delete();
+        permitted('class-levels.delete', true); // Check permission (JSON response)
 
-            return response()->json(['message' => 'Class levels deleted successfully']);
+        try {
+            if ($request->has('ids')) {
+                $deleted = ClassLevel::whereIn('id', $request->input('ids'))->delete();
+                return response()->json([
+                    'message' => $deleted ? 'Class levels deleted successfully' : 'No class levels were deleted',
+                ]);
+            }
+
+            return response()->json(['message' => 'No class levels were deleted'], 400);
+        } catch (\Exception $e) {
+            Log::error('Failed to delete class levels: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to delete class levels'], 500);
         }
+    }
 
-        return response()->json(['message' => 'No class levels were deleted']);
+    /**
+     * Restore a soft-deleted class level.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function restore(Request $request, $id)
+    {
+        permitted('class-levels.restore', true); // Check permission (JSON response)
+
+        try {
+            $classLevel = ClassLevel::withTrashed()->findOrFail($id);
+            $classLevel->restore();
+
+            return response()->json(['message' => 'Class level restored successfully']);
+        } catch (\Exception $e) {
+            Log::error('Failed to restore class level: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to restore class level'], 500);
+        }
     }
 }
