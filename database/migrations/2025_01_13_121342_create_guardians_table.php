@@ -13,12 +13,13 @@ return new class extends Migration
     {
         Schema::create('guardians', function (Blueprint $table) {
             $table->id();
-            $table->string('user_id')->index();
+            $table->foreignUuid('user_id')->index()->constrained('users')->cascadeOnDelete();
+            $table->foreignUuid('school_id')->index()->constrained('schools')->cascadeOnDelete();
             $table->timestamps();
             $table->softDeletes();
 
-            // Add foreign key constraint
-             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            // Ensure unique user-school combination
+            $table->unique(['user_id', 'school_id'], 'guardians_user_school_unique');
         });
     }
 
