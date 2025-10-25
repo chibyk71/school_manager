@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class UpdateVehicleDocumentRequest extends FormRequest
+class StoreVehicleExpenseRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -24,11 +24,13 @@ class UpdateVehicleDocumentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title' => 'sometimes|required|string|max:255',
+            'amount' => 'required|numeric|min:0',
+            'liters' => 'nullable|numeric|min:0',
+            'date_of_expense' => 'required|date',
+            'next_due_date' => 'nullable|date|after_or_equal:date_of_expense',
             'description' => 'nullable|string',
-            'date_of_expiry' => 'nullable|date',
             'options' => 'nullable|array',
-            'file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048', // 2MB limit
+            'file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
         ];
     }
 }

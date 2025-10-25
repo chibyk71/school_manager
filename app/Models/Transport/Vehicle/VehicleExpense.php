@@ -2,31 +2,33 @@
 
 namespace App\Models\Transport\Vehicle;
 
+use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Model representing a vehicle document in the school management system.
+ * Model representing a vehicle expense in the school management system.
  *
- * Stores documents related to vehicles, such as insurance or registration.
+ * Tracks expenses related to vehicles, such as fuel or maintenance, with optional media (e.g., receipts).
  *
  * @property int $id Auto-incrementing primary key.
  * @property int $vehicle_id Associated vehicle ID.
- * @property string $title Document title (e.g., Insurance, Registration).
- * @property string|null $description Document description.
- * @property \Illuminate\Support\Carbon|null $date_of_expiry Expiry date of the document.
- * @property array|null $options Additional document options.
+ * @property float $amount Expense amount.
+ * @property float|null $liters Fuel volume in liters (if applicable).
+ * @property \Illuminate\Support\Carbon $date_of_expense Date of the expense.
+ * @property \Illuminate\Support\Carbon|null $next_due_date Next due date for recurring expenses.
+ * @property string|null $description Expense description.
+ * @property array|null $options Additional expense options.
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
  */
-class VehicleDocument extends Model
+class VehicleExpense extends Model
 {
     use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasMedia;
 
@@ -35,7 +37,7 @@ class VehicleDocument extends Model
      *
      * @var string
      */
-    protected $table = 'vehicle_documents';
+    protected $table = 'vehicle_expenses';
 
     /**
      * The attributes that are mass assignable.
@@ -44,9 +46,11 @@ class VehicleDocument extends Model
      */
     protected $fillable = [
         'vehicle_id',
-        'title',
+        'amount',
+        'liters',
+        'date_of_expense',
+        'next_due_date',
         'description',
-        'date_of_expiry',
         'options',
     ];
 
@@ -56,8 +60,11 @@ class VehicleDocument extends Model
      * @var array<string, string>
      */
     protected $casts = [
+        'amount' => 'float',
+        'liters' => 'float',
+        'date_of_expense' => 'datetime',
+        'next_due_date' => 'datetime',
         'options' => 'array',
-        'date_of_expiry' => 'datetime',
     ];
 
     /**
@@ -80,12 +87,11 @@ class VehicleDocument extends Model
      * @var array<string>
      */
     protected array $globalFilterFields = [
-        'title',
         'description',
     ];
 
     /**
-     * Get the vehicle associated with the document.
+     * Get the vehicle associated with the expense.
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
@@ -102,9 +108,13 @@ class VehicleDocument extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->useLogName('vehicle_document')
+            ->useLogName('vehicle_expense')
             ->setDescriptionForEvent(function ($event) {
-                return "Vehicle document {$event}: {$this->title} for Vehicle ID {$this->vehicle_id}";
+                $description = "Vehicle expense {$event}: {$this->amount} for Vehicle ID {$this->vehicle_id}";
+                if ($event === 'created' && $this->hasMedia('VehicleExpenses')) {
+                    $description .= ' with attached media';
+                }
+                return $description;
             })
             ->logFillable()
             ->logOnlyDirty()

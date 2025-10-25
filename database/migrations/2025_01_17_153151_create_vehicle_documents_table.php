@@ -3,6 +3,9 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use App\Models\School;
+use App\Models\Transport\Vehicle\Vehicle;
+use App\Models\Transport\Vehicle\VehicleDocument;
 
 return new class extends Migration
 {
@@ -13,7 +16,14 @@ return new class extends Migration
     {
         Schema::create('vehicle_documents', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->date('date_of_expiry')->nullable();
+            $table->json('options')->nullable();
             $table->timestamps();
+            $table->softDeletes();
+            $table->index('vehicle_id');
         });
     }
 
