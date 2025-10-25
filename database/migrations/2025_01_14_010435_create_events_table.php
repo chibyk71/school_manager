@@ -4,8 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -13,18 +12,22 @@ return new class extends Migration
     {
         Schema::create('events', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
-            $table->foreignId('term_id')->constrained('terms')->onDelete('cascade');
-            $table->string('description')->nullable();
-            $table->dateTime('start_date');
-            $table->dateTime('end_date')->nullable();
-            $table->dateTime('start_time')->nullable();
-            $table->dateTime('end_time')->nullable();
-            $table->foreignId('event_type_id')->constrained('event_types')->onDelete('cascade');
+            $table->foreignUuid('school_id')->nullable()->constrained('schools')->cascadeOnDelete();
+            $table->foreignId('event_type_id')->constrained('event_types')->cascadeOnDelete();
+            $table->foreignId('term_id')->constrained('terms')->cascadeOnDelete();
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->date('start_date');
+            $table->time('start_time')->nullable();
+            $table->date('end_date')->nullable();
+            $table->time('end_time')->nullable();
             $table->string('venue')->nullable();
             $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();
+            $table->index('school_id');
+            $table->index('event_type_id');
+            $table->index('term_id');
         });
     }
 
