@@ -8,17 +8,38 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * Creates the syllabus_details table with school scoping, soft delete support, and approval workflow.
+     *
+     * @return void
      */
     public function up(): void
     {
         Schema::create('syllabus_details', function (Blueprint $table) {
             $table->id();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignId('syllabus_id')->constrained('syllabi')->cascadeOnDelete();
+            $table->unsignedInteger('week');
+            $table->text('objectives')->nullable();
+            $table->string('topic');
+            $table->json('sub_topics')->nullable();
+            $table->text('description')->nullable();
+            $table->json('resources')->nullable();
+            $table->enum('status', ['draft', 'pending_approval', 'published', 'rejected', 'archived'])->default('draft');
             $table->timestamps();
+            $table->softDeletes();
+            $table->index('deleted_at');
+            $table->index('school_id');
+            $table->index('syllabus_id');
         });
     }
 
     /**
      * Reverse the migrations.
+     *
+     * Drops the syllabus_details table.
+     *
+     * @return void
      */
     public function down(): void
     {
