@@ -24,11 +24,11 @@ Route::group(['prefix' => 'settings'], function () {
     Route::get('profile/general', [GeneralController::class, 'index'])->name('profile.setting');
     Route::post('profile/general', [GeneralController::class, 'update'])->name('profile.setting.update');
 
-    Route::get('/school/permission', [PermissionController::class, 'index'])->name('website.sms');
-    Route::post('/school/permission', [PermissionController::class, 'store'])->name('website.sms.post');
+    Route::get('/school/permission', [PermissionController::class, 'index'])->name('settings.permission');
+    Route::post('/school/permission', [PermissionController::class, 'store']);
 
-    Route::get('/school/roles', [RolesController::class, 'index'])->name('website.sms');
-    Route::post('/school/roles', [RolesController::class, 'store'])->name('website.sms.post');
+    Route::get('/school/roles', [RolesController::class, 'index'])->name('settings.roles');
+    Route::post('/school/roles', [RolesController::class, 'store']);
 
     Route::get('/website/localization', [LocalizationController::class, 'index'])->name('website.localization');
     Route::post('/website/localization', [LocalizationController::class, 'store'])->name('website.localization.post');
@@ -46,7 +46,7 @@ Route::group(['prefix' => 'settings'], function () {
     Route::post('/system/email/templates', [TemplateController::class, 'store'])->name('system.email.template.post');
 
     Route::get('/system/sms', [SMSController::class, 'index'])->name('system.sms');
-    Route::post('/system/sms', [SMSController::class, 'store'])->name('system.sms.post');
+    Route::post('/system/sms', [SMSController::class, 'store']);
 
     Route::get('/system/otp', [OtpController::class, 'index'])->name('system.otp');
     Route::post('/system/otp', [OtpController::class, 'store'])->name('system.otp.post');
