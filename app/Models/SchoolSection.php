@@ -7,6 +7,7 @@ use App\Models\Academic\Student;
 use App\Models\Employee\Staff;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
@@ -18,7 +19,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class SchoolSection extends Model
 {
     /** @use HasFactory<\Database\Factories\SchoolSectionFactory> */
-    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, HasUuids;
 
     /**
      * The attributes that are mass assignable.
