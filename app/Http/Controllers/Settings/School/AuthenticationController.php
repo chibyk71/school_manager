@@ -3,13 +3,20 @@
 namespace App\Http\Controllers\Settings\School;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Settings\AuthenticationSettingsRequest;
 use App\Models\School;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Controller for managing authentication settings in a single-tenant school system.
+ * Controller for managing authentication settings in a multi-tenant school system.
+ *
+ * @group Settings
  */
 class AuthenticationController extends Controller
 {
@@ -18,28 +25,37 @@ class AuthenticationController extends Controller
      *
      * Retrieves authentication settings for the active school and renders the view.
      *
-     * @return \Inertia\Response The Inertia response with settings data.
+     * @param Request $request The HTTP request instance.
+     * @return InertiaResponse|JsonResponse
      *
-     * @throws \Exception If settings retrieval fails or no active school is found.
+     * @throws \Exception If no active school is found.
      */
-    public function index()
+    public function index(Request $request): InertiaResponse|JsonResponse
     {
         try {
-            permitted('manage-settings');
+            // Check permission
+            permitted('manage-settings', $request->expectsJson());
 
+            // Get active school
             $school = GetSchoolModel();
             if (!$school) {
-                abort(403, 'No active school found.');
+                throw new \Exception('No active school found.');
             }
 
-            $setting = getMergedSettings('authentication', $school);
+            // Retrieve settings
+            $settings = getMergedSettings('authentication', $school);
+
+            if ($request->expectsJson()) {
+                return response()->json(['settings' => $settings], 200);
+            }
 
             return Inertia::render('Settings/School/Authentication', [
-                'setting' => $setting,
-            ], 'resources/js/Pages/Settings/School/Authentication.vue');
+                'settings' => $settings,
+                'school_id' => $school->id,
+            ]);
         } catch (\Exception $e) {
-            Log::error('Failed to fetch authentication settings: ' . $e->getMessage());
-            return redirect()->route('dashboard')->with('error', 'Failed to load authentication settings.');
+            Log::error("Failed to fetch authentication settings for school: {$e->getMessage()}");
+            return $this->respondWithError($request, 'Failed to load authentication settings.');
         }
     }
 
@@ -48,44 +64,83 @@ class AuthenticationController extends Controller
      *
      * Validates and saves authentication settings for the active school.
      *
-     * @param Request $request The incoming HTTP request.
-     * @return \Illuminate\Http\RedirectResponse Redirects on success.
+     * @param AuthenticationSettingsRequest $request The validated HTTP request.
+     * @return RedirectResponse|JsonResponse
      *
-     * @throws \Illuminate\Validation\ValidationException If validation fails.
-     * @throws \Exception If settings storage fails.
+     * @throws \Exception If settings storage fails or no active school is found.
      */
-    public function store(Request $request)
+    public function store(AuthenticationSettingsRequest $request): RedirectResponse|JsonResponse
     {
         try {
-            permitted('manage-settings');
+            // Check permission
+            permitted('manage-settings', $request->expectsJson());
 
+            // Get active school
             $school = GetSchoolModel();
             if (!$school) {
-                abort(403, 'No active school found.');
+                throw new \Exception('No active school found.');
             }
 
-            $validated = $request->validate([
-                'login_throttle_max' => 'required|integer|min:1',
-                'login_throttle_lock' => 'required|integer|min:1',
-                'reset_password_token_life' => 'required|integer|min:1',
-                'allow_password_reset' => 'required|boolean',
-                'enable_email_verification' => 'required|boolean',
-                'allow_user_registration' => 'required|boolean',
-                'account_approval' => 'required|boolean',
-                'oAuth_registration' => 'required|boolean',
-                'show_terms_on_registration' => 'required|boolean',
-            ]);
+            // Get validated data
+            $validated = $request->validated();
 
+            // Save settings
             SaveOrUpdateSchoolSettings('authentication', $validated, $school);
 
-            return redirect()
-                ->route('settings.authentication.index')
-                ->with('success', 'Authentication settings saved successfully.');
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return redirect()->back()->withErrors($e->errors())->withInput();
+            // Log activity
+            activity()
+                ->performedOn($school)
+                ->causedBy($request->user())
+                ->withProperties(['settings' => $validated])
+                ->log('Authentication settings updated');
+
+            return $this->respondWithSuccess(
+                $request,
+                'Authentication settings saved successfully.',
+                'settings.authentication.index'
+            );
         } catch (\Exception $e) {
-            Log::error('Failed to save authentication settings: ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Failed to save authentication settings: ' . $e->getMessage());
+            Log::error("Failed to save authentication settings for school: {$e->getMessage()}");
+            return $this->respondWithError($request, 'Failed to save authentication settings.');
         }
+    }
+
+    /**
+     * Respond with a success message for web or API requests.
+     *
+     * @param Request $request The HTTP request instance.
+     * @param string $message The success message.
+     * @param string|null $redirectRoute Optional redirect route name.
+     * @return RedirectResponse|JsonResponse
+     */
+    protected function respondWithSuccess(Request $request, string $message, ?string $redirectRoute = null): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['message' => $message], 200);
+        }
+
+        $response = redirect()->back()->with('success', $message);
+        if ($redirectRoute) {
+            $response = redirect()->route($redirectRoute);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Respond with an error message for web or API requests.
+     *
+     * @param Request $request The HTTP request instance.
+     * @param string $message The error message.
+     * @param int $statusCode The HTTP status code.
+     * @return RedirectResponse|JsonResponse
+     */
+    protected function respondWithError(Request $request, string $message, int $statusCode = 400): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['error' => $message], $statusCode);
+        }
+
+        return redirect()->back()->with('error', $message);
     }
 }
