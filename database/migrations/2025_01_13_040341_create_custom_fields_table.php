@@ -30,7 +30,7 @@ return new class extends Migration
             $table->string('cast_as')->nullable();
             $table->boolean('has_options')->default(false);
             $table->string('model_type')->index();
-            $table->foreignUuid('school_id')->nullable()->constrained('schools')->cascadeOnDelete()->cascadeOnUpdate()->index();
+            $table->foreignUuid('school_id')->nullable()->constrained('schools')->cascadeOnDelete()->cascadeOnUpdate();
             $table->timestamps();
             $table->softDeletes();
             $table->unique(['name', 'model_type', 'school_id'], 'custom_fields_unique');
@@ -42,7 +42,6 @@ return new class extends Migration
             $table->morphs('model');
             $table->text('value')->nullable();
             $table->timestamps();
-            $table->index(['model_type', 'model_id']);
         });
     }
 

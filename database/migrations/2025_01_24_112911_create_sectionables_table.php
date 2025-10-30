@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('sectionables', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_section_id')->constrained('school_sections')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_section_id')->constrained('school_sections')->cascadeOnDelete();
             $table->uuidMorphs('sectionable');
             $table->timestamps();
         });

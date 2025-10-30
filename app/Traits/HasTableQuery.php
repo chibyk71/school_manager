@@ -17,19 +17,6 @@ use Illuminate\Support\Facades\Log;
  */
 trait HasTableQuery
 {
-    /**
-     * Columns that should never be searchable, sortable, or filterable (model-level hidden columns).
-     *
-     * @var array<string>
-     */
-    protected array $hiddenTableColumns = [];
-
-    /**
-     * Columns used for global search on the model.
-     *
-     * @var array<string>
-     */
-    protected array $globalFilterFields = [];
 
     /**
      * Get model-defined hidden table columns.
@@ -38,7 +25,7 @@ trait HasTableQuery
      */
     public function getHiddenTableColumns(): array
     {
-        return $this->hiddenTableColumns ?? [];
+        return is_array($this->hiddenTableColumns) ? $this->hiddenTableColumns : [];
     }
 
     /**

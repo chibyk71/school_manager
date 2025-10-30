@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('subjects', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
             $table->string('name')->index();
             $table->string('code')->index();
             $table->string('description')->nullable();

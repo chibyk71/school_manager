@@ -10,6 +10,7 @@ use App\Traits\BelongsToSchool;
 use App\Traits\BelongsToSections;
 use App\Traits\HasCustomFields;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -35,7 +36,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class Staff extends Model
 {
     /** @use HasFactory<\Database\Factories\StaffFactory> */
-    use HasFactory, BelongsToSchool, BelongsToSections, HasCustomFields, HasTableQuery, SoftDeletes, LogsActivity;
+    use HasFactory, BelongsToSchool, BelongsToSections, HasCustomFields, HasTableQuery, SoftDeletes, LogsActivity, HasUuids;
 
     /**
      * The table associated with the model.
@@ -52,7 +53,6 @@ class Staff extends Model
     protected $fillable = [
         'user_id',
         'school_id',
-        'department_role_id',
     ];
 
     /**
@@ -125,11 +125,11 @@ class Staff extends Model
     /**
      * Get the department role associated with the staff.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
-    public function departmentRole(): BelongsTo
+    public function departmentRole()
     {
-        return $this->belongsTo(DepartmentRole::class);
+        return $this->belongsToMany(DepartmentRole::class, 'staff_department_role', 'staff_id', 'department_role_id');
     }
 
     /**

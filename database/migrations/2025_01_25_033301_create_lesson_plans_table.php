@@ -16,11 +16,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('lesson_plans', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade');
-            $table->foreignId('class_level_id')->constrained('class_levels')->onDelete('cascade');
+            $table->foreignUuid('class_level_id')->constrained('class_levels')->onDelete('cascade');
             $table->foreignUuid('subject_id')->constrained('subjects')->onDelete('cascade');
-            $table->foreignId('sylabus_detail_id')->nullable()->constrained('sylabus_details')->onDelete('set null');
+            $table->foreignUuid('syllabus_detail_id')->nullable()->constrained('syllabus_details')->onDelete('set null');
             $table->string('topic');
             $table->date('date');
             $table->text('objective');
@@ -30,7 +30,7 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
             $table->index('deleted_at');
-            $table->unique(['school_id', 'class_level_id', 'subject_id', 'topic', 'date']);
+            $table->unique(['school_id', 'class_level_id', 'subject_id', 'topic', 'date'], 'unique_lesson_plan' );
         });
     }
 

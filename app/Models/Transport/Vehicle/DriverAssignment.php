@@ -16,7 +16,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Tracks driver assignments to vehicles with effective and unassignment dates.
  *
  * @property int $id Auto-incrementing primary key.
- * @property int $vehicle_id Associated vehicle ID.
+ * @property string $vehicle_id Associated vehicle ID.
  * @property string $staff_id Associated staff ID (driver).
  * @property \Illuminate\Support\Carbon $effective_date Effective date of assignment.
  * @property \Illuminate\Support\Carbon|null $unassigned_at Date when driver was unassigned.

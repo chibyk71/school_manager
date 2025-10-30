@@ -57,7 +57,7 @@ class CreateMediaManTables extends Migration
         Schema::create(config('mediaman.tables.mediables'), function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->unsignedBigInteger('media_id')->index();
-            $table->unsignedBigInteger('mediable_id')->index();
+            $table->uuid('mediable_id')->index();
             $table->string('mediable_type');
             $table->string('channel');
 

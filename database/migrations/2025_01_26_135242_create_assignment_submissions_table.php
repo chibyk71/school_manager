@@ -14,10 +14,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('assignment_submissions', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained()->onDelete('cascade');
             $table->foreignUuid('student_id')->constrained('students')->onDelete('cascade');
-            $table->foreignId('assignment_id')->constrained()->onDelete('cascade');
+            $table->foreignUuid('assignment_id')->constrained()->onDelete('cascade');
             $table->text('answer_text')->nullable();
             $table->decimal('mark_obtained', 5, 2)->nullable();
             $table->enum('status', ['draft', 'submitted', 'graded'])->default('submitted');

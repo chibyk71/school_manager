@@ -15,7 +15,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('routes', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->string('name');
             $table->text('description')->nullable();
             $table->string('status')->default('active');
@@ -23,7 +23,7 @@ return new class extends Migration
             $table->string('ending_point');
             $table->string('distance');
             $table->string('duration');
-            $table->foreignId('fee_id')->nullable()->constrained('fees')->cascadeOnDelete();
+            $table->foreignUuid('fee_id')->nullable()->constrained('fees')->cascadeOnDelete();
             $table->foreignUuid('school_id')->index()->constrained('schools')->cascadeOnDelete();
             $table->timestamps();
             $table->softDeletes();

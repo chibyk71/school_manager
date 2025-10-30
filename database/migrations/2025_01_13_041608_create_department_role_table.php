@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('department_role', function (Blueprint $table) {
-            $table->id();
-            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('department_id')->constrained('departments')->cascadeOnDelete()->index();
-            $table->foreignUuid('role_id')->constrained('roles')->cascadeOnDelete()->index();
-            $table->foreignId('school_section_id')->nullable()->constrained('school_sections')->cascadeOnDelete()->index();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('department_id')->constrained('departments')->cascadeOnDelete();
+            $table->foreignUuid('role_id')->constrained('roles')->cascadeOnDelete();
+            $table->foreignUuid('school_section_id')->nullable()->constrained('school_sections')->cascadeOnDelete();
             $table->string('name');
             $table->timestamps();
             $table->softDeletes();

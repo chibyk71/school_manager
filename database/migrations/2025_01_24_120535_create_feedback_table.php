@@ -24,27 +24,7 @@ return new class extends Migration {
             $table->foreignUuid('handled_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
             $table->softDeletes();
-            $table->index('school_id');
-            $table->index(['feedbackable_type', 'feedbackable_id']);
-            $table->index('handled_by');
         });
-
-        // Seed sample feedback
-        if (app()->environment(['local', 'testing'])) {
-            $school = School::factory()->create();
-            $user = User::factory()->create();
-            $feedback = Feedback::create([
-                'id' => (string) Str::uuid(),
-                'school_id' => $school->id,
-                'feedbackable_id' => $user->id,
-                'feedbackable_type' => User::class,
-                'subject' => 'Sample Feedback',
-                'message' => 'This is a sample feedback message.',
-                'status' => 'pending',
-                'handled_by' => null,
-            ]);
-            $feedback->addConfig('category', 'Suggestion');
-        }
     }
 
     /**

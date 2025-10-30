@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('user_id')->index();
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
-            $table->foreignId('fee_concession_id')->constrained('fee_concessions')->onDelete('cascade');
+            $table->foreignUuid('fee_concession_id')->constrained('fee_concessions')->onDelete('cascade');
             $table->decimal('concession_amount', 10, 2)->default(0);
             $table->timestamps();
         });

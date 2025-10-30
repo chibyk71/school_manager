@@ -9,6 +9,7 @@ use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -143,10 +144,10 @@ class DepartmentRole extends Model
     /**
      * Get the staff members associated with the department role.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
-    public function staff(): HasMany
+    public function staff(): BelongsToMany
     {
-        return $this->hasMany(Staff::class, 'department_role_id');
+        return $this->BelongsToMany(Staff::class, 'staff_department_role', 'department_role_id', 'staff_id');
     }
 }

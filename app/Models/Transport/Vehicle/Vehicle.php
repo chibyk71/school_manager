@@ -2,11 +2,14 @@
 
 namespace App\Models\Transport\Vehicle;
 
+use App\Models\Configuration\Config;
 use App\Models\School;
 use App\Models\Transport\Route;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
+use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Model;
@@ -18,7 +21,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * Vehicles are school-scoped and associated with routes, drivers, and documents.
  *
- * @property int $id Auto-incrementing primary key.
+ * @property string $id Auto-incrementing primary key.
  * @property string $school_id Associated school ID.
  * @property string $name Vehicle name.
  * @property string $registration_number Vehicle registration number.
@@ -30,7 +33,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string|null $owner_company_name Owner company name (if not owned).
  * @property string|null $owner_phone Owner phone number (if not owned).
  * @property string|null $owner_email Owner email (if not owned).
- * @property int|null $vehicle_fuel_type_id Associated fuel type ID.
+ * @property string|null $vehicle_fuel_type Associated fuel type ID.
  * @property int $max_fuel_capacity Fuel capacity in liters.
  * @property bool $is_active Whether the vehicle is active.
  * @property array|null $options Additional vehicle options.
@@ -40,7 +43,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Vehicle extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasUuids, HasConfig;
 
     /**
      * The table associated with the model.
@@ -70,6 +73,13 @@ class Vehicle extends Model
         'max_fuel_capacity',
         'is_active',
         'options',
+    ];
+
+    protected $attributes = [
+        'is_owned' => true,
+        'is_active' => true,
+        'fuel_type' => null,
+        'type' => null,
     ];
 
     /**
@@ -121,15 +131,46 @@ class Vehicle extends Model
     {
         return $this->belongsTo(School::class);
     }
-
-    /**
-     * Get the fuel type associated with the vehicle.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function fuelType()
+/** Set a vehicle-type config (system-wide) */
+    public function setVehicleType(string $type): Config
     {
-        return $this->belongsTo(VehicleFuelType::class, 'vehicle_fuel_type_id');
+        return $this->addConfig('vehicle_type', $type);
+    }
+
+    /** Set a fuel-type config (school-specific when a school is active) */
+    public function setFuelType(string $fuel): Config
+    {
+        return $this->addConfig('vehicle_fuel_type', $fuel);
+    }
+
+    public function getFuelTypeAttribute()
+    {
+        return $this->fuelType();
+    }
+
+    public function getTypeAttribute()
+    {
+        return $this->vehicleType();
+    }
+
+    /** Get the effective vehicle type (school → system) */
+    public function vehicleType(): ?string
+    {
+        return $this->getConfig('vehicle_type');
+    }
+
+    /** Get the effective fuel type */
+    public function fuelType(): ?string
+    {
+        return $this->getConfig('vehicle_fuel_type');
+    }
+
+    /** Get both at once – returns ['vehicle_type'=>…, 'vehicle_fuel_type'=>…] */
+    public function vehicleConfig(): array
+    {
+        return $this->getConfigs(['vehicle_type', 'vehicle_fuel_type'])
+                    ->pluck('value', 'name')
+                    ->toArray();
     }
 
     /**

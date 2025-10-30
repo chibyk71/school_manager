@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('fee_class_section', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('fee_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('class_section_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('fee_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('class_section_id')->constrained()->cascadeOnDelete();
             $table->timestamps();
         });
     }

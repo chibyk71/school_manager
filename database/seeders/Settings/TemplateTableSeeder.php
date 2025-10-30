@@ -3,7 +3,7 @@
 namespace Database\Seeders\Settings;
 
 use Illuminate\Database\Seeder;
-use App\Models\Tenant\MailTemplate;
+use Spatie\MailTemplates\Models\MailTemplate;
 
 class TemplateTableSeeder extends Seeder
 {
@@ -31,7 +31,7 @@ class TemplateTableSeeder extends Seeder
         foreach ($defaultTemplates as $template) {
             MailTemplate::updateOrCreate(
                 ['mailable' => $template['mailable'], 'school_id' => null],
-                ['subject' => $template['subject'], 'body' => $template['body']]
+                ['subject' => $template['subject'], 'text_template' => $template['body'], 'html_template'=> $template['body']]
             );
         }
     }

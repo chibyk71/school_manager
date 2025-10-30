@@ -3,6 +3,7 @@
 namespace Database\Seeders\Settings;
 
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Log;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
 
 /**
@@ -41,6 +42,6 @@ class UserManagementSeeder extends Seeder
 
         Settings::set('user_management', $defaults);
 
-        \Log::info('UserManagementSeeder completed', $defaults);
+        Log::info('UserManagementSeeder completed', $defaults);
     }
 }

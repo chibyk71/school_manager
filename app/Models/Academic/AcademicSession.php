@@ -2,11 +2,11 @@
 
 namespace App\Models\Academic;
 
-use App\Models\School;
+use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -22,7 +22,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class AcademicSession extends Model
 {
     /** @use HasFactory<\Database\Factories\AcademicSessionFactory> */
-    use HasFactory, BelongsToSchool, SoftDeletes, HasTableQuery, LogsActivity;
+    use HasFactory, BelongsToSchool, SoftDeletes, HasTableQuery, LogsActivity, HasUuids;
 
     /**
      * The attributes that are mass assignable.

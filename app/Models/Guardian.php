@@ -6,6 +6,7 @@ use App\Models\Academic\Student;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasCustomFields;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -22,7 +23,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Guardian extends Model
 {
     /** @use HasFactory<\Database\Factories\GuardianFactory> */
-    use HasFactory, BelongsToSchool, HasCustomFields, HasTableQuery, SoftDeletes;
+    use HasFactory, BelongsToSchool, HasCustomFields, HasTableQuery, SoftDeletes, HasUuids;
 
     /**
      * The attributes that are mass assignable.

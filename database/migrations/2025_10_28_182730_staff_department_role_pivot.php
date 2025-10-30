@@ -11,14 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('notice_recipients', function (Blueprint $table) {
+        Schema::create('staff_department_role', function (Blueprint $table) {
             $table->id();
-            $table->foreignUuid('notice_id')->constrained('notices')->cascadeOnDelete();
-            $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete();
-            $table->boolean('is_read')->default(false);
+            $table->foreignUuid('staff_id')->constrained('staff')->cascadeOnDelete();
+            $table->foreignUuid('department_role_id')->constrained('department_role')->cascadeOnDelete();
             $table->timestamps();
             $table->softDeletes();
-            $table->index(['notice_id', 'user_id']);
+            $table->unique(['staff_id', 'department_role_id'], 'staff_department_role_unique');
         });
     }
 
@@ -27,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('notice_recipients');
+        Schema::dropIfExists('staff_department_role');
     }
 };

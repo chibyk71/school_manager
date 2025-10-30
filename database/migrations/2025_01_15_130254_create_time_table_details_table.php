@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('time_table_details', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignUuid('timetable_id')->constrained('time_tables')->cascadeOnDelete()->index();
-            $table->foreignId('class_period_id')->constrained('class_periods')->cascadeOnDelete()->index();
-            $table->foreignId('teacher_class_section_subject_id')->constrained('teacher_class_section_subjects')->cascadeOnDelete()->index();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('timetable_id')->constrained('time_tables')->cascadeOnDelete();
+            $table->foreignUuid('class_period_id')->constrained('class_periods')->cascadeOnDelete();
+            $table->foreignId('teacher_class_section_subject_id')->constrained('teacher_class_section_subjects')->cascadeOnDelete();
             $table->enum('day', ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
             $table->string('start_time');
             $table->string('end_time');

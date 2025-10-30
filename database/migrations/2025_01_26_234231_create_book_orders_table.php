@@ -16,9 +16,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('book_orders', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade');
-            $table->foreignId('book_list_id')->constrained('book_lists')->onDelete('cascade');
+            $table->foreignUuid('book_list_id')->constrained('book_lists')->onDelete('cascade');
             $table->foreignUuid('student_id')->constrained('students')->onDelete('cascade');
             $table->date('order_date');
             $table->date('return_date')->nullable();

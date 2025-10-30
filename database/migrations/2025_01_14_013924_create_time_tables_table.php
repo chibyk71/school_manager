@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('time_tables', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('term_id')->constrained('terms')->cascadeOnDelete()->index();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('term_id')->constrained('terms')->cascadeOnDelete();
             $table->string('title')->index();
             $table->dateTime('effective_date');
             $table->enum('status', ['active', 'draft', 'inactive'])->default('draft');

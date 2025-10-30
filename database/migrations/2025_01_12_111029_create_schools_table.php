@@ -18,6 +18,7 @@ return new class extends Migration
         Schema::create('schools', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('name')->unique();
+            $table->string('code')->unique();
             $table->string('slug')->unique();
             $table->string('email')->unique();
             $table->string('phone_one')->nullable();

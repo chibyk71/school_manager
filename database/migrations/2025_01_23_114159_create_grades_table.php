@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('grades', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('school_section_id')->nullable()->constrained('school_sections')->cascadeOnDelete()->index();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('school_section_id')->nullable()->constrained('school_sections')->cascadeOnDelete();
             $table->string('name')->index();
             $table->string('code')->index();
             $table->integer('min_score');

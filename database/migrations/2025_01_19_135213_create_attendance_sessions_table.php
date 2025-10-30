@@ -16,11 +16,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('attendance_sessions', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
-            $table->foreignId('class_section_id')->constrained('class_sections')->cascadeOnDelete();
-            $table->foreignId('class_period_id')->constrained('class_periods')->cascadeOnDelete();
-            $table->foreignId('manager_id')->constrained('users')->onDelete('set null');
+            $table->foreignUuid('class_section_id')->constrained('class_sections')->cascadeOnDelete();
+            $table->foreignUuid('class_period_id')->constrained('class_periods')->cascadeOnDelete();
+            $table->foreignUuid('manager_id')->nullable()->constrained('users')->onDelete('set null');
             $table->string('name');
             $table->text('description')->nullable();
             $table->date('date_effective');

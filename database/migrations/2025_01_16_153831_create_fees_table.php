@@ -12,12 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('fees', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->onDelete('cascade')->comment('The school associated with this fee');
-            $table->foreignId('branch_id')->nullable()->constrained('branches')->onDelete('cascade')->comment('The branch associated with this fee, if applicable');
-            $table->foreignId('fee_type_id')->constrained('fee_types')->onDelete('cascade')->comment('The type of fee (e.g., tuition, sports)');
-            $table->foreignId('term_id')->constrained('terms')->onDelete('cascade')->comment('The academic term for this fee');
-            $table->foreignId('recorded_by')->constrained('users')->onDelete('restrict')->comment('The user who recorded the fee');
+            $table->uuid('id')->primary()->comment('Primary key for the fee record');
+            $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade')->comment('The school associated with this fee');
+            $table->foreignUuid('fee_type_id')->constrained('fee_types')->onDelete('cascade')->comment('The type of fee (e.g., tuition, sports)');
+            $table->foreignUuid('term_id')->constrained('terms')->onDelete('cascade')->comment('The academic term for this fee');
+            $table->foreignUuid('recorded_by')->constrained('users')->onDelete('restrict')->comment('The user who recorded the fee');
             $table->string('description')->nullable()->comment('Optional description of the fee');
             $table->decimal('amount', 15, 2)->comment('The fee amount');
             $table->date('due_date')->comment('The due date for the fee payment');

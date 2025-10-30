@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('leave_types', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
             $table->string('name');
             $table->string('description')->nullable();
             $table->unsignedInteger('max_days')->nullable();

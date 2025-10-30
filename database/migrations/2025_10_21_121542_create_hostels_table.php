@@ -12,11 +12,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('hostels', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->foreignId('staff_id')->nullable()->constrained('staff')->nullOnDelete();
+            $table->foreignUuid('staff_id')->nullable()->constrained('staff')->nullOnDelete();
             $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();

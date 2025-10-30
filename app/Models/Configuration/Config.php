@@ -2,9 +2,10 @@
 
 namespace App\Models\Configuration;
 
+use App\Models\Model;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -14,7 +15,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * Configurations can be system-wide or scoped to a school.
  *
- * @property int $id Auto-incrementing primary key.
+ * @property string $id Auto-incrementing primary key.
  * @property string $name Configuration name (e.g., theme_color).
  * @property string|null $description Configuration description.
  * @property string|null $color Optional color value (e.g., hex code).
@@ -28,7 +29,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Config extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, HasUuids;
 
     /**
      * The attributes that are mass assignable.
@@ -38,6 +39,7 @@ class Config extends Model
     protected $fillable = [
         'name',
         'description',
+        'value',
         'color',
         'scope_type',
         'scope_id',

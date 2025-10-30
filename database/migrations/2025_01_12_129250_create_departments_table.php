@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('departments', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->Uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
             $table->string('name');
             $table->string('category')->nullable();
             $table->text('description')->nullable();
@@ -25,9 +25,9 @@ return new class extends Migration
 
         Schema::create('department_user', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('department_id')->constrained('departments')->cascadeOnDelete()->index();
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete()->index();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('department_id')->constrained('departments')->cascadeOnDelete();
+            $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete()->index();
             $table->timestamps();
             $table->unique(['department_id', 'user_id'], 'department_user_unique');
         });

@@ -19,9 +19,9 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
             $table->foreignUuid('student_id')->constrained('students')->cascadeOnDelete();
-            $table->foreignId('class_level_id')->constrained('class_levels')->cascadeOnDelete();
-            $table->foreignId('school_section_id')->constrained('school_sections')->cascadeOnDelete();
-            $table->foreignId('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete();
+            $table->foreignUuid('class_level_id')->constrained('class_levels')->cascadeOnDelete();
+            $table->foreignUuid('school_section_id')->constrained('school_sections')->cascadeOnDelete();
+            $table->foreignUuid('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete();
             $table->string('roll_no')->unique();
             $table->string('status')->default('pending'); // e.g., pending, approved, rejected
             $table->json('configs')->nullable(); // For additional settings

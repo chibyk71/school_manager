@@ -3,6 +3,7 @@
 namespace Database\Seeders\Settings;
 
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Log;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
 
 /**
@@ -31,6 +32,6 @@ class SMSSeeder extends Seeder
 
         Settings::set('sms', $defaults);
 
-        \Log::info('SMSSeeder completed', $defaults);
+        Log::info('SMSSeeder completed', $defaults);
     }
 }

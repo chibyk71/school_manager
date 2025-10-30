@@ -15,9 +15,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('hostel_assignments', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('hostel_room_id')->constrained('hostel_rooms')->cascadeOnDelete();
-            $table->foreignId('student_id')->constrained('students')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('hostel_room_id')->constrained('hostel_rooms')->cascadeOnDelete();
+            $table->foreignUuid('student_id')->constrained('students')->cascadeOnDelete();
             $table->enum('status', ['checked-in', 'checked-out'])->default('checked-in');
             $table->date('check_in_date');
             $table->date('check_out_date')->nullable();

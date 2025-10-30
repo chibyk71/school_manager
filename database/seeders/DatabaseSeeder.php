@@ -45,12 +45,12 @@ class DatabaseSeeder extends Seeder
         // 3. OPTIONAL: Demo data / factories (uncomment for local dev)
         // -----------------------------------------------------------------
 
-        $this->callWithLog(\Database\Seeders\SchoolSectionSeeder::class);
-        $this->callWithLog(\Database\Seeders\ClassLevelSeeder::class);
-        $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
+        // $this->callWithLog(\Database\Seeders\SchoolSectionSeeder::class);
+        // $this->callWithLog(\Database\Seeders\ClassLevelSeeder::class);
+        // $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
 
         // Create a demo school + admin
-        \App\Models\School::factory()->create([
+        $school = \App\Models\School::factory()->create([
             'name'      => 'Demo Academy',
             'slug'      => 'demo',
             'code'      => 'DA',
@@ -61,7 +61,7 @@ class DatabaseSeeder extends Seeder
         \App\Models\User::factory()->create([
             'name'  => 'Demo Admin',
             'email' => 'admin@demo.academy',
-            'school_id' => 1,
+            'school_id' => $school->id,
         ])->addRole('admin');
 
         Log::info('DatabaseSeeder finished successfully.');

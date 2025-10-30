@@ -9,9 +9,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('salary_addons', function (Blueprint $table) {
-            $table->id();
-            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignUuid('staff_id')->constrained('staff')->cascadeOnDelete()->index();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('staff_id')->constrained('staff')->cascadeOnDelete();
             $table->string('name');
             $table->enum('type', ['bonus', 'allowance', 'overtime', 'deduction'])->nullable();
             $table->decimal('amount', 15, 2);

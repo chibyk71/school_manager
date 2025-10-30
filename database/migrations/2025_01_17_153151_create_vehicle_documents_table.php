@@ -15,8 +15,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('vehicle_documents', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
             $table->string('title');
             $table->text('description')->nullable();
             $table->date('date_of_expiry')->nullable();

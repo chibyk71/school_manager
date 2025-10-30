@@ -11,10 +11,10 @@ return new class extends Migration {
     public function up(): void
     {
         Schema::create('events', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->nullable()->constrained('schools')->cascadeOnDelete();
-            $table->foreignId('event_type_id')->constrained('event_types')->cascadeOnDelete();
-            $table->foreignId('term_id')->constrained('terms')->cascadeOnDelete();
+            $table->foreignUuid('event_type_id')->constrained('event_types')->cascadeOnDelete();
+            $table->foreignUuid('term_id')->constrained('terms')->cascadeOnDelete();
             $table->string('title');
             $table->text('description')->nullable();
             $table->date('start_date');

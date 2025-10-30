@@ -15,10 +15,9 @@ return new class extends Migration
     {
         Schema::create('assessments', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->uuid('school_id')->index()->nullable();
+            $table->uuid('school_id')->nullable();
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
-            $table->foreignId('term_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('assessment_type_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('term_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->integer('weight');
             $table->integer('max_score');

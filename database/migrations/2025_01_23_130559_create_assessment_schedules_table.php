@@ -14,12 +14,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('assessment_schedules', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->uuid('school_id')->index()->nullable();
             $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
             $table->foreignUuid('assessment_id')->constrained('assessments')->cascadeOnDelete()->cascadeOnUpdate();
             $table->foreignUuid('subject_id')->constrained('subjects')->cascadeOnDelete()->cascadeOnUpdate();
-            $table->foreignId('class_section_id')->constrained('class_sections')->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignUuid('class_section_id')->constrained('class_sections')->cascadeOnDelete()->cascadeOnUpdate();
             $table->foreignUuid('invigilator_id')->constrained('staff')->cascadeOnDelete()->cascadeOnUpdate();
             $table->date('start_date')->index();
             $table->date('end_date');

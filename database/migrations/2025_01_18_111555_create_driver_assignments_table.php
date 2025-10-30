@@ -17,8 +17,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('driver_assignments', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
             $table->foreignUuid('staff_id')->constrained('staff')->cascadeOnDelete();
             $table->timestamp('effective_date');
             $table->enum('role', ['driver', 'incharge'])->default('driver');

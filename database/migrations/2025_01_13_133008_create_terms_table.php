@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('terms', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete()->index();
+            $table->Uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete();
             $table->string('name')->index();
             $table->text('description')->nullable();
             $table->date('start_date')->nullable();

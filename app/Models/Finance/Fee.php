@@ -9,6 +9,7 @@ use App\Models\School;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use App\Traits\HasTransaction;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,12 +19,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * Fee model representing individual fees to be paid, grouped by fee type.
  * Each fee is associated with a school, term, and optional branch.
  *
- * @property int $id
- * @property int $school_id
- * @property int|null $branch_id
+ * @property string $id
+ * @property string $school_id
  * @property int $fee_type_id
- * @property int $term_id
- * @property int $recorded_by
+ * @property string $term_id
+ * @property string $recorded_by
  * @property string|null $description
  * @property float $amount
  * @property \Carbon\Carbon $due_date
@@ -33,7 +33,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Fee extends Model
 {
-    use HasFactory, BelongsToSchool, HasTableQuery, HasTransaction, LogsActivity, SoftDeletes;
+    use HasFactory, BelongsToSchool, HasTableQuery, HasTransaction, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The attributes that are mass assignable.

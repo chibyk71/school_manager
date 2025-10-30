@@ -2,9 +2,11 @@
 
 namespace App\Models\Transport\Vehicle;
 
+use App\Traits\BelongsToPrimaryModel;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Model;
@@ -16,8 +18,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * Stores documents related to vehicles, such as insurance or registration.
  *
- * @property int $id Auto-incrementing primary key.
- * @property int $vehicle_id Associated vehicle ID.
+ * @property string $id Auto-incrementing primary key.
+ * @property string $vehicle_id Associated vehicle ID.
  * @property string $title Document title (e.g., Insurance, Registration).
  * @property string|null $description Document description.
  * @property \Illuminate\Support\Carbon|null $date_of_expiry Expiry date of the document.
@@ -28,7 +30,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class VehicleDocument extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasMedia;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToPrimaryModel, HasMedia, HasUuids;
 
     /**
      * The table associated with the model.
@@ -119,5 +121,9 @@ class VehicleDocument extends Model
     public static function getSchoolIdColumn(): string
     {
         return 'vehicle.school_id';
+    }
+
+    public function getRelationshipToPrimaryModel() {
+        'vehicle';
     }
 }

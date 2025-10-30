@@ -14,7 +14,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('assessment_types', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->uuid('school_id')->index()->nullable();
             $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
             $table->string('name');

@@ -6,6 +6,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -15,8 +16,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * Department model representing a school department (e.g., HR, Academics).
  *
- * @property int $id
- * @property int $school_id
+ * @property string $id
+ * @property string $school_id
  * @property string $name
  * @property string|null $category
  * @property string|null $description
@@ -27,7 +28,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Department extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The attributes that are mass assignable.

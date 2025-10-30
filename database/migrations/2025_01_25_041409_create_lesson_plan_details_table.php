@@ -16,9 +16,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('lesson_plan_details', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade');
-            $table->foreignId('lesson_plan_id')->constrained('lesson_plans')->onDelete('cascade');
+            $table->foreignUuid('lesson_plan_id')->constrained('lesson_plans')->onDelete('cascade');
             $table->string('title');
             $table->string('sub_title')->nullable();
             $table->text('objective')->nullable();
@@ -32,8 +32,6 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
             $table->index('deleted_at');
-            $table->index('school_id');
-            $table->index('lesson_plan_id');
         });
     }
 

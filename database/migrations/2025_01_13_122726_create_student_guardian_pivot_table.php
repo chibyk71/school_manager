@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('student_guardian_pivot', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('guardian_id')->constrained('guardians')->cascadeOnDelete();
-            $table->foreignId('student_id')->constrained('students')->cascadeOnDelete();
+            $table->foreignUuid('guardian_id')->constrained('guardians')->cascadeOnDelete();
+            $table->foreignUuid('student_id')->constrained('students')->cascadeOnDelete();
             $table->timestamps();
             $table->unique(['guardian_id', 'student_id'], 'student_guardian_unique');
         });

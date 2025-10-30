@@ -16,7 +16,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('academic_sessions', function (Blueprint $table) {
-            $table->id();
+            $table->Uuid('id')->primary()->comment('Primary key as UUID for global uniqueness');
             $table->string('name')->nullable()->comment('Name of the academic session (e.g., 2024/2025)');
             $table->date('start_date')->comment('Start date of the academic session');
             $table->date('end_date')->comment('End date of the academic session');

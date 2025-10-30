@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('staff_school_section_pivot', function (Blueprint $table) {
             $table->id();
             $table->foreignUuid('staff_id')->constrained('staff')->cascadeOnDelete();
-            $table->foreignId('school_section_id')->constrained('school_sections')->cascadeOnDelete();
+            $table->foreignUuid('school_section_id')->constrained('school_sections')->cascadeOnDelete();
             $table->timestamps();
             $table->unique(['staff_id', 'school_section_id'], 'staff_section_unique');
         });

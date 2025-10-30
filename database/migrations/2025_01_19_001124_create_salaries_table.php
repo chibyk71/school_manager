@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('salaries', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('department_role_id')->constrained('department_roles')->cascadeOnDelete()->index();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('department_role_id')->constrained('department_role')->cascadeOnDelete();
             $table->decimal('base_salary', 15, 2);
             $table->date('effective_date');
             $table->json('options')->nullable();

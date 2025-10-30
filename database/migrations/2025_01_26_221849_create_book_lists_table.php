@@ -16,9 +16,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('book_lists', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade');
-            $table->foreignId('class_level_id')->constrained('class_levels')->onDelete('cascade');
+            $table->foreignUuid('class_level_id')->constrained('class_levels')->onDelete('cascade');
             $table->foreignUuid('subject_id')->constrained('subjects')->onDelete('cascade');
             $table->string('title')->index();
             $table->string('author');

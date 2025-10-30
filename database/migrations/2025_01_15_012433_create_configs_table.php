@@ -12,11 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('configs', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->string('name');
             $table->string('description')->nullable();
-            $table->nullableMorphs('scope');
-            $table->morphs('configurable');
+            $table->text('value');
+            $table->nullableUuidMorphs('scope');
+            $table->uuidMorphs('configurable');
             $table->string('color')->nullable();
             $table->timestamps();
             $table->softDeletes();

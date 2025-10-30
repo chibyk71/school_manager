@@ -12,8 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('class_periods', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
             $table->unsignedMediumInteger('order')->index();
             $table->boolean('is_break')->default(false);
             $table->decimal('duration', 5, 2); // e.g., 1.50 hours

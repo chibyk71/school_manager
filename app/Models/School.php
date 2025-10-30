@@ -18,7 +18,7 @@ use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 /**
  * Model representing a school in a single-tenant system.
  */
-class School extends Model
+class School extends \App\Models\Model
 {
     /** @use HasFactory<\Database\Factories\SchoolFactory> */
     use HasFactory, HasSettings, HasUuids, HasAddress, BelongsToSections, Filterable, Sortable, SoftDeletes;
@@ -31,6 +31,7 @@ class School extends Model
     protected $fillable = [
         'name',
         'slug',
+        'code',
         'email',
         'phone_one',
         'phone_two',

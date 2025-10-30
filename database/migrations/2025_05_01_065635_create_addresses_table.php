@@ -14,12 +14,12 @@ return new class extends Migration
         Schema::create('addresses', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->nullable()->constrained('schools')->cascadeOnDelete();
-            $table->morphs('addressable');
+            $table->uuidMorphs('addressable');
             $table->string('address');
             $table->string('city');
             $table->string('state');
             $table->string('postal_code')->nullable();
-            $table->foreignId('country_id')->constrained('countries')->cascadeOnDelete();
+            $table->foreignUuid('country_id')->constrained('countries')->cascadeOnDelete();
             $table->boolean('is_primary')->default(false);
             $table->timestamps();
             $table->softDeletes();

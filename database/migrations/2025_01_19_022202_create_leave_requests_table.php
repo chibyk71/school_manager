@@ -12,17 +12,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('leave_requests', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete()->index();
-            $table->foreignId('leave_type_id')->constrained('leave_types')->cascadeOnDelete()->index();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete();
+            $table->foreignUuid('leave_type_id')->constrained('leave_types')->cascadeOnDelete();
             $table->text('reason')->nullable();
             $table->date('start_date');
             $table->date('end_date');
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
-            $table->foreignId('approved_by')->nullable()->constrained('users')->cascadeOnDelete()->index();
+            $table->foreignUuid('approved_by')->nullable()->constrained('users')->cascadeOnDelete();
             $table->timestamp('approved_at')->nullable();
-            $table->foreignId('rejected_by')->nullable()->constrained('users')->cascadeOnDelete()->index();
+            $table->foreignUuid('rejected_by')->nullable()->constrained('users')->cascadeOnDelete();
             $table->timestamp('rejected_at')->nullable();
             $table->text('rejected_reason')->nullable();
             $table->timestamps();

@@ -3,6 +3,7 @@
 namespace App\Models\Transport\Vehicle;
 
 use App\Models\Model;
+use App\Traits\BelongsToPrimaryModel;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
@@ -16,8 +17,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * Tracks expenses related to vehicles, such as fuel or maintenance, with optional media (e.g., receipts).
  *
- * @property int $id Auto-incrementing primary key.
- * @property int $vehicle_id Associated vehicle ID.
+ * @property string $id Auto-incrementing primary key.
+ * @property string $vehicle_id Associated vehicle ID.
  * @property float $amount Expense amount.
  * @property float|null $liters Fuel volume in liters (if applicable).
  * @property \Illuminate\Support\Carbon $date_of_expense Date of the expense.
@@ -30,7 +31,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class VehicleExpense extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasMedia;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToPrimaryModel, HasMedia;
 
     /**
      * The table associated with the model.
@@ -98,6 +99,11 @@ class VehicleExpense extends Model
     public function vehicle()
     {
         return $this->belongsTo(Vehicle::class);
+    }
+
+    public function getRelationshipToPrimaryModel(): string
+    {
+        return 'vehicle';
     }
 
     /**

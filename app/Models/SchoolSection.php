@@ -9,14 +9,13 @@ use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Model representing a school section (e.g., primary, secondary).
  */
-class SchoolSection extends Model
+class SchoolSection extends \App\Models\Model
 {
     /** @use HasFactory<\Database\Factories\SchoolSectionFactory> */
     use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, HasUuids;

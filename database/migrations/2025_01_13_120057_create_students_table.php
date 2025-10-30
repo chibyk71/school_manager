@@ -15,7 +15,7 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->foreignUuid('user_id')->index()->constrained('users')->cascadeOnDelete();
             $table->foreignUuid('school_id')->index()->constrained('schools')->cascadeOnDelete();
-            $table->foreignId('school_section_id')->constrained('school_sections')->cascadeOnDelete();
+            $table->foreignUuid('school_section_id')->constrained('school_sections')->cascadeOnDelete();
             $table->timestamps();
             $table->softDeletes();
 

@@ -14,12 +14,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('term_result_details', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->uuid('school_id')->index()->nullable();
             $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
-            $table->foreignId('term_result_id')->constrained()->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignUuid('term_result_id')->constrained()->cascadeOnDelete()->cascadeOnUpdate();
             $table->foreignUuid('subject_id')->constrained('subjects')->cascadeOnDelete()->cascadeOnUpdate();
-            $table->foreignId('grade_id')->constrained()->cascadeOnDelete()->cascadeOnUpdate();
+            $table->foreignUuid('grade_id')->constrained()->cascadeOnDelete()->cascadeOnUpdate();
             $table->decimal('score', 5, 2);
             $table->text('class_teacher_remark')->nullable();
             $table->text('head_teacher_remark')->nullable();

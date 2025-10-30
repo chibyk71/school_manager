@@ -12,12 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('leave_allocations', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete()->index();
-            $table->foreignId('leave_type_id')->constrained('leave_types')->cascadeOnDelete()->index();
+            $table->uuid()->primary();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete();
+            $table->foreignUuid('leave_type_id')->constrained('leave_types')->cascadeOnDelete();
             $table->unsignedInteger('no_of_days');
-            $table->foreignId('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete()->index();
+            $table->foreignUuid('academic_session_id')->constrained('academic_sessions')->cascadeOnDelete();
             $table->timestamps();
             $table->softDeletes();
             $table->unique(['school_id', 'user_id', 'leave_type_id', 'academic_session_id'], 'leave_allocations_unique');

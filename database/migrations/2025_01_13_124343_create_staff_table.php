@@ -15,7 +15,6 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->foreignUuid('user_id')->index()->constrained('users')->cascadeOnDelete();
             $table->foreignUuid('school_id')->index()->constrained('schools')->cascadeOnDelete();
-            $table->foreignId('department_role_id')->nullable()->constrained('department_roles')->cascadeOnDelete()->index();
             $table->timestamps();
             $table->softDeletes();
             $table->unique(['user_id', 'school_id'], 'staff_user_school_unique');

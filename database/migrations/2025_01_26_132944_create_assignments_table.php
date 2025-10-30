@@ -14,12 +14,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('assignments', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')
                 ->constrained('schools')
                 ->cascadeOnDelete()
                 ->comment('References the school the assignment belongs to');
-            $table->foreignId('class_level_id')
+            $table->foreignUuid('class_level_id')
                 ->constrained('class_levels')
                 ->cascadeOnDelete()
                 ->comment('References the class level for the assignment');
@@ -32,7 +32,7 @@ return new class extends Migration
             $table->text('description')
                 ->nullable()
                 ->comment('Optional description of the assignment');
-            $table->foreignId('term_id')
+            $table->foreignUuid('term_id')
                 ->constrained('terms')
                 ->cascadeOnDelete()
                 ->comment('References the academic term');

@@ -16,9 +16,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('attendance_ledgers', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
-            $table->foreignId('attendance_session_id')->constrained('attendance_sessions')->cascadeOnDelete();
+            $table->foreignUuid('attendance_session_id')->constrained('attendance_sessions')->cascadeOnDelete();
             $table->uuidMorphs('attendable');
             $table->enum('status', ['present', 'absent', 'late', 'leave', 'holiday'])->default('absent');
             $table->string('remarks')->nullable();

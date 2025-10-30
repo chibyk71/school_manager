@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('fee_concessions', function (Blueprint $table) {
-            $table->id()->comment('Primary key for the fee concession');
-            $table->foreignId('school_id')->constrained('schools')->onDelete('cascade')->comment('The school associated with this fee concession');
-            $table->foreignId('fee_type_id')->constrained('fee_types')->onDelete('cascade')->comment('The fee type associated with this concession');
+            $table->uuid('id')->primary()->comment('Primary key for the fee concession');
+            $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade')->comment('The school associated with this fee concession');
+            $table->foreignUuid('fee_type_id')->constrained('fee_types')->onDelete('cascade')->comment('The fee type associated with this concession');
             $table->string('name')->comment('Name of the fee concession (e.g., Merit Scholarship)');
             $table->string('description')->nullable()->comment('Optional description of the fee concession');
             $table->enum('type', ['amount', 'percent'])->comment('Type of concession: fixed amount or percentage');

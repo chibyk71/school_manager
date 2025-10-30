@@ -16,9 +16,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('syllabus_details', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
-            $table->foreignId('syllabus_id')->constrained('syllabi')->cascadeOnDelete();
+            $table->foreignUuid('syllabus_id')->constrained('syllabi')->cascadeOnDelete();
             $table->unsignedInteger('week');
             $table->text('objectives')->nullable();
             $table->string('topic');
@@ -29,8 +29,6 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
             $table->index('deleted_at');
-            $table->index('school_id');
-            $table->index('syllabus_id');
         });
     }
 

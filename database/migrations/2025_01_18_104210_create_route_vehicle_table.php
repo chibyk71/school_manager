@@ -18,8 +18,8 @@ return new class extends Migration
     {
         Schema::create('route_vehicle', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('route_id')->constrained('routes')->cascadeOnDelete();
-            $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
+            $table->foreignUuid('route_id')->constrained('routes')->cascadeOnDelete();
+            $table->foreignUuid('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
             $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete();
             $table->string('status')->default('active');
             $table->timestamps();

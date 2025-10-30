@@ -16,9 +16,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('syllabus_detail_approvals', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
-            $table->foreignId('syllabus_detail_id')->constrained('syllabus_details')->cascadeOnDelete();
+            $table->foreignUuid('syllabus_detail_id')->constrained('syllabus_details')->cascadeOnDelete();
             $table->foreignUuid('requester_id')->constrained('staff')->cascadeOnDelete();
             $table->foreignUuid('approver_id')->nullable()->constrained('staff')->onDelete('set null');
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');

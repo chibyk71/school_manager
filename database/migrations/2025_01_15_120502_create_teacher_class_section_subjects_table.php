@@ -13,9 +13,9 @@ return new class extends Migration
     {
         Schema::create('teacher_class_section_subjects', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained('schools')->cascadeOnDelete()->index();
-            $table->foreignId('teacher_id')->constrained('staff')->cascadeOnDelete()->index();
-            $table->foreignId('class_section_id')->constrained('class_sections')->cascadeOnDelete()->index();
+            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
+            $table->foreignUuid('teacher_id')->constrained('staff')->cascadeOnDelete();
+            $table->foreignUuid('class_section_id')->constrained('class_sections')->cascadeOnDelete();
             $table->uuid('subject_id')->index();
             $table->string('role')->nullable();
             $table->timestamps();

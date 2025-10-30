@@ -15,8 +15,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('vehicle_expenses', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
             $table->decimal('amount', 10, 2);
             $table->decimal('liters', 8, 2)->nullable();
             $table->date('date_of_expense');
