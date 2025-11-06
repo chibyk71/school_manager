@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\School;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreConfigRequest extends FormRequest
 {
@@ -23,13 +25,24 @@ class StoreConfigRequest extends FormRequest
      */
     public function rules(): array
     {
+        $school = GetSchoolModel();
+
         return [
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string|max:255',
-            'color' => 'nullable|string|max:7|regex:/^#[0-9A-Fa-f]{6}$/',
-            'is_system' => 'boolean',
-            'configurable_type' => 'required|string',
-            'configurable_id' => 'required|string',
+            'name'        => [
+                'required',
+                'regex:/^[a-z_]+$/',
+                Rule::unique('configs')->where(function ($query) use ($school) {
+                    $query->where('applies_to', $this->applies_to)
+                          ->where('scope_type', $this->is_system ? null : School::class)
+                          ->where('scope_id', $this->is_system ? null : $school?->id);
+                }),
+            ],
+            'applies_to'  => 'required|string', // e.g., App\Models\School
+            'label'       => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'color'       => 'nullable|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/',
+            'options'     => 'required|array|min:1',
+            'options.*'   => 'required|string',
         ];
     }
 }

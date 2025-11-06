@@ -24,12 +24,11 @@ class UpdateConfigRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => 'sometimes|required|string|max:255',
-            'description' => 'nullable|string|max:255',
-            'color' => 'nullable|string|max:7|regex:/^#[0-9A-Fa-f]{6}$/',
-            'is_system' => 'boolean',
-            'configurable_type' => 'sometimes|required|string',
-            'configurable_id' => 'sometimes|required|string',
+            'label'       => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'color'       => 'nullable|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/',
+            'options'     => 'required|array|min:1',
+            'options.*'   => 'required|string',
         ];
     }
 }
