@@ -1,128 +1,226 @@
 <?php
+// app/Http/Controllers/DashboardController.php
 
 namespace App\Http\Controllers;
 
-use App\Models\School;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Laratrust\LaratrustFacade;
+use Laratrust\LaratrustFacade as Laratrust;
 
 /**
- * DashboardController
- *
- * One entry point → many dashboards.
- *
- * 1. Resolve the *entry* dashboard component (SuperAdmin, Leadership, …)
- * 2. Build a rich `can` permission array
- * 3. Render `Dashboard/BaseDashboard` – the UI decides what to show.
- *
- * UI location:
- *   resources/js/Pages/Dashboard/BaseDashboard.vue
- *   resources/js/Pages/Dashboard/SuperAdminDashboard.vue   (optional full page)
+ * Unified dashboard controller.
+ * Renders widget configuration only — each widget fetches its own data via API.
+ * Uses permission structure to dynamically build widget groups.
  */
 class DashboardController extends Controller
 {
-    /** -----------------------------------------------------------------
-     *  Role → Entry-point component map
-     *  -----------------------------------------------------------------
-     *  The value is the **exact Inertia component name** (without .vue).
-     *  Add new roles here – no other code changes.
+    /**
+     * Display the dashboard with widget configuration.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Inertia\Response
      */
-    private const ENTRY_MAP = [
-        // SaaS super-admin
-        'super-admin' => 'SuperAdminDashboard',
-
-        // School leadership
-        'admin' => 'LeadershipDashboard',
-        'principal' => 'LeadershipDashboard',
-        'vice_principal_academic' => 'LeadershipDashboard',
-        'vice_principal_admin' => 'LeadershipDashboard',
-
-        // Academic staff (fallback entry point)
-        'teacher' => 'AcademicDashboard',
-        'hod' => 'AcademicDashboard',
-        'subject-coordinator' => 'AcademicDashboard',
-        'class-teacher' => 'AcademicDashboard',
-        'lesson-planner' => 'AcademicDashboard',
-        'exam-officer' => 'AcademicDashboard',
-        'librarian' => 'AcademicDashboard',
-
-        // Finance
-        'bursar' => 'FinanceDashboard',
-        'accountant' => 'FinanceDashboard',
-
-        // Administration
-        'school_secretary' => 'AdministrativeDashboard',
-        'administrative_officer' => 'AdministrativeDashboard',
-        'records_officer' => 'AdministrativeDashboard',
-        'public_relations_officer' => 'AdministrativeDashboard',
-
-        // Operations (ICT, Maintenance, Transport, Catering, Boarding)
-        'head_ict_mis' => 'OperationsDashboard',
-        'ict_officer' => 'OperationsDashboard',
-        'systems_administrator' => 'OperationsDashboard',
-        'it-support' => 'OperationsDashboard',
-        'head_maintenance' => 'OperationsDashboard',
-        'head_security' => 'OperationsDashboard',
-        'transport_officer' => 'OperationsDashboard',
-        'catering_manager' => 'OperationsDashboard',
-        'boarding_house_master' => 'OperationsDashboard',
-    ];
-
-    public function __invoke(Request $request): \Inertia\Response
+    public function index(Request $request): \Inertia\Response
     {
-        $user = $request->user();
-        if (!$user) {
-            abort(403, 'Unauthenticated.');
-        }
+        permitted('dashboard.view');
 
-        $school = GetSchoolModel();
+        $user = auth()->user();
+        $permissions = ($user)->permissions()->pluck('name')->toArray();
 
-        // 1. Resolve entry component
-        $entryComponent = $this->resolveEntryComponent($user);
+        $widgets = $this->buildWidgetGroups($permissions);
 
-        // 2. Build `can` array
-        $can = $this->buildCanArray($user);
-
-        // 3. Activity log
-        activity()
-            ->causedBy($user)
-            ->performedOn($school)
-            ->log("Accessed {$entryComponent}");
-
-        // 4. Render the *base* dashboard – UI decides what to show
-        return Inertia::render('Dashboard/BaseDashboard', [
-            'entryComponent' => $entryComponent,   // optional: for full-page overrides
-            'user' => $user->only(['id', 'name', 'email', 'avatar']),
-            'school' => $school ? [
-                'id' => $school->id,
-                'name' => $school->name,
-                'logo' => $school->logo_url ?? null,
-                'sectionCount' => $school->sections()->count(),
-            ] : null,
-            'roles' => $user->roles->pluck('name')->toArray(),
-            'can' => $can,
+        return Inertia::render('Dashboard/Index', [
+            'widgets' => $widgets,
         ]);
     }
 
-    private function resolveEntryComponent($user): string
+    /**
+     * Build widget groups based on user permissions.
+     *
+     * @param array $permissions
+     * @return array<string, array<string, array{title:string,icon:string,endpoint:string}>>
+     */
+    protected function buildWidgetGroups(array $permissions): array
     {
-        foreach (self::ENTRY_MAP as $role => $component) {
-            if (LaratrustFacade::hasRole($role)) {
-                return $component;
-            }
+        $groups = [];
+
+        // Leadership / Admin Group
+        if ($this->hasAnyPermission($permissions, [
+            'view-schools', 'create-school', 'update-school', 'delete-school',
+            'departments.view', 'departments.create', 'departments.assign-role'
+        ])) {
+            $groups['leadership'] = [
+                'schoolOverview' => [
+                    'title' => 'School Overview',
+                    'icon' => 'pi-building',
+                    'endpoint' => '/api/dashboard/school-overview',
+                ],
+                'staffSummary' => [
+                    'title' => 'Staff Summary',
+                    'icon' => 'pi-users',
+                    'endpoint' => '/api/dashboard/staff-summary',
+                ],
+                'departmentRoles' => [
+                    'title' => 'Department Roles',
+                    'icon' => 'pi-sitemap',
+                    'endpoint' => '/api/dashboard/department-roles',
+                ],
+            ];
         }
 
-        // Fallback – any authenticated user gets the generic base layout
-        return 'Dashboard';
+        // Academic Management Group
+        if ($this->hasAnyPermission($permissions, [
+            'class-sections.view', 'subjects.view', 'teacher-assignments.view',
+            'timetables.view', 'timetable-details.view', 'terms.view'
+        ])) {
+            $groups['academic'] = [
+                'classSections' => [
+                    'title' => 'Class Sections',
+                    'icon' => 'pi-th-large',
+                    'endpoint' => '/api/dashboard/class-sections',
+                ],
+                'subjects' => [
+                    'title' => 'Subjects',
+                    'icon' => 'pi-book',
+                    'endpoint' => '/api/dashboard/subjects',
+                ],
+                'teacherAssignments' => [
+                    'title' => 'Teacher Assignments',
+                    'icon' => 'pi-id-card',
+                    'endpoint' => '/api/dashboard/teacher-assignments',
+                ],
+                'timetableSummary' => [
+                    'title' => 'Timetable',
+                    'icon' => 'pi-clock',
+                    'endpoint' => '/api/dashboard/timetable-summary',
+                ],
+            ];
+        }
+
+        // Student & Parent Group
+        if ($this->hasPermission($permissions, 'view-parent-dashboard') || $this->hasPermission($permissions, 'view-student-dashboard')) {
+            $groups['myStudents'] = [
+                'childProgress' => [
+                    'title' => 'My Children',
+                    'icon' => 'pi-user',
+                    'endpoint' => '/api/dashboard/parent/children',
+                ],
+                'myGrades' => [
+                    'title' => 'My Grades',
+                    'icon' => 'pi-star',
+                    'endpoint' => '/api/dashboard/student/grades',
+                ],
+                'assignmentsDue' => [
+                    'title' => 'Assignments Due',
+                    'icon' => 'pi-file-edit',
+                    'endpoint' => '/api/dashboard/student/assignments',
+                ],
+            ];
+        }
+
+        // Transport & Logistics Group
+        if ($this->hasAnyPermission($permissions, [
+            'routes.view', 'vehicles.view', 'vehicles.assign-driver',
+            'vehicle-documents.view', 'vehicle-expenses.view'
+        ])) {
+            $groups['transport'] = [
+                'routes' => [
+                    'title' => 'Transport Routes',
+                    'icon' => 'pi-map',
+                    'endpoint' => '/api/dashboard/routes',
+                ],
+                'vehicles' => [
+                    'title' => 'Vehicles',
+                    'icon' => 'pi-car',
+                    'endpoint' => '/api/dashboard/vehicles',
+                ],
+                'vehicleExpenses' => [
+                    'title' => 'Vehicle Expenses',
+                    'icon' => 'pi-money-bill',
+                    'endpoint' => '/api/dashboard/vehicle-expenses',
+                ],
+            ];
+        }
+
+        // Hostel Management Group
+        if ($this->hasAnyPermission($permissions, [
+            'hostel.view-any', 'hostel-room.view-any', 'hostel-assignment.view-any'
+        ])) {
+            $groups['hostel'] = [
+                'hostelOverview' => [
+                    'title' => 'Hostel Overview',
+                    'icon' => 'pi-home',
+                    'endpoint' => '/api/dashboard/hostel-overview',
+                ],
+                'roomAllocation' => [
+                    'title' => 'Room Allocation',
+                    'icon' => 'pi-bed',
+                    'endpoint' => '/api/dashboard/hostel-rooms',
+                ],
+                'studentAssignments' => [
+                    'title' => 'Student Assignments',
+                    'icon' => 'pi-users',
+                    'endpoint' => '/api/dashboard/hostel-assignments',
+                ],
+            ];
+        }
+
+        // Finance & Reports Group
+        if ($this->hasPermission($permissions, 'finance-reports.view')) {
+            $groups['finance'] = [
+                'financialSummary' => [
+                    'title' => 'Financial Summary',
+                    'icon' => 'pi-wallet',
+                    'endpoint' => '/api/dashboard/finance-summary',
+                ],
+                'feeCollection' => [
+                    'title' => 'Fee Collection',
+                    'icon' => 'pi-chart-line',
+                    'endpoint' => '/api/dashboard/fee-collection',
+                ],
+            ];
+        }
+
+        // Notices & Communication
+        if ($this->hasAnyPermission($permissions, [
+            'notices.view', 'notices.create', 'notices.mark-read'
+        ])) {
+            $groups['communication'] = [
+                'notices' => [
+                    'title' => 'School Notices',
+                    'icon' => 'pi-bell',
+                    'endpoint' => '/api/dashboard/notices',
+                ],
+            ];
+        }
+
+        // Fallback: Always show if no other group
+        if (empty($groups)) {
+            $groups['general'] = [
+                'welcome' => [
+                    'title' => 'Welcome',
+                    'icon' => 'pi-info-circle',
+                    'endpoint' => '/api/dashboard/welcome',
+                ],
+            ];
+        }
+
+        return $groups;
     }
 
-    private function buildCanArray($user): array
+    /**
+     * Check if user has any of the given permissions.
+     */
+    protected function hasAnyPermission(array $userPermissions, array $required): bool
     {
-        $can = [];
-        foreach (self::PERMISSIONS as $key => $permission) {
-            $can[$key] = $user->can($permission);
-        }
-        return $can;
+        return collect($userPermissions)->intersect($required)->isNotEmpty();
+    }
+
+    /**
+     * Check if user has a specific permission.
+     */
+    protected function hasPermission(array $userPermissions, string $permission): bool
+    {
+        return in_array($permission, $userPermissions);
     }
 }
