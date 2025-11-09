@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
             $table->foreignUuid('staff_id')->constrained('staff')->cascadeOnDelete();
             $table->string('name');
-            $table->enum('type', ['bonus', 'allowance', 'overtime', 'deduction'])->nullable();
+            $table->string('type')->index();
             $table->decimal('amount', 15, 2);
             $table->text('description')->nullable();
             $table->date('effective_date');

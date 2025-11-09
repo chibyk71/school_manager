@@ -21,6 +21,7 @@ return new class extends Migration
             $table->date('effective_date')->nullable();
             $table->string('name');
             $table->text('description')->nullable();
+            $table->string('type')->index();
             $table->timestamps();
             $table->softDeletes();
             $table->unique(['school_id', 'salary_id', 'department_role_id', 'name', 'effective_date'], 'salary_structures_unique');
