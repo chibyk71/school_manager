@@ -36,16 +36,6 @@ class SchoolSectionSeeder extends Seeder
             "description" => "Secondary education, typically covering grades 10-12."
         ],
         [
-            "name" => "vocational_school",
-            "display_name" => "Vocational School",
-            "description" => "Education focused on practical skills and trades."
-        ],
-        [
-            "name" => "special_education",
-            "display_name" => "Special Education",
-            "description" => "Education tailored to students with special needs."
-        ],
-        [
             "name" => "adult_education",
             "display_name" => "Adult Education",
             "description" => "Education programs for adults seeking further learning or skills development."

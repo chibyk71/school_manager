@@ -6,6 +6,7 @@ use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -16,9 +17,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents a detailed entry for a lesson plan in the school management system.
  *
  * @package App\Models\Resource
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $lesson_plan_id
+ * @property string $lesson_plan_id
  * @property string $title
  * @property string|null $sub_title
  * @property string|null $objective
@@ -35,7 +36,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class LessonPlanDetail extends Model
 {
-    use BelongsToSchool, HasTableQuery, HasMedia, LogsActivity, SoftDeletes;
+    use BelongsToSchool, HasTableQuery, HasMedia, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

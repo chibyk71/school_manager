@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *
  * @property string $id
  * @property string $school_id
- * @property int $fee_type_id
+ * @property string $fee_type_id
  * @property string $term_id
  * @property string $recorded_by
  * @property string|null $description

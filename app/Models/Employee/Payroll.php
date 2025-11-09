@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use App\Traits\HasTransaction;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -16,10 +17,10 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * Payroll model representing payroll records for employees in a school.
  *
- * @property int $id
- * @property int $school_id
- * @property int $user_id
- * @property int $salary_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $user_id
+ * @property string $salary_id
  * @property float|null $bonus
  * @property float|null $deduction
  * @property float $net_salary
@@ -32,7 +33,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Payroll extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasTransaction;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasTransaction, HasUuids;
 
     /**
      * The table associated with the model.

@@ -16,7 +16,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * This model is global and not scoped to any school, used as a reference table
  * for addresses and other entities requiring country data.
  *
- * @property int $id Auto-incrementing primary key.
+ * @property string $id Auto-incrementing primary key.
  * @property string $name Country name (e.g., Nigeria).
  * @property string $code ISO 3166-1 alpha-2 country code (e.g., NG).
  * @property \Illuminate\Support\Carbon|null $created_at

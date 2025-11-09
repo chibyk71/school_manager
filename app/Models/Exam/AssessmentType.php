@@ -5,13 +5,14 @@ namespace App\Models\Exam;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Model representing an assessment type (e.g., quiz, midterm, final) in the school management system.
  *
- * @property int $id Primary key
+ * @property string $id Primary key
  * @property string $school_id UUID of the associated school
  * @property string $name Assessment type name
  * @property string|null $description Assessment type description
@@ -23,7 +24,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class AssessmentType extends Model
 {
-    use BelongsToSchool, HasTableQuery, LogsActivity;
+    use BelongsToSchool, HasTableQuery, LogsActivity, HasUuids;
 
     /**
      * The table associated with the model.

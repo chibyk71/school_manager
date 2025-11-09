@@ -2,15 +2,15 @@
 
 namespace App\Models\Employee;
 
-use App\Models\Model;
 use App\Models\School;
 use App\Models\SchoolSection;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -18,19 +18,19 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * DepartmentRole model representing a pivot between Department, Role, and optionally SchoolSection.
  *
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $department_id
+ * @property string $department_id
  * @property string $role_id
- * @property int|null $school_section_id
+ * @property string|null $school_section_id
  * @property string $name
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
  */
-class DepartmentRole extends Model
+class DepartmentRole extends Pivot
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The table associated with the model.

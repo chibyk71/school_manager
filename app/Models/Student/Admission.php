@@ -8,6 +8,7 @@ use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasCustomFields;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -21,9 +22,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $id
  * @property string $school_id
  * @property string $student_id
- * @property int $class_level_id
- * @property int $school_section_id
- * @property int $academic_session_id
+ * @property string $class_level_id
+ * @property string $school_section_id
+ * @property string $academic_session_id
  * @property string $roll_no
  * @property string $status
  * @property array|null $configs
@@ -33,7 +34,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Admission extends Model
 {
-    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasCustomFields;
+    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasCustomFields, HasUuids;
 
     /**
      * The table associated with the model.

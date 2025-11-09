@@ -10,13 +10,14 @@ use App\Models\Employee\Staff;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Model representing an assessment result for a student in the school management system.
  *
- * @property int $id Primary key
+ * @property string $id Primary key
  * @property string $assessment_id UUID of the associated assessment
  * @property string $student_id UUID of the associated student
  * @property string $subject_id UUID of the associated subject
@@ -31,7 +32,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class AssessmentResult extends Model
 {
-    use LogsActivity, BelongsToSchool, HasTableQuery;
+    use LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The table associated with the model.

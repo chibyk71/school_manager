@@ -6,7 +6,9 @@ use App\Models\Model;
 use App\Models\School;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
+use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,9 +17,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * FeeConcession model for providing discounts, waivers, or reductions to students or groups of students.
  *
- * @property int $id
- * @property int $school_id
- * @property int $fee_type_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $fee_type_id
  * @property string $name
  * @property string|null $description
  * @property string $type
@@ -30,7 +32,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class FeeConcession extends Model
 {
-    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids, HasConfig;
 
     /**
      * The attributes that are mass assignable.
@@ -90,6 +92,14 @@ class FeeConcession extends Model
         'created_at',
         'updated_at',
     ];
+
+    /**
+     * TODO add to seeder ['bonus', 'allowance', 'overtime', 'deduction']
+     * @var array<string>
+     */
+    public function getConfigurableProperties(): array {
+        return ['type',];
+    }
 
     /**
      * Get the activity log options for the model.

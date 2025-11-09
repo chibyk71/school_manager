@@ -22,7 +22,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $city City name.
  * @property string $state State or province.
  * @property string|null $postal_code Postal or ZIP code.
- * @property int $country_id Foreign key to countries table.
+ * @property string $country_id Foreign key to countries table.
  * @property bool $is_primary Indicates if this is the primary address.
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at

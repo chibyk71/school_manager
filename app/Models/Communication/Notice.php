@@ -60,9 +60,9 @@ class Notice extends Model
      *
      * @var array<int, string>
      */
-    protected $appends = [
-        'type',
-    ];
+    public function getConfigurableProperties(): array {
+        return ['type',];
+    }
 
     /**
      * Columns that should never be searchable, sortable, or filterable.
@@ -122,13 +122,13 @@ class Notice extends Model
 
     /**
      * Get the notice type (e.g., Announcement, Alert).
-     *
+     * TODO add type seeder in config
      * @return string|null
      */
-    public function getTypeAttribute(): ?string
-    {
-        return $this->addConfig('type', null)->value ?? null;
-    }
+    // public function getTypeAttribute(): ?string
+    // {
+    //     return $this->addConfig('type', null)->value ?? null;
+    // }
 
     /**
      * Get the options for logging changes to the model.

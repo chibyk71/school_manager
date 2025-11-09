@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Exam;
 
+use App\Http\Controllers\Controller;
 use App\Models\Academic\Grade;
 use App\Models\Academic\Subject;
 use App\Models\Exam\TermResult;

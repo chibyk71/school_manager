@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use App\Traits\HasTransaction;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
@@ -16,8 +17,8 @@ use Spatie\Activitylog\LogOptions;
  * Payment model for tracking payments made by students for fees or fee installments.
  *
  * @property string $id
- * @property int $school_id
- * @property int $user_id
+ * @property string $school_id
+ * @property string $user_id
  * @property string $payment_method
  * @property string $payment_status
  * @property float $payment_amount
@@ -25,8 +26,8 @@ use Spatie\Activitylog\LogOptions;
  * @property string $payment_reference
  * @property \Illuminate\Support\Carbon $payment_date
  * @property string $payment_description
- * @property int|null $fee_installment_detail_id
- * @property int|null $fee_id
+ * @property string|null $fee_installment_detail_id
+ * @property string|null $fee_id
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
@@ -34,7 +35,7 @@ use Spatie\Activitylog\LogOptions;
 class Payment extends Model
 {
     /** @use HasFactory<\Database\Factories\Finance\PaymentFactory> */
-    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, HasTransaction;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, HasTransaction, HasUuids;
 
     /**
      * Indicates if the IDs are auto-incrementing.

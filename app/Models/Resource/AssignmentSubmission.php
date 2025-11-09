@@ -7,6 +7,7 @@ use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -17,9 +18,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents an assignment submission in the school management system.
  *
  * @package App\Models\Resource
- * @property int $id
+ * @property string $id
  * @property string $student_id
- * @property int $assignment_id
+ * @property string $assignment_id
  * @property string|null $answer_text
  * @property float|null $mark_obtained
  * @property string $status
@@ -32,7 +33,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class AssignmentSubmission extends Model
 {
-    use BelongsToSchool, HasMedia, HasTableQuery, LogsActivity, SoftDeletes;
+    use BelongsToSchool, HasMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

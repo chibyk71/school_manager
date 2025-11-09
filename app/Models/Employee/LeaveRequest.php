@@ -7,6 +7,7 @@ use App\Models\Model;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -15,17 +16,17 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * LeaveRequest model representing leave requests submitted by employees in a school.
  *
- * @property int $id
- * @property int $school_id
- * @property int $user_id
- * @property int $leave_type_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $user_id
+ * @property string $leave_type_id
  * @property string|null $reason
  * @property \Illuminate\Support\Carbon $start_date
  * @property \Illuminate\Support\Carbon $end_date
  * @property string $status
- * @property int|null $approved_by
+ * @property string|null $approved_by
  * @property \Illuminate\Support\Carbon|null $approved_at
- * @property int|null $rejected_by
+ * @property string|null $rejected_by
  * @property \Illuminate\Support\Carbon|null $rejected_at
  * @property string|null $rejected_reason
  * @property \Illuminate\Support\Carbon|null $created_at
@@ -34,7 +35,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class LeaveRequest extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The table associated with the model.

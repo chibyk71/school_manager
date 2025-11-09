@@ -7,6 +7,7 @@ use App\Models\SchoolSection;
 use App\Traits\BelongsToSchool;
 use App\Traits\BelongsToSections;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -16,9 +17,9 @@ use Spatie\Activitylog\LogOptions;
 /**
  * ClassLevel model representing academic class levels (e.g., JSS1, SSS2) within a school.
  *
- * @property int $id
- * @property int $school_id
- * @property int $school_section_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $school_section_id
  * @property string $name
  * @property string|null $display_name
  * @property string|null $description
@@ -28,7 +29,7 @@ use Spatie\Activitylog\LogOptions;
  */
 class ClassLevel extends Model
 {
-    use HasFactory, BelongsToSchool, BelongsToSections, HasTableQuery, SoftDeletes, LogsActivity;
+    use HasFactory, BelongsToSchool, BelongsToSections, HasTableQuery, SoftDeletes, LogsActivity, HasUuids;
 
     /**
      * The attributes that are mass assignable.

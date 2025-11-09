@@ -44,7 +44,6 @@ class CustomField extends Model
         'cast_as',
         'has_options',
         'model_type',
-        'entity_id',
         'school_id',
     ];
 
@@ -120,6 +119,26 @@ class CustomField extends Model
     public function getRequiredAttribute(): bool
     {
         return in_array('required', $this->rules ?? []);
+    }
+
+    public function scopeForSchool($query, $school)
+    {
+        return $query->where('school_id', $school->id ?? $school);
+    }
+
+    public function scopeForModel($query, $model)
+    {
+        return $query->where('model_type', is_string($model) ? $this->resources[$model] ?? $model : $model);
+    }
+
+    public function scopeOrdered($query)
+    {
+        return $query->orderBy('sort')->orderBy('id');
+    }
+
+    public function responses()
+    {
+        return $this->hasMany(CustomFieldResponse::class, 'custom_field_id', 'id');
     }
 
     /**

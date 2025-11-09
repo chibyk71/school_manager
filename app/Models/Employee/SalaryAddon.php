@@ -7,6 +7,7 @@ use App\Models\School;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -15,9 +16,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * SalaryAddon model representing custom salary components (bonuses, allowances, overtime, deductions) for employees.
  *
- * @property int $id
- * @property int $school_id
- * @property int $user_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $user_id
  * @property string $name
  * @property float $amount
  * @property string|null $description
@@ -31,7 +32,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class SalaryAddon extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasConfig;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasConfig, HasUuids;
 
     /**
      * The table associated with the model.
@@ -49,22 +50,22 @@ class SalaryAddon extends Model
         'school_id',
         'user_id',
         'name',
-        'type',
         'amount',
         'description',
         'effective_date',
         'recurrence',
         'recurrence_end_date',
+        'type'
     ];
 
     /**
      * The attributes that should be appended to the model's array form.
-     *
+     * TODO add to seeder ['bonus', 'allowance', 'overtime', 'deduction']
      * @var array<string>
      */
-    protected $appends = [
-        'type',
-    ];
+    public function getConfigurableProperties(): array {
+        return ['type',];
+    }
 
     /**
      * The attributes that should be cast.
@@ -117,16 +118,6 @@ class SalaryAddon extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->setDescriptionForEvent(fn(string $eventName) => "Salary addon '{$this->name}' ({$this->type}) for user ID {$this->user_id} was {$eventName}");
-    }
-
-    /**
-     * Get the salary addon type from configurations.
-     *
-     * @return array
-     */
-    public function getTypeAttribute(): array
-    {
-        return $this->configs();
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Models\Employee;
 use App\Models\School;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -14,9 +15,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * Salary model representing salary structures for department roles in a school.
  *
- * @property int $id
- * @property int $school_id
- * @property int $department_role_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $department_role_id
  * @property float $base_salary
  * @property \Illuminate\Support\Carbon $effective_date
  * @property array|null $options
@@ -26,7 +27,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Salary extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The table associated with the model.

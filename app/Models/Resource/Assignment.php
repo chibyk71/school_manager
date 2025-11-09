@@ -9,6 +9,7 @@ use App\Traits\BelongsToSections;
 use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -19,13 +20,13 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents an assignment in the school management system.
  *
  * @package App\Models\Resource
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $class_level_id
+ * @property string $class_level_id
  * @property string $subject_id
  * @property string $title
  * @property string|null $description
- * @property int $term_id
+ * @property string $term_id
  * @property int $total_mark
  * @property \Illuminate\Support\Carbon $due_date
  * @property string $teacher_id
@@ -35,7 +36,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Assignment extends Model
 {
-    use BelongsToSchool, BelongsToSections, HasMedia, HasConfig, HasTableQuery, LogsActivity, SoftDeletes;
+    use BelongsToSchool, BelongsToSections, HasMedia, HasConfig, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.
@@ -59,6 +60,7 @@ class Assignment extends Model
         'total_mark',
         'due_date',
         'teacher_id',
+        'type' // TODO migrate
     ];
 
     /**
@@ -68,16 +70,6 @@ class Assignment extends Model
      */
     protected $casts = [
         'due_date' => 'datetime',
-    ];
-
-    /**
-     * The accessors to append to the model's array form.
-     *
-     * @var array<string>
-     */
-    protected $appends = [
-        'media',
-        'type',
     ];
 
     /**
@@ -103,12 +95,12 @@ class Assignment extends Model
 
     /**
      * Get the configuration type attribute.
-     *
-     * @return array The configuration names.
+     * 
+     * TODO add to seeder ['bonus', 'allowance', 'overtime', 'deduction']
+     * @var array<string>
      */
-    public function getTypeAttribute(): array
-    {
-        return $this->configs()->pluck('name')->toArray();
+    public function getConfigurableProperties(): array {
+        return ['type',];
     }
 
     /**

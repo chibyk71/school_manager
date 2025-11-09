@@ -6,6 +6,7 @@ use App\Models\Academic\Student;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -16,9 +17,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents a book order in the school management system.
  *
  * @package App\Models\Resource
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $book_list_id
+ * @property string $book_list_id
  * @property string $student_id
  * @property \Illuminate\Support\Carbon $order_date
  * @property \Illuminate\Support\Carbon|null $return_date
@@ -29,7 +30,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class BookOrder extends Model
 {
-    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes;
+    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

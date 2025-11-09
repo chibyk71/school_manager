@@ -7,6 +7,7 @@ use App\Models\Configuration\LeaveType;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -16,11 +17,11 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * LeaveLedger model representing leave transactions (e.g., encashed days) for employees in a school.
  *
- * @property int $id
- * @property int $school_id
- * @property int $user_id
- * @property int $leave_type_id
- * @property int $academic_session_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $user_id
+ * @property string $leave_type_id
+ * @property string $academic_session_id
  * @property int $encashed_days
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
@@ -28,7 +29,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class LeaveLedger extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The table associated with the model.

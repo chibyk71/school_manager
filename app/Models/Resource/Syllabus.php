@@ -6,6 +6,7 @@ use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -16,11 +17,11 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents a syllabus entry in the school management system.
  *
  * @package App\Models\Resource
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $class_level_id
+ * @property string $class_level_id
  * @property string $subject_id
- * @property int $term_id
+ * @property string $term_id
  * @property string $topic
  * @property string|null $sub_topic
  * @property string|null $description
@@ -32,7 +33,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Syllabus extends Model
 {
-    use BelongsToSchool, HasTableQuery, HasMedia, LogsActivity, SoftDeletes;
+    use BelongsToSchool, HasTableQuery, HasMedia, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

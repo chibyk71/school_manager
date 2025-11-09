@@ -8,6 +8,7 @@ use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -18,9 +19,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents a book list entry in the school management system.
  *
  * @package App\Models\Resource
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $class_level_id
+ * @property string $class_level_id
  * @property string $subject_id
  * @property string $title
  * @property string $author
@@ -34,7 +35,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class BookList extends Model
 {
-    use BelongsToSchool, HasMedia, HasTableQuery, LogsActivity, SoftDeletes;
+    use BelongsToSchool, HasMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

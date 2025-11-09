@@ -8,6 +8,7 @@ use App\Models\Transport\Vehicle\Vehicle;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -18,7 +19,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * Routes are school-scoped and associated with vehicles, users (drivers/students), and fees.
  *
- * @property int $id Auto-incrementing primary key.
+ * @property string $id Auto-incrementing primary key.
  * @property string $name Route name.
  * @property string|null $description Route description.
  * @property string $status Route status (e.g., active, inactive).
@@ -26,7 +27,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $ending_point Ending point of the route.
  * @property string $distance Route distance (e.g., '10 km').
  * @property string $duration Route duration (e.g., '30 minutes').
- * @property int|null $fee_id Associated fee ID.
+ * @property string|null $fee_id Associated fee ID.
  * @property string $school_id Associated school ID.
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
@@ -34,7 +35,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Route extends Model
 {
-    use HasFactory, LogsActivity, SoftDeletes, BelongsToSchool, HasTableQuery;
+    use HasFactory, LogsActivity, SoftDeletes, BelongsToSchool, HasUuids;
 
     /**
      * The attributes that are mass assignable.

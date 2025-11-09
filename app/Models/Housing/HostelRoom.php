@@ -4,6 +4,7 @@ namespace App\Models\Housing;
 
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Model;
@@ -15,8 +16,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * Manages individual rooms within a hostel.
  *
- * @property int $id Auto-incrementing primary key.
- * @property int $hostel_id Associated hostel ID.
+ * @property string $id Auto-incrementing primary key.
+ * @property string $hostel_id Associated hostel ID.
  * @property string $room_number Room identifier (e.g., A1).
  * @property int $capacity Maximum number of students.
  * @property string|null $description Room description.
@@ -28,7 +29,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class HostelRoom extends Model
 {
     /** @use HasFactory<\Database\Factories\Housing\HostelRoomFactory> */
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasUuids;
 
     protected $table = 'hostel_rooms';
 

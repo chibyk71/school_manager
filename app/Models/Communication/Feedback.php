@@ -74,16 +74,16 @@ class Feedback extends Model
         'status',
         'subject',
         'message',
+        'category'
     ];
 
     /**
-     * The accessors to append to the model's array form.
      *
      * @var array<int, string>
      */
-    protected $appends = [
-        'category',
-    ];
+    public function getConfigurableProperties(): array {
+        return ['category',];
+    }
 
     /**
      * Columns that should never be searchable, sortable, or filterable.
@@ -133,13 +133,13 @@ class Feedback extends Model
 
     /**
      * Get the feedback category (Complaint, Suggestion, Appreciation).
-     *
+     * TODO add config seeder
      * @return string|null
      */
-    public function getCategoryAttribute(): ?string
-    {
-        return $this->addConfig('category', null)->value ?? null;
-    }
+    // public function getCategoryAttribute(): ?string
+    // {
+    //     return $this->addConfig('category', null)->value ?? null;
+    // }
 
     /**
      * Scope a query to only include handled feedback.

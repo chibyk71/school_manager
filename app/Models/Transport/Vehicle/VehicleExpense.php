@@ -7,6 +7,7 @@ use App\Traits\BelongsToPrimaryModel;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use FarhanShares\MediaMan\Traits\HasMedia;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -31,7 +32,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class VehicleExpense extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToPrimaryModel, HasMedia;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToPrimaryModel, HasMedia, HasUuids;
 
     /**
      * The table associated with the model.
@@ -125,15 +126,5 @@ class VehicleExpense extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
-    }
-
-    /**
-     * Get the school ID column name through the vehicle relationship.
-     *
-     * @return string
-     */
-    public static function getSchoolIdColumn(): string
-    {
-        return 'vehicle.school_id';
     }
 }

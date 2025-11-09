@@ -5,6 +5,7 @@ namespace App\Models\Transport\Vehicle;
 use App\Models\Employee\Staff;
 use App\Models\Model;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -15,7 +16,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * Tracks driver assignments to vehicles with effective and unassignment dates.
  *
- * @property int $id Auto-incrementing primary key.
+ * @property string $id Auto-incrementing primary key.
  * @property string $vehicle_id Associated vehicle ID.
  * @property string $staff_id Associated staff ID (driver).
  * @property \Illuminate\Support\Carbon $effective_date Effective date of assignment.
@@ -27,7 +28,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class DriverAssignment extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

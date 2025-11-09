@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\AcademicSessionController;
 use App\Http\Controllers\AdmissionController;
-use App\Http\Controllers\AssessmentResultController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\AssignmentSubmissionController;
 use App\Http\Controllers\AttendanceLedgerController;
@@ -18,6 +17,7 @@ use App\Http\Controllers\DepartmentRoleController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventTypeController;
 use App\Http\Controllers\Exam\AssessmentController;
+use App\Http\Controllers\Exam\AssessmentResultController;
 use App\Http\Controllers\Exam\AssessmentScheduleController;
 use App\Http\Controllers\Exam\AssessmentTypeController;
 use App\Http\Controllers\FeedbackController;
@@ -55,10 +55,9 @@ use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SyllabusController;
 use App\Http\Controllers\SyllabusDetailController;
-use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\TermController;
-use App\Http\Controllers\TermResultController;
-use App\Http\Controllers\TermResultDetailController;
+use App\Http\Controllers\Exam\TermResultController;
+use App\Http\Controllers\Exam\TermResultDetailController;
 use App\Http\Controllers\TimeTableController;
 use App\Http\Controllers\TimeTableDetailController;
 use App\Http\Controllers\UserController;
@@ -77,6 +76,8 @@ Route::get('/', function () {
         'phpVersion' => PHP_VERSION,
     ]);
 });
+
+Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth', 'verified'])->name('dashboard');
 
 // Exams
 Route::resource('exam.assessment', AssessmentController::class);

@@ -4,6 +4,7 @@ namespace App\Models\Housing;
 
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Model;
@@ -15,9 +16,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * Tracks student assignments to hostel rooms.
  *
- * @property int $id Auto-incrementing primary key.
- * @property int $hostel_room_id Associated room ID.
- * @property int $student_id Associated student ID.
+ * @property string $id Auto-incrementing primary key.
+ * @property string $hostel_room_id Associated room ID.
+ * @property string $student_id Associated student ID.
  * @property string $status Assignment status (e.g., checked-in, checked-out).
  * @property \Illuminate\Support\Carbon $check_in_date Check-in date.
  * @property \Illuminate\Support\Carbon|null $check_out_date Check-out date.
@@ -29,7 +30,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class HostelAssignment extends Model
 {
     /** @use HasFactory<\Database\Factories\Housing\HostelAssignmentFactory> */
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasUuids;
 
     protected $table = 'hostel_assignments';
 

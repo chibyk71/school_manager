@@ -15,10 +15,10 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * SalaryStructure model representing specific salary components for a department role in a school.
  *
- * @property int $id
- * @property int $school_id
- * @property int $salary_id
- * @property int $department_role_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $salary_id
+ * @property string $department_role_id
  * @property float $amount
  * @property string $currency
  * @property \Illuminate\Support\Carbon|null $effective_date
@@ -54,6 +54,7 @@ class SalaryStructure extends Model
         'effective_date',
         'name',
         'description',
+        'type'
     ];
 
     /**
@@ -61,9 +62,9 @@ class SalaryStructure extends Model
      *
      * @var array<string>
      */
-    protected $appends = [
-        'salary_type',
-    ];
+    public function getConfigurableProperties(): array {
+        return ['type',];
+    }
 
     /**
      * The attributes that should be cast.

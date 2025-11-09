@@ -7,17 +7,18 @@ use App\Models\Academic\Subject;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Model representing subject-specific details of a student's term result in the school management system.
  *
- * @property int $id Primary key
+ * @property string $id Primary key
  * @property string $school_id UUID of the associated school
- * @property int $term_result_id ID of the associated term result
+ * @property string $term_result_id ID of the associated term result
  * @property string $subject_id UUID of the associated subject
- * @property int $grade_id ID of the associated grade
+ * @property string $grade_id ID of the associated grade
  * @property float $score Subject-specific score
  * @property string|null $class_teacher_remark Class teacher's remark for the subject
  * @property string|null $head_teacher_remark Head teacher's remark for the subject
@@ -26,7 +27,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class TermResultDetail extends Model
 {
-    use BelongsToSchool, HasTableQuery, LogsActivity;
+    use BelongsToSchool, HasTableQuery, LogsActivity, HasUuids;
 
     /**
      * The table associated with the model.

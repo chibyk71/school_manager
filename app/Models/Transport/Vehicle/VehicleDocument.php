@@ -123,7 +123,7 @@ class VehicleDocument extends Model
         return 'vehicle.school_id';
     }
 
-    public function getRelationshipToPrimaryModel() {
-        'vehicle';
+    public function getRelationshipToPrimaryModel(): string {
+        return 'vehicle';
     }
 }

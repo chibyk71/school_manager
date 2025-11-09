@@ -4,8 +4,10 @@ namespace App\Models\Finance;
 
 use App\Models\School;
 use App\Traits\BelongsToSchool;
+use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use App\Traits\HasTransaction;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\Model;
@@ -14,10 +16,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * Expense model representing expenses made by a school or branch.
  *
- * @property int $id
- * @property int $school_id
- * @property int|null $branch_id
- * @property int $recorded_by
+ * @property string $id
+ * @property string $school_id
+ * @property string $recorded_by
  * @property float $amount
  * @property string $category
  * @property string|null $description
@@ -29,7 +30,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Expense extends Model
 {
-    use BelongsToSchool, HasTableQuery, HasTransaction, LogsActivity, SoftDeletes;
+    use BelongsToSchool, HasTableQuery, HasTransaction, LogsActivity, SoftDeletes, HasUuids, HasConfig;
 
     /**
      * The attributes that are mass assignable.
@@ -112,6 +113,14 @@ class Expense extends Model
     public function getTransactionType(): string
     {
         return 'expense';
+    }
+
+    /**
+     * TODO add to seeder ['bonus', 'allowance', 'overtime', 'deduction']
+     * @var array<string>
+     */
+    public function getConfigurableProperties(): array {
+        return ['category',];
     }
 
     /**

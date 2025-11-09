@@ -78,8 +78,6 @@ class Vehicle extends Model
     protected $attributes = [
         'is_owned' => true,
         'is_active' => true,
-        'fuel_type' => null,
-        'type' => null,
     ];
 
     /**
@@ -131,47 +129,6 @@ class Vehicle extends Model
     {
         return $this->belongsTo(School::class);
     }
-/** Set a vehicle-type config (system-wide) */
-    public function setVehicleType(string $type): Config
-    {
-        return $this->addConfig('vehicle_type', $type);
-    }
-
-    /** Set a fuel-type config (school-specific when a school is active) */
-    public function setFuelType(string $fuel): Config
-    {
-        return $this->addConfig('vehicle_fuel_type', $fuel);
-    }
-
-    public function getFuelTypeAttribute()
-    {
-        return $this->fuelType();
-    }
-
-    public function getTypeAttribute()
-    {
-        return $this->vehicleType();
-    }
-
-    /** Get the effective vehicle type (school → system) */
-    public function vehicleType(): ?string
-    {
-        return $this->getConfig('vehicle_type');
-    }
-
-    /** Get the effective fuel type */
-    public function fuelType(): ?string
-    {
-        return $this->getConfig('vehicle_fuel_type');
-    }
-
-    /** Get both at once – returns ['vehicle_type'=>…, 'vehicle_fuel_type'=>…] */
-    public function vehicleConfig(): array
-    {
-        return $this->getConfigs(['vehicle_type', 'vehicle_fuel_type'])
-                    ->pluck('value', 'name')
-                    ->toArray();
-    }
 
     /**
      * Get the documents associated with the vehicle.
@@ -184,13 +141,11 @@ class Vehicle extends Model
     }
 
     /**
-     * Get the incharges associated with the vehicle.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     * TODO add to seeder ['bonus', 'allowance', 'overtime', 'deduction']
+     * @var array<string>
      */
-    public function vehicleIncharges()
-    {
-        return $this->hasMany(VehicleIncharge::class);
+    public function getConfigurableProperties(): array {
+        return ['make', 'fuel_type'];
     }
 
     /**

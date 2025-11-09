@@ -2,11 +2,13 @@
 
 namespace App\Models\Misc;
 
+use App\Models\Academic\ClassSection;
 use App\Models\Model;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -17,10 +19,10 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents an attendance session for a class in the school management system.
  *
  * @package App\Models\Misc
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $class_section_id
- * @property int $class_period_id
+ * @property string $class_section_id
+ * @property string $class_period_id
  * @property string $manager_id
  * @property string $name
  * @property string|null $description
@@ -32,7 +34,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class AttendanceSession extends Model
 {
-    use BelongsToSchool, HasConfig, HasTableQuery, LogsActivity, SoftDeletes;
+    use BelongsToSchool, HasConfig, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.
@@ -54,7 +56,7 @@ class AttendanceSession extends Model
         'name',
         'description',
         'date_effective',
-        'configs',
+        'type'  // TODO add to migration,
     ];
 
     /**
@@ -64,15 +66,7 @@ class AttendanceSession extends Model
      */
     protected $casts = [
         'date_effective' => 'date',
-        'configs' => 'array',
     ];
-
-    /**
-     * The accessors to append to the model's array form.
-     *
-     * @var array<string>
-     */
-    protected $appends = ['type'];
 
     /**
      * Columns that should never be searchable, sortable, or filterable.
@@ -84,7 +78,6 @@ class AttendanceSession extends Model
         'updated_at',
         'deleted_at',
         'description',
-        'configs',
     ];
 
     /**
@@ -95,16 +88,17 @@ class AttendanceSession extends Model
     protected $globalFilterFields = [
         'name',
         'date_effective',
+        'type'
     ];
 
     /**
      * Get the type attribute (alias for configs).
      *
-     * @return array|null
+     * TODO add to seeder ['bonus', 'allowance', 'overtime', 'deduction']
+     * @var array<string>
      */
-    public function getTypeAttribute()
-    {
-        return $this->configs;
+    public function getConfigurableProperties(): array {
+        return ['type',];
     }
 
     /**
@@ -114,7 +108,7 @@ class AttendanceSession extends Model
      */
     public function classSection()
     {
-        return $this->belongsTo(\App\Models\ClassSection::class);
+        return $this->belongsTo(ClassSection::class);
     }
 
     /**
@@ -124,7 +118,7 @@ class AttendanceSession extends Model
      */
     public function classPeriod()
     {
-        return $this->belongsTo(\App\Models\ClassPeriod::class);
+        return $this->belongsTo(\App\Models\Academic\ClassPeriod::class);
     }
 
     /**

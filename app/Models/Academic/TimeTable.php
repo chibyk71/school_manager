@@ -30,7 +30,7 @@ use Illuminate\Support\Arr;
  */
 class TimeTable extends Model
 {
-    use HasFactory, HasUuids, SoftDeletes, LogsActivity, HasConfig, BelongsToSchool, BelongsToSections, HasTableQuery;
+    use HasFactory, HasUuids, SoftDeletes, LogsActivity, BelongsToSchool, BelongsToSections, HasTableQuery;
 
     /**
      * The attributes that are mass assignable.

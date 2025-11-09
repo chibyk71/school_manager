@@ -7,6 +7,7 @@ use App\Models\School;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,10 +16,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * FeeInstallmentDetail model for tracking individual student installment details for a fee payment plan.
  *
- * @property int $id
- * @property int $school_id
- * @property int $fee_installment_id
- * @property int $user_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $fee_installment_id
+ * @property string $user_id
  * @property float $amount
  * @property \Carbon\Carbon $due_date
  * @property string $status
@@ -31,7 +32,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class FeeInstallmentDetail extends Model
 {
     /** @use HasFactory<\Database\Factories\Finance\FeeInstallmentDetailFactory> */
-    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The attributes that are mass assignable.

@@ -33,7 +33,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Assessment extends Model
 {
-    use LogsActivity, BelongsToSchool, BelongsToSections, HasConfig, HasTableQuery, HasUuids;
+    use LogsActivity, BelongsToSchool, BelongsToSections, HasTableQuery, HasUuids;
 
     /**
      * The attributes that are mass assignable.
@@ -65,15 +65,6 @@ class Assessment extends Model
     ];
 
     /**
-     * The attributes that should be appended to the model's array form.
-     *
-     * @var array<string>
-     */
-    protected $appends = [
-        'type',
-    ];
-
-    /**
      * The attributes used for global filtering.
      *
      * @var array<string>
@@ -86,16 +77,6 @@ class Assessment extends Model
      * @var array<string>
      */
     protected array $hiddenTableColumns = ['school_id', 'created_at', 'updated_at'];
-
-    /**
-     * Get the assessment type name.
-     *
-     * @return string|null The assessment type name or null if not found.
-     */
-    public function getTypeAttribute(): ?string
-    {
-        return $this->assessmentType?->name;
-    }
 
     /**
      * Define the relationship with the AssessmentType model.

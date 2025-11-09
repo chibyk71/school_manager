@@ -7,6 +7,7 @@ use App\Models\Configuration\LeaveType;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -16,19 +17,19 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * LeaveAllocation model representing leave allocations for employees in a school.
  *
- * @property int $id
- * @property int $school_id
- * @property int $user_id
- * @property int $leave_type_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $user_id
+ * @property string $leave_type_id
  * @property int $no_of_days
- * @property int $academic_session_id
+ * @property string $academic_session_id
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
  */
 class LeaveAllocation extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The table associated with the model.

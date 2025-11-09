@@ -5,6 +5,7 @@ namespace App\Models\Misc;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -15,9 +16,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents an attendance record for a student or staff in the school management system.
  *
  * @package App\Models\Misc
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $attendance_session_id
+ * @property string $attendance_session_id
  * @property string $attendable_id
  * @property string $attendable_type
  * @property string $status
@@ -28,7 +29,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class AttendanceLedger extends Model
 {
-    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes;
+    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

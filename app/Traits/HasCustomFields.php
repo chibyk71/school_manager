@@ -3,6 +3,7 @@
 namespace App\Traits;
 
 use App\Models\CustomField;
+use App\Models\CustomFieldResponse;
 use App\Models\School;
 use Exception;
 use Illuminate\Support\Facades\Cache;
@@ -143,18 +144,11 @@ trait HasCustomFields
     {
         try {
             $school = $this->getActiveSchool();
-
-            // Ensure extra_attributes column exists
-            if (!property_exists($this, 'casts') || !isset($this->casts['extra_attributes']) || $this->casts['extra_attributes'] !== 'array') {
-                throw new \Exception('Model ' . get_class($this) . ' must define extra_attributes as array in casts.');
-            }
-
             $savedResponses = [];
-            $validator = Validator::make([], []);
 
-            // Cache custom fields for performance
+            // Cache custom fields
             $cacheKey = 'custom_fields_' . $school->id . '_' . md5(get_class($this));
-            $allowedFields = Cache::remember($cacheKey, now()->addHour(), function () use ($school) {
+            $customFields = Cache::remember($cacheKey, now()->addHour(), function () use ($school) {
                 return CustomField::where('model_type', get_class($this))
                     ->where('school_id', $school->id)
                     ->get()
@@ -163,53 +157,57 @@ trait HasCustomFields
 
             $rules = [];
             $customAttributes = [];
-            $filteredResponses = [];
+            $validResponses = [];
 
-            // Validate responses against defined custom fields
             foreach ($responses as $fieldName => $value) {
-                if (!$allowedFields->has($fieldName)) {
-                    $validator->errors()->add($fieldName, "The field '{$fieldName}' is not recognized for this model.");
-                    continue;
+                $customField = $customFields->get($fieldName);
+
+                if (!$customField) {
+                    throw new \Exception("Custom field '{$fieldName}' not found.");
                 }
 
-                $customField = $allowedFields->get($fieldName);
+                // Collect validation rules
                 if ($validate && !empty($customField->rules)) {
                     $rules[$fieldName] = $customField->rules;
-                    $customAttributes[$fieldName] = strtolower($customField->label ?? $fieldName);
+                    $customAttributes[$fieldName] = $customField->label ?? $fieldName;
                 }
 
-                $filteredResponses[$fieldName] = $value;
+                $validResponses[$fieldName] = [
+                    'custom_field_id' => $customField->id,
+                    'value' => $value,
+                ];
             }
 
-            // Apply validation rules if required
-            if ($validate && $rules) {
-                $fieldValidator = Validator::make($filteredResponses, $rules, [], $customAttributes);
-                if ($fieldValidator->fails()) {
-                    foreach ($fieldValidator->errors()->messages() as $field => $errors) {
-                        foreach ($errors as $error) {
-                            $validator->errors()->add($field, $error);
-                        }
-                    }
+            // Validate all at once
+            if ($validate && !empty($rules)) {
+                $validator = Validator::make($responses, $rules, [], $customAttributes);
+                if ($validator->fails()) {
+                    throw new ValidationException($validator);
                 }
             }
 
-            if ($validator->errors()->isNotEmpty()) {
-                throw new ValidationException($validator);
-            }
+            // Use database transaction
+            \DB::transaction(function () use ($validResponses, $savedResponses) {
+                foreach ($validResponses as $fieldName => $data) {
+                    CustomFieldResponse::updateOrCreate(
+                        [
+                            'custom_field_id' => $data['custom_field_id'],
+                            'model_type' => get_class($this),
+                            'model_id' => $this->id,
+                        ],
+                        ['value' => $data['value']]
+                    );
 
-            // Save responses to extra_attributes
-            foreach ($filteredResponses as $fieldName => $value) {
-                $this->extra_attributes[$fieldName] = $value;
-                $savedResponses[$fieldName] = $value;
-            }
-
-            $this->save();
+                    $savedResponses[$fieldName] = $data['value'];
+                }
+            });
 
             return $savedResponses;
+
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
-            Log::error('Failed to save custom field responses for model ' . get_class($this) . ': ' . $e->getMessage());
+            Log::error('Failed to save custom responses: ' . $e->getMessage());
             throw new \Exception('Unable to save custom field responses: ' . $e->getMessage());
         }
     }
@@ -247,6 +245,26 @@ trait HasCustomFields
             'options' => 'nullable|array',
             'options.*' => 'string|max:255',
         ])->validate();
+    }
+
+    /**
+     * Get the value of a custom field for the current model.
+     *
+     * @param string $fieldName The name of the custom field.
+     * @return mixed The value of the custom field.
+     */
+    public function getCustomFieldValue(string $fieldName)
+    {
+        return $this->customFieldResponses()
+            ->join('custom_fields', 'custom_field_responses.custom_field_id', '=', 'custom_fields.id')
+            ->where('custom_fields.name', $fieldName)
+            ->value('custom_field_responses.value');
+    }
+
+
+    public function customFieldResponses()
+    {
+        return $this->morphMany(CustomFieldResponse::class, 'model');
     }
 
     /**

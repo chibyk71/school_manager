@@ -4,7 +4,8 @@ import Staff from './Dashboard/Staff.vue';
 </script>
 
 <template>
-    <Head title="Dashboard" />
+
+    <Head title="Wellcome" />
 
     <Staff />
 </template>

@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Exam;
 
+use App\Http\Controllers\Controller;
 use App\Models\Academic\ClassSection;
 use App\Models\Academic\Grade;
 use App\Models\Academic\Student;
@@ -252,7 +253,7 @@ class AssessmentResultController extends Controller
     public function update(Request $request, AssessmentResult $assessmentResult)
     {
         try {
-            permitted('edit-assessment-results');
+            permitted('assessment-results.edit');
 
             $school = GetSchoolModel();
             if (!$school || $assessmentResult->school_id !== $school->id) {
@@ -293,7 +294,7 @@ class AssessmentResultController extends Controller
     public function destroy(AssessmentResult $assessmentResult)
     {
         try {
-            permitted('delete-assessment-results');
+            permitted('assessment-results.delete');
 
             $school = GetSchoolModel();
             if (!$school || $assessmentResult->school_id !== $school->id) {

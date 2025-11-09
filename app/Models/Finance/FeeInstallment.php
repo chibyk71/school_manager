@@ -5,6 +5,7 @@ namespace App\Models\Finance;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -13,10 +14,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * FeeInstallment model for creating payment plans for fees, storing installment settings for a fee.
  *
- * @property int $id
- * @property int $school_id
- * @property int $fee_id
- * @property int $no_of_installment
+ * @property string $id
+ * @property string $school_id
+ * @property string $fee_id
+ * @property string $no_of_installment
  * @property float|null $initial_amount_payable
  * @property \Carbon\Carbon $due_date
  * @property array|null $options
@@ -27,7 +28,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class FeeInstallment extends Model
 {
     /** @use HasFactory<\Database\Factories\Finance\FeeInstallmentFactory> */
-    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The attributes that are mass assignable.

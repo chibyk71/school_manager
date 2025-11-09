@@ -38,17 +38,6 @@ class ClassLevelSeeder extends Seeder
             ['name' => 'sss_2', 'display_name' => 'SSS 2', 'description' => 'Second year of senior secondary education.'],
             ['name' => 'sss_3', 'display_name' => 'SSS 3', 'description' => 'Final year of senior secondary education.'],
         ],
-        'vocational_school' => [
-            ['name' => 'voc_basic', 'display_name' => 'Basic Vocational Training', 'description' => 'Entry-level vocational training.'],
-            ['name' => 'voc_intermediate', 'display_name' => 'Intermediate Vocational Training', 'description' => 'Intermediate level of vocational skills.'],
-            ['name' => 'voc_advanced', 'display_name' => 'Advanced Vocational Training', 'description' => 'Higher-level vocational certification.'],
-        ],
-        'special_education' => [
-            ['name' => 'spec_early', 'display_name' => 'Special Needs Early Intervention', 'description' => 'Support for young children with special needs.'],
-            ['name' => 'spec_primary', 'display_name' => 'Special Primary Education', 'description' => 'Inclusive primary education for special needs students.'],
-            ['name' => 'spec_secondary', 'display_name' => 'Special Secondary Education', 'description' => 'Inclusive secondary education for special needs students.'],
-            ['name' => 'spec_voc', 'display_name' => 'Special Vocational Training', 'description' => 'Skill training tailored for individuals with special needs.'],
-        ],
         'adult_education' => [
             ['name' => 'adult_basic', 'display_name' => 'Basic Literacy', 'description' => 'Literacy program for adults.'],
             ['name' => 'adult_intermediate', 'display_name' => 'Post-Literacy', 'description' => 'Advanced reading and writing for adults.'],

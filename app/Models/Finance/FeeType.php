@@ -5,6 +5,7 @@ namespace App\Models\Finance;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,8 +15,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * FeeType model representing types of fees to be collected by a school.
  * Fees are grouped by fee types for categorization.
  *
- * @property int $id
- * @property int $school_id
+ * @property string $id
+ * @property string $school_id
  * @property string $name
  * @property string|null $description
  * @property string|null $color
@@ -26,7 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class FeeType extends Model
 {
-    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The attributes that are mass assignable.

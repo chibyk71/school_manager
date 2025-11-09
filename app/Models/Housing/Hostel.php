@@ -12,6 +12,7 @@ use App\Traits\HasConfig;
 use App\Traits\BelongsToSections;
 use App\Traits\HasAddress;
 use App\Traits\HasTransaction;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -39,7 +40,7 @@ use Spatie\SchemalessAttributes\SchemalessAttributes;
  */
 class Hostel extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasCustomFields, HasConfig, BelongsToSections, HasAddress, HasTransaction;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasCustomFields, HasUuids, BelongsToSections, HasAddress;
 
     protected $table = 'hostels';
 
@@ -112,37 +113,5 @@ class Hostel extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
-    }
-
-    /**
-     * Get the transaction type for the hostel.
-     *
-     * @return string
-     */
-    public function getTransactionType(): string
-    {
-        return 'expense'; // Hostels typically incur expenses
-    }
-
-    /**
-     * Get the transaction category for the hostel.
-     *
-     * @return string
-     */
-    public function getCategory(): string
-    {
-        return 'hostel_management';
-    }
-
-    /**
-     * Get the amount for the transaction.
-     *
-     * @return float
-     * @throws \Exception
-     */
-    public function getAmount(): float
-    {
-        // Example: Sum of room fees or maintenance costs
-        return $this->options['maintenance_fee'] ?? 0.0;
     }
 }

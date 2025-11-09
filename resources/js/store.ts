@@ -293,7 +293,7 @@ export const menuItems = ref([
                     { title: "SMS Settings", link: route("system.sms") },
                     { title: "OTP", link: route("system.otp") },
                     { title: "GDPR Cookies", link: route('system.gdpr') },
-                    {title: "Custom Fields", link: route('website.custom_field')},
+                    {title: "Custom Fields", link: route('website.custom-field')},
                 ],
             },
             {

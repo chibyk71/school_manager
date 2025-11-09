@@ -4,6 +4,7 @@ namespace App\Models\Resource;
 
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -14,9 +15,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Represents an approval request for a syllabus detail in the school management system.
  *
  * @package App\Models\Resource
- * @property int $id
+ * @property string $id
  * @property string $school_id
- * @property int $syllabus_detail_id
+ * @property string $syllabus_detail_id
  * @property string $requester_id
  * @property string|null $approver_id
  * @property string $status
@@ -27,7 +28,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class SyllabusDetailApproval extends Model
 {
-    use BelongsToSchool, LogsActivity, SoftDeletes;
+    use BelongsToSchool, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

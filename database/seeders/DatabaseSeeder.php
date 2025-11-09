@@ -21,10 +21,22 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+
         // -----------------------------------------------------------------
-        // 1. ROLES & PERMISSIONS (must be first – everything else references them)
+        // 1. CREATE A SCHOOL FIRST (required for BelongsToSchool models)
         // -----------------------------------------------------------------
-        $this->callWithLog(RolesTableSeeder::class);
+        $school = \App\Models\School::firstOrCreate(
+            ['slug' => 'demo'],
+            [
+                'name' => 'Demo Academy',
+                'code' => 'DA',
+                'email' => 'admin@demo.academy',
+                'phone_one' => '08012345678',
+            ]
+        );
+
+        // Set this school as the active one for the rest of seeding
+        app('schoolManager')->setActiveSchool($school);
 
         // -----------------------------------------------------------------
         // 2. GLOBAL SETTINGS (tenant-agnostic defaults)
@@ -45,23 +57,15 @@ class DatabaseSeeder extends Seeder
         // 3. OPTIONAL: Demo data / factories (uncomment for local dev)
         // -----------------------------------------------------------------
 
-        // $this->callWithLog(\Database\Seeders\SchoolSectionSeeder::class);
-        // $this->callWithLog(\Database\Seeders\ClassLevelSeeder::class);
-        // $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
+        $this->callWithLog(\Database\Seeders\SchoolSectionSeeder::class);
+        $this->callWithLog(\Database\Seeders\ClassLevelSeeder::class);
+        $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
+        $this->callWithLog(RolesTableSeeder::class);
 
-        // Create a demo school + admin
-        $school = \App\Models\School::factory()->create([
-            'name'      => 'Demo Academy',
-            'slug'      => 'demo',
-            'code'      => 'DA',
-            'email'     => 'admin@demo.academy',
-            'phone_one' => '08012345678',
-        ]);
 
         \App\Models\User::factory()->create([
-            'name'  => 'Demo Admin',
+            'name' => 'Demo Admin',
             'email' => 'admin@demo.academy',
-            'school_id' => $school->id,
         ])->addRole('admin');
 
         Log::info('DatabaseSeeder finished successfully.');

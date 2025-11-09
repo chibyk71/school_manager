@@ -15,7 +15,7 @@ class ConfigController extends Controller
 {
     public function index(Request $request): \Inertia\Response
     {
-        Gate::authorize('viewAny', Config::class);
+        Gate::authorize('viewany', Config::class);
 
         $school = GetSchoolModel();
 

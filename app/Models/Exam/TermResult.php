@@ -8,17 +8,18 @@ use App\Models\Academic\Term;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Model representing a student's term result in the school management system.
  *
- * @property int $id Primary key
+ * @property string $id Primary key
  * @property string $school_id UUID of the associated school
  * @property string $student_id UUID of the associated student
- * @property int $term_id ID of the associated term
- * @property int $class_id ID of the associated class level
+ * @property string $term_id ID of the associated term
+ * @property string $class_id ID of the associated class level
  * @property float $total_score Total score for the term
  * @property float $average_score Average score for the term
  * @property int $position Student's position in the class
@@ -30,7 +31,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class TermResult extends Model
 {
-    use BelongsToSchool, HasTableQuery, LogsActivity;
+    use BelongsToSchool, HasTableQuery, LogsActivity, HasUuids;
 
     /**
      * The attributes that are mass assignable.
