@@ -12,19 +12,30 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('transactions', function (Blueprint $table) {
-            $table->uuid('id')->primary()->comment('Primary key for the transaction');
-            $table->foreignUuid('payable_id')->nullable()->comment('Polymorphic relation ID (e.g., Fee, Expense)');
-            $table->string('payable_type')->nullable()->comment('Polymorphic relation type (e.g., App\Models\Finance\Fee)');
-            $table->foreignUuid('school_id')->constrained('schools')->onDelete('cascade')->comment('The school associated with this transaction');
-            $table->foreignUuid('school_section_id')->nullable()->constrained('school_sections')->onDelete('cascade')->comment('The school section associated with this transaction, if applicable');
-            $table->decimal('amount', 15, 2)->comment('Amount of the transaction');
-            $table->text('description')->nullable()->comment('Details or notes about the transaction');
-            $table->date('transaction_date')->comment('Date of the transaction');
-            $table->string('reference_number')->nullable()->comment('Reference number for the transaction');
-            $table->foreignUuid('recorded_by')->nullable()->constrained('users')->onDelete('restrict')->comment('User who recorded the transaction');
+            $table->uuid('id')->primary();
+            $table->foreignUuid('school_id')->constrained()->cascadeOnDelete();
+
+            // Polymorphic relationship: Fee, Expense, Payment, etc.
+            $table->uuidMorphs('payable'); // payable_id + payable_type
+
+            $table->string('transaction_type')->index(); // income, expense
+            $table->string('category')->index(); // Tuition, Salary, Utilities, etc.
+            $table->decimal('amount', 15, 2);
+            $table->decimal('balance_after', 15, 2)->nullable(); // Optional: running balance
+
+            $table->date('transaction_date');
+            $table->text('description')->nullable();
+
+            $table->foreignUuid('recorded_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->string('reference')->unique()->nullable(); // e.g. PAYSTACK-REF, EXP-001
+            $table->json('meta')->nullable(); // Extra data: payment method, bank, etc.
+
             $table->timestamps();
-            $table->softDeletes()->comment('Soft delete column for recoverable deletion');
-            $table->index(['school_id', 'reference_number'])->comment('Index for efficient querying');
+            $table->softDeletes();
+
+            // Indexes for performance
+            $table->index(['school_id', 'transaction_date']);
+            $table->index(['transaction_type', 'category']);
         });
     }
 

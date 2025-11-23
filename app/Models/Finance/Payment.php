@@ -167,4 +167,13 @@ class Payment extends Model
     {
         return $this->belongsTo(FeeInstallmentDetail::class);
     }
+
+    public function getTransactionType(): string
+    {
+        return 'income';
+    }
+    public function getCategory(): string
+    {
+        return '';
+    }
 }
