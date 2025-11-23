@@ -44,8 +44,27 @@ class AcademicSession extends Model
      */
     protected $casts = [
         'is_current' => 'boolean',
-        'start_date' => 'date',
-        'end_date' => 'date',
+        'start_date' => 'date:Y-m-d',
+        'end_date' => 'date:Y-m-d',
+    ];
+
+    /**
+     * Hidden columns in table view (not searchable/sortable/filterable).
+     *
+     * @var array<string>
+     */
+    protected array $hiddenTableColumns = [
+        'school_id',
+        'deleted_at',
+    ];
+
+    /**
+     * Columns used for global search.
+     *
+     * @var array<string>
+     */
+    protected array $globalFilterFields = [
+        'name',
     ];
 
     /**
@@ -68,7 +87,7 @@ class AcademicSession extends Model
         return $query->where('is_current', true);
     }
 
-     public function getActivitylogOptions(): LogOptions
+    public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
             ->useLogName('academic_session')
