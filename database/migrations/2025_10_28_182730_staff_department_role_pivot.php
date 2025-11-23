@@ -11,13 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('user_department_role', function (Blueprint $table) {
+        Schema::create('staff_department_role', function (Blueprint $table) {
             $table->id();
-            $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete();
+            $table->foreignUuid('staff_id')->constrained('staff')->cascadeOnDelete();
             $table->foreignUuid('department_role_id')->constrained('department_role')->cascadeOnDelete();
             $table->timestamps();
             $table->softDeletes();
-            $table->unique(['user_id', 'department_role_id'], 'staff_department_role_unique');
+            $table->unique(['staff_id', 'department_role_id'], 'staff_department_role_unique');
         });
     }
 

@@ -22,6 +22,7 @@ return new class extends Migration
             $table->foreignUuid('class_period_id')->constrained('class_periods')->cascadeOnDelete();
             $table->foreignUuid('manager_id')->nullable()->constrained('users')->onDelete('set null');
             $table->string('name');
+            $table->string('type');
             $table->text('description')->nullable();
             $table->date('date_effective');
             $table->json('configs')->nullable();
