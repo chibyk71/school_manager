@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\AcademicSessionService;
 use App\Services\SchoolService;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Log;
@@ -28,8 +29,11 @@ class MyServiceProvider extends ServiceProvider
                 return new SchoolService();
             });
 
+            $this->app->singleton('academicContext', fn() => new AcademicSessionService());
+
             // Register alias for easier access
             $this->app->alias('schoolManager', SchoolService::class);
+            $this->app->alias('academicContext', AcademicSessionService::class);
         } catch (\Exception $e) {
             Log::error('Failed to register SchoolService: ' . $e->getMessage());
             throw new \Exception('Unable to register SchoolService.');

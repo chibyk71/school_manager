@@ -119,7 +119,7 @@ class SchoolService
                 ]);
 
                 // Assign admin role and associate with school
-                $admin->assignRole('admin', $school->id);
+                $admin->addRole('admin', $school->id);
                 $admin->schools()->attach($school->id);
                 $admin->notify(new MadeAdminOfSchoolNotification($school));
 
@@ -216,7 +216,7 @@ class SchoolService
                     ]
                 );
 
-                $admin->assignRole('admin', $school->id);
+                $admin->addRole('admin', $school->id);
                 $admin->schools()->syncWithoutDetaching($school->id);
                 $admin->notify(new MadeAdminOfSchoolNotification($school));
 
