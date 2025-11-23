@@ -154,4 +154,14 @@ class LeaveRequest extends Model
     {
         return $this->belongsTo(User::class, 'rejected_by');
     }
+
+    /**
+     * Returns a morphable object representing the leave request.
+     *
+     * @return object
+     */
+    public function requestable()
+    {
+        return $this->morphTo();
+    }
 }

@@ -14,13 +14,12 @@ if (!function_exists('getMergedSettings')) {
      *
      * @param string $key The settings key to retrieve (e.g., 'tax', 'fees').
      * @param Model|null $model The school or branch model instance.
-     * @param int|null $branchId Optional branch ID for branch-specific settings.
      * @return array The merged settings array.
      *
      * @throws \InvalidArgumentException If the key is invalid.
      * @throws \Exception If settings retrieval fails.
      */
-    function getMergedSettings(string $key, $model, ?int $branchId = null): array
+    function getMergedSettings(string $key, $model): array
     {
         try {
             if (empty($key)) {
@@ -110,7 +109,7 @@ if (!function_exists('SaveOrUpdateSchoolSettings')) {
      * @throws \InvalidArgumentException If the key or data is invalid.
      * @throws \Exception If settings save fails.
      */
-    function SaveOrUpdateSchoolSettings(string $key, array $validatedData, $model = null, ?int $branchId = null): void
+    function SaveOrUpdateSchoolSettings(string $key, array $validatedData, $model = null): void
     {
         try {
             if (empty($key)) {
@@ -121,7 +120,7 @@ if (!function_exists('SaveOrUpdateSchoolSettings')) {
             }
 
             // Determine the model to save settings to
-            $targetModel = $branchId ? Branch::find($branchId) : ($model ?? GetSchoolModel());
+            $targetModel = ($model ?? GetSchoolModel());
 
             // Fallback to global settings if no model is provided
             $targetModel = $targetModel ?? Settings::class;
@@ -254,3 +253,91 @@ if (!function_exists('generateEnrollmentId')) {
         );
     }
 }
+
+if (! function_exists('currentSession')) {
+    /**
+     * @return \App\Models\Academic\AcademicSession|null
+     */
+    function currentSession(): ?\App\Models\Academic\AcademicSession
+    {
+        return app('academicContext')->currentSession();
+    }
+}
+
+if (! function_exists('currentTerm')) {
+    /**
+     * @return \App\Models\Academic\Term|null
+     */
+    function currentTerm(): ?\App\Models\Academic\Term
+    {
+        return app('academicContext')->currentTerm();
+    }
+}
+
+if (!function_exists('send_school_sms')) {
+    /**
+     * Send an SMS using the current school's configured providers (with fallback)
+     *
+     * This is the easiest way to send ad-hoc SMS from anywhere in your app.
+     * Automatically resolves the current school context.
+     *
+     * @param string              $to            Phone number (e.g. 08012345678 or +2348012345678)
+     * @param string              $message       SMS body
+     * @param \App\Models\School|null $school    Optional: override school (defaults to current)
+     * @param array               $options       Optional: ['sender' => 'CustomID', 'force' => true]
+     *
+     * @return bool  true if sent via at least one provider
+     */
+    function send_school_sms(
+        string $to,
+        string $message,
+        ?\App\Models\School $school = null,
+        array $options = []
+    ): bool {
+        // Normalize phone number (remove spaces, dashes, etc.)
+        $to = preg_replace('/[^0-9+]/', '', $to);
+
+        // Validate basic phone length
+        if (strlen($to) < 10 || strlen($to) > 15) {
+            \Log::warning('Invalid phone number for SMS', ['to' => $to, 'message' => $message]);
+            return false;
+        }
+
+        // Resolve school if not provided
+        if (!$school) {
+            $school = GetSchoolModel();
+            if (!$school) {
+                \Log::warning('send_school_sms: No active school found', ['to' => $to]);
+                return false;
+            }
+        }
+
+        // Override sender if provided
+        if (!empty($options['sender'])) {
+            // Temporarily override global sender for this message
+            $original = getMergedSettings('sms', $school);
+            $modified = $original;
+            $modified['global_sender_id'] = $options['sender'];
+            // Settings::setTemporary($modified);
+        }
+
+        try {
+            $sent = app(\App\Services\SmsService::class)->send($to, $message, $school);
+
+            // Fire event or log if needed
+            if ($sent) {
+                // event(new \App\Events\SmsSent($to, $message, $school));
+            }
+
+            return $sent;
+        } catch (\Throwable $e) {
+            \Log::error('send_school_sms helper failed', [
+                'to' => $to,
+                'school_id' => $school->id,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+}
+

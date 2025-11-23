@@ -127,4 +127,6 @@ return [
         'SchoolManager' => App\Facades\SchoolManager::class,
     ],
 
+    'metrics_cache_minutes' => 20
+
 ];
