@@ -49,7 +49,7 @@ class PermissionController extends Controller
                 ],
                 'assignedPermissions' => $formattedAssignedPermissions,
                 'allPermissions' => $formattedPermissions,
-            ], 'resources/js/Pages/Settings/School/Permission.vue');
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch permissions: ' . $e->getMessage());
             return redirect()->route('settings.roles.index')->with('error', 'Failed to load permissions.');
