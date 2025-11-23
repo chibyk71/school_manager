@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\DepartmentCategories;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateDepartmentRequest extends FormRequest
@@ -30,7 +31,7 @@ class UpdateDepartmentRequest extends FormRequest
                 'max:255',
                 'unique:departments,name,' . $departmentId . ',id,school_id,' . $school->id,
             ],
-            'category' => 'sometimes|string|max:255',
+            'category' => 'required|string|in:' . implode(',', DepartmentCategories::getKeys()),
             'description' => 'sometimes|string',
             'effective_date' => 'sometimes|date|after_or_equal:today',
         ];

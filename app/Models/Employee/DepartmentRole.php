@@ -148,6 +148,11 @@ class DepartmentRole extends Pivot
      */
     public function staff(): BelongsToMany
     {
-        return $this->BelongsToMany(Staff::class, 'staff_department_role', 'department_role_id', 'staff_id');
+        return $this->belongsToMany(
+            \App\Models\Employee\Staff::class,
+            'staff_department_role',
+            'department_role_id',
+            'staff_id'
+        );
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\DepartmentCategories;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreDepartmentRequest extends FormRequest
@@ -29,7 +30,7 @@ class StoreDepartmentRequest extends FormRequest
                 'max:255',
                 'unique:departments,name,NULL,id,school_id,' . $school->id,
             ],
-            'category' => 'nullable|string|max:255',
+            'category' => 'required|string|in:' . implode(',', DepartmentCategories::getKeys()),
             'description' => 'nullable|string',
             'effective_date' => 'nullable|date|after_or_equal:today',
         ];
