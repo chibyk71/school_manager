@@ -43,6 +43,7 @@ use App\Http\Controllers\LessonPlanDetailController;
 use App\Http\Controllers\NoticeController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PromotionBatchController;
 use App\Http\Controllers\RouteController;
 use App\Http\Controllers\SalaryAddonController;
 use App\Http\Controllers\SalaryController;
@@ -98,7 +99,25 @@ Route::resource('staff', StaffController::class);
 Route::resource('student', StudentController::class);
 
 // Academics
-Route::resource('academic-session', AcademicSessionController::class);
+Route::resource('academic.session', AcademicSessionController::class);
+Route::delete('/', [AcademicSessionController::class, 'destroy'])->name('academic.session.destroy');
+Route::post('/{session}/current', [AcademicSessionController::class, 'setCurrent'])->name('academic.session.setCurrent');
+
+Route::resource('promotions', PromotionBatchController::class)
+    ->only(['index', 'review']);
+
+Route::post('promotions/{batch}/approve', [PromotionBatchController::class, 'approve'])
+    ->name('promotions.approve');
+
+Route::post('promotions/{batch}/reject', [PromotionBatchController::class, 'reject'])
+    ->name('promotions.reject');
+
+Route::post('promotions/{batch}/execute', [PromotionBatchController::class, 'execute'])
+    ->name('promotions.execute');
+
+Route::post('promotions/{batch}/bulk-override', [PromotionBatchController::class, 'bulkOverride'])
+    ->name('promotions.bulk-override');
+
 Route::resource('subjects', SubjectController::class);
 Route::resource('grades', GradeController::class);
 Route::resource('class-levels', ClassLevelController::class);
@@ -107,6 +126,8 @@ Route::resource('timetables', TimeTableController::class);
 Route::resource('timetable-details', TimeTableDetailController::class);
 Route::resource('assignments', AssignmentController::class);
 Route::resource('terms', TermController::class);
+Route::delete('/', [TermController::class, 'destroy'])->name('terms.destroy');
+Route::post('/{term}/active', [TermController::class, 'setActive'])->name('terms.setActive');
 // Resource routes for assignment submissions
 Route::resource('assignment-submissions', AssignmentSubmissionController::class);
 Route::delete('assignment-submissions', [AssignmentSubmissionController::class, 'destroy'])->name('assignment-submissions.destroy');
@@ -315,8 +336,10 @@ Route::get('/hostels/{hostel}/rooms/{hostelRoom}/assignments/{hostelAssignment}'
 Route::put('/hostels/{hostel}/rooms/{hostelRoom}/assignments/{hostelAssignment}', [HostelAssignmentController::class, 'update'])->name('hostel-assignments.update');
 Route::delete('/hostels/{hostel}/rooms/{hostelRoom}/assignments', [HostelAssignmentController::class, 'destroy'])->name('hostel-assignments.destroy');
 
-
+// routes/web.php
+Route::get('/notifications/history', [NotificationLogController::class, 'index'])
+    ->name('notifications.history');
 
 require __DIR__ . '/auth.php';
-
+require __DIR__ . '/options.php';
 require __DIR__ . '/settings.php';

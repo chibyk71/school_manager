@@ -18,7 +18,7 @@ defineProps<{
     <div class="md:flex block items-center justify-between mb-3 pt-14">
         <div class="my-auto mb-2">
             <h3 class="page-title text-xl/none text-color font-semibold mb-1">{{ title }}</h3>
-            <Breadcrumb class="p-0 bg-transparent dark:bg-transparent text-color" :home="{ icon: 'pi pi-home', url: '/' }" :model="crumb">
+            <Breadcrumb class="p-0 !bg-transparent dark:!bg-transparent text-color" :home="{ icon: 'pi pi-home', url: '/' }" :model="crumb">
                 <template #item="slotProps">
                     <li class="breadcrumb-item">
                         <Link v-if="slotProps.item.url" :href="slotProps.item.url">

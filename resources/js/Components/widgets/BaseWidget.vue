@@ -1,58 +1,150 @@
 <!-- resources/js/components/widgets/BaseWidget.vue -->
-<script setup lang="ts">
-import { ref, onMounted, watch, onUnmounted } from 'vue';
+<script setup lang="ts" generic="T = any">
+/**
+ * ----------------------------------------------------------------------
+ *  BaseWidget – reusable card that fetches JSON from an Inertia route.
+ * ----------------------------------------------------------------------
+ * Features
+ *   • Auto-refresh (optional)
+ *   • Loading / error states with retry button
+ *   • Emits `loaded` (payload) and `error` (message)
+ *   • Fully typed slot (`data: T`)
+ *
+ * @example
+ *   <BaseWidget
+ *     title="Enrollment"
+ *     icon="pi pi-users"
+ *     endpoint="/api/widgets/enrollment"
+ *     :refresh-interval="30000"
+ *   >
+ *     <template #default="{ data }">
+ *       <p>Total: {{ data.total }}</p>
+ *     </template>
+ *   </BaseWidget>
+ */
+
+import { ref, watch, onMounted, onBeforeUnmount, computed } from 'vue';
 import Card from 'primevue/card';
 import ProgressSpinner from 'primevue/progressspinner';
 import Button from 'primevue/button';
 import { useToast } from 'primevue/usetoast';
+import axios, { type AxiosError } from 'axios';
 
-const props = defineProps<{
+/* ------------------------------------------------------------------ */
+/*  Props (typed)                                                    */
+/* ------------------------------------------------------------------ */
+interface BaseWidgetProps {
+    /** Card title */
     title: string;
+    /** Optional PrimeIcons class (e.g. "pi pi-users") */
     icon?: string;
-    endpoint: string;          // Inertia route that returns JSON
-    refreshInterval?: number; // ms, optional auto-refresh
-}>();
+    /** Inertia route that returns JSON */
+    endpoint: string;
+    /** Auto-refresh interval in ms (optional) */
+    refreshInterval?: number;
+}
+const props = defineProps<BaseWidgetProps>();
 
+/* ------------------------------------------------------------------ */
+/*  Emits                                                            */
+/* ------------------------------------------------------------------ */
 const emit = defineEmits<{
-    (e: 'loaded', payload: any): void;
+    /** Successfully loaded data */
+    (e: 'loaded', payload: T): void;
+    /** Fetch error */
+    (e: 'error', message: string): void;
 }>();
 
+/* ------------------------------------------------------------------ */
+/*  Reactive state                                                   */
+/* ------------------------------------------------------------------ */
 const toast = useToast();
 const loading = ref(true);
 const error = ref<string | null>(null);
-const data = ref<any>(null);
+const data = ref<T | null>(null);
+let intervalId: number | null = null;
 
+/* ------------------------------------------------------------------ */
+/*  Core fetch logic                                                */
+/* ------------------------------------------------------------------ */
 const fetch = async () => {
     loading.value = true;
     error.value = null;
+
     try {
-        // Inertia.visit keeps the page but returns JSON when `preserveState: true`
-        const response = await window.axios.get(props.endpoint);
+        const response = await axios.get<T>(props.endpoint);
         data.value = response.data;
         emit('loaded', response.data);
-    } catch (e: any) {
-        error.value = e.response?.data?.message ?? 'Failed to load widget';
-        toast.add({ severity: 'error', summary: props.title, detail: error.value, life: 4000 });
+    } catch (e) {
+        const err = e as AxiosError<{ message?: string }>;
+        const msg = err.response?.data?.message ?? err.message ?? 'Failed to load widget';
+        error.value = msg;
+        toast.add({ severity: 'error', summary: props.title, detail: msg, life: 4000 });
+        emit('error', msg);
     } finally {
         loading.value = false;
     }
 };
 
+/* ------------------------------------------------------------------ */
+/*  Auto-refresh handling                                            */
+/* ------------------------------------------------------------------ */
+const startInterval = () => {
+    if (!props.refreshInterval) return;
+    intervalId = window.setInterval(fetch, props.refreshInterval);
+};
+
+const stopInterval = () => {
+    if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+    }
+};
+
+/* ------------------------------------------------------------------ */
+/*  Lifecycle                                                        */
+/* ------------------------------------------------------------------ */
 onMounted(() => {
     fetch();
-    if (props.refreshInterval) {
-        const id = setInterval(fetch, props.refreshInterval);
-
-        // cleanup on unmount
-        onUnmounted(() => clearInterval(id));
-    }
+    startInterval();
 });
 
-watch(() => props.endpoint, fetch);
+onBeforeUnmount(() => {
+    stopInterval();
+});
+
+/* ------------------------------------------------------------------ */
+/*  React to endpoint changes (e.g. filter change)                  */
+/* ------------------------------------------------------------------ */
+watch(() => props.endpoint, () => {
+    fetch();
+});
+
+/* ------------------------------------------------------------------ */
+/*  React to refreshInterval changes                                 */
+/* ------------------------------------------------------------------ */
+watch(
+    () => props.refreshInterval,
+    (newVal, oldVal) => {
+        stopInterval();
+        if (newVal) startInterval();
+    }
+);
+
+/* ------------------------------------------------------------------ */
+/*  Computed – slot props                                            */
+/* ------------------------------------------------------------------ */
+const slotProps = computed(() => ({
+    data: data.value.data,
+}));
 </script>
 
 <template>
-    <Card class="h-full shadow-md">
+    <!-- --------------------------------------------------------------
+       Card wrapper – full height, dark-mode aware
+       -------------------------------------------------------------- -->
+    <Card class="h-full flex flex-col shadow-md bg-white dark:bg-gray-800">
+        <!-- -------------------------- Title -------------------------- -->
         <template #title>
             <div class="flex items-center gap-2">
                 <i v-if="icon" :class="`pi ${icon}`"></i>
@@ -60,23 +152,29 @@ watch(() => props.endpoint, fetch);
             </div>
         </template>
 
+        <!-- -------------------------- Content ----------------------- -->
         <template #content>
-            <div v-if="loading" class="flex justify-center items-center h-32">
-                <ProgressSpinner style="width:2rem;height:2rem" />
-            </div>
+            <div class="flex-1 flex flex-col justify-center">
 
-            <div v-else-if="error" class="text-red-600 text-sm">
-                {{ error }}
-                <Button icon="pi pi-refresh" class="p-button-text p-button-sm ml-2" @click="fetch" />
-            </div>
+                <!-- Loading -->
+                <div v-if="loading" class="flex justify-center items-center h-32" aria-live="polite">
+                    <ProgressSpinner style="width:2rem;height:2rem" />
+                </div>
 
-            <slot v-else :data="data" />
+                <!-- Error -->
+                <div v-else-if="error" class="text-red-600 text-sm flex items-center flex-wrap gap-2"
+                    aria-live="assertive">
+                    {{ error }}
+                    <Button icon="pi pi-refresh" class="p-button-text p-button-sm" @click="fetch" aria-label="Retry" />
+                </div>
+
+                <!-- Success – slot receives typed data -->
+                <slot v-else v-bind="slotProps" />
+            </div>
         </template>
     </Card>
 </template>
 
 <style scoped>
-:deep(.p-card) {
-    @apply bg-white dark:bg-gray-800;
-}
+/* No deep selector needed – Card already respects dark mode via Tailwind */
 </style>

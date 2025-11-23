@@ -1,8 +1,9 @@
+<!-- /js/Pages/Dashboard/Admin.vue -->
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { Avatar, AvatarGroup, Badge, Button, Card, Carousel, Checkbox, DatePicker, Menu, Message, ProgressBar, Select, Tab, TabList, TabPanel, TabPanels, Tabs, Timeline } from 'primevue';
-import Statistic from './Partials/Statistic.vue';
+import Statistic from '../../Components/widgets/Statistic.vue';
 import { quicklinksItems } from '@/store';
 import QuickLink from './Partials/QuickLink.vue';
 import Chart from 'primevue/chart';
@@ -26,9 +27,9 @@ const setChartOptions = () => {
 </script>
 
 <template>
-    <Head title="Dashboard" />
+    <Head title="Admin Dashboard" />
 
-    <AuthenticatedLayout title="Dashboard" :crumb="[{label:'Dashboard'}]" :buttons="[{label:'Add Student',icon:'pi pi-plus'}, {label: 'Fees Details', severity:'secondary', as:Link, href: '#'}]">
+    <AuthenticatedLayout title="Admin Dashboard" :crumb="[{label:'Dashboard'}]" :buttons="[{label:'Add Student',icon:'pi pi-plus'}, {label: 'Fees Details', severity:'secondary', as:Link, href: '#'}]">
 
         <div class="mb-3 w-full">
             <Message closable severity="success"  class="rounded-full">

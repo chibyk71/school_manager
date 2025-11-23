@@ -16,15 +16,26 @@ export type PageProps<
     flash: {
         error: string,
         success: string
-    }
+    };
+    darkMode: boolean;
 };
 
-export type Statistic = {
-    stat: number,
-    percentage: number,
-    title: string,
-    active: number,
-    inactive: number
+// resources/js/types.ts
+export interface StatisticData {
+  /** Main number to display */
+  value: number;
+  /** Title (e.g. "Total Students") */
+  title: string;
+  /** Background image for avatar */
+  image: string;
+  /** Tailwind background class (e.g. "bg-red-200/50") */
+  severity: string;
+  /** Growth change */
+  growth: number;
+  /** Active count */
+  active: number;
+  /** Inactive count */
+  inactive: number;
 }
 
 export interface Student {

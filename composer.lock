@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4772d657bd0ddd49e78b4acaeadf8ef9",
+    "content-hash": "f7cb125f5b3d4a0508ac897dd0125205",
     "packages": [
         {
             "name": "abbasudo/laravel-purity",
@@ -268,6 +268,68 @@
                 "source": "https://github.com/dflydev/dflydev-dot-access-data/tree/v3.0.3"
             },
             "time": "2024-07-08T12:26:09+00:00"
+        },
+        {
+            "name": "djunehor/laravel-sms",
+            "version": "2.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/djunehor/laravel-sms.git",
+                "reference": "24fe1e06c012bf15b4ae687f2bd74c5484a3210a"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/djunehor/laravel-sms/zipball/24fe1e06c012bf15b4ae687f2bd74c5484a3210a",
+                "reference": "24fe1e06c012bf15b4ae687f2bd74c5484a3210a",
+                "shasum": ""
+            },
+            "require": {
+                "guzzlehttp/guzzle": ">=6.5.x-dev",
+                "php": ">=7.1"
+            },
+            "require-dev": {
+                "orchestra/testbench": ">=3.5.x-dev",
+                "phpunit/phpunit": ">=6.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Djunehor\\Sms\\SmsServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "files": [
+                    "src/Helpers/helpers.php"
+                ],
+                "psr-4": {
+                    "Djunehor\\Sms\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Zacchaeus Bolaji",
+                    "email": "djunehor@gmail.com"
+                }
+            ],
+            "description": "Send SMS from your laravel application",
+            "keywords": [
+                "djunehor",
+                "laravel",
+                "laravel-package",
+                "php",
+                "sms"
+            ],
+            "support": {
+                "issues": "https://github.com/djunehor/laravel-sms/issues",
+                "source": "https://github.com/djunehor/laravel-sms/tree/2.2.0"
+            },
+            "time": "2021-03-04T17:17:59+00:00"
         },
         {
             "name": "doctrine/inflector",
@@ -3842,6 +3904,74 @@
                 "source": "https://github.com/ruangdeveloper/laravel-settings/tree/v2.0.0"
             },
             "time": "2024-03-14T21:13:09+00:00"
+        },
+        {
+            "name": "sakanjo/laravel-easy-metrics",
+            "version": "v1.1.11",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/sakanjo/laravel-easy-metrics.git",
+                "reference": "42124956f56a9c8452f8d76b6cde6a5451e7a7e7"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/sakanjo/laravel-easy-metrics/zipball/42124956f56a9c8452f8d76b6cde6a5451e7a7e7",
+                "reference": "42124956f56a9c8452f8d76b6cde6a5451e7a7e7",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/database": "^10.0|^11.0|^12.0",
+                "illuminate/http": "^10.0|^11.0|^12.0",
+                "illuminate/support": "^10.0|^11.0|^12.0",
+                "php": "^8.0"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.13",
+                "orchestra/testbench": "^8.14",
+                "pestphp/pest": "^2.24",
+                "phpstan/phpstan": "^1.10"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "SaKanjo\\EasyMetrics\\EasyMetricsServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "SaKanjo\\EasyMetrics\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Salah Kanjo",
+                    "email": "dev.salah.kanjo@gmail.com"
+                }
+            ],
+            "description": "Generate metrics with ease and precision.",
+            "keywords": [
+                "Metrics",
+                "charts",
+                "laravel",
+                "reports"
+            ],
+            "support": {
+                "issues": "https://github.com/sakanjo/laravel-easy-metrics/issues",
+                "source": "https://github.com/sakanjo/laravel-easy-metrics/tree/v1.1.11"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/sakanjo",
+                    "type": "github"
+                }
+            ],
+            "time": "2025-10-27T18:41:47+00:00"
         },
         {
             "name": "santigarcor/laratrust",

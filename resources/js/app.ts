@@ -1,15 +1,15 @@
-import '../css/app.postcss';
+import '../css/app.css';
 import './bootstrap';
 
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
-import { createApp, DefineComponent, h, VueElement } from 'vue';
+import { createApp, DefineComponent, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
-import PrimeVue from 'primevue/config';
 import { PerfectScrollbarPlugin } from 'vue3-perfect-scrollbar';
 import 'vue3-perfect-scrollbar/style.css';
+import PrimeVue from 'primevue/config';
 import { DialogService, Tooltip, ToastService, ConfirmationService } from 'primevue';
-import Aura from '@primeuix/themes/aura';
+import VueApexCharts from "vue3-apexcharts";
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -25,21 +25,13 @@ createInertiaApp({
             .use(plugin)
             .use(ZiggyVue)
             .use(PrimeVue, {
-                theme: {
-                    preset: Aura,
-                    options: {
-                        darkModeSelector: '.dark',
-                    },
-                    cssLayer: {
-                        name: 'primevue',
-                        order: 'theme, base, primevue'
-                    }
-                }
+                unstyled: true,
             })
             .use(PerfectScrollbarPlugin)
             .use(ToastService)
             .use(DialogService)
             .use(ConfirmationService)
+            .use(VueApexCharts)
             .directive('tooltip', Tooltip)
             .mount(el);
     },
