@@ -7,28 +7,30 @@ namespace App\Models;
 use Abbasudo\Purity\Traits\Filterable;
 use Abbasudo\Purity\Traits\Sortable;
 use App\Models\Academic\Student;
+use App\Models\Employee\Department;
 use App\Models\Employee\Staff;
 use App\Models\Finance\FeeConcession;
 use App\Models\Transport\Route;
 use App\Models\Transport\Vehicle\Vehicle;
 use App\Notifications\TimeTableGeneratedNotification;
+use App\Support\DepartmentCategories;
 use App\Traits\HasTableQuery;
-use App\Traits\HasTransaction;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laratrust\Contracts\LaratrustUser;
 use Laratrust\Traits\HasRolesAndPermissions;
 use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\CausesActivity;
 use Spatie\Activitylog\Traits\LogsActivity;
 
-class User extends Authenticatable
+class User extends Authenticatable implements LaratrustUser
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasSettings, CausesActivity, HasRolesAndPermissions, HasUuids, Filterable, Sortable, HasTableQuery, HasTransaction, LogsActivity;
+    use HasFactory, Notifiable, HasSettings, CausesActivity, HasRolesAndPermissions, HasUuids, Filterable, Sortable, HasTableQuery, LogsActivity;
 
     /**
      * The attributes that are mass assignable.
@@ -82,6 +84,11 @@ class User extends Authenticatable
     public function schools()
     {
         return $this->belongsToMany(School::class, 'school_users');
+    }
+
+    public function departments()
+    {
+        return $this->belongsToMany(Department::class, 'department_user');
     }
 
     /**
@@ -151,6 +158,39 @@ class User extends Authenticatable
             ->useLogName('user')
             ->logOnly(['name', 'email'])
             ->setDescriptionForEvent(fn(string $eventName) => "User {$this->name} was {$eventName}");
+    }
+
+    /**
+     * Get the user's primary department category based on roles.
+     * Resolves conflicts by selecting the category with the lowest priority.
+     *
+     * @return string|null The primary category key or null if no roles.
+     */
+    public function getPrimaryCategory(): ?string
+    {
+        $userCategories = $this->departments()->pluck('category')->unique()->filter();
+
+        if ($userCategories->isEmpty()) {
+            return null;
+        }
+
+        $minPriority = PHP_INT_MAX;
+        $primary = null;
+
+        foreach ($userCategories as $cat) {
+            if (!DepartmentCategories::isValid($cat)) {
+                continue; // Skip invalid categories
+            }
+
+            $prio = DepartmentCategories::getPriority($cat);
+
+            if ($prio < $minPriority) {
+                $minPriority = $prio;
+                $primary = $cat;
+            }
+        }
+
+        return $primary;
     }
 
     public function receiveBroadcastNotifications()

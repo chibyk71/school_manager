@@ -13,6 +13,7 @@ use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -127,9 +128,19 @@ class Staff extends Model
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
-    public function departmentRole()
+    public function departmentRoles(): BelongsToMany
     {
-        return $this->belongsToMany(DepartmentRole::class, 'staff_department_role', 'staff_id', 'department_role_id');
+        return $this->belongsToMany(
+            DepartmentRole::class,
+            'staff_department_role',
+            'staff_id',
+            'department_role_id'
+        )->withTimestamps();
+    }
+
+    public function departments()
+    {
+        return $this->departmentRoles()->with('department')->get()->pluck('department')->unique();
     }
 
     /**
