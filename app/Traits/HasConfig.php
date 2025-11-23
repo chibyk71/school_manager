@@ -26,7 +26,7 @@ trait HasConfig
     ): Config {
         try {
             $school = GetSchoolModel() ?? $this;  // Assume $this is School if no global
-            
+
             return Config::updateOrCreate(
                 [
                     'name'       => $name,
