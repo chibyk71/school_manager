@@ -6,11 +6,12 @@ import { Button, Card, Checkbox, IconField, Image, InputIcon, InputText, Message
 
 defineProps<{
     canResetPassword?: boolean;
+    canRegister?: boolean;
     status?: string;
 }>();
 
 const form = useForm({
-    email: '',
+    login: 'admin@demo.academy',
     password: '',
     remember: false,
 });
@@ -64,9 +65,9 @@ const submit = () => {
                             <label class="form-label">Email Address</label>
                             <IconField>
                                 <InputIcon class="pi pi-envelope"></InputIcon>
-                                <InputText :invalid="!!form.errors.email" v-model="form.email" required autofocus type="email"  fluid label="Email Address" />
+                                <InputText :invalid="!!form.errors.login" v-model="form.login" required autofocus type="email"  fluid label="Email Address" />
                             </IconField>
-                            <Message severity="error" variant="simple" v-if="form.errors.email"> {{ form.errors.email }} </Message>
+                            <Message severity="error" variant="simple" v-if="form.errors.login"> {{ form.errors.login }} </Message>
                         </div>
                         <TextInput label="Password" icon="pi pi-lock" :error="form.errors.password">
                             <template #input="{ invalid }">
@@ -80,16 +81,16 @@ const submit = () => {
                             <Checkbox binary v-model="form.remember" />
                             <p class="ml-2 mb-0 ">Remember Me</p>
                         </div>
-                        <div class="text-end ml-auto">
+                        <div class="text-end ml-auto" v-if="canResetPassword">
                             <Link :href="route('password.request')" class="text-red-500">Forgot
                                 Password?</Link>
                         </div>
                     </div>
                     <div class="mb-3">
-                        <Button type="submit" loading-icon="pi pi-spinner" fluid :loading="form.processing">Sign In</Button>
+                        <Button type="submit" loading-icon="pi pi-spinner" fluid :loading="form.processing" label="Sign In" class="" severity="primary"></Button>
                     </div>
                     <div class="text-center">
-                        <h6 class="fw-normal text-dark mb-0">Don’t have an account? <Link :href="route('register')" class="hover-a "> Create Account</Link>
+                        <h6 v-if="canRegister" class="fw-normal text-dark mb-0">Don't have an account? <Link :href="route('register')" class="hover-a "> Create Account</Link>
                         </h6>
                     </div>
               </template>
