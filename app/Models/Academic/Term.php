@@ -4,6 +4,7 @@ namespace App\Models\Academic;
 
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -14,9 +15,9 @@ use Illuminate\Support\Arr;
 /**
  * Term model representing an academic term within an academic session (e.g., First Term).
  *
- * @property int $id
- * @property int $school_id
- * @property int $academic_session_id
+ * @property string $id
+ * @property string $school_id
+ * @property string $academic_session_id
  * @property string $name
  * @property string|null $description
  * @property \Illuminate\Support\Carbon|null $start_date
@@ -30,7 +31,7 @@ use Illuminate\Support\Arr;
  */
 class Term extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The attributes that are mass assignable.
