@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Academic\AcademicSession;
 use App\Http\Requests\StoreAcademicSessionRequest;
 use App\Http\Requests\UpdateAcademicSessionRequest;
+use App\Services\AcademicSessionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
 
@@ -20,6 +22,11 @@ use Illuminate\Support\Facades\Log;
  */
 class AcademicSessionController extends Controller
 {
+
+    public function __construct(protected AcademicSessionService $service)
+    {
+    }
+
     /**
      * Display a listing of academic sessions for the current school.
      *
@@ -29,32 +36,32 @@ class AcademicSessionController extends Controller
     public function index(Request $request)
     {
         // Check if the user has permission to view academic sessions
-        permitted('view-academic-sessions');
+        Gate::authorize('viewAny', AcademicSession::class);
 
         try {
-            // Fetch sessions for the current school, sorted by start_date descending
-            $academicSessions = AcademicSession::query()
-                ->orderBy('start_date', 'desc')
-                ->get()
-                ->map(function ($session) {
-                    return [
-                        'id' => $session->id,
-                        'name' => $session->name,
-                        'start_date' => Carbon::parse($session->start_date)->toDateString(), // Format: YYYY-MM-DD
-                        'end_date' => Carbon::parse($session->end_date)->toDateString(), // Format: YYYY-MM-DD
-                        'start_date_human' => Carbon::parse($session->start_date)->translatedFormat('F j, Y'), // Format: March 11, 2025
-                        'end_date_human' => Carbon::parse($session->end_date)->translatedFormat('F j, Y'), // Format: February 17, 2026
-                        'is_current' => $session->is_current,
-                        'school_id' => $session->school_id,
-                        'created_at' => $session->created_at->toDateTimeString(),
-                        'updated_at' => $session->updated_at->toDateTimeString(),
-                    ];
-                });
+
+            $extra = [
+                ['field' => 'term_count', 'relation' => 'terms', 'aggregate' => 'count', 'sortable' => true],
+            ];
+
+            $sessions = AcademicSession::tableQuery($request, $extra)->map(fn($s) => [
+                'id' => $s->id,
+                'name' => $s->name,
+                'start_date' => $s->start_date,
+                'end_date' => $s->end_date,
+                'is_current' => $s->is_current,
+                'term_count' => $s->terms_count ?? 0,
+                'created_at' => $s->created_at->toDateTimeString(),
+            ]);
 
             // Render the Inertia view
             // Suggested UI file: resources/js/Pages/Academic/AcademicSession.vue
             return Inertia::render('Academic/AcademicSession', [
-                'academicSessions' => $academicSessions,
+                'sessions' => $sessions,
+                'can' => [
+                    'create' => $request->user()->can('create', AcademicSession::class),
+                    'delete' => $request->user()->can('delete', AcademicSession::class),
+                ]
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch academic sessions: ' . $e->getMessage());
@@ -71,19 +78,19 @@ class AcademicSessionController extends Controller
     public function store(StoreAcademicSessionRequest $request)
     {
         // Check if the user has permission to create academic sessions
-        permitted('create-academic-sessions');
+        Gate::authorize('create', AcademicSession::class);
 
         try {
             $validated = $request->validated();
 
-            // Ensure only one session is marked as current per school
-            if ($validated['is_current']) {
-                AcademicSession::where('school_id', GetSchoolModel()->id)
-                    ->where('is_current', true)
-                    ->update(['is_current' => false]);
+            // Auto-deactivate previous current session if needed
+            if ($validated['is_current'] ?? false) {
+                $this->service->setCurrentSession(
+                    AcademicSession::create($validated)
+                );
+            } else {
+                AcademicSession::create($validated);
             }
-
-            AcademicSession::create($validated);
 
             return redirect()->route('academic-session.index')
                 ->with('success', 'Academic Session created successfully');
@@ -104,16 +111,15 @@ class AcademicSessionController extends Controller
     public function update(UpdateAcademicSessionRequest $request, AcademicSession $academicSession)
     {
         // Check if the user has permission to update academic sessions
-        permitted('update-academic-sessions');
+        Gate::authorize('update', $academicSession);
 
         try {
             $validated = $request->validated();
 
             // Ensure only one session is marked as current per school
             if ($validated['is_current']) {
-                AcademicSession::where('school_id', GetSchoolModel()->id)
-                    ->where('is_current', true)
-                    ->update(['is_current' => false]);
+                $this->service->setCurrentSession($academicSession);
+                unset($validated['is_current']);
             }
 
             $academicSession->update($validated);
@@ -127,6 +133,16 @@ class AcademicSessionController extends Controller
         }
     }
 
+
+    /** Set current (quick toggle) */
+    public function setCurrent(AcademicSession $session)
+    {
+        Gate::authorize('update', $session);
+        $this->service->setCurrentSession($session);
+
+        return back()->with('success', 'Current session switched.');
+    }
+
     /**
      * Delete one or more academic sessions.
      *
@@ -136,7 +152,7 @@ class AcademicSessionController extends Controller
     public function destroy(Request $request)
     {
         // Check if the user has permission to delete academic sessions
-        permitted('delete-academic-sessions');
+        Gate::authorize('delete', AcademicSession::class);
 
         try {
             $validated = $request->validate([
