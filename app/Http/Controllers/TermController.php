@@ -6,6 +6,7 @@ use App\Http\Requests\StoreTermRequest;
 use App\Http\Requests\UpdateTermRequest;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
+use App\Services\AcademicSessionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
@@ -30,9 +31,7 @@ class TermController extends Controller
 
         try {
             // If no academic session is provided, use the current session
-            if (!$academicSession) {
-                $academicSession = AcademicSession::currentSession();
-            }
+            $academicSession ??= app(AcademicSessionService::class)->currentSession();
 
             // Define extra fields for table query
             $extraFields = [
@@ -187,6 +186,14 @@ class TermController extends Controller
                 ? response()->json(['error' => 'Failed to update term'], 500)
                 : redirect()->back()->with(['error' => 'Failed to update term'])->withInput();
         }
+    }
+
+    /** Quick “set active” for a term */
+    public function setActive(Term $term)
+    {
+        Gate::authorize('update', $term);
+        app(AcademicSessionService::class)->setActiveTerm($term);
+        return back()->with('success', 'Active term switched.');
     }
 
     /**
