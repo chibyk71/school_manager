@@ -51,7 +51,8 @@ class DatabaseSeeder extends Seeder
         $this->callWithLog(\Database\Seeders\Settings\SMTPTableSeeder::class);
         $this->callWithLog(\Database\Seeders\Settings\TemplateTableSeeder::class);
         $this->callWithLog(\Database\Seeders\Settings\UserManagementSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\SMSSeeder::class);   // <-- NEW
+        $this->callWithLog(\Database\Seeders\Settings\SMSSeeder::class);
+        $this->callWithLog(\Database\Seeders\Settings\AuthenticationSeeder::class);  // <-- NEW
 
         // -----------------------------------------------------------------
         // 3. OPTIONAL: Demo data / factories (uncomment for local dev)
