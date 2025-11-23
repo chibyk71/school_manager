@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School;
+namespace App\Http\Controllers\Settings\System;
 
 use App\Http\Controllers\Controller;
 use App\Models\School;
@@ -36,7 +36,7 @@ class OtpController extends Controller
 
             return Inertia::render('Settings/School/OTP', [
                 'setting' => $setting,
-            ], 'resources/js/Pages/Settings/School/OTP.vue');
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch OTP settings: ' . $e->getMessage());
             return redirect()->route('dashboard')->with('error', 'Failed to load OTP settings.');

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\UserManagement;
+namespace App\Http\Controllers\Settings\School;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\UserManagementSettingsRequest;

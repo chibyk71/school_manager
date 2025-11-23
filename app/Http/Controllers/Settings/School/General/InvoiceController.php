@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings\School;
+namespace App\Http\Controllers\Settings\School\General;
 
 use App\Http\Controllers\Controller;
 use App\Models\School;
@@ -36,7 +36,7 @@ class InvoiceController extends Controller
 
             return Inertia::render('Settings/School/Invoice', [
                 'settings' => $settings,
-            ], 'resources/js/Pages/Settings/School/Invoice.vue');
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch invoice settings: ' . $e->getMessage());
             return redirect()->route('dashboard')->with('error', 'Failed to load invoice settings.');

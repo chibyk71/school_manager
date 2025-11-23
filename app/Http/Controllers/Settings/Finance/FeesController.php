@@ -51,6 +51,12 @@ class FeesController extends Controller
                 'lock_student_panel' => 'required|boolean',
                 'print_fees_receipt_for' => 'required|array',
                 'single_page' => 'required|boolean',
+                'late_payment_punishment' => 'required|array',
+                'late_payment_punishment.enabled' => 'required|boolean',
+                'late_payment_punishment.type' => 'required|in:percentage,fixed',
+                'late_payment_punishment.amount' => 'required|numeric|min:0',
+                'late_payment_punishment.apply_per' => 'required|in:day,once',
+                'late_payment_punishment.grace_period_days' => 'required|integer|min:0',
             ]);
 
             // Save or update school-specific fees settings
