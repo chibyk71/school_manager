@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Finance;
 
+use App\Events\PaymentReceived;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePaymentRequest;
 use App\Http\Requests\UpdatePaymentRequest;
@@ -132,6 +133,8 @@ class PaymentController extends Controller
                     'paid_date' => $payment->payment_date,
                 ]);
             }
+
+            PaymentReceived::dispatch($payment);
 
             // Notify finance managers and the student
             $recipients = User::where('school_id', $school->id)

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Finance;
 
+use App\Events\FeeAssignedToClasses;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreFeeRequest;
 use App\Http\Requests\UpdateFeeRequest;
@@ -129,7 +130,10 @@ class FeeController extends Controller
             $fee = Fee::create($validated);
 
             if (!empty($validated['class_section_ids'])) {
-                $fee->classSections()->sync($validated['class_section_ids']);
+                $classSectionIds = $validated['class_section_ids'];
+                $fee->classSections()->sync($classSectionIds);
+                // Fire event (queued)
+                FeeAssignedToClasses::dispatch($fee, $classSectionIds, $request->isMethod('put'));
             }
 
             $fee->createTransaction([
@@ -229,8 +233,11 @@ class FeeController extends Controller
             $validated = $request->validated();
             $fee->update($validated);
 
-            if (isset($validated['class_section_ids'])) {
-                $fee->classSections()->sync($validated['class_section_ids']);
+            if (!empty($validated['class_section_ids'])) {
+                $classSectionIds = $validated['class_section_ids'];
+                $fee->classSections()->sync($classSectionIds);
+                // Fire event (queued)
+                FeeAssignedToClasses::dispatch($fee, $classSectionIds, true);
             }
 
             $fee->createTransaction([
