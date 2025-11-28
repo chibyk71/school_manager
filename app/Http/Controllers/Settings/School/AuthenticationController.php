@@ -4,14 +4,12 @@ namespace App\Http\Controllers\Settings\School;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\AuthenticationSettingsRequest;
-use App\Models\School;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
-use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Controller for managing authentication settings in a multi-tenant school system.

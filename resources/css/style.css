@@ -1,0 +1,2012 @@
+@charset "UTF-8";
+/**
+ * @fileoverview Main stylesheet for the School Management SaaS MVP.
+ * Tailwind CSS v4 configuration: All theming is CSS-native via @theme.
+ * Target: Primary/secondary schools in Nigeria/Africa—minimal, modern ICT transition.
+ * Features: Multi-tenant (schools + branches/sections), low-cost, no dev hires needed.
+ * Tech: Laravel 11 + Vue3 + PrimeVue + Inertia + Tailwind v4.
+ * Usage: Import in app.blade.php: @vite(['resources/css/app.css', 'resources/js/app.js'])
+ * VSCode: Use Tailwind IntelliSense for @theme var completions.
+ */
+
+/*============================
+
+========================================*/
+/****** Utils ******/
+@import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap");
+
+@import "tailwindcss";
+@import "tailwindcss-primeui";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Core theme definition: Extend Tailwind defaults with school-specific colors/spacing.
+ * Defined at top-level for v4 JIT generation of utilities (e.g., bg-primary).
+ * Colors use hex for compatibility; v4 converts to OKLCH internally for better UX.
+ * Extend, don't override: Keeps grays/fonts from Tailwind but adds yours.
+ */
+@theme {
+    /* Primary Palette (exact matches from style.css) */
+    --color-primary: #3d5ee1;
+    --color-secondary: #6fccd8;
+    --color-info: #0f65cd;
+    --color-success: #1abe17;
+    --color-warning: #eab300;
+    --color-danger: #e82646;
+    --color-dark: #202c4b;
+    --color-light: #e9edf4;
+    --color-pink: #e83e8c;
+    --color-purple: #4a00e5;
+    --color-teal: #02a8b5;
+    --color-blue: #339dff;
+    --color-skyblue: #05c3fb;
+    --color-yellow: #ffff00;
+    --color-success-800: #48cb45;
+
+    /* Gray Scale */
+    --color-gray-100: #e6e8eb;
+    --color-gray-200: #cdd0d7;
+    --color-gray-300: #b5b9c3;
+    --color-gray-400: #9ca1af;
+    --color-gray-500: #838a9b;
+    --color-gray-600: #6a7287;
+    --color-gray-700: #515b73;
+    --color-gray-800: #39435f;
+    --color-gray-900: #202c4b;
+
+    /* Light Backgrounds */
+    --color-light-100: #fdfdfe;
+    --color-light-200: #fbfbfd;
+    --color-light-300: #f8fafc;
+    --color-light-400: #f6f8fb;
+    --color-light-500: #f4f6fa;
+
+    /* Soft / Opacity Variants (exact from style.css) */
+    --color-primary-10: rgba(61, 94, 225, 0.1);
+    --color-primary-25: rgba(61, 94, 225, 0.25);
+    --color-primary-50: rgba(61, 94, 225, 0.5);
+    --color-primary-75: rgba(61, 94, 225, 0.75);
+
+    --color-secondary-10: rgba(111, 204, 216, 0.1);
+    --color-info-10: rgba(15, 101, 205, 0.1);
+    --color-info-30: rgba(15, 101, 205, 0.3);
+    --color-success-10: rgba(26, 190, 23, 0.1);
+    --color-warning-10: rgba(234, 179, 0, 0.1);
+    --color-danger-10: rgba(232, 38, 70, 0.1);
+    --color-dark-10: rgba(32, 44, 75, 0.1);
+    --color-dark-30: rgba(32, 44, 75, 0.3);
+    --color-light-50: rgba(233, 237, 244, 0.5);
+    --color-light-90: rgba(233, 237, 244, 0.9);
+
+    /* Transparent background colors used in style.css */
+    --bg-primary-transparent: #f2f5ff;
+    --bg-secondary-transparent: #e8fcff;
+    --bg-info-transparent: #e7f1fc;
+    --bg-success-transparent: #e8f9e8;
+    --bg-warning-transparent: #fef8ea;
+    --bg-danger-transparent: #fde9ed;
+    --bg-skyblue-transparent: #e6f9ff;
+    --bg-light-transparent: rgba(233, 237, 244, 0.5);
+
+    /* Gradient Backgrounds (exact from style.css) */
+    --bg-primary-gradient: linear-gradient(180deg, #f3f6ff 0%, #ffffff 100%);
+    --bg-secondary-gradient: linear-gradient(180deg, #e8fcff 0%, #ffffff 100%);
+    --bg-info-gradient: linear-gradient(180deg, #e7f1fc 0%, #ffffff 100%);
+    --bg-success-gradient: linear-gradient(180deg, #e8f9e8 0%, #ffffff 100%);
+    --bg-warning-gradient: linear-gradient(180deg, #fef8ea 0%, #ffffff 100%);
+    --bg-danger-gradient: linear-gradient(180deg, #fde9ed 0%, #ffffff 100%);
+    --bg-purple-gradient: linear-gradient(to right, #4a00e5 0%, #9b25b7 100%);
+    --bg-teal-gradient: linear-gradient(180deg, #e6f9ff 0%, #ffffff 100%);
+    --bg-light-gradient: linear-gradient(180deg, #d1d6de 0%, #ffffff 100%);
+    --bg-dark-gradient: linear-gradient(180deg, #f3f6ff 0%, #ffffff 100%);
+
+    /* Dark Mode Core Colors (from style.css darkmode section) */
+    --dark-bg-primary: #131022;
+    --dark-bg-secondary: #1b1632;
+    --dark-text-primary: #efefff2;
+    --dark-text-secondary: #b9b7c0;
+    --dark-text-muted: rgba(185, 183, 192, 0.5);
+
+    /* Font Families – exact matches from style.css */
+    --font-roboto: "Roboto", sans-serif;
+    --font-nunito: "Nunito", sans-serif;
+    --font-poppins: "Poppins", sans-serif;
+
+    /* Optional: set a fallback modern stack */
+    --font-system: system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    /* ───────────────────────────────
+     Custom Breakpoints (to match style.css behavior)
+     ─────────────────────────────── */
+    --breakpoint-xs: 575.98px; /* mobile-first cutoff */
+    --breakpoint-sm: 576px; /* matches Bootstrap sm */
+    --breakpoint-md: 768px; /* tablet */
+    --breakpoint-lg: 992px; /* desktop */
+    --breakpoint-xl: 1200px; /* large desktop */
+    --breakpoint-2xl: 1400px; /* extra-large */
+
+    /* ───────────────────────────────
+     Custom Spacing Scale
+     (pulled from style.css common paddings/margins)
+     ─────────────────────────────── */
+    --spacing-0: 0;
+    --spacing-1: 0.25rem; /* 4px  */
+    --spacing-2: 0.5rem; /* 8px  */
+    --spacing-3: 0.75rem; /* 12px */
+    --spacing-4: 1rem; /* 16px */
+    --spacing-5: 1.25rem; /* 20px */
+    --spacing-6: 1.5rem; /* 24px */
+    --spacing-7: 1.75rem; /* 28px */
+    --spacing-8: 2rem; /* 32px */
+    --spacing-9: 2.25rem; /* 36px */
+    --spacing-10: 2.5rem; /* 40px */
+    --spacing-11: 2.75rem; /* 44px */
+    --spacing-12: 3rem; /* 48px */
+
+    /* Frequently used in the original template */
+    --spacing-xs: 0.625rem; /* 10px  */
+    --spacing-sm: 0.875rem; /* 14px  */
+    --spacing-md: 1.125rem; /* 18px  */
+    --spacing-lg: 1.875rem; /* 30px – very common in style.css */
+    --spacing-xl: 2.5rem; /* 40px */
+    --spacing-2xl: 3.75rem; /* 60px */
+    --spacing-3xl: 5rem; /* 80px */
+
+    /* ───────────────────────────────
+     Border Radius (exact matches from style.css)
+     ─────────────────────────────── */
+    --radius-none: 0;
+    --radius-sm: 0.25rem; /* 4px  */
+    --radius: 0.375rem; /* 6px  */
+    --radius-md: 0.5rem; /* 8px  */
+    --radius-lg: 0.75rem; /* 12px – used heavily in template */
+    --radius-xl: 1rem; /* 16px */
+    --radius-2xl: 1.5rem; /* 24px */
+    --radius-full: 9999px;
+
+    /* ───────────────────────────────
+     Shadows (common in style.css cards, modals, etc.)
+     ─────────────────────────────── */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    --shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+    --shadow-md: 0 10px 20px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 15px 35px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.12);
+}
+
+/* Apply globally – matches style.css default */
+@layer base {
+    /* Import Google Fonts once (recommended in <head> or here if you prefer) */
+    @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&family=Nunito:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700;800;900&display=swap");
+
+    html,
+    body {
+        font-family: var(--font-roboto), var(--font-system);
+        font-size: 14px; /* style.css default */
+        line-height: 1.5;
+        font-weight: 400;
+    }
+
+    /* Optional utility classes you can use anywhere */
+    .font-roboto {
+        font-family: var(--font-roboto), var(--font-system);
+    }
+    .font-nunito {
+        font-family: var(--font-nunito), var(--font-system);
+    }
+    .font-poppins {
+        font-family: var(--font-poppins), var(--font-system);
+    }
+
+    /* Headings often use Poppins or bolder Roboto in the template */
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    .h1,
+    .h2,
+    .h3,
+    .h4,
+    .h5,
+    .h6 {
+        font-family: var(--font-roboto), var(--font-system);
+        font-weight: 700;
+    }
+
+    /* If you want Poppins for specific titles (common in PreSkool template) */
+    .font-heading {
+        font-family: var(--font-poppins), var(--font-system);
+    }
+
+    /* ───────────────────────────────
+     Root & Body – exact replica of style.css
+     ─────────────────────────────── */
+    *,
+    *::before,
+    *::after {
+        box-sizing: border-box;
+    }
+
+    * {
+        outline: none !important;
+    }
+
+    html {
+        scroll-behavior: smooth;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: var(--font-roboto), var(--font-system);
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--color-gray-600); /* #6A7287 → now variable */
+        background-color: #fff;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ::selection – uses primary color variable */
+    ::selection {
+        background: var(--color-primary);
+        color: #fff;
+        text-shadow: none;
+    }
+    ::-moz-selection {
+        background: var(--color-primary);
+        color: #fff;
+    }
+
+    img {
+        max-width: 100%;
+        height: auto;
+        vertical-align: middle;
+        border-style: none;
+    }
+
+    button {
+        cursor: pointer;
+        transition: all 0.5s ease;
+    }
+    button:focus {
+        box-shadow: none !important;
+    }
+
+    a:focus,
+    button:focus,
+    input:focus,
+    textarea:focus,
+    select:focus,
+    [tabindex]:focus {
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    a,
+    button,
+    .btn,
+    input[type="submit"],
+    .cursor-pointer {
+        transition: all 0.3s ease;
+    }
+
+    ol,
+    ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    p {
+        margin-bottom: 20px;
+    }
+    p:last-child {
+        margin-bottom: 0;
+    }
+
+    strong {
+        font-weight: 700;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    .h1,
+    .h2,
+    .h3,
+    .h4,
+    .h5,
+    .h6 {
+        color: var(--color-dark); /* #202C4B → now variable */
+        margin-bottom: 0;
+        line-height: 1.2;
+    }
+
+    /* Dark mode overrides – fully variable */
+    .dark body {
+        color: var(--dark-text-secondary); /* #B9B7C0 */
+        background-color: var(--dark-bg-primary); /* #131022 */
+    }
+
+    .dark ::selection {
+        background: var(--color-primary);
+        color: #fff;
+    }
+
+    .dark h1,
+    .dark h2,
+    .dark h3,
+    .dark h4,
+    .dark h5,
+    .dark h6,
+    .dark .h1,
+    .dark .h2,
+    .dark .h3,
+    .dark .h4,
+    .dark .h5,
+    .dark .h6 {
+        color: var(--dark-text-primary); /* #EFEFF2 */
+    }
+
+    /* ───────────────────────────────
+     Headings – exact sizes/weights from style.css
+     ─────────────────────────────── */
+    h1,
+    .h1 {
+        @apply text-[2.5rem] leading-tight font-bold text-[var(--color-dark)];
+        /* 40px → 2.5rem */
+    }
+    h2,
+    .h2 {
+        @apply text-[2rem] leading-tight font-bold text-[var(--color-dark)];
+        /* 32px → 2rem */
+    }
+    h3,
+    .h3 {
+        @apply text-[1.75rem] leading-tight font-bold text-[var(--color-dark)];
+        /* 28px → 1.75rem */
+    }
+    h4,
+    .h4 {
+        @apply text-[1.5rem] leading-tight font-bold text-[var(--color-dark)];
+        /* 24px → 1.5rem */
+    }
+    h5,
+    .h5 {
+        @apply text-[1.25rem] leading-tight font-medium text-[var(--color-dark)];
+        /* 20px → 1.25rem, weight 500 in template */
+    }
+    h6,
+    .h6 {
+        @apply text-[1rem] leading-tight font-medium text-[var(--color-dark)];
+        /* 16px → 1rem, weight 500 */
+    }
+
+    /* ───────────────────────────────
+     Paragraph & basic text
+     ─────────────────────────────── */
+    p {
+        @apply text-base leading-6 text-[var(--color-gray-600)] mb-5;
+        /* 16px, line-height 1.6 → ~24px, color #6A7287 */
+    }
+    p:last-child {
+        @apply mb-0;
+    }
+
+    /* Strong & emphasis */
+    strong,
+    b {
+        @apply font-bold;
+    }
+    em,
+    i {
+        @apply italic;
+    }
+
+    /* Blockquote – exact from style.css */
+    blockquote {
+        @apply text-lg italic text-gray-600 border-l-4 border-gray-300 pl-4 my-6;
+        /* font-size: 1.25rem (20px), color #6c757d → closest gray-600 */
+    }
+
+    /* ───────────────────────────────
+     Dark mode typography overrides
+     ─────────────────────────────── */
+    .dark h1,
+    .dark h2,
+    .dark h3,
+    .dark h4,
+    .dark h5,
+    .dark h6,
+    .dark .h1,
+    .dark .h2,
+    .dark .h3,
+    .dark .h4,
+    .dark .h5,
+    .dark .h6 {
+        @apply text-[var(--dark-text-primary)];
+    }
+
+    .dark p {
+        @apply text-[var(--dark-text-secondary)] opacity-90;
+    }
+
+    .dark blockquote {
+        @apply text-[var(--dark-text-secondary)] border-l-gray-700;
+    }
+
+    /* ───────────────────────────────
+     Optional: Utility classes for quick overrides
+     ─────────────────────────────── */
+    .text-heading {
+        @apply text-[var(--color-dark)] font-bold;
+    }
+    .text-muted {
+        @apply text-[var(--color-gray-600)];
+    }
+    .text-sm {
+        @apply text-sm;
+    }
+    .text-lg {
+        @apply text-lg;
+    }
+    .leading-relaxed {
+        @apply leading-relaxed;
+    }
+}
+
+/* ───────────────────────────────
+   Utility classes for the new spacing values
+   (Tailwind doesn’t generate these automatically from CSS vars)
+   ─────────────────────────────── */
+@layer utilities {
+    /* Spacing */
+    .p-xs {
+        padding: var(--spacing-xs);
+    }
+    .px-xs {
+        padding-left: var(--spacing-xs);
+        padding-right: var(--spacing-xs);
+    }
+    .py-xs {
+        padding-top: var(--spacing-xs);
+        padding-bottom: var(--spacing-xs);
+    }
+    .m-xs {
+        margin: var(--spacing-xs);
+    }
+    .mx-xs {
+        margin-left: var(--spacing-xs);
+        margin-right: var(--spacing-xs);
+    }
+    .my-xs {
+        margin-top: var(--spacing-xs);
+        margin-bottom: var(--spacing-xs);
+    }
+
+    .p-sm {
+        padding: var(--spacing-sm);
+    }
+    .px-sm {
+        padding-left: var(--spacing-sm);
+        padding-right: var(--spacing-sm);
+    }
+    .py-sm {
+        padding-top: var(--spacing-sm);
+        padding-bottom: var(--spacing-sm);
+    }
+
+    .p-lg {
+        padding: var(--spacing-lg);
+    }
+    .px-lg {
+        padding-left: var(--spacing-lg);
+        padding-right: var(--spacing-lg);
+    }
+    .py-lg {
+        padding-top: var(--spacing-lg);
+        padding-bottom: var(--spacing-lg);
+    }
+    .m-lg {
+        margin: var(--spacing-lg);
+    }
+    .mx-lg {
+        margin-left: var(--spacing-lg);
+        margin-right: var(--spacing-lg);
+    }
+    .my-lg {
+        margin-top: var(--spacing-lg);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .gap-lg {
+        gap: var(--spacing-lg);
+    }
+
+    /* Radius */
+    .rounded-sm {
+        border-radius: var(--radius-sm);
+    }
+    .rounded {
+        border-radius: var(--radius);
+    }
+    .rounded-md {
+        border-radius: var(--radius-md);
+    }
+    .rounded-lg {
+        border-radius: var(--radius-lg);
+    }
+    .rounded-xl {
+        border-radius: var(--radius-xl);
+    }
+    .rounded-2xl {
+        border-radius: var(--radius-2xl);
+    }
+
+    /* Shadows */
+    .shadow-sm {
+        box-shadow: var(--shadow-sm);
+    }
+    .shadow {
+        box-shadow: var(--shadow);
+    }
+    .shadow-md {
+        box-shadow: var(--shadow-md);
+    }
+    .shadow-lg {
+        box-shadow: var(--shadow-lg);
+    }
+    .shadow-xl {
+        box-shadow: var(--shadow-xl);
+    }
+}
+
+@layer utilities {
+    /* ───────────────────────────────
+     Solid Backgrounds (with border + white text where needed)
+     ─────────────────────────────── */
+    .bg-primary {
+        @apply bg-[var(--color-primary)]    border border-[var(--color-primary)]    text-white;
+    }
+    .bg-secondary {
+        @apply bg-[var(--color-secondary)]  border border-[var(--color-secondary)]  text-white;
+    }
+    .bg-info {
+        @apply bg-[var(--color-info)]       border border-[var(--color-info)]       text-white;
+    }
+    .bg-success {
+        @apply bg-[var(--color-success)]    border border-[var(--color-success)]    text-white;
+    }
+    .bg-warning {
+        @apply bg-[var(--color-warning)]    border border-[var(--color-warning)]    text-white;
+    }
+    .bg-danger {
+        @apply bg-[var(--color-danger)]     border border-[var(--color-danger)]     text-white;
+    }
+    .bg-dark {
+        @apply bg-[var(--color-dark)]       border border-[var(--color-dark)]       text-white;
+    }
+    .bg-light {
+        @apply bg-[var(--color-light)]      border border-[var(--color-light)]      text-gray-700;
+    }
+    .bg-pink {
+        @apply bg-[var(--color-pink)]       border border-[var(--color-pink)]       text-white;
+    }
+    .bg-purple {
+        @apply bg-[var(--color-purple)]     border border-[var(--color-purple)]     text-white;
+    }
+    .bg-teal {
+        @apply bg-[var(--color-teal)]       border border-[var(--color-teal)]       text-white;
+    }
+    .bg-blue {
+        @apply bg-[var(--color-blue)]       border border-[var(--color-blue)]       text-white;
+    }
+    .bg-skyblue {
+        @apply bg-[var(--color-skyblue)]    border border-[var(--color-skyblue)]    text-white;
+    }
+    .bg-yellow {
+        @apply bg-[var(--color-yellow)]     border border-[var(--color-yellow)]     text-black;
+    }
+
+    /* ───────────────────────────────
+     Soft / Low-opacity Backgrounds
+     ─────────────────────────────── */
+    .bg-soft-primary {
+        @apply bg-[var(--color-primary-10)] text-[var(--color-primary)];
+    }
+    .bg-soft-secondary {
+        @apply bg-[var(--color-secondary-10)] text-[var(--color-secondary)];
+    }
+    .bg-soft-success {
+        @apply bg-[var(--color-success-10)] text-[var(--color-success)];
+    }
+    .bg-soft-warning {
+        @apply bg-[var(--color-warning-10)] text-[var(--color-warning)];
+    }
+    .bg-soft-danger {
+        @apply bg-[var(--color-danger-10)] text-[var(--color-danger)];
+    }
+    .bg-soft-info {
+        @apply bg-[var(--color-info-30)] text-[var(--color-info)];
+    }
+    .bg-soft-light {
+        @apply bg-[var(--color-light-90)] text-[var(--color-gray-600)];
+    }
+    .bg-soft-dark {
+        @apply bg-[var(--color-dark-30)] text-white;
+    }
+
+    /* ───────────────────────────────
+     Transparent / Hover-safe Backgrounds
+     ─────────────────────────────── */
+    .bg-primary-transparent {
+        @apply bg-[var(--bg-primary-transparent)]   text-[var(--color-primary)];
+    }
+    .bg-secondary-transparent {
+        @apply bg-[var(--bg-secondary-transparent)] text-[var(--color-secondary)];
+    }
+    .bg-info-transparent {
+        @apply bg-[var(--bg-info-transparent)]      text-[var(--color-info)];
+    }
+    .bg-success-transparent {
+        @apply bg-[var(--bg-success-transparent)]   text-[var(--color-success)];
+    }
+    .bg-warning-transparent {
+        @apply bg-[var(--bg-warning-transparent)]   text-[var(--color-warning)];
+    }
+    .bg-danger-transparent {
+        @apply bg-[var(--bg-danger-transparent)]    text-[var(--color-danger)];
+    }
+    .bg-skyblue-transparent {
+        @apply bg-[var(--bg-skyblue-transparent)]   text-[var(--color-skyblue)];
+    }
+    .bg-light-transparent {
+        @apply bg-[var(--bg-light-transparent)]     text-[var(--color-gray-700)];
+    }
+
+    /* Hover versions (used heavily in cards, badges, etc.) */
+    .hover\:bg-primary-transparent:hover {
+        @apply bg-[var(--bg-primary-transparent)];
+    }
+    .hover\:bg-secondary-transparent:hover {
+        @apply bg-[var(--bg-secondary-transparent)];
+    }
+    .hover\:bg-info-transparent:hover {
+        @apply bg-[var(--bg-info-transparent)];
+    }
+    .hover\:bg-success-transparent:hover {
+        @apply bg-[var(--bg-success-transparent)];
+    }
+    .hover\:bg-warning-transparent:hover {
+        @apply bg-[var(--bg-warning-transparent)];
+    }
+    .hover\:bg-danger-transparent:hover {
+        @apply bg-[var(--bg-danger-transparent)];
+    }
+
+    /* ───────────────────────────────
+     Outline Variants (white bg + colored border + colored text)
+     ─────────────────────────────── */
+    .bg-outline-primary {
+        @apply bg-white border border-[var(--color-primary)]   text-[var(--color-primary)];
+    }
+    .bg-outline-secondary {
+        @apply bg-white border border-[var(--color-secondary)] text-[var(--color-secondary)];
+    }
+    .bg-outline-success {
+        @apply bg-white border border-[var(--color-success)]   text-[var(--color-success)];
+    }
+    .bg-outline-info {
+        @apply bg-white border border-[var(--color-info)]      text-[var(--color-info)];
+    }
+    .bg-outline-warning {
+        @apply bg-white border border-[var(--color-warning)]   text-[var(--color-warning)];
+    }
+    .bg-outline-danger {
+        @apply bg-white border border-[var(--color-danger)]    text-[var(--color-danger)];
+    }
+    .bg-outline-dark {
+        @apply bg-white border border-[var(--color-dark)]      text-[var(--color-dark)];
+    }
+    .bg-outline-light {
+        @apply bg-white border border-[var(--color-light)]     text-black;
+    }
+
+    /* ───────────────────────────────
+     Gradient Backgrounds
+     ─────────────────────────────── */
+    .bg-primary-gradient {
+        background: var(--bg-primary-gradient);
+    }
+    .bg-secondary-gradient {
+        background: var(--bg-secondary-gradient);
+    }
+    .bg-info-gradient {
+        background: var(--bg-info-gradient);
+    }
+    .bg-success-gradient {
+        background: var(--bg-success-gradient);
+    }
+    .bg-warning-gradient {
+        background: var(--bg-warning-gradient);
+    }
+    .bg-danger-gradient {
+        background: var(--bg-danger-gradient);
+    }
+    .bg-purple-gradient {
+        background: var(--bg-purple-gradient);
+    }
+    .bg-teal-gradient {
+        background: var(--bg-teal-gradient);
+    }
+    .bg-light-gradient {
+        background: var(--bg-light-gradient);
+    }
+    .bg-dark-gradient {
+        background: var(--bg-dark-gradient);
+    }
+
+    /* ───────────────────────────────
+     Special ones from style.css
+     ─────────────────────────────── */
+    .bg-pending {
+        @apply bg-[var(--color-skyblue)] text-white;
+    }
+    .badge-soft-pending {
+        @apply bg-[var(--bg-skyblue-transparent)] text-[var(--color-skyblue)];
+    }
+    .bg-light-gray {
+        @apply bg-[var(--color-gray-200)];
+    }
+    .bg-light-orange {
+        @apply bg-orange-400/10;
+    }
+    .bg-light-red {
+        @apply bg-[var(--color-danger-10)];
+    }
+    .bg-light-green {
+        @apply bg-[var(--color-success-10)];
+    }
+
+    /* ───────────────────────────────
+     Dark mode overrides (auto-applied when .dark is on parent)
+     ─────────────────────────────── */
+    .dark .bg-white {
+        @apply bg-[var(--dark-bg-primary)];
+    }
+    .dark .bg-light {
+        @apply bg-[var(--dark-bg-secondary)];
+    }
+    .dark .bg-soft-light {
+        @apply bg-[var(--dark-bg-secondary)/50];
+    }
+}
+
+@layer utilities {
+    /* ─── 1. Color containers with gradient + overlay (used in dashboard widgets) ─── */
+    .color-container {
+        @apply relative overflow-hidden rounded-lg;
+    }
+    .color-container::before {
+        content: "";
+        @apply absolute inset-0 opacity-10;
+        background: linear-gradient(
+            135deg,
+            var(--color-primary) 0%,
+            var(--color-secondary) 100%
+        );
+    }
+
+    /* ─── 2. Text overlay on colored/gradient backgrounds (perfect text readability) ─── */
+    .text-container {
+        @apply relative z-10;
+    }
+
+    /* ─── 3. Small colored info boxes (used in stats cards) ─── */
+    .color-box {
+        @apply w-12 h-12 rounded-lg flex items-center justify-center text-white text-xl font-bold shadow-lg;
+    }
+
+    /* ─── 4. Badge variations that use exact rgba values not covered by soft utilities ─── */
+    .badge-soft-pending {
+        @apply bg-[var(--bg-skyblue-transparent)] text-[var(--color-skyblue)]   px-3 py-1 text-xs font-medium rounded-full;
+    }
+    .badge-soft-approved {
+        @apply bg-[var(--color-success-10)]        text-[var(--color-success)]    px-3 py-1 text-xs font-medium rounded-full;
+    }
+    .badge-soft-rejected {
+        @apply bg-[var(--color-danger-10)]        text-[var(--color-danger)]     px-3 py-1 text-xs font-medium rounded-full;
+    }
+    .badge-soft-warning {
+        @apply bg-[var(--color-warning-10)]       text-[var(--color-warning)]    px-3 py-1 text-xs font-medium rounded-full;
+    }
+
+    /* ─── 5. Icon + text inline badge (very common in the template) ─── */
+    .badge-icon {
+        @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded;
+    }
+
+    /* ─── 6. Dashboard stat number styling (big bold number + small label) ─── */
+    .stat-number {
+        @apply text-3xl font-bold text-[var(--color-dark)];
+    }
+    .stat-label {
+        @apply text-sm text-[var(--color-gray-600)] mt-1;
+    }
+
+    /* ─── 7. Card hover lift effect (used everywhere) ─── */
+    .card-hover {
+        @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+    }
+
+    /* ─── 8. Subtle border bottom accent (used in tabs, cards) ─── */
+    .border-accent-bottom {
+        @apply border-b-4 border-transparent border-b-[var(--color-primary)];
+    }
+
+    /* Dark mode overrides for the above */
+    .dark .stat-number {
+        @apply text-[var(--dark-text-primary)];
+    }
+    .dark .stat-label {
+        @apply text-[var(--dark-text-secondary)];
+    }
+}
+
+/* Make PrimeVue checkboxes match the old template exactly */
+@layer components {
+    .p-checkbox .p-checkbox-box {
+        @apply w-5 h-5 rounded border-2 border-gray-300;
+        background: white;
+        transition: all 0.2s;
+    }
+    .p-checkbox.p-highlight .p-checkbox-box {
+        @apply bg-primary border-primary;
+    }
+    .p-checkbox .p-checkbox-box .p-checkbox-icon {
+        @apply text-white text-xs;
+    }
+
+    /* Dark mode */
+    .dark .p-checkbox .p-checkbox-box {
+        @apply border-gray-600 bg-[var(--dark-bg-secondary)];
+    }
+    .dark .p-checkbox.p-highlight .p-checkbox-box {
+        @apply bg-primary border-primary;
+    }
+}
+
+@layer base {
+    /* ───────────────────────────────
+     Main page wrapper (replaces .page-wrapper from style.css)
+     ─────────────────────────────── */
+    .page-wrapper {
+        @apply min-h-screen flex flex-col transition-all duration-300;
+        margin-left: 280px; /* default: sidebar expanded */
+        background-color: #f8fafc;
+    }
+
+    /* Sidebar collapsed state (mobile + toggle) */
+    .page-wrapper.compacted {
+        margin-left: 80px; /* compacted sidebar width */
+    }
+
+    /* Mobile: full width */
+    @media (max-width: 991.98px) {
+        .page-wrapper {
+            margin-left: 0 !important;
+        }
+    }
+
+    /* ───────────────────────────────
+     Header + Main content area
+     ─────────────────────────────── */
+    .page-header {
+        @apply fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-40;
+        margin-left: 280px;
+        transition: margin-left 0.3s ease;
+    }
+    .page-header.compacted {
+        margin-left: 80px;
+    }
+    @media (max-width: 991.98px) {
+        .page-header {
+            margin-left: 0 !important;
+        }
+    }
+
+    .page-body {
+        @apply flex-1 pt-16 px-lg pb-10; /* uses our --spacing-lg = 30px */
+        min-height: calc(100vh - 64px);
+    }
+
+    /* ───────────────────────────────
+     Content area (inside page-body)
+     ─────────────────────────────── */
+    .page-content {
+        @apply flex-1 max-w-full;
+    }
+
+    /* ───────────────────────────────
+     Sidebar base (for reference – full styling in #11)
+     ─────────────────────────────── */
+    .sidebar {
+        @apply fixed left-0 top-0 bottom-0 w-72 bg-white border-r border-gray-200 z-50;
+        transition: width 0.3s ease;
+    }
+    .sidebar.compacted {
+        width: 80px;
+    }
+    @media (max-width: 991.98px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+    }
+
+    /* ───────────────────────────────
+     Dark mode overrides
+     ─────────────────────────────── */
+    .dark .page-wrapper {
+        background-color: var(--dark-bg-primary);
+    }
+    .dark .page-header {
+        @apply bg-[var(--dark-bg-secondary)] border-gray-800;
+    }
+    .dark .sidebar {
+        @apply bg-[var(--dark-bg-secondary)] border-gray-800;
+    }
+}
+
+@layer base {
+    /* Enable dark mode when .dark is on <html> (or body) */
+    .dark {
+        color-scheme: dark;
+    }
+
+    /* Core background overrides (used literally everywhere in style.css) */
+    .dark {
+        @apply bg-[var(--dark-bg-primary)] text-[var(--dark-text-secondary)];
+    }
+
+    /* Cards, panels, modals, tables – everything that was bg-white */
+    .dark .bg-white,
+    .dark .bg-light,
+    .dark .bg-gray-50,
+    .dark .bg-surface-50 {
+        @apply bg-[var(--dark-bg-secondary)];
+    }
+
+    /* Borders that were light gray → dark gray */
+    .dark .border,
+    .dark .border-gray-200,
+    .dark .border-gray-300 {
+        @apply border-gray-700;
+    }
+
+    /* Text colors */
+    .dark .text-gray-900 {
+        @apply text-[var(--dark-text-primary)];
+    }
+    .dark .text-gray-700 {
+        @apply text-[var(--dark-text-secondary)];
+    }
+    .dark .text-gray-600 {
+        @apply text-gray-400;
+    }
+    .dark .text-gray-500 {
+        @apply text-gray-500;
+    }
+    .dark .text-gray-400 {
+        @apply text-gray-600;
+    }
+
+    /* PrimeVue surface overrides */
+    .dark .p-component,
+    .dark .p-card,
+    .dark .p-panel,
+    .dark .p-datatable .p-datatable-thead > tr > th,
+    .dark .p-dialog .p-dialog-header,
+    .dark .p-menubar,
+    .dark .p-tabview .p-tabview-nav li .p-tabview-nav-link {
+        @apply bg-[var(--dark-bg-secondary)] text-[var(--dark-text-primary)] border-gray-700;
+    }
+
+    /* Inputs & form elements */
+    .dark .p-inputtext,
+    .dark .p-dropdown,
+    .dark .p-multiselect,
+    .dark .p-calendar .p-inputtext {
+        @apply bg-[var(--dark-bg-secondary)] text-white border-gray-600;
+    }
+
+    /* Scrollbars in dark mode (webkit) */
+    .dark ::-webkit-scrollbar {
+        width: 8px;
+    }
+    .dark ::-webkit-scrollbar-track {
+        @apply bg-[var(--dark-bg-secondary)];
+    }
+    .dark ::-webkit-scrollbar-thumb {
+        @apply bg-gray-600 rounded;
+    }
+    .dark ::-webkit-scrollbar-thumb:hover {
+        @apply bg-gray-500;
+    }
+}
+
+@layer utilities {
+    /* Direct mapping of the most common style.css dark rules */
+    .dark\:bg-dark {
+        @apply dark:bg-[var(--dark-bg-primary)];
+    }
+    .dark\:bg-secondary {
+        @apply dark:bg-[var(--dark-bg-secondary)];
+    }
+    .dark\:text-primary {
+        @apply dark:text-[var(--dark-text-primary)];
+    }
+    .dark\:text-secondary {
+        @apply dark:text-[var(--dark-text-secondary)];
+    }
+    .dark\:text-muted {
+        @apply dark:text-gray-500;
+    }
+    .dark\:border-gray {
+        @apply dark:border-gray-700;
+    }
+    .dark\:shadow-dark {
+        @apply dark:shadow-2xl dark:shadow-gray-900/50;
+    }
+
+    /* Hover states that change in dark mode */
+    .dark\:hover\:bg-primary\/10:hover {
+        @apply dark:hover:bg-primary/10;
+    }
+    .dark\:hover\:bg-gray-800:hover {
+        @apply dark:hover:bg-gray-800;
+    }
+    .dark\:hover\:text-primary:hover {
+        @apply dark:hover:text-primary;
+    }
+}
+
+@layer components {
+    /* Base PrimeVue button reset – matches original .btn styling */
+    .p-button {
+        @apply font-medium text-sm transition-all duration-200 shadow-sm;
+        height: 40px !important;
+        padding: 0 1.25rem !important;
+        border-radius: var(
+            --radius-lg
+        ) !important; /* 12px – exact from template */
+        text-transform: none !important;
+        font-family: inherit !important;
+    }
+
+    /* Primary Button – .btn-primary */
+    .p-button.p-button-primary,
+    .p-button:not([class*="p-button-"]):not([class*="bg-"]) {
+        @apply bg-[var(--color-primary)] border border-[var(--color-primary)] text-white hover:bg-primary/90 hover:border-primary/90;
+    }
+
+    /* Secondary Button – .btn-secondary */
+    .p-button.p-button-secondary {
+        @apply bg-[var(--color-secondary)] border border-[var(--color-secondary)] text-white hover:bg-secondary/90;
+    }
+
+    /* Success – .btn-success */
+    .p-button.p-button-success {
+        @apply bg-[var(--color-success)] border border-[var(--color-success)] text-white hover:bg-success/90;
+    }
+
+    /* Info – .btn-info */
+    .p-button.p-button-info {
+        @apply bg-[var(--color-info)] border border-[var(--color-info)] text-white hover:bg-info/90;
+    }
+
+    /* Warning – .btn-warning */
+    .p-button.p-button-warning {
+        @apply bg-[var(--color-warning)] border border-[var(--color-warning)] text-white hover:bg-warning/90;
+    }
+
+    /* Danger – .btn-danger */
+    .p-button.p-button-danger {
+        @apply bg-[var(--color-danger)] border border-[var(--color-danger)] text-white hover:bg-danger/90;
+    }
+
+    /* Dark – .btn-dark */
+    .p-button.p-button-dark {
+        @apply bg-[var(--color-dark)] border border-[var(--color-dark)] text-white hover:bg-dark/90;
+    }
+
+    /* Light – .btn-light */
+    .p-button.p-button-light {
+        @apply bg-[var(--color-light)] border border-[var(--color-light)] text-gray-700 hover:bg-gray-200;
+    }
+
+    /* Outline variants – matches .btn-outline-* */
+    .p-button.p-button-outlined {
+        @apply bg-transparent text-[var(--color-primary)] border border-[var(--color-primary)] hover:bg-primary/10;
+    }
+    .p-button.p-button-outlined.p-button-secondary {
+        @apply text-[var(--color-secondary)] border-[var(--color-secondary)] hover:bg-secondary/10;
+    }
+    .p-button.p-button-outlined.p-button-success {
+        @apply text-[var(--color-success)]   border-[var(--color-success)]   hover:bg-success/10;
+    }
+    .p-button.p-button-outlined.p-button-info {
+        @apply text-[var(--color-info)]      border-[var(--color-info)]      hover:bg-info/10;
+    }
+    .p-button.p-button-outlined.p-button-warning {
+        @apply text-[var(--color-warning)]   border-[var(--color-warning)]   hover:bg-warning/10;
+    }
+    .p-button.p-button-outlined.p-button-danger {
+        @apply text-[var(--color-danger)]    border-[var(--color-danger)]    hover:bg-danger/10;
+    }
+
+    /* Soft / Transparent variants – .btn-soft-* & .btn-transparent */
+    .p-button.bg-soft-primary {
+        @apply bg-[var(--color-primary-10)] text-[var(--color-primary)] hover:bg-primary-25;
+    }
+    .p-button.bg-soft-success {
+        @apply bg-[var(--color-success-10)] text-[var(--color-success)] hover:bg-success;
+    }
+    .p-button.bg-soft-danger {
+        @apply bg-[var(--color-danger-10)] text-[var(--color-danger)] hover:bg-danger;
+    }
+
+    /* Size variants – matches .btn-sm, .btn-lg */
+    .p-button.p-button-sm {
+        @apply h-9 px-4 text-xs;
+    }
+    .p-button.p-button-lg {
+        @apply h-12 px-8 text-base;
+    }
+
+    /* Rounded pill – .btn-pill */
+    .p-button.rounded-full {
+        @apply !rounded-full;
+    }
+
+    /* Icon-only buttons */
+    .p-button.p-button-icon-only {
+        @apply w-10 p-0;
+    }
+
+    /* Dark mode – PrimeVue buttons */
+    .dark .p-button.p-button-primary {
+        @apply bg-primary text-white hover:bg-primary/80;
+    }
+    .dark .p-button.p-button-light {
+        @apply bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700;
+    }
+    .dark .p-button.p-button-outlined {
+        @apply bg-transparent text-primary border-primary hover:bg-primary/20;
+    }
+}
+
+@layer components {
+    /* Base Card – matches .card from style.css */
+    .p-card {
+        @apply bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden;
+        transition: all 0.3s ease;
+    }
+
+    /* Card Header – matches .card-header */
+    .p-card .p-card-header {
+        @apply bg-gray-50 border-b border-gray-200 px-6 py-4;
+    }
+
+    /* Card Title – matches .card-title */
+    .p-card .p-card-title {
+        @apply text-xl font-semibold text-[var(--color-dark)] mb-0;
+    }
+
+    /* Card Subtitle – matches .card-subtitle */
+    .p-card .p-card-subtitle {
+        @apply text-sm text-gray-600 mt-1;
+    }
+
+    /* Card Body – matches .card-body */
+    .p-card .p-card-body {
+        @apply px-6 py-5;
+    }
+
+    /* Card Footer – matches .card-footer */
+    .p-card .p-card-footer {
+        @apply bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-between;
+    }
+
+    /* Hover lift effect – used everywhere in the template */
+    .p-card:hover {
+        @apply shadow-xl -translate-y-1;
+    }
+
+    /* Soft/Transparent cards – .card-transparent, .card-soft-primary etc. */
+    .p-card.bg-transparent,
+    .p-card.bg-soft-primary {
+        @apply bg-[var(--color-primary-10)] border-transparent shadow-sm;
+    }
+    .p-card.bg-soft-success {
+        @apply bg-[var(--color-success-10)];
+    }
+    .p-card.bg-soft-danger {
+        @apply bg-[var(--color-danger-10)];
+    }
+    .p-card.bg-soft-warning {
+        @apply bg-[var(--color-warning-10)];
+    }
+
+    /* Gradient header cards – very common in dashboard */
+    .p-card.gradient-header .p-card-header {
+        @apply bg-primary-gradient text-white border-0;
+    }
+    .p-card.gradient-header .p-card-title,
+    .p-card.gradient-header .p-card-subtitle {
+        @apply text-white;
+    }
+
+    /* Dark mode – perfect visual match */
+    .dark .p-card {
+        @apply bg-[var(--dark-bg-secondary)] border-gray-700 shadow-xl;
+    }
+    .dark .p-card .p-card-header {
+        @apply bg-gray-800/50 border-gray-700;
+    }
+    .dark .p-card .p-card-title {
+        @apply text-[var(--dark-text-primary)];
+    }
+    .dark .p-card .p-card-subtitle {
+        @apply text-gray-400;
+    }
+    .dark .p-card .p-card-footer {
+        @apply bg-gray-800/50 border-gray-700;
+    }
+}
+
+@layer components {
+    /* ───────────────────────────────
+     Menubar – Top Header Navigation
+     ─────────────────────────────── */
+    .p-menubar {
+        @apply bg-white border-b border-gray-200 h-16 px-4 shadow-sm;
+        border-radius: 0 !important;
+        padding: 0 !important;
+    }
+
+    .dark .p-menubar {
+        @apply bg-[var(--dark-bg-secondary)] border-gray-700;
+    }
+
+    /* Menubar root list */
+    .p-menubar .p-menubar-root-list {
+        @apply h-full gap-2;
+    }
+
+    /* Brand / Logo area */
+    .p-menubar .p-menubar-start {
+        @apply flex items-center gap-3;
+    }
+
+    /* Logo image */
+    .p-menubar .brand-logo img {
+        @apply h-9 w-auto;
+    }
+
+    /* Menu items */
+    .p-menubar .p-menuitem-link {
+        @apply h-16 px-4 flex items-center text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-none transition-colors;
+    }
+    .p-menubar .p-menuitem-link:hover {
+        @apply bg-gray-100 dark:bg-gray-800;
+    }
+    .p-menubar .p-menuitem-link .p-menuitem-text {
+        @apply text-gray-700 dark:text-gray-300;
+    }
+    .p-menubar .p-menuitem-link:focus {
+        @apply ring-0 outline-none;
+    }
+
+    /* Active menu item */
+    .p-menubar .p-menuitem-link.active {
+        @apply bg-primary/10 text-primary font-semibold;
+    }
+
+    /* Right-side items (notifications, profile, etc.) */
+    .p-menubar .p-menubar-end {
+        @apply flex items-center gap-3;
+    }
+
+    /* ───────────────────────────────
+     Dropdown (Select, MultiSelect, etc.)
+     ─────────────────────────────── */
+    .p-dropdown {
+        @apply h-10 min-w-[140px] border-gray-300 rounded-md text-sm;
+        background-color: white !important;
+    }
+
+    .p-dropdown:not(.p-disabled):hover {
+        @apply border-primary;
+    }
+    .p-dropdown.p-focus {
+        @apply ring-4 ring-primary/10 border-primary shadow-md;
+    }
+
+    .p-dropdown .p-dropdown-label {
+        @apply text-gray-700;
+    }
+
+    /* Dropdown panel */
+    .p-dropdown-panel {
+        @apply mt-1 border border-gray-200 rounded-lg shadow-xl bg-white overflow-hidden;
+    }
+    .p-dropdown-panel .p-dropdown-items {
+        @apply py-1;
+    }
+    .p-dropdown-panel .p-dropdown-item {
+        @apply px-4 py-2.5 text-sm text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors;
+    }
+    .p-dropdown-panel .p-dropdown-item.p-highlight {
+        @apply bg-primary/10 text-primary font-medium;
+    }
+
+    /* Dark mode – Dropdown */
+    .dark .p-dropdown {
+        @apply bg-[var(--dark-bg-secondary)] border-gray-600 text-gray-200;
+    }
+    .dark .p-dropdown .p-dropdown-label {
+        @apply text-gray-200 placeholder-gray-500;
+    }
+    .dark .p-dropdown-panel {
+        @apply bg-[var(--dark-bg-secondary)] border-gray-700;
+    }
+    .dark .p-dropdown-panel .p-dropdown-item {
+        @apply text-gray-300 hover:bg-primary/20;
+    }
+    .dark .p-dropdown-panel .p-dropdown-item.p-highlight {
+        @apply bg-primary/20 text-primary;
+    }
+
+    /* ───────────────────────────────
+     Special Header Classes (used in layout)
+     ─────────────────────────────── */
+    .header-transparent {
+        @apply bg-transparent border-b-0 shadow-none;
+    }
+    .header-gradient {
+        @apply bg-primary-gradient shadow-lg;
+    }
+}
+
+/* ───────────────────────────────
+   #17 – Custom Scrollbars (exact match with style.css)
+   ─────────────────────────────── */
+@layer base {
+    /* Light mode – thin & subtle */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        @apply bg-gray-100 rounded;
+    }
+    ::-webkit-scrollbar-thumb {
+        @apply bg-gray-400 rounded hover:bg-gray-500 transition-colors;
+    }
+    ::-webkit-scrollbar-corner {
+        @apply bg-gray-100;
+    }
+
+    /* Dark mode – matches original template perfectly */
+    .dark ::-webkit-scrollbar-track {
+        @apply bg-gray-800;
+    }
+    .dark ::-webkit-scrollbar-thumb {
+        @apply bg-gray-600 hover:bg-gray-500;
+    }
+
+    /* Firefox fallback (partial support) */
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: #9ca3af #f3f4f6;
+    }
+    .dark * {
+        scrollbar-color: #6b7280 #1f2937;
+    }
+}
+
+/* ───────────────────────────────
+   #18 – Keyframes & Animations from original style.css
+   ─────────────────────────────── */
+@layer utilities {
+    /* Pulse animation – used on loading spinners, notifications */
+    @keyframes pulse {
+        0%,
+        100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.5;
+        }
+    }
+    .animate-pulse {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    /* Bounce – used on "new" badges */
+    @keyframes bounce {
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-8px);
+        }
+    }
+    .animate-bounce {
+        animation: bounce 1s infinite;
+    }
+
+    /* Fade In Up – used on modal/page entrance */
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translate3d(0, 20px, 0);
+        }
+        to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+        }
+    }
+    .animate-fade-in-up {
+        animation: fadeInUp 0.4s ease-out;
+    }
+
+    /* Spin – for loading icons */
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
+        }
+    }
+    .animate-spin {
+        animation: spin 1s linear infinite;
+    }
+
+    /* Ping – notification dot */
+    @keyframes ping {
+        75%,
+        100% {
+            transform: scale(2);
+            opacity: 0;
+        }
+    }
+    .animate-ping {
+        animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+}
+
+@layer components {
+    /* ───────────────────────────────
+     DataTable – Global Styling (matches .table from style.css)
+     ─────────────────────────────── */
+    .p-datatable {
+        @apply rounded-lg overflow-hidden border border-gray-200;
+    }
+
+    .p-datatable .p-datatable-header {
+        @apply bg-gray-50 border-b border-gray-200 px-6 py-4 text-left text-sm font-semibold text-gray-700;
+    }
+
+    /* Table wrapper */
+    .p-datatable-table {
+        @apply w-full text-sm text-gray-700;
+    }
+
+    /* Header */
+    .p-datatable-thead > tr > th {
+        @apply bg-gray-50 border-b border-gray-200 px-6 py-4 text-left font-medium text-gray-700 uppercase tracking-wider;
+        position: relative;
+    }
+
+    /* Body rows */
+    .p-datatable-tbody > tr {
+        @apply transition-colors hover:bg-gray-50;
+    }
+    .p-datatable-tbody > tr:nth-child(even) {
+        @apply bg-white;
+    }
+    .p-datatable-tbody > tr:nth-child(odd) {
+        @apply bg-gray-25;
+    }
+
+    .p-datatable-tbody > tr > td {
+        @apply px-6 py-4 border-b border-gray-200;
+    }
+
+    /* Hover row highlight */
+    .p-datatable-tbody > tr:hover {
+        @apply bg-primary/5;
+    }
+
+    /* Selected row */
+    .p-datatable-tbody > tr.p-highlight {
+        @apply bg-primary/10;
+    }
+
+    /* Footer */
+    .p-datatable-tfoot > tr > td {
+        @apply bg-gray-50 border-t border-gray-200 px-6 py-4;
+    }
+
+    /* Responsive wrapper */
+    .p-datatable-wrapper {
+        @apply overflow-x-auto;
+    }
+
+    /* Paginator */
+    .p-paginator {
+        @apply bg-white border-t border-gray-200 px-4 py-3 flex items-center justify-between;
+    }
+
+    /* ───────────────────────────────
+     Dark Mode – DataTable
+     ─────────────────────────────── */
+    .dark .p-datatable {
+        @apply border-gray-700;
+    }
+    .dark .p-datatable .p-datatable-header {
+        @apply bg-gray-800 border-gray-700 text-gray-300;
+    }
+    .dark .p-datatable-thead > tr > th {
+        @apply bg-gray-800 border-gray-700 text-gray-400;
+    }
+    .dark .p-datatable-tbody > tr {
+        @apply hover:bg-gray-800/50;
+    }
+    .dark .p-datatable-tbody > tr:nth-child(even) {
+        @apply bg-gray-900/50;
+    }
+    .dark .p-datatable-tbody > tr > td {
+        @apply border-gray-700 text-gray-300;
+    }
+    .dark .p-datatable-tbody > tr:hover {
+        @apply bg-primary/20;
+    }
+    .dark .p-paginator {
+        @apply bg-gray-800 border-gray-700;
+    }
+}
+
+/* ───────────────────────────────
+   #21 – Raw CSS: Sorting Arrows (Font Awesome + :before/:after)
+   Tailwind can't target these → raw CSS required
+   ─────────────────────────────── */
+.p-datatable .p-sortable-column {
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Default state – both arrows visible (gray) */
+.p-datatable .p-sortable-column::before,
+.p-datatable .p-sortable-column::after {
+    @apply absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs;
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    opacity: 0.4;
+}
+
+.p-datatable .p-sortable-column::before {
+    content: "\f0de"; /* arrow-up */
+    top: 8px;
+}
+
+.p-datatable .p-sortable-column::after {
+    content: "\f0dd"; /* arrow-down */
+    top: 18px;
+}
+
+/* Active ascending */
+.p-datatable .p-sortable-column.p-sortable-column-asc::before {
+    @apply text-primary opacity-100;
+}
+.p-datatable .p-sortable-column.p-sortable-column-asc::after {
+    @apply opacity-30;
+}
+
+/* Active descending */
+.p-datatable .p-sortable-column.p-sortable-column-desc::after {
+    @apply text-primary opacity-100;
+}
+.p-datatable .p-sortable-column.p-sortable-column-desc::before {
+    @apply opacity-30;
+}
+
+/* Dark mode arrows */
+.dark .p-datatable .p-sortable-column::before,
+.dark .p-datatable .p-sortable-column::after {
+    @apply text-gray-500;
+}
+.dark .p-datatable .p-sortable-column.p-sortable-column-asc::before,
+.dark .p-datatable .p-sortable-column.p-sortable-column-desc::after {
+    @apply text-primary;
+}
+
+/* ───────────────────────────────
+   #20 – Accordions & Popovers (PrimeVue + Bootstrap-style fallbacks)
+   ─────────────────────────────── */
+@layer components {
+    /* PrimeVue Accordion – matches original .accordion */
+    .p-accordion .p-accordion-header {
+        @apply bg-white border border-gray-200 rounded-t-lg font-medium text-gray-800;
+    }
+    .p-accordion
+        .p-accordion-header:not(.p-highlight)
+        .p-accordion-header-link {
+        @apply hover:bg-gray-50;
+    }
+    .p-accordion .p-accordion-header.p-highlight .p-accordion-header-link {
+        @apply bg-primary text-white border-primary;
+    }
+    .p-accordion .p-accordion-content {
+        @apply border border-t-0 border-gray-200 rounded-b-lg bg-white;
+    }
+
+    /* Dark mode */
+    .dark .p-accordion .p-accordion-header {
+        @apply bg-gray-800 border-gray-700 text-gray-200;
+    }
+    .dark .p-accordion .p-accordion-content {
+        @apply bg-gray-800/50 border-gray-700;
+    }
+
+    /* Bootstrap-style .accordion fallback (if you ever use raw <div class="accordion">) */
+    .accordion-button {
+        @apply bg-white border border-gray-300 rounded-t-lg font-medium px-5 py-4 text-left;
+    }
+    .accordion-button:not(.collapsed) {
+        @apply bg-primary text-white border-primary;
+    }
+    .accordion-body {
+        @apply border border-t-0 border-gray-300 rounded-b-lg px-5 py-4 bg-white;
+    }
+
+    /* PrimeVue Tooltip / Popover (used for info popups) */
+    .p-tooltip .p-tooltip-text {
+        @apply bg-gray-900 text-white text-sm rounded shadow-lg px-3 py-2;
+    }
+    .p-tooltip.p-tooltip-top .p-tooltip-arrow {
+        @apply border-t-gray-900;
+    }
+
+    .dark .p-tooltip .p-tooltip-text {
+        @apply bg-gray-700 text-gray-100;
+    }
+}
+
+/* ───────────────────────────────
+   #22 – List & Badge Utilities (exact match with style.css)
+   ─────────────────────────────── */
+@layer utilities {
+    /* ── List Styles ── */
+    .list-disc {
+        @apply list-disc list-inside;
+    }
+    .list-decimal {
+        @apply list-decimal list-inside;
+    }
+    .list-none {
+        @apply list-none;
+    }
+
+    /* Numbered list with circle */
+    .list-circle {
+        @apply list-none pl-8;
+    }
+    .list-circle > li {
+        @apply relative mb-2;
+    }
+    .list-circle > li::before {
+        content: counter(list-item);
+        @apply absolute left-0 -ml-8 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-medium;
+        counter-increment: list-item;
+    }
+
+    /* Icon list – common in features section */
+    .list-check {
+        @apply list-none pl-8;
+    }
+    .list-check > li {
+        @apply relative mb-3 text-gray-700;
+    }
+    .list-check > li::before {
+        content: "\f00c";
+        font-family: "Font Awesome 5 Free";
+        font-weight: 900;
+        @apply absolute left-0 -ml-8 text-success text-lg;
+    }
+
+    /* ── Badges – complete set from style.css ── */
+    .badge {
+        @apply inline-flex items-center px-3 py-1 text-xs font-medium rounded-full;
+    }
+    .badge-primary {
+        @apply bg-primary/10 text-primary;
+    }
+    .badge-success {
+        @apply bg-success/10 text-success;
+    }
+    .badge-danger {
+        @apply bg-danger/10 text-danger;
+    }
+    .badge-warning {
+        @apply bg-warning/10 text-warning;
+    }
+    .badge-info {
+        @apply bg-info/10 text-info;
+    }
+    .badge-secondary {
+        @apply bg-secondary/10 text-secondary;
+    }
+    .badge-dark {
+        @apply bg-gray-800 text-white;
+    }
+
+    /* Soft badges with solid background */
+    .badge-soft-primary {
+        @apply bg-primary/20 text-primary;
+    }
+    .badge-soft-success {
+        @apply bg-success/20 text-success;
+    }
+    .badge-soft-danger {
+        @apply bg-danger/20 text-danger;
+    }
+    .badge-soft-warning {
+        @apply bg-warning/20 text-warning;
+    }
+
+    /* Badge with dot */
+    .badge-dot {
+        @apply relative pl-6;
+    }
+    .badge-dot::before {
+        content: "";
+        @apply absolute left-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-current;
+    }
+
+    /* Badge with icon */
+    .badge-icon {
+        @apply inline-flex items-center gap-2;
+    }
+
+    /* Dark mode badges */
+    .dark .badge-primary {
+        @apply bg-primary/20 text-primary;
+    }
+    .dark .badge-success {
+        @apply bg-success/20 text-success;
+    }
+    .dark .badge-danger {
+        @apply bg-danger/20 text-danger;
+    }
+}
+
+/* ───────────────────────────────
+   #23 – The ONLY remaining raw media queries
+   (Everything else is now handled by Tailwind classes)
+   ─────────────────────────────── */
+@layer base {
+    /* 1. Sidebar mobile behavior (from original style.css) */
+    @media (max-width: 991.98px) {
+        .page-wrapper {
+            margin-left: 0 !important;
+        }
+        .page-header {
+            margin-left: 0 !important;
+        }
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+    }
+
+    /* 2. Header mobile padding reduction */
+    @media (max-width: 767.98px) {
+        .p-menubar {
+            @apply px-3;
+        }
+        .p-menubar .p-menubar-start,
+        .p-menubar .p-menubar-end {
+            @apply gap-2;
+        }
+    }
+
+    /* 3. Dashboard grid fallback for very small screens */
+    @media (max-width: 480px) {
+        .grid-cols-1.sm\:grid-cols-2.md\:grid-cols-3.lg\:grid-cols-4 {
+            @apply grid-cols-1;
+        }
+        .text-4xl {
+            @apply text-3xl;
+        }
+    }
+
+    /* 4. Hide sidebar text completely on collapsed + mobile */
+    @media (max-width: 1024px) {
+        .sidebar.w-20 span:not([class*="badge"]),
+        .sidebar.w-20 h6,
+        .sidebar.w-20 .brand-logo span {
+            @apply opacity-0 pointer-events-none;
+        }
+    }
+}
+
+/* Optional: Tailwind extend for extra breakpoints (if you want them) */
+@layer base {
+    @media (min-width: 1400px) {
+        .container {
+            max-width: 1320px;
+        }
+    }
+}
+
+/* ───────────────────────────────
+   #24 – PrimeVue Dark Mode Overrides (comprehensive)
+   ─────────────────────────────── */
+@layer components {
+    /* ── Core PrimeVue container ── */
+    .dark .p-component,
+    .dark .p-component-overlay {
+        @apply bg-[var(--dark-bg-secondary)] text-[var(--dark-text-primary)] border-gray-700;
+    }
+
+    /* ── Buttons (already covered but reinforced) ── */
+    .dark .p-button {
+        @apply border-gray-600;
+    }
+    .dark .p-button.p-button-outlined {
+        @apply bg-transparent border-gray-600 text-gray-300 hover:bg-gray-700;
+    }
+    .dark .p-button.p-button-text {
+        @apply text-gray-300 hover:bg-gray-700;
+    }
+
+    /* ── Inputs & Form Elements ── */
+    .dark .p-inputtext,
+    .dark .p-float-label .p-inputtext,
+    .dark .p-inputtextarea,
+    .dark .p-password input,
+    .dark .p-calendar .p-inputtext,
+    .dark .p-selectbutton .p-button,
+    .dark .p-inputnumber input {
+        @apply bg-gray-800/50 border-gray-600 text-gray-200 placeholder-gray-500 focus:border-primary;
+    }
+
+    /* ── Dropdown / MultiSelect / CascadeSelect ── */
+    .dark .p-dropdown,
+    .dark .p-multiselect,
+    .dark .p-cascadeselect {
+        @apply bg-gray-800/50 border-gray-600;
+    }
+    .dark .p-dropdown-panel,
+    .dark .p-multiselect-panel,
+    .dark .p-cascadeselect-panel {
+        @apply bg-gray-800 border-gray-700 shadow-2xl;
+    }
+    .dark .p-dropdown-item,
+    .dark .p-multiselect-item {
+        @apply text-gray-300 hover:bg-primary/20;
+    }
+    .dark .p-dropdown-item.p-highlight,
+    .dark .p-multiselect-item.p-highlight {
+        @apply bg-primary/30 text-white;
+    }
+
+    /* ── Cards & Panels ── */
+    .dark .p-card {
+        @apply bg-gray-800/70 border-gray-700 shadow-2xl;
+    }
+    .dark .p-card .p-card-header,
+    .dark .p-card .p-card-footer {
+        @apply bg-gray-900/50 border-gray-700;
+    }
+
+    /* ── Dialog / Overlay ── */
+    .dark .p-dialog {
+        @apply bg-gray-800 border border-gray-700 shadow-2xl;
+    }
+    .dark .p-dialog .p-dialog-header,
+    .dark .p-dialog .p-dialog-footer {
+        @apply bg-gray-900/50 border-gray-700;
+    }
+
+    /* ── Toast & Messages ── */
+    .dark .p-toast {
+        @apply opacity-95;
+    }
+    .dark .p-toast-message {
+        @apply bg-gray-800 border-l-4 shadow-xl;
+    }
+    .dark .p-toast-message-success {
+        @apply border-success;
+    }
+    .dark .p-toast-message-info {
+        @apply border-info;
+    }
+    .dark .p-toast-message-warn {
+        @apply border-warning;
+    }
+    .dark .p-toast-message-error {
+        @apply border-danger;
+    }
+
+    /* ── TabView & Tabs ── */
+    .dark .p-tabview .p-tabview-nav {
+        @apply bg-gray-800 border-gray-700;
+    }
+    .dark .p-tabview .p-tabview-nav li .p-tabview-nav-link {
+        @apply bg-transparent border-transparent text-gray-400 hover:text-white;
+    }
+    .dark .p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+        @apply bg-gray-700 text-white border-primary;
+    }
+
+    /* ── Accordion ── */
+    .dark .p-accordion .p-accordion-header .p-accordion-header-link {
+        @apply bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700;
+    }
+    .dark
+        .p-accordion
+        .p-accordion-header.p-highlight
+        .p-accordion-header-link {
+        @apply bg-primary text-white;
+    }
+    .dark .p-accordion .p-accordion-content {
+        @apply bg-gray-800/50 border-gray-700;
+    }
+
+    /* ── Menu / Menubar / PanelMenu ── */
+    .dark .p-menu,
+    .dark .p-panelmenu .p-panelmenu-header > a,
+    .dark .p-panelmenu .p-panelmenu-content {
+        @apply bg-gray-800 border-gray-700;
+    }
+    .dark .p-menuitem-link,
+    .dark .p-panelmenu .p-menuitem-link {
+        @apply hover:bg-primary/20;
+    }
+
+    /* ── ProgressBar & Skeleton ── */
+    .dark .p-progressbar .p-progressbar-value {
+        @apply bg-primary;
+    }
+    .dark .p-skeleton {
+        @apply bg-gray-700;
+    }
+
+    /* ── ScrollPanel & PerfectScrollbar ── */
+    .dark .ps__rail-y {
+        @apply bg-gray-800;
+    }
+    .dark .ps__thumb-y {
+        @apply bg-gray-600 hover:bg-gray-500;
+    }
+}

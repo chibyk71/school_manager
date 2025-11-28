@@ -1,609 +1,1363 @@
+@charset "UTF-8";
+/**
+ * @fileoverview Main stylesheet for the School Management SaaS MVP.
+ * Tailwind CSS v4 configuration: All theming is CSS-native via @theme.
+ * Target: Primary/secondary schools in Nigeria/Africa—minimal, modern ICT transition.
+ * Features: Multi-tenant (schools + branches/sections), low-cost, no dev hires needed.
+ * Tech: Laravel 11 + Vue3 + PrimeVue + Inertia + Tailwind v4.
+ * Usage: Import in app.blade.php: @vite(['resources/css/app.css', 'resources/js/app.js'])
+ * VSCode: Use Tailwind IntelliSense for @theme var completions.
+ */
+
+/****** Utils ******/
+@import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap");
+
 @import "tailwindcss";
 @import "tailwindcss-primeui";
 
-
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Core theme definition: Extend Tailwind defaults with school-specific colors/spacing.
+ * Defined at top-level for v4 JIT generation of utilities (e.g., bg-primary).
+ * Colors use hex for compatibility; v4 converts to OKLCH internally for better UX.
+ * Extend, don't override: Keeps grays/fonts from Tailwind but adds yours.
+ */
 @theme {
-    --breakpoint-sm: 36rem; /* Bootstrap sm: 576px */
-    --breakpoint-md: 48rem; /* Bootstrap md: 768px */
-    --breakpoint-lg: 62rem; /* Bootstrap lg: 992px */
-    --breakpoint-xl: 75rem; /* Bootstrap xl: 1200px */
-    --breakpoint-2xl: 87.5rem; /* Bootstrap xxl: 1400px */
+    /* Primary Palette (exact matches from style.css) */
+    --color-primary: #3d5ee1;
+    --color-secondary: #6fccd8;
+    --color-info: #0f65cd;
+    --color-success: #1abe17;
+    --color-warning: #eab300;
+    --color-danger: #e82646;
+    --color-dark: #202c4b;
+    --color-light: #e9edf4;
+    --color-pink: #e83e8c;
+    --color-purple: #4a00e5;
+    --color-teal: #02a8b5;
+    --color-blue: #339dff;
+    --color-skyblue: #05c3fb;
+    --color-yellow: #ffff00;
+    --color-success-800: #48cb45;
 
-    --container-3xs: 16rem; /* Custom - Not used in Bootstrap */
-    --container-2xs: 18rem; /* Custom */
-    --container-xs: 20rem; /* Custom */
+    /* Gray Scale */
+    --color-gray-100: #e6e8eb;
+    --color-gray-200: #cdd0d7;
+    --color-gray-300: #b5b9c3;
+    --color-gray-400: #9ca1af;
+    --color-gray-500: #838a9b;
+    --color-gray-600: #6a7287;
+    --color-gray-700: #515b73;
+    --color-gray-800: #39435f;
+    --color-gray-900: #202c4b;
 
-    --container-sm: 33.75rem; /* Bootstrap sm - 540px */
-    --container-md: 45rem; /* Bootstrap md - 720px */
-    --container-lg: 60rem; /* Bootstrap lg - 960px */
-    --container-xl: 71.25rem; /* Bootstrap xl - 1140px */
-    --container-2xl: 82.5rem; /* Bootstrap xxl - 1320px */
+    /* Light Backgrounds */
+    --color-light-100: #fdfdfe;
+    --color-light-200: #fbfbfd;
+    --color-light-300: #f8fafc;
+    --color-light-400: #f6f8fb;
+    --color-light-500: #f4f6fa;
 
-    --container-3xl: 90rem; /* Custom large (1440px) */
-    --container-4xl: 96rem; /* Custom */
-    --container-5xl: 102.4rem; /* Custom (1638.4px) */
-    --container-6xl: 115.2rem; /* Custom (1843.2px) */
-    --container-7xl: 128rem; /* Custom (2048px) */
-}
+    /* Soft / Opacity Variants (exact from style.css) */
+    --color-primary-10: rgba(61, 94, 225, 0.1);
+    --color-primary-25: rgba(61, 94, 225, 0.25);
+    --color-primary-50: rgba(61, 94, 225, 0.5);
+    --color-primary-75: rgba(61, 94, 225, 0.75);
 
-/* Light */
-:root {
-    --p-primary-50: #f2f7f8;
-    --p-primary-100: #c2eaf0;
-    --p-primary-200: #a6e7f0;
-    --p-primary-300: #85e5f1;
-    --p-primary-400: #8cbbc2;
-    --p-primary-500: #69c1cc;
-    --p-primary-600: #4aafbd;
-    --p-primary-700: #258794;
-    --p-primary-800: #0c5d68;
-    --p-primary-900: #0a525c;
-    --p-primary-950: #043036;
-    --p-surface-0: #ffffff;
-    --p-surface-50: #fafafa;
-    --p-surface-100: #f4f4f5;
-    --p-surface-200: #e4e4e7;
-    --p-surface-300: #d4d4d8;
-    --p-surface-400: #a1a1aa;
-    --p-surface-500: #71717a;
-    --p-surface-600: #52525b;
-    --p-surface-700: #3f3f46;
-    --p-surface-800: #27272a;
-    --p-surface-900: #18181b;
-    --p-surface-950: #09090b;
-    --p-content-border-radius: 6px;
-    --p-primary-color: var(--p-primary-500);
-    --p-primary-contrast-color: var(--p-surface-0);
-    --p-primary-hover-color: var(--p-primary-600);
-    --p-primary-active-color: var(--p-primary-700);
-    --p-content-border-color: var(--p-surface-200);
-    --p-content-hover-background: var(--p-surface-100);
-    --p-content-hover-color: var(--p-surface-800);
-    --p-highlight-background: var(--p-primary-50);
-    --p-highlight-color: var(--p-primary-700);
-    --p-highlight-focus-background: var(--p-primary-100);
-    --p-highlight-focus-color: var(--p-primary-800);
-    --p-text-color: var(--p-surface-700);
-    --p-text-hover-color: var(--p-surface-800);
-    --p-text-muted-color: var(--p-surface-500);
-    --p-text-hover-muted-color: var(--p-surface-600);
-    --body-bg-gradient: linear-gradient(
-        180deg,
-        rgba(245, 254, 253, 0.9) 0%,
-        rgba(255, 255, 255, 0.99) 100%
-    );
-    --body-bg-image: url(/assets/img/bg/patternlight.png);
-    --body-bg-image-size: 4.6875rem;
-    --body-bg-cover: url(/hud-vue/assets/cover-dhlOIT5m.jpg);
-    --body-font-weight: 400;
-    --body-letter-spacing: 0.046875rem;
-    --app-header-bg: var(--p-surface-0);
-    --app-header-brand-img: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAggAAAIICAYAAAAL/BZjAAAACXBIWXMAAAsTAAALEwEAmpwYAAAF7GlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgNS42LWMxNDggNzkuMTY0MDM2LCAyMDE5LzA4LzEzLTAxOjA2OjU3ICAgICAgICAiPiA8cmRmOlJERiB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiPiA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtbG5zOmRjPSJodHRwOi8vcHVybC5vcmcvZGMvZWxlbWVudHMvMS4xLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczpzdEV2dD0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL3NUeXBlL1Jlc291cmNlRXZlbnQjIiB4bWxuczpwaG90b3Nob3A9Imh0dHA6Ly9ucy5hZG9iZS5jb20vcGhvdG9zaG9wLzEuMC8iIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDIxLjEgKE1hY2ludG9zaCkiIHhtcDpDcmVhdGVEYXRlPSIyMDIxLTA4LTAzVDE0OjQ0OjUwKzA4OjAwIiB4bXA6TW9kaWZ5RGF0ZT0iMjAyMy0wMy0wN1QxNDozNDozOCswODowMCIgeG1wOk1ldGFkYXRhRGF0ZT0iMjAyMy0wMy0wN1QxNDozNDozOCswODowMCIgZGM6Zm9ybWF0PSJpbWFnZS9wbmciIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6OThmYmI3ZGUtMDk0MC00NWE0LThiMTUtM2ZlYjgwYjkyMTMwIiB4bXBNTTpEb2N1bWVudElEPSJ4bXAuZGlkOjEwNzc2RjRERUI0QTExRUJCQzYzODczQjhBQjE2NUJBIiB4bXBNTTpPcmlnaW5hbERvY3VtZW50SUQ9InhtcC5kaWQ6MTA3NzZGNERFQjRBMTFFQkJDNjM4NzNCOEFCMTY1QkEiIHBob3Rvc2hvcDpDb2xvck1vZGU9IjMiIHBob3Rvc2hvcDpJQ0NQcm9maWxlPSJzUkdCIElFQzYxOTY2LTIuMSI+IDx4bXBNTTpEZXJpdmVkRnJvbSBzdFJlZjppbnN0YW5jZUlEPSJ4bXAuaWlkOjEwNzc2RjRBRUI0QTExRUJCQzYzODczQjhBQjE2NUJBIiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjEwNzc2RjRCRUI0QTExRUJCQzYzODczQjhBQjE2NUJBIi8+IDx4bXBNTTpIaXN0b3J5PiA8cmRmOlNlcT4gPHJkZjpsaSBzdEV2dDphY3Rpb249InNhdmVkIiBzdEV2dDppbnN0YW5jZUlEPSJ4bXAuaWlkOjk4ZmJiN2RlLTA5NDAtNDVhNC04YjE1LTNmZWI4MGI5MjEzMCIgc3RFdnQ6d2hlbj0iMjAyMy0wMy0wN1QxNDozNDozOCswODowMCIgc3RFdnQ6c29mdHdhcmVBZ2VudD0iQWRvYmUgUGhvdG9zaG9wIDIxLjAgKE1hY2ludG9zaCkiIHN0RXZ0OmNoYW5nZWQ9Ii8iLz4gPC9yZGY6U2VxPiA8L3htcE1NOkhpc3Rvcnk+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+glWIjQAACFtJREFUeJzt2cGNg0AQAMG15VRIwOQfAk7JF0C/ToLF0lZJfJnlM7TgsW3bd8D5HncfABZij3O6590HAAB+j0AAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABCvCTM+E2YArMyeXdP7ypvPCIQxxtgnzQFYkR27nuPqAX4xAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACBeY4zH3YcAAP5lv3qALwgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQzzHG9+LrmPY0ALCGY1z8/vYFAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACAEAgAQAgEACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAADxmjTnmDSH37HffQBYiB3L6WYEwnvCDICV2bOczi8GACAEAgAQAgEACIEAAIRAAABCIAAAIRAAgBAIAEAIBAAgBAIAEAIBAAiBAACEQAAAQiAAACEQAIAQCABACAQAIAQCABACAQAIgQAAhEAAAEIgAAAhEACA+APf8z1YVNUo0AAAAABJRU5ErkJggg==);
-    --app-header-link-color: var(--p-surface-900);
-    --app-header-link-hover-color: var(--p-surface-950);
-    --app-sidebar-menu-header-color: rgba(var(--inverse-rgb), 0.3);
-    --app-sidebar-menu-link-color: rgba(var(--inverse-rgb), 0.5);
-    --app-sidebar-menu-link-hover-color: --p-surface-950;
-    --app-sidebar-menu-link-active-color: --p-surface-950;
-    --theme-bg-subtle: #d3ebe4;
-}
+    --color-secondary-10: rgba(111, 204, 216, 0.1);
+    --color-info-10: rgba(15, 101, 205, 0.1);
+    --color-info-30: rgba(15, 101, 205, 0.3);
+    --color-success-10: rgba(26, 190, 23, 0.1);
+    --color-warning-10: rgba(234, 179, 0, 0.1);
+    --color-danger-10: rgba(232, 38, 70, 0.1);
+    --color-dark-10: rgba(32, 44, 75, 0.1);
+    --color-dark-30: rgba(32, 44, 75, 0.3);
+    --color-light-50: rgba(233, 237, 244, 0.5);
+    --color-light-90: rgba(233, 237, 244, 0.9);
 
-/* Dark Mode Color Variables */
-.dark {
-    /* Surface colors reversed for dark mode */
-    --p-surface-0: #09090b; /* Base background */
-    --p-surface-50: #18181b; /* Card/Panel background */
-    --p-surface-100: #27272a; /* Lighter components, hover backgrounds */
-    --p-surface-200: #3f3f46;
-    --p-surface-300: #52525b;
-    --p-surface-400: #71717a;
-    --p-surface-500: #a1a1aa;
-    --p-surface-600: #d4d4d8;
-    --p-surface-700: #e4e4e7;
-    --p-surface-800: #f4f4f5; /* Lightest surface for text (was 100) */
-    --p-surface-900: #fafafa; /* Lighter surface for text (was 50) */
-    --p-surface-950: #ffffff; /* Text/Icon color (was 0) */
+    /* Transparent background colors used in style.css */
+    --bg-primary-transparent: #f2f5ff;
+    --bg-secondary-transparent: #e8fcff;
+    --bg-info-transparent: #e7f1fc;
+    --bg-success-transparent: #e8f9e8;
+    --bg-warning-transparent: #fef8ea;
+    --bg-danger-transparent: #fde9ed;
+    --bg-skyblue-transparent: #e6f9ff;
+    --bg-light-transparent: rgba(233, 237, 244, 0.5);
 
-    /* Thematic Properties */
-    --p-content-border-radius: 6px;
-    
-    --p-primary-color: var(--p-primary-500);
-    /* Contrast color should be a light surface for dark primary background */
-    --p-primary-contrast-color: var(--p-surface-950); 
-    --p-primary-hover-color: var(--p-primary-400); /* Slightly lighter for hover effect */
-    --p-primary-active-color: var(--p-primary-300); /* Lighter for active/pressed state */
-    
-    /* Content border should be a dark, subtle color */
-    --p-content-border-color: var(--p-surface-200); 
-    
-    /* Hover background should be a slightly lighter surface */
-    --p-content-hover-background: var(--p-surface-100); 
-    /* Hover color should be a light color for better contrast */
-    --p-content-hover-color: var(--p-surface-900); 
+    /* Gradient Backgrounds (exact from style.css) */
+    --bg-primary-gradient: linear-gradient(180deg, #f3f6ff 0%, #ffffff 100%);
+    --bg-secondary-gradient: linear-gradient(180deg, #e8fcff 0%, #ffffff 100%);
+    --bg-info-gradient: linear-gradient(180deg, #e7f1fc 0%, #ffffff 100%);
+    --bg-success-gradient: linear-gradient(180deg, #e8f9e8 0%, #ffffff 100%);
+    --bg-warning-gradient: linear-gradient(180deg, #fef8ea 0%, #ffffff 100%);
+    --bg-danger-gradient: linear-gradient(180deg, #fde9ed 0%, #ffffff 100%);
+    --bg-purple-gradient: linear-gradient(to right, #4a00e5 0%, #9b25b7 100%);
+    --bg-teal-gradient: linear-gradient(180deg, #e6f9ff 0%, #ffffff 100%);
+    --bg-light-gradient: linear-gradient(180deg, #d1d6de 0%, #ffffff 100%);
+    --bg-dark-gradient: linear-gradient(180deg, #f3f6ff 0%, #ffffff 100%);
 
-    /* Highlight backgrounds should use the dark surface scale */
-    --p-highlight-background: var(--p-surface-200); 
-    --p-highlight-color: var(--p-primary-300); /* Keep highlight text light */
-    --p-highlight-focus-background: var(--p-surface-300);
-    --p-highlight-focus-color: var(--p-primary-200);
+    /* Dark Mode Core Colors (from style.css darkmode section) */
+    --color-dark-bg-primary: #131022;
+    --color-dark-bg-secondary: #1b1632;
+    --color-dark-text-primary: #efeff2;
+    --color-dark-text-secondary: #b9b7c0;
+    --color-dark-text-muted: rgba(185, 183, 192, 0.5);
 
-    /* Text colors are pulled from the *light* end of the surface scale */
-    --p-text-color: var(--p-surface-800); 
-    --p-text-hover-color: var(--p-surface-900);
-    --p-text-muted-color: var(--p-surface-500); /* Muted color should be dark grey */
-    --p-text-hover-muted-color: var(--p-surface-600);
-    
-    /* Body background gradient reversed for a dark effect */
-    --body-bg-gradient: linear-gradient(
-        180deg,
-        rgba(4, 48, 54, 0.9) 0%, /* Uses primary-950/dark color as starting point */
-        rgba(9, 9, 11, 0.99) 100% /* Uses surface-0/black as end point */
-    );
+    /* Font Families – exact matches from style.css */
+    --font-roboto: "Roboto", sans-serif;
+    --font-nunito: "Nunito", sans-serif;
+    --font-poppins: "Poppins", sans-serif;
 
-    --app-header-link-color: var(--p-surface-50);
-    --app-header-link-hover-color: var(--p-surface-950);
-    --app-sidebar-menu-header-color: rgba(var(--inverse-rgb), 0.3);
-    --app-sidebar-menu-link-color: rgba(var(--inverse-rgb), 0.5);
-    --app-sidebar-menu-link-hover-color: --p-surface-950;
-    --app-sidebar-menu-link-active-color: --p-surface-950;
-    --theme-bg-subtle: #d3ebe4;
-    --app-header-bg: var(--p-surface-50);
-}
+    /* Optional: set a fallback modern stack */
+    --font-system: system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    /* ───────────────────────────────
+     Custom Breakpoints (to match style.css behavior)
+     ─────────────────────────────── */
+    --breakpoint-xs: 575.98px; /* mobile-first cutoff */
+    --breakpoint-sm: 576px; /* matches Bootstrap sm */
+    --breakpoint-md: 768px; /* tablet */
+    --breakpoint-lg: 992px; /* desktop */
+    --breakpoint-xl: 1200px; /* large desktop */
+    --breakpoint-2xl: 1400px; /* extra-large */
 
-body {
-    @apply w-screen h-[100vh] overflow-x-hidden;
+    /* ───────────────────────────────
+     Custom Spacing Scale
+     (pulled from style.css common paddings/margins)
+     ─────────────────────────────── */
+    --spacing-0: 0;
+    --spacing-1: 0.25rem; /* 4px  */
+    --spacing-2: 0.5rem; /* 8px  */
+    --spacing-3: 0.75rem; /* 12px */
+    --spacing-4: 1rem; /* 16px */
+    --spacing-5: 1.25rem; /* 20px */
+    --spacing-6: 1.5rem; /* 24px */
+    --spacing-7: 1.75rem; /* 28px */
+    --spacing-8: 2rem; /* 32px */
+    --spacing-9: 2.25rem; /* 36px */
+    --spacing-10: 2.5rem; /* 40px */
+    --spacing-11: 2.75rem; /* 44px */
+    --spacing-12: 3rem; /* 48px */
+
+    /* Frequently used in the original template */
+    --spacing-xs: 0.625rem; /* 10px  */
+    --spacing-sm: 0.875rem; /* 14px  */
+    --spacing-md: 1.125rem; /* 18px  */
+    --spacing-lg: 1.875rem; /* 30px – very common in style.css */
+    --spacing-xl: 2.5rem; /* 40px */
+    --spacing-2xl: 3.75rem; /* 60px */
+    --spacing-3xl: 5rem; /* 80px */
+
+    /* ───────────────────────────────
+     Border Radius (exact matches from style.css)
+     ─────────────────────────────── */
+    --radius-none: 0;
+    --radius-sm: 0.25rem; /* 4px  */
+    --radius: 0.375rem; /* 6px  */
+    --radius-md: 0.5rem; /* 8px  */
+    --radius-lg: 0.75rem; /* 12px – used heavily in template */
+    --radius-xl: 1rem; /* 16px */
+    --radius-2xl: 1.5rem; /* 24px */
+    --radius-full: 9999px;
+
+    /* ───────────────────────────────
+     Shadows (common in style.css cards, modals, etc.)
+     ─────────────────────────────── */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    --shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+    --shadow-md: 0 10px 20px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 15px 35px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.12);
 }
 
-html:before {
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 100%;
-    z-index: -5;
-    background: var(--body-bg-gradient);
+/* ============ 1. SPACING (theme + arbitrary) ============ */
+@utility p-*      { padding:       --value(--spacing-*, [length]); }
+@utility px-*     { padding-left:  --value(--spacing-*, [length]); padding-right:  --value(--spacing-*, [length]); }
+@utility py-*     { padding-top:   --value(--spacing-*, [length]); padding-bottom: --value(--spacing-*, [length]); }
+@utility m-*      { margin:        --value(--spacing-*, [length]); }
+@utility mx-*     { margin-left:   --value(--spacing-*, [length]); margin-right:   --value(--spacing-*, [length]); }
+@utility my-*     { margin-top:    --value(--spacing-*, [length]); margin-bottom:  --value(--spacing-*, [length]); }
+
+@utility -p-*     { padding:       calc(-1 * --value(--spacing-*, [length])); }
+@utility -m-*     { margin:        calc(-1 * --value(--spacing-*, [length])); }
+
+/* ============ 2. SOLID COLORS + BORDER (bg-primary, bg-success, …) ============ */
+@utility bg-primary   { background-color: var(--color-primary);   border: 1px solid var(--color-primary);   color: #fff; }
+@utility bg-secondary { background-color: var(--color-primary); border: 1px solid var(--color-primary); color: #fff; } /* short alias */
+@utility bg-secondary { background-color: var(--color-secondary); border: 1px solid var(--color-secondary); color: #fff; }
+@utility bg-info      { background-color: var(--color-info);      border: 1px solid var(--color-info);      color: #fff; }
+@utility bg-success   { background-color: var(--color-success);   border: 1px solid var(--color-success);   color: #fff; }
+@utility bg-warning   { background-color: var(--color-warning);   border: 1px solid var(--color-warning);   color: #fff; }
+@utility bg-danger    { background-color: var(--color-danger);    border: 1px solid var(--color-danger);    color: #fff; }
+@utility bg-dark      { background-color: var(--color-dark);      border: 1px solid var(--color-dark);      color: #fff; }
+@utility bg-light     { background-color: var(--color-light);     border: 1px solid var(--color-light);     color: var(--color-gray-600); }
+@utility bg-pink      { background-color: var(--color-pink);      border: 1px solid var(--color-pink);      color: #fff; }
+@utility bg-purple    { background-color: var(--color-purple);    border: 1px solid var(--color-purple);    color: #fff; }
+@utility bg-teal      { background-color: var(--color-teal);      border: 1px solid var(--color-teal);      color: #fff; }
+@utility bg-blue      { background-color: var(--color-blue);      border: 1px solid var(--color-blue);      color: #fff; }
+@utility bg-skyblue   { background-color: var(--color-skyblue);   border: 1px solid var(--color-skyblue);   color: #fff; }
+@utility bg-yellow    { background-color: var(--color-yellow);    border: 1px solid var(--color-yellow);    color: #000; }
+
+/* ============ 3. OPACITY / SOFT BACKGROUNDS ============ */
+@utility bg-primary-*   { background-color: --value(--color-primary-*,   [color]); color: var(--color-primary); }
+@utility bg-secondary-* { background-color: --value(--color-secondary-*, [color]); color: var(--color-secondary); }
+@utility bg-info-*      { background-color: --value(--color-info-*,      [color]); color: var(--color-info); }
+@utility bg-success-*   { background-color: --value(--color-success-*,   [color]); color: var(--color-success); }
+@utility bg-warning-*   { background-color: --value(--color-warning-*,   [color]); color: var(--color-warning); }
+@utility bg-danger-*    { background-color: --value(--color-danger-*,    [color]); color: var(--color-danger); }
+@utility bg-dark-*      { background-color: --value(--color-dark-*,      [color]); color: #fff; }
+@utility bg-light-*     { background-color: --value(--color-light-*,     [color]); color: var(--color-gray-600); }
+
+/* ============ 4. SOFT & TRANSPARENT BACKGROUNDS ============ */
+@utility bg-soft-primary   { background-color: var(--color-primary-10);   color: var(--color-primary); }
+@utility bg-soft-secondary { background-color: var(--color-secondary-10); color: var(--color-secondary); }
+@utility bg-soft-success   { background-color: var(--color-success-10);   color: var(--color-success); }
+@utility bg-soft-danger    { background-color: var(--color-danger-10);    color: var(--color-danger); }
+@utility bg-soft-warning   { background-color: var(--color-warning-10);   color: var(--color-warning); }
+@utility bg-soft-info      { background-color: var(--color-info-10);      color: var(--color-info); }
+
+@utility bg-primary-transparent   { background-color: var(--bg-primary-transparent);   color: var(--color-primary); }
+@utility bg-secondary-transparent { background-color: var(--bg-secondary-transparent); color: var(--color-secondary); }
+@utility bg-info-transparent      { background-color: var(--bg-info-transparent);      color: var(--color-info); }
+@utility bg-success-transparent   { background-color: var(--bg-success-transparent);   color: var(--color-success); }
+@utility bg-warning-transparent   { background-color: var(--bg-warning-transparent);   color: var(--color-warning); }
+@utility bg-danger-transparent    { background-color: var(--bg-danger-transparent);    color: var(--color-danger); }
+@utility bg-skyblue-transparent   { background-color: var(--bg-skyblue-transparent);   color: var(--color-skyblue); }
+@utility bg-light-transparent     { background-color: var(--bg-light-transparent);     color: var(--color-gray-700); }
+
+/* ============ 5. OUTLINE STYLE BACKGROUNDS ============ */
+@utility bg-outline-primary   { background-color: #fff; border: 1px solid var(--color-primary);   color: var(--color-primary); }
+@utility bg-outline-secondary { background-color: #fff; border: 1px solid var(--color-secondary); color: var(--color-secondary); }
+@utility bg-outline-info      { background-color: #fff; border: 1px solid var(--color-info);      color: var(--color-info); }
+@utility bg-outline-success   { background-color: #fff; border: 1px solid var(--color-success);   color: var(--color-success); }
+@utility bg-outline-warning   { background-color: #fff; border: 1px solid var(--color-warning);   color: var(--color-warning); }
+@utility bg-outline-danger    { background-color: #fff; border: 1px solid var(--color-danger);    color: var(--color-danger); }
+
+/* ============ 6. GRADIENT BACKGROUNDS ============ */
+@utility bg-gradient-* {
+  background: --value(--bg-*-gradient, [image]);
+  color: #fff;
 }
 
-body:before {
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 100%;
-    background-color: transparent;
-    background-image: var(--body-bg-image);
-    background-size: var(--body-bg-image-size);
-    background-repeat: repeat;
-    background-attachment: initial;
-    z-index: -5;
+/* ============ 7. ANIMATIONS ============ */
+@utility animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+@utility animate-ping  { animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite; }
+@utility animate-spin  { animation: spin 1s linear infinite; }
+@utility animate-bounce{ animation: bounce 1s infinite; }
+@utility animate-fade-in-up { animation: fadeInUp 0.4s ease-out; }
+
+/* ============ 8. GENERAL OPACITY (arbitrary + integer) ============ */
+@utility opacity-* {
+  opacity: --value([percentage]);           /* opacity-[0.35] */
+  opacity: calc(--value(integer) * 1%);     /* opacity-35 → 35% */
 }
 
-h1 {
-    font-size: 2.5rem; /* Bootstrap h1 (40px) */
-    font-weight: 700;
-}
-h2 {
-    font-size: 2rem; /* Bootstrap h2 (32px) */
-    font-weight: 600;
-}
-h3 {
-    font-size: 1.75rem; /* Bootstrap h3 (28px) */
-    font-weight: 600;
-}
-h4 {
-    font-size: 1.5rem; /* Bootstrap h4 (24px) */
-    font-weight: 600;
-}
-h5 {
-    font-size: 1.25rem; /* Bootstrap h5 (20px) */
-    font-weight: 500;
-}
-h6 {
-    font-size: 1rem; /* Bootstrap h6 (16px) */
-    font-weight: 500;
-}
-p {
-    font-size: 1rem; /* Bootstrap paragraph (16px) */
-    line-height: 1.6;
-    color: rgba(var(--p-highlight-color), 0.5); /* Bootstrap text-dark */
-}
-strong {
-    font-weight: 700;
-}
-em {
-    font-style: italic;
-}
-blockquote {
-    font-size: 1.25rem;
-    font-style: italic;
-    border-left: 4px solid #dee2e6; /* Bootstrap blockquote border */
-    padding-left: 1rem;
-    color: #6c757d; /* Bootstrap muted color */
-}
+/* Apply globally – matches style.css default */
+@layer base {
+    /* Import Google Fonts once (recommended in <head> or here if you prefer) */
+    @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&family=Nunito:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700;800;900&display=swap");
 
-.list-group a.active {
-    color: rgb(61, 94, 225);
-    background: rgb(236, 239, 252);
-}
-
-.p-menubar.app-header {
-    @apply h-14 bg-[var(--app-header-bg)] transition-all duration-150 ease-in-out border-0 rounded-t-md;
-    & .brand {
-        height: 100%;
-        width: 18.875rem;
-        padding: 0 1rem;
-        display: flex;
-        align-items: center;
-
-        & .brand-logo {
-            text-decoration: none;
-            color: var(--app-header-link-color);
-            font-size: 0.91875rem;
-            letter-spacing: 2px;
-            display: flex;
-            align-items: center;
-
-            & .brand-img {
-                width: 1.625rem;
-                height: 1.625rem;
-                background: var(--app-header-brand-img);
-                background-size: cover;
-                background-position: center;
-                background-repeat: no-repeat;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin-right: 1rem;
-
-                & .brand-img-text {
-                    display: block;
-                    letter-spacing: initial;
-                    font-weight: 600;
-                    font-size: 1.05rem;
-                }
-            }
-        }
-    }
-}
-
-@media (min-width: 992px) {
-    .mini-sidebar.expand-menu .header-left {
-        @apply flex-row justify-between flex px-[15px] py-0;
-    }
-    .mini-sidebar .header-left {
-        @apply flex items-center justify-center w-20 flex-col p-0;
-    }
-    .mini-sidebar .header-left .logo-small {
-        @apply block pt-2.5 pb-0 px-0;
-    }
-    .mini-sidebar .header-left .logo {
-        @apply hidden;
-    }
-    .mini-sidebar .menu-arrow {
-        @apply hidden;
-    }
-    .mini-sidebar .chat-user {
-        @apply hidden;
-    }
-    .mini-sidebar .user-menu .badge {
-        @apply flex;
-    }
-    .mini-sidebar.expand-menu .menu-arrow {
-        @apply block;
-    }
-    .mini-sidebar.expand-menu .chat-user {
-        @apply block;
-    }
-    .mini-sidebar.expand-menu .logo-small {
-        @apply hidden;
-    }
-    .mini-sidebar.expand-menu .logo {
-        @apply block;
-    }
-    .mini-sidebar.expand-menu #toggle_btn {
-        @apply opacity-100;
-    }
-    .mini-sidebar .noti-dot:before {
-        @apply hidden;
-    }
-}
-
-.sidebar {
-    @apply flex bg-[var(--app-header-bg)] z-[1001] fixed transition-all duration-[0.5s] ease-[ease] w-[252px] mt-0 border-[--theme-bg-subtle] border-r border-solid left-0 top-14 bottom-0;
-
-    .sidebar-inner {
-        @apply w-full;
+    html,
+    body {
+        font-family: var(--font-roboto), var(--font-system);
+        font-size: 14px; /* style.css default */
+        line-height: 1.5;
+        font-weight: 400;
     }
 
-    .sidebar-menu {
-        @apply p-[15px];
+    /* Optional utility classes you can use anywhere */
+    .font-roboto {
+        font-family: var(--font-roboto), var(--font-system);
+    }
+    .font-nunito {
+        font-family: var(--font-nunito), var(--font-system);
+    }
+    .font-poppins {
+        font-family: var(--font-poppins), var(--font-system);
+    }
 
-        & > ul {
-            li .submenu > ul li a {
-                @apply text-sm relative pl-10 before:content-[""] before:w-[5px] before:h-[5px] before:absolute before:-translate-y-2/4 before:rounded-[50%] before:left-7 before:top-2/4 before:bg-primary-200;
-            }
+    /* Headings often use Poppins or bolder Roboto in the template */
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    .h1,
+    .h2,
+    .h3,
+    .h4,
+    .h5,
+    .h6 {
+        font-family: var(--font-roboto), var(--font-system);
+        font-weight: 700;
+    }
 
-            & > li {
-                @apply mb-6;
+    /* If you want Poppins for specific titles (common in PreSkool template) */
+    .font-heading {
+        font-family: var(--font-poppins), var(--font-system);
+    }
 
-                &:last-child ul {
-                    @apply mb-0;
-                }
-                &.active a {
-                    @apply text-[--p-text-color] rounded-[5px];
-                }
-                &.active svg {
-                    @apply text-[--p-primary-300];
-                }
-                svg {
-                    @apply min-w-[16px] w-4 h-4 mr-2.5;
-                }
-                & > a {
-                    @apply flex items-center relative text-primary px-[15px] py-2.5;
-                }
-                &.submenu ul li a {
-                    @apply font-medium text-sm relative block pl-[30px] pr-2 py-2;
-                }
-                ul {
-                    /* @apply block mb-[15px]; */
-                    li {
-                        @apply overflow-hidden mb-[5px] rounded-[5px];
-                        a {
-                            @apply flex items-center font-normal text-sm dark:text-primary text-color relative w-full p-2 dark:hover:text-[--p-primary-hover-color];
-                            &.active span {
-                                @apply text-primary-contrast;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    /* ───────────────────────────────
+     Root & Body – exact replica of style.css
+     ─────────────────────────────── */
+    *,
+    *::before,
+    *::after {
+        box-sizing: border-box;
     }
-}
-@media (max-width: 991.98px) {
-    .sidebar {
-        @apply ml-[-575px] transition-all duration-[0.4s] ease-[ease] z-[1041];
-    }
-}
-@media (max-width: 575.98px) {
-    .sidebar {
-        @apply w-full;
-    }
-}
-.sidebar .sidebar-menu > ul li .submenu > a.subdrop {
-    @apply bg-primary-200;
-}
-.sidebar .sidebar-menu > ul li .submenu > a.subdrop i {
-    @apply text-primary-300 bg-primary-contrast;
-}
-.sidebar .sidebar-menu > ul li .submenu > a.active {
-    @apply rounded-[5px] bg-primary dark:bg-primary-200;
-}
-.sidebar .sidebar-menu > ul li .submenu > a.active i {
-    @apply text-primary-300 bg-primary-contrast;
-}
-.sidebar .sidebar-menu > ul li .submenu > a.active span {
-    @apply text-primary-300;
-}
-.sidebar .sidebar-menu .menu-arrow {
-    @apply flex items-center justify-center text-lg leading-4 size-4 absolute transition-all duration-[0.2s] ease-[ease] rounded-[50%] right-2.5 top-2/4;
-}
-.sidebar .sidebar-menu.subdrop .menu-arrow {
-    @apply -translate-y-2/4 rotate-90 bg-transparent;
-}
-.sidebar .sidebar-left {
-    @apply w-[100px] shadow-[5px_0px_15px_rgba(0,0,0,0.05)];
-}
-.sidebar .sub-menu a {
-    @apply flex items-center justify-between;
-}
-.sidebar li a.subdrop .menu-arrow {
-    @apply -translate-y-2/4 rotate-90;
-}
-.sidebar .sidemenu a {
-    @apply w-full font-medium block mt-0 mb-2.5 mx-0 p-2.5 rounded-[5px] hover:text-primary-contrast;
-}
-.sidebar .sidemenu a:hover {
-    background: linear-gradient(46.62deg, #3d5ee1 0%, #673ab7 93.64%);
-}
-.sidebar .sidemenu a:hover svg {
-    @apply text-color;
-}
-.sidebar .sidemenu a svg {
-    @apply stroke-[1px];
-}
-@media (min-width: 992px) {
-    .mini-sidebar .page-wrapper {
-        @apply ml-20;
-    }
-    .mini-sidebar .user-names {
-        @apply hidden;
-    }
-    .mini-sidebar .header-left #toggle_btn {
-        @apply opacity-100 rotate-180 after:border-0;
-    }
-    .mini-sidebar .sidebar .sidebar-menu .clinicdropdown > a {
-        @apply p-[5px];
-    }
-    .mini-sidebar .sidebar .sidebar-menu > ul > li ul li.submenu ul li a {
-        @apply pl-10;
-    }
-    .mini-sidebar.expand-menu .header-left #toggle_btn {
-        @apply opacity-100 rotate-180;
-    }
-    .mini-sidebar.expand-menu .sidebar .sidebar-menu .clinicdropdown > a {
-        @apply px-[15px] py-2.5;
-    }
-    .mini-sidebar .sidebar-right {
-        @apply hidden;
-    }
-    .mini-sidebar .sidebar .sidebar-menu ul li a span {
-        @apply hidden;
-    }
-    .mini-sidebar .sidebar .sidebar-menu ul li svg {
-        @apply mr-0;
-    }
-    .mini-sidebar .sidebar {
-        @apply w-20 overflow-hidden;
-    }
-    .mini-sidebar.expand-menu .sidebar {
-        @apply block;
-    }
-    .expand-menu.mini-sidebar .sidebar .sidebar-menu .submenu-hdr {
-        @apply flex text-xs after:ml-2;
-    }
-    .expand-menu.mini-sidebar .sidebar .user-names {
-        @apply hidden;
-    }
-    .expand-menu .sidebar-right {
-        @apply block transition-all duration-[0.2s] ease-[ease];
-        -webkit-transition: all 0.2s ease;
-        -ms-transition: all 0.2s ease;
-    }
-    .expand-menu .sidebar {
-        @apply w-[252px];
-    }
-    .expand-menu .sidebar .sidebar-menu ul > li > a {
-        @apply p-2;
-    }
-    .expand-menu .sidebar .sidebar-menu ul > li > a span {
-        @apply inline-block leading-[0];
-    }
-    .expand-menu .sidebar .sidebar-menu ul > li svg {
-        @apply mr-2.5;
-    }
-    .expand-menu .sidebar .sidebar-menu .submenu-hdr {
-        @apply flex;
-    }
-    .expand-menu .header-left {
-        @apply w-[252px];
-    }
-    #toggle_btn {
-        @apply flex items-center justify-center float-left;
-        display: -webkit-box;
-        display: -ms-flexbox;
-        -webkit-box-align: center;
-        -ms-flex-align: center;
-        -webkit-justify-content: center;
-        -ms-flex-pack: center;
-    }
-}
-body.mini-sidebar .sidebar .sidebar-menu > ul > li.submenu-open ul li a {
-    @apply flex items-center justify-center font-medium text-[15px] text-[#67748E] relative w-full;
-    display: -webkit-box;
-    display: -ms-flexbox;
-    -webkit-box-align: center;
-    -ms-flex-align: center;
-    -webkit-justify-content: center;
-    -ms-flex-pack: center;
-}
-body.mini-sidebar .sidebar .sidebar-menu > ul > li ul > li.active a {
-    @apply justify-center;
-}
-body.mini-sidebar .sidebar .sidebar-menu > ul li a {
-    @apply justify-center;
-}
-body.mini-sidebar.expand-menu
-    .sidebar
-    .sidebar-menu
-    > ul
-    > li.submenu-open
-    ul
-    li
-    a {
-    @apply pl-[18px];
-    justify-content: left;
-    -webkit-justify-content: left;
-    -ms-flex-pack: left;
-}
-body.mini-sidebar.expand-menu
-    .sidebar
-    .sidebar-menu
-    > ul
-    > li
-    ul
-    > li.active
-    a {
-    justify-content: start;
-}
-body.mini-sidebar.expand-menu .sidebar .user-names {
-    @apply block;
-}
-body.mini-sidebar.expand-menu .sidebar .sidebar-menu > ul li a {
-    justify-content: start;
-}
-.sidebarrightmenu .sidebar-right {
-    @apply block;
-}
-.slide-nav .sidebar {
-    @apply ml-0;
-}
-.sidebar-overlay {
-    @apply hidden h-full w-full z-[99] bg-[rgba(0,0,0,0.6)] fixed left-0 top-[60px];
-}
-.sidebar-overlay.opened {
-    @apply block;
-}
-.mini-sidebar .active.subdrop ~ ul {
-    @apply hidden;
-}
-.mini-sidebar.expand-menu .active.subdrop ~ ul {
-    @apply block;
-}
-.active.subdrop ~ ul {
-    @apply block;
-}
-.mini-sidebar .header #toggle_btn {
-    @apply opacity-0 h-0 w-0;
-}
-.mini-sidebar.expand-menu .header #toggle_btn {
-    @apply opacity-100 h-auto w-auto;
-}
 
-.page-wrapper {
-    -webkit-transition: all 0.5s ease;
-    -ms-transition: all 0.5s ease;
-    transition: all 0.5s ease;
-    margin: 0 0 0 252px;
-    position: relative;
-    left: 0;
-    -webkit-transition: all 0.2s ease;
-    -ms-transition: all 0.2s ease;
-    transition: all 0.2s ease;
-}
+    * {
+        outline: none !important;
+    }
 
-@media (max-width: screen(lg)) {
-    .page-wrapper {
+    html {
+        scroll-behavior: smooth;
+    }
+
+    body {
         margin: 0;
-        padding: 60px 0 0;
+        padding: 0;
+        font-family: var(--font-roboto), var(--font-system);
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--color-gray-600); /* #6A7287 → now variable */
+        background-color: #fff;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ::selection – uses primary color variable */
+    ::selection {
+        background: var(--color-primary);
+        color: #fff;
+        text-shadow: none;
+    }
+    ::-moz-selection {
+        background: var(--color-primary);
+        color: #fff;
+    }
+
+    img {
+        max-width: 100%;
+        height: auto;
+        vertical-align: middle;
+        border-style: none;
+    }
+
+    button {
+        cursor: pointer;
+        transition: all 0.5s ease;
+    }
+    button:focus {
+        box-shadow: none !important;
+    }
+
+    a:focus,
+    button:focus,
+    input:focus,
+    textarea:focus,
+    select:focus,
+    [tabindex]:focus {
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    a,
+    button,
+    .btn,
+    input[type="submit"],
+    .cursor-pointer {
+        transition: all 0.3s ease;
+    }
+
+    ol,
+    ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    p {
+        margin-bottom: 20px;
+    }
+    p:last-child {
+        margin-bottom: 0;
+    }
+
+    strong {
+        font-weight: 700;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    .h1,
+    .h2,
+    .h3,
+    .h4,
+    .h5,
+    .h6 {
+        color: var(--color-dark); /* #202C4B → now variable */
+        margin-bottom: 0;
+        line-height: 1.2;
+    }
+
+    /* Dark mode overrides – fully variable */
+    .dark body {
+        @apply bg-dark-bg-primary text-dark-text-secondary; /* #131022 */ /* #B9B7C0 */
+    }
+
+    .dark ::selection {
+        background: var(--color-primary);
+        color: #fff;
+    }
+
+    .dark h1,
+    .dark h2,
+    .dark h3,
+    .dark h4,
+    .dark h5,
+    .dark h6,
+    .dark .h1,
+    .dark .h2,
+    .dark .h3,
+    .dark .h4,
+    .dark .h5,
+    .dark .h6 {
+        color: var(--dark-text-primary); /* #EFEFF2 */
+    }
+
+    /* ───────────────────────────────
+     Headings – exact sizes/weights from style.css
+     ─────────────────────────────── */
+    h1,
+    .h1 {
+        @apply text-[2.5rem] leading-tight font-bold text-[var(--color-dark)];
+        /* 40px → 2.5rem */
+    }
+    h2,
+    .h2 {
+        @apply text-[2rem] leading-tight font-bold text-[var(--color-dark)];
+        /* 32px → 2rem */
+    }
+    h3,
+    .h3 {
+        @apply text-[1.75rem] leading-tight font-bold text-[var(--color-dark)];
+        /* 28px → 1.75rem */
+    }
+    h4,
+    .h4 {
+        @apply text-[1.5rem] leading-tight font-bold text-[var(--color-dark)];
+        /* 24px → 1.5rem */
+    }
+    h5,
+    .h5 {
+        @apply text-[1.25rem] leading-tight font-medium text-[var(--color-dark)];
+        /* 20px → 1.25rem, weight 500 in template */
+    }
+    h6,
+    .h6 {
+        @apply text-[1rem] leading-tight font-medium text-[var(--color-dark)];
+        /* 16px → 1rem, weight 500 */
+    }
+
+    /* ───────────────────────────────
+     Paragraph & basic text
+     ─────────────────────────────── */
+    p {
+        @apply text-base leading-6 text-[var(--color-gray-600)] mb-5;
+        /* 16px, line-height 1.6 → ~24px, color #6A7287 */
+    }
+    p:last-child {
+        @apply mb-0;
+    }
+
+    /* Strong & emphasis */
+    strong,
+    b {
+        @apply font-bold;
+    }
+    em,
+    i {
+        @apply italic;
+    }
+
+    /* Blockquote – exact from style.css */
+    blockquote {
+        @apply text-lg italic text-gray-600 border-l-4 border-gray-300 pl-4 my-6;
+        /* font-size: 1.25rem (20px), color #6c757d → closest gray-600 */
+    }
+
+    /* ───────────────────────────────
+     Dark mode typography overrides
+     ─────────────────────────────── */
+    .dark h1,
+    .dark h2,
+    .dark h3,
+    .dark h4,
+    .dark h5,
+    .dark h6,
+    .dark .h1,
+    .dark .h2,
+    .dark .h3,
+    .dark .h4,
+    .dark .h5,
+    .dark .h6 {
+        @apply text-[var(--dark-text-primary)];
+    }
+
+    .dark p {
+        @apply text-[var(--dark-text-secondary)] opacity-90;
+    }
+
+    .dark blockquote {
+        @apply text-[var(--dark-text-secondary)] border-l-gray-700;
+    }
+
+    /* ───────────────────────────────
+     Optional: Utility classes for quick overrides
+     ─────────────────────────────── */
+    .text-heading {
+        @apply text-[var(--color-dark)] font-bold;
+    }
+    .text-muted {
+        @apply text-[var(--color-gray-600)];
+    }
+    .text-sm {
+        @apply text-sm;
+    }
+    .text-lg {
+        @apply text-lg;
+    }
+    .leading-relaxed {
+        @apply leading-relaxed;
     }
 }
-.page-wrapper .content {
-    @apply p-6 pb-0;
 
-    &:max-lg {
-        @apply p-4 pb-0;
+/* ───────────────────────────────
+   Animations (@keyframes raw; classes via @utility above)
+   ─────────────────────────────── */
+@keyframes pulse {
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes bounce {
+    0%,
+    100% {
+        transform: translateY(-25%);
+        animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+    }
+    50% {
+        transform: translateY(0);
+        animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 20px, 0);
+    }
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes ping {
+    75%,
+    100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+/* ───────────────────────────────
+   Complex Utilities (Lists, Badges – Keep in @layer for nesting)
+   ─────────────────────────────── */
+@layer utilities {
+    /* ── List Styles ── */
+    .list-disc {
+        @apply list-disc list-inside;
+    }
+    .list-decimal {
+        @apply list-decimal list-inside;
+    }
+    .list-none {
+        @apply list-none;
     }
 
-    &.content-two {
-        @apply pb-6;
+    /* Numbered list with circle */
+    .list-circle {
+        @apply list-none pl-8;
+    }
+    .list-circle > li {
+        @apply relative mb-2;
+    }
+    .list-circle > li::before {
+        content: counter(list-item);
+        @apply absolute left-0 -ml-8 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-medium;
+        counter-increment: list-item;
+    }
 
-        &:max-md {
-            @apply pb-4;
+    /* Icon list – common in features section */
+    .list-check {
+        @apply list-none pl-8;
+    }
+    .list-check > li {
+        @apply relative mb-3 text-gray-700;
+    }
+    .list-check > li::before {
+        content: "\f00c";
+        font-family: "Font Awesome 5 Free";
+        font-weight: 900;
+        @apply absolute left-0 -ml-8 text-success text-lg;
+    }
+
+    /* ── Badges – complete set from style.css ── */
+    .badge {
+        @apply inline-flex items-center px-3 py-1 text-xs font-medium rounded-full;
+    }
+    .badge-primary {
+        @apply bg-primary/10 text-primary;
+    }
+    .badge-success {
+        @apply bg-success/10 text-success;
+    }
+    .badge-danger {
+        @apply bg-danger/10 text-danger;
+    }
+    .badge-warning {
+        @apply bg-warning/10 text-warning;
+    }
+    .badge-info {
+        @apply bg-info/10 text-info;
+    }
+    .badge-secondary {
+        @apply bg-secondary/10 text-secondary;
+    }
+    .badge-dark {
+        @apply bg-gray-800 text-white;
+    }
+
+    /* Soft badges with solid background */
+    .badge-soft-primary {
+        @apply bg-primary/20 text-primary;
+    }
+    .badge-soft-success {
+        @apply bg-success/20 text-success;
+    }
+    .badge-soft-danger {
+        @apply bg-danger/20 text-danger;
+    }
+    .badge-soft-warning {
+        @apply bg-warning/20 text-warning;
+    }
+
+    /* Badge with dot */
+    .badge-dot {
+        @apply relative pl-6;
+    }
+    .badge-dot::before {
+        content: "";
+        @apply absolute left-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-current;
+    }
+
+    /* Badge with icon */
+    .badge-icon {
+        @apply inline-flex items-center gap-2;
+    }
+
+    /* Dark mode badges */
+    .dark .badge-primary {
+        @apply bg-primary/20 text-primary;
+    }
+    .dark .badge-success {
+        @apply bg-success/20 text-success;
+    }
+    .dark .badge-danger {
+        @apply bg-danger/20 text-danger;
+    }
+}
+
+/* ───────────────────────────────
+   #21 – Raw CSS: Sorting Arrows (Font Awesome + :before/:after)
+   Tailwind can't target these → raw CSS required
+   ─────────────────────────────── */
+.p-datatable .p-sortable-column {
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Default state – both arrows visible (gray) */
+.p-datatable .p-sortable-column::before,
+.p-datatable .p-sortable-column::after {
+    @apply absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs;
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    opacity: 0.4;
+}
+
+.p-datatable .p-sortable-column::before {
+    content: "\f0de"; /* arrow-up */
+    top: 8px;
+}
+
+.p-datatable .p-sortable-column::after {
+    content: "\f0dd"; /* arrow-down */
+    top: 18px;
+}
+
+/* Active ascending */
+.p-datatable .p-sortable-column.p-sortable-column-asc::before {
+    @apply text-primary opacity-100;
+}
+.p-datatable .p-sortable-column.p-sortable-column-asc::after {
+    @apply opacity-30;
+}
+
+/* Active descending */
+.p-datatable .p-sortable-column.p-sortable-column-desc::after {
+    @apply text-primary opacity-100;
+}
+.p-datatable .p-sortable-column.p-sortable-column-desc::before {
+    @apply opacity-30;
+}
+
+/* Dark mode arrows */
+.dark .p-datatable .p-sortable-column::before,
+.dark .p-datatable .p-sortable-column::after {
+    @apply text-gray-500;
+}
+.dark .p-datatable .p-sortable-column.p-sortable-column-asc::before,
+.dark .p-datatable .p-sortable-column.p-sortable-column-desc::after {
+    @apply text-primary;
+}
+
+/* ───────────────────────────────
+   #20 – Accordions & Popovers (PrimeVue + Bootstrap-style fallbacks)
+   ─────────────────────────────── */
+@layer components {
+    /* PrimeVue Accordion – matches original .accordion */
+    .p-accordion .p-accordion-header {
+        @apply bg-white border border-gray-200 rounded-t-lg font-medium text-gray-800;
+    }
+    .p-accordion
+        .p-accordion-header:not(.p-highlight)
+        .p-accordion-header-link {
+        @apply hover:bg-gray-50;
+    }
+    .p-accordion .p-accordion-header.p-highlight .p-accordion-header-link {
+        @apply bg-primary text-white border-primary;
+    }
+    .p-accordion .p-accordion-content {
+        @apply border border-t-0 border-gray-200 rounded-b-lg bg-white;
+    }
+
+    /* Dark mode */
+    .dark .p-accordion .p-accordion-header {
+        @apply bg-gray-800 border-gray-700 text-gray-200;
+    }
+    .dark .p-accordion .p-accordion-content {
+        @apply bg-gray-800/50 border-gray-700;
+    }
+
+    /* Bootstrap-style .accordion fallback (if you ever use raw <div class="accordion">) */
+    .accordion-button {
+        @apply bg-white border border-gray-300 rounded-t-lg font-medium px-5 py-4 text-left;
+    }
+    .accordion-button:not(.collapsed) {
+        @apply bg-primary text-white border-primary;
+    }
+    .accordion-body {
+        @apply border border-t-0 border-gray-300 rounded-b-lg px-5 py-4 bg-white;
+    }
+
+    /* PrimeVue Tooltip / Popover (used for info popups) */
+    .p-tooltip .p-tooltip-text {
+        @apply bg-gray-900 text-white text-sm rounded shadow-lg px-3 py-2;
+    }
+    .p-tooltip.p-tooltip-top .p-tooltip-arrow {
+        @apply border-t-gray-900;
+    }
+
+    .dark .p-tooltip .p-tooltip-text {
+        @apply bg-gray-700 text-gray-100;
+    }
+}
+
+/* ───────────────────────────────
+   #23 – The ONLY remaining raw media queries
+   (Everything else is now handled by Tailwind classes)
+   ─────────────────────────────── */
+@layer base {
+    /* 1. Sidebar mobile behavior (from original style.css) */
+    @media (max-width: 991.98px) {
+        .page-wrapper {
+            margin-left: 0 !important;
+        }
+        .page-header {
+            margin-left: 0 !important;
+        }
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+    }
+
+    /* 2. Header mobile padding reduction */
+    @media (max-width: 767.98px) {
+        .p-menubar {
+            @apply px-3;
+        }
+        .p-menubar .p-menubar-start,
+        .p-menubar .p-menubar-end {
+            @apply gap-2;
+        }
+    }
+
+    /* 3. Dashboard grid fallback for very small screens */
+    @media (max-width: 480px) {
+        .grid-cols-1.sm\:grid-cols-2.md\:grid-cols-3.lg\:grid-cols-4 {
+            @apply grid-cols-1;
+        }
+        .text-4xl {
+            @apply text-3xl;
+        }
+    }
+
+    /* 4. Hide sidebar text completely on collapsed + mobile */
+    @media (max-width: 1024px) {
+        .sidebar.w-20 span:not([class*="badge"]),
+        .sidebar.w-20 h6,
+        .sidebar.w-20 .brand-logo span {
+            @apply opacity-0 pointer-events-none;
         }
     }
 }
 
-.page-header {
-    @apply flex items-center justify-between flex-wrap mb-2.5;
+/* Optional: Tailwind extend for extra breakpoints (if you want them) */
+@layer base {
+    @media (min-width: 1400px) {
+        .container {
+            max-width: 1320px;
+        }
+    }
 }
 
-@media (max-width: 575.98px) {
-    .page-header {
-        @apply flex-col items-start;
+/* ───────────────────────────────
+   #24 – PrimeVue Dark Mode Overrides (comprehensive)
+   ─────────────────────────────── */
+@layer components {
+    /* ── Core PrimeVue container ── */
+    .dark .p-component,
+    .dark .p-component-overlay {
+        @apply bg-[var(--dark-bg-secondary)] text-[var(--dark-text-primary)] border-gray-700;
+    }
+
+    /* ── Buttons (already covered but reinforced) ── */
+    .dark .p-button {
+        @apply border-gray-600;
+    }
+    .dark .p-button.p-button-outlined {
+        @apply bg-transparent border-gray-600 text-gray-300 hover:bg-gray-700;
+    }
+    .dark .p-button.p-button-text {
+        @apply text-gray-300 hover:bg-gray-700;
+    }
+
+    /* ── Inputs & Form Elements ── */
+    .dark .p-inputtext,
+    .dark .p-float-label .p-inputtext,
+    .dark .p-inputtextarea,
+    .dark .p-password input,
+    .dark .p-calendar .p-inputtext,
+    .dark .p-selectbutton .p-button,
+    .dark .p-inputnumber input {
+        @apply bg-gray-800/50 border-gray-600 text-gray-200 placeholder-gray-500 focus:border-primary;
+    }
+
+    /* ── Dropdown / MultiSelect / CascadeSelect ── */
+    .dark .p-dropdown,
+    .dark .p-multiselect,
+    .dark .p-cascadeselect {
+        @apply bg-gray-800/50 border-gray-600;
+    }
+    .dark .p-dropdown-panel,
+    .dark .p-multiselect-panel,
+    .dark .p-cascadeselect-panel {
+        @apply bg-gray-800 border-gray-700 shadow-2xl;
+    }
+    .dark .p-dropdown-item,
+    .dark .p-multiselect-item {
+        @apply text-gray-300 hover:bg-primary/20;
+    }
+    .dark .p-dropdown-item.p-highlight,
+    .dark .p-multiselect-item.p-highlight {
+        @apply bg-primary/30 text-white;
+    }
+
+    /* ── Cards & Panels ── */
+    .dark .p-card {
+        @apply bg-gray-800/70 border-gray-700 shadow-2xl;
+    }
+    .dark .p-card .p-card-header,
+    .dark .p-card .p-card-footer {
+        @apply bg-gray-900/50 border-gray-700;
+    }
+
+    /* ── Dialog / Overlay ── */
+    .dark .p-dialog {
+        @apply bg-gray-800 border border-gray-700 shadow-2xl;
+    }
+    .dark .p-dialog .p-dialog-header,
+    .dark .p-dialog .p-dialog-footer {
+        @apply bg-gray-900/50 border-gray-700;
+    }
+
+    /* ── Toast & Messages ── */
+    .dark .p-toast {
+        @apply opacity-95;
+    }
+    .dark .p-toast-message {
+        @apply bg-gray-800 border-l-4 shadow-xl;
+    }
+    .dark .p-toast-message-success {
+        @apply border-success;
+    }
+    .dark .p-toast-message-info {
+        @apply border-info;
+    }
+    .dark .p-toast-message-warn {
+        @apply border-warning;
+    }
+    .dark .p-toast-message-error {
+        @apply border-danger;
+    }
+
+    /* ── TabView & Tabs ── */
+    .dark .p-tabview .p-tabview-nav {
+        @apply bg-gray-800 border-gray-700;
+    }
+    .dark .p-tabview .p-tabview-nav li .p-tabview-nav-link {
+        @apply bg-transparent border-transparent text-gray-400 hover:text-white;
+    }
+    .dark .p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+        @apply bg-gray-700 text-white border-primary;
+    }
+
+    /* ── Accordion ── */
+    .dark .p-accordion .p-accordion-header .p-accordion-header-link {
+        @apply bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700;
+    }
+    .dark
+        .p-accordion
+        .p-accordion-header.p-highlight
+        .p-accordion-header-link {
+        @apply bg-primary text-white;
+    }
+    .dark .p-accordion .p-accordion-content {
+        @apply bg-gray-800/50 border-gray-700;
+    }
+
+    /* ── Menu / Menubar / PanelMenu ── */
+    .dark .p-menu,
+    .dark .p-panelmenu .p-panelmenu-header > a,
+    .dark .p-panelmenu .p-panelmenu-content {
+        @apply bg-gray-800 border-gray-700;
+    }
+    .dark .p-menuitem-link,
+    .dark .p-panelmenu .p-menuitem-link {
+        @apply hover:bg-primary/20;
+    }
+
+    /* ── ProgressBar & Skeleton ── */
+    .dark .p-progressbar .p-progressbar-value {
+        @apply bg-primary;
+    }
+    .dark .p-skeleton {
+        @apply bg-gray-700;
+    }
+
+    /* ── ScrollPanel & PerfectScrollbar ── */
+    .dark .ps__rail-y {
+        @apply bg-gray-800;
+    }
+    .dark .ps__thumb-y {
+        @apply bg-gray-600 hover:bg-gray-500;
+    }
+}
+
+/* ───────────────────────────────
+   #21 – Raw CSS: Sorting Arrows (Font Awesome + :before/:after)
+   Tailwind can't target these → raw CSS required
+   ─────────────────────────────── */
+.p-datatable .p-sortable-column {
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Default state – both arrows visible (gray) */
+.p-datatable .p-sortable-column::before,
+.p-datatable .p-sortable-column::after {
+    @apply absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs;
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    opacity: 0.4;
+}
+
+.p-datatable .p-sortable-column::before {
+    content: "\f0de"; /* arrow-up */
+    top: 8px;
+}
+
+.p-datatable .p-sortable-column::after {
+    content: "\f0dd"; /* arrow-down */
+    top: 18px;
+}
+
+/* Active ascending */
+.p-datatable .p-sortable-column.p-sortable-column-asc::before {
+    @apply text-primary opacity-100;
+}
+.p-datatable .p-sortable-column.p-sortable-column-asc::after {
+    @apply opacity-30;
+}
+
+/* Active descending */
+.p-datatable .p-sortable-column.p-sortable-column-desc::after {
+    @apply text-primary opacity-100;
+}
+.p-datatable .p-sortable-column.p-sortable-column-desc::before {
+    @apply opacity-30;
+}
+
+/* Dark mode arrows */
+.dark .p-datatable .p-sortable-column::before,
+.dark .p-datatable .p-sortable-column::after {
+    @apply text-gray-500;
+}
+.dark .p-datatable .p-sortable-column.p-sortable-column-asc::before,
+.dark .p-datatable .p-sortable-column.p-sortable-column-desc::after {
+    @apply text-primary;
+}
+
+/* ───────────────────────────────
+   DataTable, Accordion, etc. (Components – Unchanged)
+   ─────────────────────────────── */
+@layer components {
+    /* ───────────────────────────────
+     DataTable – Global Styling (matches .table from style.css)
+     ─────────────────────────────── */
+    .p-datatable {
+        @apply rounded-lg overflow-hidden border border-gray-200;
+    }
+
+    .p-datatable .p-datatable-header {
+        @apply bg-gray-50 border-b border-gray-200 px-6 py-4 text-left text-sm font-semibold text-gray-700;
+    }
+
+    /* Table wrapper */
+    .p-datatable-table {
+        @apply w-full text-sm text-gray-700;
+    }
+
+    /* Header */
+    .p-datatable-thead > tr > th {
+        @apply bg-gray-50 border-b border-gray-200 px-6 py-4 text-left font-medium text-gray-700 uppercase tracking-wider;
+        position: relative;
+    }
+
+    /* Body rows */
+    .p-datatable-tbody > tr {
+        @apply transition-colors hover:bg-gray-50;
+    }
+    .p-datatable-tbody > tr:nth-child(even) {
+        @apply bg-white;
+    }
+    .p-datatable-tbody > tr:nth-child(odd) {
+        @apply bg-gray-500/20;
+    }
+
+    .p-datatable-tbody > tr > td {
+        @apply px-6 py-4 border-b border-gray-200;
+    }
+
+    /* Hover row highlight */
+    .p-datatable-tbody > tr:hover {
+        @apply bg-primary/5;
+    }
+
+    /* Selected row */
+    .p-datatable-tbody > tr.p-highlight {
+        @apply bg-primary/10;
+    }
+
+    /* Footer */
+    .p-datatable-tfoot > tr > td {
+        @apply bg-gray-50 border-t border-gray-200 px-6 py-4;
+    }
+
+    /* Responsive wrapper */
+    .p-datatable-wrapper {
+        @apply overflow-x-auto;
+    }
+
+    /* Paginator */
+    .p-paginator {
+        @apply bg-white border-t border-gray-200 px-4 py-3 flex items-center justify-between;
+    }
+
+    /* ───────────────────────────────
+     Dark Mode – DataTable
+     ─────────────────────────────── */
+    .dark .p-datatable {
+        @apply border-gray-700;
+    }
+    .dark .p-datatable .p-datatable-header {
+        @apply bg-gray-800 border-gray-700 text-gray-300;
+    }
+    .dark .p-datatable-thead > tr > th {
+        @apply bg-gray-800 border-gray-700 text-gray-400;
+    }
+    .dark .p-datatable-tbody > tr {
+        @apply hover:bg-gray-800/50;
+    }
+    .dark .p-datatable-tbody > tr:nth-child(even) {
+        @apply bg-gray-900/50;
+    }
+    .dark .p-datatable-tbody > tr > td {
+        @apply border-gray-700 text-gray-300;
+    }
+    .dark .p-datatable-tbody > tr:hover {
+        @apply bg-primary/20;
+    }
+    .dark .p-paginator {
+        @apply bg-gray-800 border-gray-700;
+    }
+}
+
+/* ───────────────────────────────
+   #23 – Raw media queries (Unchanged)
+   ─────────────────────────────── */
+@layer base {
+    /* 1. Sidebar mobile behavior (from original style.css) */
+    @media (max-width: 991.98px) {
+        .page-wrapper {
+            margin-left: 0 !important;
+        }
+        .page-header {
+            margin-left: 0 !important;
+        }
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        .sidebar.mobile-open {
+            transform: translateX(0);
+        }
+    }
+
+    /* 2. Header mobile padding reduction */
+    @media (max-width: 767.98px) {
+        .p-menubar {
+            @apply px-3;
+        }
+        .p-menubar .p-menubar-start,
+        .p-menubar .p-menubar-end {
+            @apply gap-2;
+        }
+    }
+
+    /* 3. Dashboard grid fallback for very small screens */
+    @media (max-width: 480px) {
+        .grid-cols-1.sm\:grid-cols-2.md\:grid-cols-3.lg\:grid-cols-4 {
+            @apply grid-cols-1;
+        }
+        .text-4xl {
+            @apply text-3xl;
+        }
+    }
+
+    /* 4. Hide sidebar text completely on collapsed + mobile */
+    @media (max-width: 1024px) {
+        .sidebar.w-20 span:not([class*="badge"]),
+        .sidebar.w-20 h6,
+        .sidebar.w-20 .brand-logo span {
+            @apply opacity-0 pointer-events-none;
+        }
+    }
+}
+
+/* Optional: Tailwind extend for extra breakpoints (Unchanged) */
+@layer base {
+    @media (min-width: 1400px) {
+        .container {
+            max-width: 1320px;
+        }
+    }
+}
+
+/* ───────────────────────────────
+   #24 – PrimeVue Dark Mode Overrides (comprehensive)
+   ─────────────────────────────── */
+@layer components {
+    /* ── Core PrimeVue container ── */
+    .dark .p-component,
+    .dark .p-component-overlay {
+        @apply bg-[var(--dark-bg-secondary)] text-[var(--dark-text-primary)] border-gray-700;
+    }
+
+    /* ── Buttons (already covered but reinforced) ── */
+    .dark .p-button {
+        @apply border-gray-600;
+    }
+    .dark .p-button.p-button-outlined {
+        @apply bg-transparent border-gray-600 text-gray-300 hover:bg-gray-700;
+    }
+    .dark .p-button.p-button-text {
+        @apply text-gray-300 hover:bg-gray-700;
+    }
+
+    /* ── Inputs & Form Elements ── */
+    .dark .p-inputtext,
+    .dark .p-float-label .p-inputtext,
+    .dark .p-inputtextarea,
+    .dark .p-password input,
+    .dark .p-calendar .p-inputtext,
+    .dark .p-selectbutton .p-button,
+    .dark .p-inputnumber input {
+        @apply bg-gray-800/50 border-gray-600 text-gray-200 placeholder-gray-500 focus:border-primary;
+    }
+
+    /* ── Dropdown / MultiSelect / CascadeSelect ── */
+    .dark .p-dropdown,
+    .dark .p-multiselect,
+    .dark .p-cascadeselect {
+        @apply bg-gray-800/50 border-gray-600;
+    }
+    .dark .p-dropdown-panel,
+    .dark .p-multiselect-panel,
+    .dark .p-cascadeselect-panel {
+        @apply bg-gray-800 border-gray-700 shadow-2xl;
+    }
+    .dark .p-dropdown-item,
+    .dark .p-multiselect-item {
+        @apply text-gray-300 hover:bg-primary/20;
+    }
+    .dark .p-dropdown-item.p-highlight,
+    .dark .p-multiselect-item.p-highlight {
+        @apply bg-primary/30 text-white;
+    }
+
+    /* ── Cards & Panels ── */
+    .dark .p-card {
+        @apply bg-gray-800/70 border-gray-700 shadow-2xl;
+    }
+    .dark .p-card .p-card-header,
+    .dark .p-card .p-card-footer {
+        @apply bg-gray-900/50 border-gray-700;
+    }
+
+    /* ── Dialog / Overlay ── */
+    .dark .p-dialog {
+        @apply bg-gray-800 border border-gray-700 shadow-2xl;
+    }
+    .dark .p-dialog .p-dialog-header,
+    .dark .p-dialog .p-dialog-footer {
+        @apply bg-gray-900/50 border-gray-700;
+    }
+
+    /* ── Toast & Messages ── */
+    .dark .p-toast {
+        @apply opacity-95;
+    }
+    .dark .p-toast-message {
+        @apply bg-gray-800 border-l-4 shadow-xl;
+    }
+    .dark .p-toast-message-success {
+        @apply border-success;
+    }
+    .dark .p-toast-message-info {
+        @apply border-info;
+    }
+    .dark .p-toast-message-warn {
+        @apply border-warning;
+    }
+    .dark .p-toast-message-error {
+        @apply border-danger;
+    }
+
+    /* ── TabView & Tabs ── */
+    .dark .p-tabview .p-tabview-nav {
+        @apply bg-gray-800 border-gray-700;
+    }
+    .dark .p-tabview .p-tabview-nav li .p-tabview-nav-link {
+        @apply bg-transparent border-transparent text-gray-400 hover:text-white;
+    }
+    .dark .p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+        @apply bg-gray-700 text-white border-primary;
+    }
+
+    /* ── Accordion ── */
+    .dark .p-accordion .p-accordion-header .p-accordion-header-link {
+        @apply bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700;
+    }
+    .dark
+        .p-accordion
+        .p-accordion-header.p-highlight
+        .p-accordion-header-link {
+        @apply bg-primary text-white;
+    }
+    .dark .p-accordion .p-accordion-content {
+        @apply bg-gray-800/50 border-gray-700;
+    }
+
+    /* ── Menu / Menubar / PanelMenu ── */
+    .dark .p-menu,
+    .dark .p-panelmenu .p-panelmenu-header > a,
+    .dark .p-panelmenu .p-panelmenu-content {
+        @apply bg-gray-800 border-gray-700;
+    }
+    .dark .p-menuitem-link,
+    .dark .p-panelmenu .p-menuitem-link {
+        @apply hover:bg-primary/20;
+    }
+
+    /* ── ProgressBar & Skeleton ── */
+    .dark .p-progressbar .p-progressbar-value {
+        @apply bg-primary;
+    }
+    .dark .p-skeleton {
+        @apply bg-gray-700;
+    }
+
+    /* ── ScrollPanel & PerfectScrollbar ── */
+    .dark .ps__rail-y {
+        @apply bg-gray-800;
+    }
+    .dark .ps__thumb-y {
+        @apply bg-gray-600 hover:bg-gray-500;
     }
 }

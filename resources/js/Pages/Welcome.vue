@@ -5,7 +5,7 @@ import Staff from './Dashboard/Staff.vue';
 
 <template>
 
-    <Head title="Wellcome" />
+    <Head title="Welcome" />
 
     <Staff />
 </template>

@@ -29,6 +29,8 @@ class EmailVerificationPromptController extends Controller
     public function __invoke(Request $request): RedirectResponse|InertiaResponse|JsonResponse
     {
         try {
+
+            Log::info('hit');
             // Ensure authenticated user
             $user = $request->user();
             if (!$user) {
@@ -58,20 +60,20 @@ class EmailVerificationPromptController extends Controller
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
-                ->withProperties(['school_id' => $school->id])
+                ->withProperties(['school_id' => $school?->id])
                 ->log('Accessed email verification prompt');
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'message' => 'Email verification required.',
-                    'school_id' => $school->id,
+                    'school_id' => $school?->id,
                     'status' => session('status'),
                 ], 200);
             }
 
             return Inertia::render('Auth/VerifyEmail', [
                 'status' => session('status'),
-                'school_id' => $school->id,
+                'school_id' => $school?->id,
                 'user' => $user->only('id', 'name', 'email'),
             ]);
         } catch (\Exception $e) {

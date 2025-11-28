@@ -29,14 +29,11 @@ class PasswordResetLinkController extends Controller
      * @param Request $request The HTTP request instance.
      * @return InertiaResponse|JsonResponse
      */
-    public function create(Request $request): InertiaResponse|JsonResponse
+    public function create(Request $request)
     {
         try {
             // Check school context
             $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
 
             // Check if password reset is allowed
             $authSettings = getMergedSettings('authentication', $school);
@@ -52,14 +49,14 @@ class PasswordResetLinkController extends Controller
             if ($request->expectsJson()) {
                 return response()->json([
                     'status' => session('status'),
-                    'school_id' => $school->id,
+                    'school_id' => $school?->id,
                     'sms_enabled' => $smsEnabled,
                 ], 200);
             }
 
             return Inertia::render('Auth/ForgotPassword', [
                 'status' => session('status'),
-                'school_id' => $school->id,
+                'school_id' => $school?->id,
                 'sms_enabled' => $smsEnabled,
             ]);
         } catch (\Exception $e) {
@@ -79,14 +76,11 @@ class PasswordResetLinkController extends Controller
      * @throws ValidationException If validation fails.
      * @throws \Exception If user lookup or OTP generation fails.
      */
-    public function store(Request $request): RedirectResponse|JsonResponse
+    public function store(Request $request)
     {
         try {
             // Check school context
             $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
 
             // Check if password reset is allowed
             $authSettings = getMergedSettings('authentication', $school);

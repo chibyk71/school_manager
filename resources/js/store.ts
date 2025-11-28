@@ -1,10 +1,11 @@
 import { useDialog } from "primevue";
 import { computed, reactive, ref, VueElementConstructor } from "vue";
 import { FilterMatchMode } from '@primevue/core/api';
+import type { SidebarMenu } from "./types";
 
 export let isDarkTheme = ref(false);
 
-export const menuItems = ref([
+export const menuItems = ref<SidebarMenu>([
     {
         header: "Main",
         items: [

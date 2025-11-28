@@ -7,6 +7,7 @@ import SidePanel from '@/Components/menu/SidePanel.vue';
 import { ButtonEmits, ButtonProps, ConfirmDialog, Toast } from 'primevue';
 import DynamicDialog from 'primevue/dynamicdialog';
 import ResourceDialogWrapper from '@/Components/Modals/ResourceDialogWrapper.vue';
+import { sidebarCollapsed } from '@/store';
 
 /**
  * Props for the authenticated layout.
@@ -18,7 +19,7 @@ import ResourceDialogWrapper from '@/Components/Modals/ResourceDialogWrapper.vue
 defineProps<{
     title: string;
     crumb: Array<{ icon?: string; label?: string; url?: string }>;
-    buttons?: Array<ButtonProps & Partial<ButtonEmits> & {href?: string}>;
+    buttons?: Array<ButtonProps & Partial<ButtonEmits> & { href?: string }>;
 }>();
 
 /**
@@ -43,25 +44,28 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <!-- ------------------------------------------------------------------
+    <div class="main-wrapper">
+        <!-- ------------------------------------------------------------------
        GLOBAL NAVIGATION
        ------------------------------------------------------------------ -->
-    <Navbar />
-    <SidePanel />
+        <Navbar />
+        <SidePanel />
 
-    <!-- ------------------------------------------------------------------
+        <!-- ------------------------------------------------------------------
        PAGE CONTENT WRAPPER
        ------------------------------------------------------------------ -->
-    <div class="page-wrapper">
-        <div class="content blank-page !pb-12">
-            <!-- Header slot – fallback to PageHeader if not overridden -->
-            <slot name="header">
-                <PageHeader :title="title" :crumb :buttons />
-            </slot>
+        <div class="page-wrapper flex-1 overflow-auto relative z-10 left-0 m-0 ml-[252px] transition-all duration-300" :class="{ 'ml-20!': sidebarCollapsed }">
+            <div class="content !pb-12 p-6 lg:p-8 min-h-[calc(100vh-56px)] dark:bg-dark-bg-primary ">
+                <!-- Header slot – fallback to PageHeader if not overridden -->
+                <slot name="header">
+                    <PageHeader :title="title" :crumb :buttons />
+                </slot>
 
-            <!-- Main page content -->
-            <slot />
+                <!-- Main page content -->
+                <slot />
+            </div>
         </div>
+
     </div>
 
     <!-- ------------------------------------------------------------------
@@ -74,8 +78,5 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Tailwind already handles most spacing – keep any custom overrides here */
-.page-wrapper {
-    @apply flex-1 overflow-auto;
-}
+
 </style>

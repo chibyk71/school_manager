@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ConfirmPasswordRequest;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +25,7 @@ class ConfirmablePasswordController extends Controller
      * @param Request $request The HTTP request instance.
      * @return InertiaResponse|JsonResponse
      */
-    public function show(Request $request): InertiaResponse|JsonResponse
+    public function show(Request $request)
     {
         try {
             // Ensure authenticated user
@@ -35,23 +36,22 @@ class ConfirmablePasswordController extends Controller
 
             // Check school context
             $school = GetSchoolModel();
-            if (!$school || $user->school_id !== $school->id) {
-                throw new \Exception('Invalid school context.');
+            if ($school && !$user->hasRole('super-admin') && !$user->schools()->where('id', $school->id)->exists()) {
+                throw new \Exception('Access denied. You are not assigned to this school.');
             }
-
-            // Check permission to access password confirmation
-            permitted('confirm-password', $request->expectsJson());
 
             // Check if password confirmation is required
             $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['require_password_confirmation'] ?? false)) {
-                Log::info("Password confirmation skipped for user {$user->id} in school {$school->id} as per settings.");
-                return $this->respondWithSuccess($request, 'Password confirmation not required.', 'dashboard');
-            }
+            // if (!($authSettings['require_password_confirmation'] ?? false)) {
+            //     Log::info("Password confirmation skipped for user {$user->id} in school {$school->id} as per settings.");
+            //     return $this->respondWithSuccess($request, 'Password confirmation not required.', 'dashboard');
+            // }
 
             // Check if password is already confirmed
-            if ($request->session()->has('auth.password_confirmed_at') &&
-                (time() - $request->session()->get('auth.password_confirmed_at') < ($authSettings['password_confirmation_ttl'] ?? 3600))) {
+            if (
+                $request->session()->has('auth.password_confirmed_at') &&
+                (time() - $request->session()->get('auth.password_confirmed_at') < ($authSettings['password_confirmation_ttl'] ?? 3600))
+            ) {
                 Log::info("Password already confirmed for user {$user->id}.");
                 return $this->respondWithSuccess($request, 'Password already confirmed.', 'dashboard');
             }
@@ -61,7 +61,7 @@ class ConfirmablePasswordController extends Controller
             }
 
             return Inertia::render('Auth/ConfirmPassword', [
-                'school_id' => $school->id,
+                'school_id' => $school?->id,
                 'user' => $user->only('id', 'name', 'email'),
             ]);
         } catch (\Exception $e) {

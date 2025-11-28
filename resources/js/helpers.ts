@@ -1,8 +1,9 @@
 import axios from "axios";
-import { useConfirm, useDialog, useToast } from "primevue";
+import { useConfirm, useDialog, useToast, type MenuEmits } from "primevue";
 import { InertiaForm, router } from '@inertiajs/vue3';
 import { reactive, ref } from "vue";
 import { ModalComponentDirectory } from "./Components/Modals/ModalDirectory";
+import { useTemplateRef } from 'vue'
 
 export const getClass = (cls: string) => {
     const documentStyle = getComputedStyle(document.documentElement);
@@ -182,3 +183,20 @@ export const formatDate = (value: Date) => {
         year: 'numeric'
     });
 };
+
+export function usePopup<T extends 'menu' | 'overlay' = 'menu'>(
+    name: string
+) {
+    // Fully typed ref – no unknown, no any
+    const ref = useTemplateRef<T extends 'menu' ? MenuEmits : any>(name as any)
+
+    const toggle = (event?: Event) => {
+        // @ts-ignore – PrimeVue components all have .toggle(event)
+        ref.value?.toggle(event)
+    }
+
+    const show = (event?: Event) => ref.value?.show(event)
+    const hide = () => ref.value?.hide()
+
+    return { ref, toggle, show, hide }
+}

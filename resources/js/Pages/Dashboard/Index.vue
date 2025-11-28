@@ -19,6 +19,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { DashboardData, WidgetDefinition } from '@/types/dashboard';
 import { ref } from 'vue';
+import { Message } from 'primevue';
 
 // ------------------------------------------------------------------
 // Props (typed – matches what DashboardController sends)
@@ -77,10 +78,17 @@ const childProps = computed(() => ({
        Layout – header/buttons come from the child dashboard component
        -------------------------------------------------------------- -->
     <AuthenticatedLayout :title="props.title" :crumb="[{ label: props.title }]" :buttons="layoutButtons">
+        <Message closable severity="success" class="rounded-full">
+            <div class="flex items-center">
+                <Avatar class="mr-2" image="assets/img/profiles/avatar-27.jpg" shape='circle'></Avatar>
+                <p>Fahed III,C has paid Fees for the <strong class="mx-1">“Term1”</strong></p>
+            </div>
+        </Message>
         <!-- --------------------------------------------------------------
          Dynamically render the correct dashboard
          -------------------------------------------------------------- -->
-        <component :is="DashboardComponent" v-if="DashboardComponent" v-bind="childProps" @update:buttons="handleUpdateButtons" />
+        <component :is="DashboardComponent" v-if="DashboardComponent" v-bind="childProps"
+            @update:buttons="handleUpdateButtons" />
 
         <!-- --------------------------------------------------------------
          Fallback – should never happen in production

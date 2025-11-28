@@ -288,3 +288,45 @@ export interface DataTableColumnVisibility {
 export interface DataTableColumnSort {
     [key: string]: SortOrder; // Maps column field to sort order
 }
+
+
+/**
+ * Represents a single menu item (leaf node or parent with submenu)
+ */
+export interface MenuItem {
+  /** Display title */
+  title: string;
+
+  /** Tabler icon class (e.g., "ti ti-layout-dashboard") */
+  icon?: string;
+
+  /** Direct route – if present, this is a clickable link */
+  link?: string;
+
+  /** Optional badge (e.g., version number) */
+  badge?: string;
+
+  /** Nested submenu – if present, this item opens a dropdown */
+  submenu?: MenuItem[];
+}
+
+/**
+ * A menu section/group that appears in the sidebar
+ */
+export interface MenuSection {
+  /** Header text shown above the group */
+  header: string;
+
+  /** List of menu items under this header */
+  items: MenuItem[];
+}
+
+/**
+ * Complete sidebar menu structure
+ */
+export type SidebarMenu = MenuSection[];
+
+export type MenuItemWithChildren = MenuItem & { submenu: MenuItem[] };
+export type MenuItemLeaf = MenuItem & { link: string; submenu?: never };
+
+export type MenuItemAll = MenuItemWithChildren | MenuItemLeaf;

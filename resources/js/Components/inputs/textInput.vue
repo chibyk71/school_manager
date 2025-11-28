@@ -1,3 +1,4 @@
+<!-- resources/js/Components/inputs/textInput.vue -->
 <script setup lang="ts">
 import { IconField, InputIcon, InputText, Message } from 'primevue';
 const model = defineModel<string>();
@@ -8,15 +9,17 @@ defineProps<{
     name?: string,
     error?: string
 }>()
+
+const id = `text-input-${Math.random().toString(36).substr(2, 9)}`;
 </script>
 
 <template>
-    <div class="mb-3">
-        <label>{{ label }}</label>
+    <div class="mb-4">
+        <label class="font-medium text-color mb-2 inline-block relative" :for='id'>{{ label }}</label>
         <IconField>
-            <InputIcon :class="icon"></InputIcon>
+            <InputIcon v-if="icon" :class="icon"></InputIcon>
             <slot name="input" :invalid="!!error">
-                <InputText :name :invalid="!!error" v-model="model" required :type fluid />
+                <InputText :id="id" :name="name" :invalid="!!error" v-model="model" required :type="type" fluid />
             </slot>
         </IconField>
         <Message severity="error" variant="simple" v-if="error"> {{ error }} </Message>

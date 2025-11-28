@@ -48,17 +48,17 @@ class AuthenticatedSessionController extends Controller
             if ($request->expectsJson()) {
                 return response()->json([
                     'canResetPassword' => $authSettings['allow_password_reset'] && Route::has('password.request'),
-                    'canRegister'      => $authSettings['allow_user_registration'] && Route::has('register'),
-                    'status'          => session('status'),
-                    'school_id'       => $school?->id,
+                    'canRegister' => $authSettings['allow_user_registration'] && Route::has('register'),
+                    'status' => session('status'),
+                    'school_id' => $school?->id,
                 ], 200);
             }
 
             return Inertia::render('Auth/Login', [
                 'canResetPassword' => $authSettings['allow_password_reset'] && Route::has('password.request'),
-                'canRegister'      => $authSettings['allow_user_registration'] && Route::has('register'),
-                'status'          => session('status'),
-                'school_id'       => $school?->id,
+                'canRegister' => $authSettings['allow_user_registration'] && Route::has('register'),
+                'status' => session('status'),
+                'school_id' => $school?->id,
             ]);
         } catch (\Exception $e) {
             Log::error("Failed to display login view: {$e->getMessage()}");
@@ -83,7 +83,7 @@ class AuthenticatedSessionController extends Controller
             // 1. Authenticate the credentials (LoginRequest does the heavy lifting)
             // -----------------------------------------------------------------
             $request->authenticate();
-            $user   = Auth::user();
+            $user = Auth::user();
             $school = GetSchoolModel(); // may be null
 
             // -----------------------------------------------------------------
@@ -98,7 +98,7 @@ class AuthenticatedSessionController extends Controller
             // -----------------------------------------------------------------
             if (!($isSystemAdmin && $school)) {
                 // Normal user – must be attached to the selected school
-                if (! $user->schools()->where('school_id', $school->id)->exists()) {
+                if (!$user->schools()->where('school_id', $school->id)->exists()) {
                     Auth::logout();
                     throw new \Exception('User not associated with this school.');
                 }
@@ -117,9 +117,9 @@ class AuthenticatedSessionController extends Controller
                 ->performedOn($user)
                 ->causedBy($user)
                 ->withProperties([
-                    'school_id'   => $school?->id,
+                    'school_id' => $school?->id,
                     'login_field' => $loginField,
-                    'system_admin'=> $isSystemAdmin,
+                    'system_admin' => $isSystemAdmin,
                 ])
                 ->log('User logged in');
 
@@ -131,7 +131,7 @@ class AuthenticatedSessionController extends Controller
             if (
                 ($authSettings['require_password_confirmation'] ?? false) &&
                 str_contains($intendedUrl, '/dashboard') &&
-                ! $request->session()->has('auth.password_confirmed_at')
+                !$request->session()->has('auth.password_confirmed_at')
             ) {
                 return $this->respondWithSuccess(
                     $request,
@@ -139,7 +139,7 @@ class AuthenticatedSessionController extends Controller
                     'password.confirm'
                 );
             }
-
+            
             // -----------------------------------------------------------------
             // 7. API response (SPA / mobile)
             // -----------------------------------------------------------------
@@ -148,8 +148,8 @@ class AuthenticatedSessionController extends Controller
 
                 return response()->json([
                     'message' => 'Login successful.',
-                    'token'   => $token,
-                    'user'    => $user->only('id', 'name', 'email', 'enrollment_id', 'roles'),
+                    'token' => $token,
+                    'user' => $user->only('id', 'name', 'email', 'enrollment_id', 'roles'),
                 ], 200);
             }
 
@@ -172,7 +172,7 @@ class AuthenticatedSessionController extends Controller
     public function destroy(Request $request): RedirectResponse|JsonResponse
     {
         try {
-            $user   = Auth::user();
+            $user = Auth::user();
             $school = GetSchoolModel();
 
             if ($user && $school) {
@@ -218,7 +218,7 @@ class AuthenticatedSessionController extends Controller
     private function isSystemWideAdmin(User $user): bool
     {
         // Option 1: No school association at all
-        if ( $user->schools()->count() === 0 || $user->hasRole('admin') ) {
+        if ($user->schools()->count() === 0 || $user->hasRole('admin')) {
             return true;
         }
 
@@ -270,4 +270,3 @@ class AuthenticatedSessionController extends Controller
         return redirect()->back()->withErrors(['login' => $message]);
     }
 }
-

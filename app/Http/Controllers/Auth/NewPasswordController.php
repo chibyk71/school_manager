@@ -28,14 +28,11 @@ class NewPasswordController extends Controller
      * @param Request $request The HTTP request instance.
      * @return InertiaResponse|JsonResponse
      */
-    public function create(Request $request): InertiaResponse|JsonResponse
+    public function create(Request $request)
     {
         try {
             // Check school context
             $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
 
             // Check if password reset is allowed
             $authSettings = getMergedSettings('authentication', $school);
@@ -46,15 +43,15 @@ class NewPasswordController extends Controller
 
             if ($request->expectsJson()) {
                 return response()->json([
-                    'school_id' => $school->id,
+                    'school_id' => $school?->id,
                     'token' => $request->query('token'),
                     'email' => $request->query('email'),
                 ], 200);
             }
 
             return Inertia::render('Auth/ResetPassword', [
-                'school_id' => $school->id,
-                'token' => $request->query('token'),
+                'school_id' => $school?->id,
+                'token' => $request->token,
                 'email' => $request->query('email'),
             ]);
         } catch (\Exception $e) {
@@ -74,9 +71,6 @@ class NewPasswordController extends Controller
         try {
             // Check school context
             $school = GetSchoolModel();
-            if (!$school || $school->id !== $request->school_id) {
-                throw new \Exception('Invalid school context.');
-            }
 
             // Check if password reset is allowed
             $authSettings = getMergedSettings('authentication', $school);
@@ -102,7 +96,7 @@ class NewPasswordController extends Controller
             }
 
             $user = User::where('email', $request->email)
-                ->where('school_id', $school->id)
+                ->where('school_id', $school?->id)
                 ->firstOrFail();
 
             // Update password
@@ -113,7 +107,7 @@ class NewPasswordController extends Controller
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
-                ->withProperties(['school_id' => $school->id])
+                ->withProperties(['school_id' => $school?->id])
                 ->log('Password reset successfully');
 
             // Fire PasswordReset event

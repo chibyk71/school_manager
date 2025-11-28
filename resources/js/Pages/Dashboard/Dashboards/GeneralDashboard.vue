@@ -1,4 +1,6 @@
 <template>
+    <GreetingCard :user="{ id: 1, name: 'Mr. Herald' }" role="admin" />
+
     <div class="space-y-8">
 
         <!-- 1. Welcome + Quick Links -->

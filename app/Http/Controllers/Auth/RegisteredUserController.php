@@ -4,63 +4,69 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use Illuminate\Auth\Events\Registered;
+use App\Notifications\AccountCreatedNotification;
+use App\Notifications\EmailVerificationNotification;
+use App\Notifications\EmailVerificationOtpNotification;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
-use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Controller for handling user registration in a multi-tenant school system.
+ * Handles user registration in a multi-tenant school system.
  *
  * @group Authentication
  */
 class RegisteredUserController extends Controller
 {
-    /**
+
+    /** --------------------------------------------------------------------- */
+    /**  PUBLIC ENDPOINTS                                                     */
+    /** --------------------------------------------------------------------- */
+
+   /**
      * Display the registration view.
      *
      * @param Request $request The HTTP request instance.
      * @return InertiaResponse|JsonResponse
      */
-    public function create(Request $request): InertiaResponse|JsonResponse
+    public function create(Request $request)
     {
         try {
-            // Check school context
-            $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
+             // Check school context
+            $school = GetSchoolModel();               //
 
-            // Check if registration is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_user_registration'] ?? false)) {
-                Log::info("User registration disabled for school {$school->id} as per settings.");
-                return $this->respondWithError($request, 'User registration is not allowed.', 403);
+            $auth   = getMergedSettings('authentication', $school);
+
+            // Registration disabled globally or per-school?
+            if (! ($auth['allow_user_registration'] ?? false)) {
+                return $this->respondWithError($request, 'Registration is disabled.', 403);
             }
 
             if ($request->expectsJson()) {
                 return response()->json([
-                    'school_id' => $school->id,
-                    'status' => session('status'),
-                    'allow_user_registration' => $authSettings['allow_user_registration'],
-                ], 200);
+                    'school_id'               => $school?->id,
+                    'allow_user_registration' => true,
+                    'show_terms'              => $auth['show_terms_on_registration'] ?? false,
+                    'schools'                 => \App\Models\School::pluck('name', 'id') ?? collect(),
+                ]);
             }
 
             return Inertia::render('Auth/Register', [
-                'school_id' => $school->id,
-                'status' => session('status'),
+                'school_id'  => $school?->id,
+                'show_terms' => $auth['show_terms_on_registration'] ?? false,
+                'schools'    => \App\Models\School::orderBy('name')->get(['id', 'name'])->toArray() ?? collect(),
             ]);
         } catch (\Exception $e) {
-            Log::error("Failed to display registration view: {$e->getMessage()}");
-            return $this->respondWithError($request, 'Failed to load registration page.');
+            Log::error("Register view error: {$e->getMessage()}");
+            return $this->respondWithError($request, 'Unable to load registration page.');
         }
     }
 
@@ -78,151 +84,155 @@ class RegisteredUserController extends Controller
     public function store(Request $request): RedirectResponse|JsonResponse
     {
         try {
-            // Check school context
-            $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
+            $school = GetSchoolModel(); // null → system admin registration
+            $auth   = getMergedSettings('authentication', $school);
+
+            // -----------------------------------------------------------------
+            // 1. Global / per-school registration guard
+            // -----------------------------------------------------------------
+            if (! ($auth['allow_user_registration'] ?? false)) {
+                throw new \Exception('Registration is not allowed.');
             }
 
-            // Check permission (optional for registration)
-            permitted('register', $request->expectsJson());
+            // -----------------------------------------------------------------
+            // 2. Rate limiting (IP + school)
+            // -----------------------------------------------------------------
+            $throttleKey = $this->throttleKey($request, $school);
+            $maxAttempts = (int) ($auth['registration_max_attempts'] ?? 5);
+            $lockMinutes = (int) ($auth['registration_lock_minutes'] ?? 1);
 
-            // Check if registration is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_user_registration'] ?? false)) {
-                throw new \Exception('User registration is not allowed.');
-            }
-
-            // Check rate limiting
-            $throttleKey = 'register|' . $request->ip();
-            $throttleMax = $authSettings['registration_max_attempts'] ?? 5;
-            $throttleLock = $authSettings['registration_lock_minutes'] ?? 1;
-            if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
-                throw new \Exception('Too many registration attempts. Please try again later.');
+            if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
+                $seconds = RateLimiter::availableIn($throttleKey);
+                throw new \Exception(trans('auth.throttle', [
+                    'seconds' => $seconds,
+                    'minutes' => ceil($seconds / 60),
+                ]));
             }
 
-            // Build password validation rules based on settings
-            $passwordRules = Password::min($authSettings['password_min_length'] ?? 8);
-            if ($authSettings['password_require_letters'] ?? true) {
-                $passwordRules = $passwordRules->letters();
-            }
-            if ($authSettings['password_require_mixed_case'] ?? false) {
-                $passwordRules = $passwordRules->mixedCase();
-            }
-            if ($authSettings['password_require_numbers'] ?? true) {
-                $passwordRules = $passwordRules->numbers();
-            }
-            if ($authSettings['password_require_symbols'] ?? false) {
-                $passwordRules = $passwordRules->symbols();
-            }
+            // -----------------------------------------------------------------
+            // 3. Dynamic password rules
+            // -----------------------------------------------------------------
+            $pwd = Password::min($auth['password_min_length'] ?? 8);
+            if ($auth['password_require_letters'] ?? true)   $pwd = $pwd->letters();
+            if ($auth['password_require_mixed_case'] ?? false) $pwd = $pwd->mixedCase();
+            if ($auth['password_require_numbers'] ?? true)   $pwd = $pwd->numbers();
+            if ($auth['password_require_symbols'] ?? false) $pwd = $pwd->symbols();
 
-            // Validate request
-            $validated = $request->validate([
-                'name' => ['required', 'string', 'max:255'],
-                'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email,NULL,id,school_id,' . $school->id],
-                'password' => ['required', 'confirmed', $passwordRules],
-                'school_id' => ['required', 'exists:schools,id'],
-            ]);
+            // -----------------------------------------------------------------
+            // 4. Validation
+            // -----------------------------------------------------------------
+            $rules = [
+                'name'                  => ['required', 'string', 'max:255'],
+                'email'                 => [
+                    'required', 'email', 'max:255',
+                    'unique:users,email,NULL'],
+                'password'              => ['required', 'confirmed', $pwd],
+                'school_id'             => ['nullable', 'exists:schools,id'],
+                'terms'                 => ($auth['show_terms_on_registration'] ?? false)
+                    ? ['required', 'accepted']
+                    : ['nullable'],
+            ];
 
-            // Create user
+            $validated = $request->validate($rules);
+
+            // -----------------------------------------------------------------
+            // 5. Create user (inactive if approval required)
+            // -----------------------------------------------------------------
             $user = User::create([
-                'name' => $validated['name'],
-                'email' => $validated['email'],
-                'password' => Hash::make($validated['password']),
-                'school_id' => $school->id,
+                'name'      => $validated['name'],
+                'email'     => $validated['email'],
+                'password'  => Hash::make($validated['password']),
+                'school_id' => $school?->id ?? $validated['school_id'],
+                'active'    => ! ($auth['account_approval'] ?? false),
             ]);
 
-            // Assign default role
-            $defaultRole = $authSettings['default_registration_role'] ?? 'guardian';
-            if (!$user->hasRole($defaultRole, $school?->id)) {
-                $user->addRole($defaultRole, $school->id);
-            }
+            // -----------------------------------------------------------------
+            // 6. Assign default role
+            // -----------------------------------------------------------------
+            $defaultRole = $auth['default_registration_role'] ?? 'guardian';
+            $user->addRole($defaultRole, $user->school_id);
 
-            // Log activity
+            // -----------------------------------------------------------------
+            // 7. Activity log
+            // -----------------------------------------------------------------
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
-                ->withProperties(['school_id' => $school->id, 'role' => $defaultRole])
+                ->withProperties([
+                    'school_id' => $user->school_id,
+                    'role'      => $defaultRole,
+                    'needs_approval' => $auth['account_approval'] ?? false,
+                ])
                 ->log('User registered');
 
-            // Fire Registered event
-            event(new Registered($user));
+            // -----------------------------------------------------------------
+            // 8. Account approval flow
+            // -----------------------------------------------------------------
+            if ($auth['account_approval'] ?? false) {
+                $user->notify(new AccountCreatedNotification($user));
+                $msg = 'Your account has been created and is awaiting admin approval.';
+            } else {
+                $msg = 'Registration successful.';
+            }
 
-            // Log in the user
-            Auth::login($user);
+            // -----------------------------------------------------------------
+            // 9. Email verification (optional)
+            // -----------------------------------------------------------------
+            if ($auth['enable_email_verification'] ?? false) {
+                $otp = app(\Ichtrojan\Otp\Otp::class)->generate($user->email, $auth['otp_length'] ?? 6, $auth['otp_validity'] ?? 10);
+                $user->notify(new EmailVerificationNotification($user, $otp->token));
+                $msg .= ' Please check your email for the verification code.';
+            }
 
-            // Clear rate limiter
-            $this->clearAttempts($throttleKey);
+            // -----------------------------------------------------------------
+            // 10. Login (only if NOT awaiting approval)
+            // -----------------------------------------------------------------
+            if (! ($auth['account_approval'] ?? false)) {
+                Auth::login($user);
+            }
+
+            // -----------------------------------------------------------------
+            // 11. Clear throttle & respond
+            // -----------------------------------------------------------------
+            RateLimiter::clear($throttleKey);
 
             if ($request->expectsJson()) {
                 return response()->json([
-                    'message' => 'Registration successful.',
-                    'user' => $user->only('id', 'name', 'email', 'school_id'),
-                ], 200);
+                    'message' => $msg,
+                    'user'    => $user->only('id', 'name', 'email', 'school_id', 'active'),
+                ], 201);
             }
 
-            return redirect()->intended(route('dashboard', absolute: false))
-                ->with('status', 'Registration successful.');
+            return redirect()->intended(route('dashboard'))
+                ->with('status', $msg);
         } catch (ValidationException $e) {
-            Log::warning("Registration validation failed: {$e->getMessage()}");
-            $this->incrementAttempts($throttleKey);
+            RateLimiter::hit($this->throttleKey($request, $school));
             throw $e;
         } catch (\Exception $e) {
-            Log::error("Registration failed for email {$request->email}: {$e->getMessage()}");
-            $this->incrementAttempts($throttleKey);
+            RateLimiter::hit($this->throttleKey($request, $school));
+            Log::error("Registration failed: {$e->getMessage()}");
             return $this->respondWithError($request, $e->getMessage());
         }
     }
 
-    /**
-     * Check if there are too many attempts.
-     *
-     * @param string $throttleKey The throttle key.
-     * @param int $maxAttempts Maximum allowed attempts.
-     * @param int $lockMinutes Lockout duration in minutes.
-     * @return bool
-     */
-    protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts, int $lockMinutes): bool
+    /** --------------------------------------------------------------------- */
+    /**  PRIVATE HELPERS                                                      */
+    /** --------------------------------------------------------------------- */
+
+    private function throttleKey(Request $request, $school): string
     {
-        return app('Illuminate\Cache\RateLimiter')->tooManyAttempts($throttleKey, $maxAttempts);
+        $schoolId = $school?->id ?? 'global';
+        return 'register|' . $request->ip() . '|' . $schoolId;
     }
 
-    /**
-     * Increment attempts for rate limiting.
-     *
-     * @param string $throttleKey The throttle key.
-     * @return void
-     */
-    protected function incrementAttempts(string $throttleKey): void
-    {
-        app('Illuminate\Cache\RateLimiter')->hit($throttleKey);
-    }
-
-    /**
-     * Clear attempts for rate limiting.
-     *
-     * @param string $throttleKey The throttle key.
-     * @return void
-     */
-    protected function clearAttempts(string $throttleKey): void
-    {
-        app('Illuminate\Cache\RateLimiter')->clear($throttleKey);
-    }
-
-    /**
-     * Respond with an error message for web or API requests.
-     *
-     * @param Request $request The HTTP request instance.
-     * @param string $message The error message.
-     * @param int $statusCode The HTTP status code.
-     * @return RedirectResponse|JsonResponse
-     */
-    protected function respondWithError(Request $request, string $message, int $statusCode = 400): RedirectResponse|JsonResponse
-    {
+    protected function respondWithError(
+        Request $request,
+        string $message,
+        int $status = 400
+    ): RedirectResponse|JsonResponse {
         if ($request->expectsJson()) {
-            return response()->json(['error' => $message], $statusCode);
+            return response()->json(['error' => $message], $status);
         }
-
         return redirect()->back()->withErrors(['email' => $message]);
     }
 }
