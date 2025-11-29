@@ -8,5 +8,5 @@ export const ModalComponentDirectory: Record<string, AsyncComponentLoader> = {
   'assign-teacher-subject': () => import('./Create/AssignTeacherSubjectClass.vue'),
   'add-staff': () => import('./Create/AddStaff.vue'),
   'department': () => import('./Create/Department.vue'),
-  'department-role': () => import('./Create/AssignDepartmentRole.vue'),
+  'assign-department-role': () => import('./Create/AssignRoleDepartmentModal.vue'),
 };
