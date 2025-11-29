@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { useModalForm } from '@/composables/useModalForm'
 import { modals } from '@/helpers';
+import UserTypeBadge from '@/Pages/UserManagement/components/UserTypeBadge.vue';
 import axios from 'axios';
 import { onMounted, ref, watch } from 'vue';
 
