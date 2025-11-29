@@ -13,11 +13,11 @@ return new class extends Migration
     {
         Schema::create('staff', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('user_id')->index()->constrained('users')->cascadeOnDelete();
-            $table->foreignUuid('school_id')->index()->constrained('schools')->cascadeOnDelete();
+            $table->date('date_of_employment')->nullable();
+            $table->date('date_of_termination')->nullable();
+            $table->string('staff_id_number')->nullable()->unique(); // e.g., STF-2025-001
             $table->timestamps();
             $table->softDeletes();
-            $table->unique(['user_id', 'school_id'], 'staff_user_school_unique');
         });
     }
 

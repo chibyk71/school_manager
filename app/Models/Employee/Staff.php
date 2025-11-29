@@ -4,8 +4,10 @@ namespace App\Models\Employee;
 
 use App\Models\Misc\AttendanceLedger;
 use App\Models\Model;
+use App\Models\Profile;
 use App\Models\School;
 use App\Models\User;
+use App\Traits\BelongsToPrimaryModel;
 use App\Traits\BelongsToSchool;
 use App\Traits\BelongsToSections;
 use App\Traits\HasCustomFields;
@@ -14,6 +16,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -37,7 +40,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class Staff extends Model
 {
     /** @use HasFactory<\Database\Factories\StaffFactory> */
-    use HasFactory, BelongsToSchool, BelongsToSections, HasCustomFields, HasTableQuery, SoftDeletes, LogsActivity, HasUuids;
+    use HasFactory, BelongsToSections, HasCustomFields, HasTableQuery, SoftDeletes, LogsActivity, HasUuids, BelongsToPrimaryModel;
 
     /**
      * The table associated with the model.
@@ -52,8 +55,9 @@ class Staff extends Model
      * @var array<string>
      */
     protected $fillable = [
-        'user_id',
-        'school_id',
+        'date_of_employment',
+        'date_of_termination',
+        'staff_id_number',
     ];
 
     /**
@@ -73,10 +77,17 @@ class Staff extends Model
      * @var array<string>
      */
     protected array $hiddenTableColumns = [
-        'school_id',
         'created_at',
         'updated_at',
         'deleted_at',
+    ];
+
+    protected $appends = [
+        'full_name',
+        'short_name',
+        'phone',
+        'email',
+        'photo_url',
     ];
 
     /**
@@ -85,8 +96,7 @@ class Staff extends Model
      * @var array<string>
      */
     protected array $globalFilterFields = [
-        'user.name',
-        'departmentRole.name',
+        'full_name', 'staff_id_number',
     ];
 
     /**
@@ -100,27 +110,37 @@ class Staff extends Model
             ->useLogName('staff')
             ->logFillable()
             ->logOnlyDirty()
-            ->setDescriptionForEvent(fn(string $eventName) => "Staff for user ID {$this->user_id} was {$eventName}");
+            ->setDescriptionForEvent(fn(string $eventName) =>
+                "Staff {$this->full_name} ({$this->staff_id_number}) was {$eventName}"
+            );
     }
+
+    public function profile(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            Profile::class,
+            Profile::class,
+            'profilable_id',
+            'id',
+            'id',
+            'profilable_id'
+        )->where('profilable_type', static::class);
+    }
+
+    public function getRelationshipToPrimaryModel(): string
+    {
+        return 'profile';
+    }
+
 
     /**
      * Get the user that owns the staff.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return mixed
      */
-    public function user(): BelongsTo
+    public function user()
     {
-        return $this->belongsTo(User::class);
-    }
-
-    /**
-     * Get the school associated with the staff.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function school(): BelongsTo
-    {
-        return $this->belongsTo(School::class);
+        return $this->profile()->with('user')->select('user_id');
     }
 
     /**
@@ -153,6 +173,46 @@ class Staff extends Model
         return $this->morphMany(AttendanceLedger::class, 'attendable');
     }
 
+    // =================================================================
+    // ACCESSORS — USED EVERYWHERE (Dashboard, Reports, SMS, PDF)
+    // =================================================================
+
+    public function getFullNameAttribute(): string
+    {
+        return $this->profile?->full_name ?? 'Unknown Staff';
+    }
+
+    public function getShortNameAttribute(): string
+    {
+        return $this->profile?->short_name ?? 'Staff';
+    }
+
+    public function getPhoneAttribute(): ?string
+    {
+        return $this->profile?->phone;
+    }
+
+    public function getEmailAttribute(): ?string
+    {
+        return $this->profile?->user?->email;
+    }
+
+    public function getPhotoUrlAttribute(): string
+    {
+        return $this->getFirstMediaUrl('photo') ?: asset('images/staff-avatar.png');
+    }
+
+    public function getYearsOfServiceAttribute(): ?int
+    {
+        if (!$this->date_of_employment) return null;
+        return $this->date_of_employment->diffInYears(now());
+    }
+
+    public function getIsActiveAttribute(): bool
+    {
+        return $this->date_of_termination === null;
+    }
+
     /**
      * Get the school ID column name.
      *
@@ -161,5 +221,10 @@ class Staff extends Model
     public static function getSchoolIdColumn(): string
     {
         return 'school_id';
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->whereNull('date_of_termination');
     }
 }

@@ -12,14 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('guardians', function (Blueprint $table) {
-            $table->Uuid('id')->primary();
-            $table->foreignUuid('user_id')->index()->constrained('users')->cascadeOnDelete();
-            $table->foreignUuid('school_id')->index()->constrained('schools')->cascadeOnDelete();
+            $table->uuid('id')->primary();
             $table->timestamps();
             $table->softDeletes();
-
-            // Ensure unique user-school combination
-            $table->unique(['user_id', 'school_id'], 'guardians_user_school_unique');
         });
     }
 

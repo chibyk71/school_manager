@@ -13,14 +13,9 @@ return new class extends Migration
     {
         Schema::create('students', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('user_id')->index()->constrained('users')->cascadeOnDelete();
-            $table->foreignUuid('school_id')->index()->constrained('schools')->cascadeOnDelete();
             $table->foreignUuid('school_section_id')->constrained('school_sections')->cascadeOnDelete();
             $table->timestamps();
             $table->softDeletes();
-
-            // Ensure unique user-school combination
-            $table->unique(['user_id', 'school_id'], 'students_user_school_unique');
         });
     }
 

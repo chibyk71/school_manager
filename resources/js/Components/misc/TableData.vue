@@ -1,3 +1,4 @@
+<!-- resources/js/Components/misc/TableData.vue -->
 <template>
     <DataTable :value="rows" :alwaysShowPaginator="false" :loading="loading" :paginator="true" :rows="perPage"
         :totalRecords="totalRecords" :first="(currentPage - 1) * perPage" :selectionMode="selectionMode"
