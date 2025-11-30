@@ -1,6 +1,4 @@
-import { useDialog } from "primevue";
-import { computed, reactive, ref, VueElementConstructor } from "vue";
-import { FilterMatchMode } from '@primevue/core/api';
+import { ref } from "vue";
 import type { SidebarMenu } from "./types";
 
 export let isDarkTheme = ref(false);
@@ -565,15 +563,3 @@ export const StudentMenu = ref([
     { label: 'Promote Student', icon: 'ti ti-arrow-ramp-right-2' },
     { label: 'Delete', icon: 'ti ti-trash-x' }
 ])
-
-export const FilterModes = FilterMatchMode
-
-export const useSelectedResources = () => {
-    const selectedResources = ref<{ [x: string]: any; id: string | number }[]>([]);
-    const selectedResourceIds = computed(() => selectedResources.value.map(resource => resource.id));
-
-    return {
-        selectedResources,
-        selectedResourceIds,
-    };
-};

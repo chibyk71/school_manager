@@ -1,13 +1,12 @@
 import axios from "axios";
-import { useConfirm, useDialog, useToast, type MenuEmits } from "primevue";
+import { useConfirm, useToast, type MenuEmits } from "primevue";
 import { InertiaForm, router } from '@inertiajs/vue3';
-import { reactive, ref } from "vue";
-import { ModalComponentDirectory } from "./Components/Modals/ModalDirectory";
+import { computed, reactive, ref } from "vue";
 import { useTemplateRef } from 'vue'
 
 export const getClass = (cls: string) => {
     const documentStyle = getComputedStyle(document.documentElement);
-    return documentStyle.getPropertyValue(cls);;
+    return documentStyle.getPropertyValue(cls);
 };
 
 export function useDeleteResource() {
@@ -166,3 +165,13 @@ export function usePopup<T extends 'menu' | 'overlay' = 'menu'>(
 
     return { ref, toggle, show, hide }
 }
+
+export const useSelectedResources = () => {
+    const selectedResources = ref<{ [x: string]: any; id: string | number }[]>([]);
+    const selectedResourceIds = computed(() => selectedResources.value.map(resource => resource.id));
+
+    return {
+        selectedResources,
+        selectedResourceIds,
+    };
+};

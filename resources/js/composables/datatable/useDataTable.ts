@@ -1,8 +1,8 @@
 // resources/js/composables/useDataTable.ts
 import { ref, watch, computed, onMounted } from 'vue'
 import axios from 'axios'
-import debounce from 'lodash/debounce'
 import type { ColumnDefinition, DataTableResponse } from '@/types'
+import { debounce } from 'lodash'
 
 export function useDataTable<T = any>(
     endpoint: string,

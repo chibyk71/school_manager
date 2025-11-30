@@ -92,8 +92,17 @@ Route::resource('exam.term-results.details', TermResultDetailController::class);
 Route::resource('schools', SchoolController::class);
 Route::resource('sections', SchoolSectionController::class);
 
-// User Manadement
-Route::resource('users', UserController::class);
+// User Management
+Route::get('/users', [UserController::class, 'index'])
+    ->name('users.index');
+Route::post('/users/email', [UserController::class, 'updateEmail'])
+    ->name('users.email');
+Route::post('/users/set-password', [UserController::class, 'setPassword'])
+    ->name('users.set-password');
+Route::post('/users/status', [UserController::class, 'toggleStatus'])
+    ->name('users.status');
+Route::post('/users/delete', [UserController::class, 'destroy'])
+    ->name('users.delete');
 Route::resource('guardians', GuardianController::class);
 Route::resource('staff', StaffController::class);
 Route::resource('student', StudentController::class);
