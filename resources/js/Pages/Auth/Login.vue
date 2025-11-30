@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import TextInput from '@/Components/inputs/textInput.vue';
+import TextInput from '@/Components/forms/textInput.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { Button, Card, Checkbox, IconField, Image, InputIcon, InputText, Message, Password, Toast } from 'primevue';

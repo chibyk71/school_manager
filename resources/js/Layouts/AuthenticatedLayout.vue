@@ -6,7 +6,7 @@ import PageHeader from '@/Components/menu/PageHeader.vue';
 import SidePanel from '@/Components/menu/SidePanel.vue';
 import { ButtonEmits, ButtonProps, ConfirmDialog, Toast } from 'primevue';
 import DynamicDialog from 'primevue/dynamicdialog';
-import ResourceDialogWrapper from '@/Components/Modals/ResourceDialogWrapper.vue';
+import ResourceDialogWrapper from '@/Components/Modals/ResourceDialog.vue';
 import { sidebarCollapsed } from '@/store';
 
 /**

@@ -139,7 +139,13 @@ class AuthenticatedSessionController extends Controller
                     'password.confirm'
                 );
             }
-            
+
+            // After successful authentication
+            if (auth()->user()->must_change_password) {
+                // Clear flag after they change it (you’ll handle in ChangePassword form)
+                return redirect()->route('password.change')->with('must_change', true);
+            }
+
             // -----------------------------------------------------------------
             // 7. API response (SPA / mobile)
             // -----------------------------------------------------------------

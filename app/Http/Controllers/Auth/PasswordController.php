@@ -88,6 +88,7 @@ class PasswordController extends Controller
             // Update password
             $user->update([
                 'password' => Hash::make($validated['password']),
+                'must_change_password'=> false,
             ]);
 
             // Log activity
@@ -126,7 +127,7 @@ class PasswordController extends Controller
      */
     protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts, int $lockMinutes): bool
     {
-        return app('Illuminate\Cache\RateLimiter')->tooManyAttempts($throttleKey, $maxAttempts, $lockMinutes);
+        return app('Illuminate\Cache\RateLimiter')->tooManyAttempts($throttleKey, $maxAttempts);
     }
 
     /**
