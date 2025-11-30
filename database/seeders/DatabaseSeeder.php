@@ -64,6 +64,9 @@ class DatabaseSeeder extends Seeder
         $this->callWithLog(RolesTableSeeder::class);
 
 
+        $this->callWithLog(\Database\Seeders\ConfigSeeder::class);
+
+
         \App\Models\User::factory()->create([
             'name' => 'Demo Admin',
             'email' => 'admin@demo.academy',

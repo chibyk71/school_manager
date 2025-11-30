@@ -16,12 +16,12 @@ class Config extends Model
     use HasFactory, LogsActivity, HasTableQuery, HasUuids, BelongsToSchool;
 
     protected $fillable = [
-        'label',
-        'name',
-        'applies_to',
+        'label', // UI label
+        'name', // machine name (e.g., currency)
+        'applies_to', // Model class (e.g., App\Models\School)
         'description',
         'color',
-        'options',
+        'options', // possible values to choose from
         'school_id',
     ];
 
