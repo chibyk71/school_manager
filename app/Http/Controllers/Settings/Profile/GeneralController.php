@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings\Profile;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -20,7 +21,7 @@ class GeneralController extends Controller
      * and renders the profile settings view.
      *
      * @param Request $request The incoming HTTP request.
-     * @return \Inertia\Response The Inertia response with profile settings.
+     * @return \Inertia\Response|RedirectResponse The Inertia response with profile settings.
      *
      * @throws \Exception If settings retrieval fails or user is not authenticated.
      */
@@ -33,7 +34,7 @@ class GeneralController extends Controller
             }
 
             // Fetch merged profile settings for the user
-            $settings = getMergedSettings('profile.general', $user, $request->branch_id);
+            $settings = getMergedSettings('profile.general', $user);
 
             return Inertia::render('Settings/Profile/General', compact('settings'));
         } catch (\Exception $e) {
@@ -75,11 +76,11 @@ class GeneralController extends Controller
             ]);
 
             // Fetch existing settings and merge with validated data
-            $settings = getMergedSettings('profile.general', $user, $request->branch_id);
+            $settings = getMergedSettings('profile.general', $user);
             $settings = array_merge($settings, array_filter($validated, fn($value) => $value !== null));
 
             // Save updated settings
-            SaveOrUpdateSchoolSettings('profile.general', $settings, $user, $request->branch_id);
+            SaveOrUpdateSchoolSettings('profile.general', $settings, $user);
 
             return redirect()
                 ->route('settings.profile.general.index')
