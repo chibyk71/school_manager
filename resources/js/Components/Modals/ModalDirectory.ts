@@ -9,4 +9,5 @@ export const ModalComponentDirectory: Record<string, AsyncComponentLoader> = {
     'add-staff': () => import('./Create/AddStaff.vue'),
     'department': () => import('./Create/Department.vue'),
     'assign-department-role': () => import('./Create/AssignRoleDepartmentModal.vue'),
+    'admin-password-reset': () => import('./Create/AdminPasswordResetModal.vue'),
 };
