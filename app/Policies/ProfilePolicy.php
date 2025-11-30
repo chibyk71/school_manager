@@ -6,6 +6,7 @@ use App\Models\Profile;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
 
+// TODO implement actual settings
 class ProfilePolicy
 {
     /**
