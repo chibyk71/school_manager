@@ -3,8 +3,6 @@
 declare(strict_types=1);
 
 namespace App\Traits;
-
-use App\Scopes\ParentModelScope;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -28,7 +26,7 @@ trait BelongsToPrimaryModel
             if (!method_exists(static::class, $relationship)) {
                 throw new \Exception("Invalid relationship '{$relationship}' defined in " . static::class);
             }
-            static::addGlobalScope(new ParentModelScope);
+            static::addGlobalScope(new \App\Models\Scopes\ParentModelScope());
         } catch (\Exception $e) {
             Log::error('Failed to boot BelongsToPrimaryModel: ' . $e->getMessage());
             throw $e;
