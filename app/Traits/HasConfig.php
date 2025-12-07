@@ -50,7 +50,7 @@ trait HasConfig
 
     public function getVisibleConfigs()
     {
-        $school = GetSchoolModel() ?? $this;  // Assume $this is School
+        $school = GetSchoolModel() ?? null;  // Assume $this is School
 
         return Config::visibleToSchool($school?->id)
             ->forModel($this::class)

@@ -30,7 +30,6 @@ return new class extends Migration {
             // Allow one user to have many profiles
             $table->index(['user_id', 'school_id', 'profile_type']);
             $table->index(['school_id', 'profile_type']);
-            $table->index(['profilable_type', 'profilable_id']);
             $table->unique(['user_id', 'school_id', 'profile_type'], 'unique_user_school_profile_type');
         });
     }

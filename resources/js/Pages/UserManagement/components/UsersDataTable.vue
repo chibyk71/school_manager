@@ -1,259 +1,287 @@
 <!-- resources/js/Pages/Admin/Users/components/UsersDataTable.vue -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, markRaw, ref } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
-import { useSelectedResources } from '@/helpers' // Your shared selection composable
-import { ColumnDefinition, FilterModes } from '@/types/datatables'
-import BulkActionsBar from './BulkActionsBar.vue'
-import AdvancedDataTable from '@/composables/datatable/AdvancedDataTable.vue'
-import { ProgressSpinner } from 'primevue'
 import UserTypeBadge from './UserTypeBadge.vue'
 import StatusToggle from './StatusToggle.vue'
 import UserActionsDropdown from './UserActionsDropdown.vue'
+import AdvancedDataTable from '@/composables/datatable/AdvancedDataTable.vue'
+import { ProgressSpinner } from 'primevue'
+
+import type { BulkAction, ColumnDefinition } from '@/types/datatables'
+import { useSelectedResources } from '@/helpers'
 
 const confirm = useConfirm()
 const toast = useToast()
 
-// Use your shared selection composable
-const { selectedResources, selectedResourceIds } = useSelectedResources()
-const selectedUsers = selectedResources // Alias for clarity in template
-
+// Global loading state for bulk operations & status toggle
 const loading = ref(false)
 
-// Columns – aligned with your ColumnDefinitionHelper (extra fields like full_name, type)
-const columns = ref<ColumnDefinition[]>([
-    {
-        field: 'full_name',
-        header: 'Name',
+// Inertia props – typed properly
+interface Props {
+    columns: ColumnDefinition<any>[]
+    users: any[]
+    totalRecords?: number
+    globalFilterFields?: string[]
+}
+const props = defineProps<Props>()
+
+
+const { selectedResourceIds, selectedResources: selectedUsers } = useSelectedResources()
+
+// Enhance columns with custom renders (without mutation!)
+const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
+    const cols = Array.isArray(props.columns) ? [...props.columns] : []
+
+    // Helper to find and replace or push
+    const upsert = (field: string, newCol: Partial<ColumnDefinition<any>>) => {
+        const index = cols.findIndex(c => c.field === field)
+        if (index >= 0) {
+            cols[index] = { ...cols[index], ...newCol }
+        } else {
+            cols.push({ field, header: field, ...newCol } as ColumnDefinition<any>)
+        }
+    }
+
+    // 1. User Type Badge
+        upsert('type', {
+            header: 'Type',
+            filterType: 'dropdown',
+            render: (row: any) => ({
+                component: markRaw(UserTypeBadge) as any,
+                props: { type: row.type || 'student', size: 'small' }
+            })
+        })
+
+    // 2. Status Toggle
+        upsert('is_active', {
+            header: 'Status',
+            filterType: 'boolean',
+            sortable: true,
+            align: 'center',
+            width: '120px',
+            render: (row: any) => ({
+                component: markRaw(StatusToggle) as any,
+                props: { userId: row.id, active: row.is_active },
+                on: {
+                    'update:active': (value: boolean) => toggleUserStatus(row.id, value)
+                }
+            })
+        })
+
+    // 3. Full Name + Avatar
+    upsert('full_name', {
+        header: 'Full Name',
         sortable: true,
-        matchMode: FilterModes.CONTAINS,
-        filterType: 'text',
-        bodyClass: 'font-medium text-left',
         render: (row: any) => ({
             template: 'div',
-            class: 'flex items-center gap-3',
+            class: 'flex items-center gap-3 min-w-0',
             children: [
                 {
                     template: 'img',
-                    src: row.avatar_url || '/images/avatar-placeholder.png',
-                    class: 'w-10 h-10 rounded-full object-cover border-2 border-gray-200 dark:border-gray-700 shadow-sm'
+                    src: row.avatar_url || '/assets/img/users/user-01.jpg',
+                    class: 'w-10 h-10 rounded-full object-cover flex-shrink-0 border-2 border-gray-200 dark:border-gray-700',
+                    props: { alt: `${row.full_name}'s avatar` }
                 },
                 {
                     template: 'div',
-                    class: 'flex flex-col',
+                    class: 'flex flex-col min-w-0',
                     children: [
-                        { template: 'span', text: row.full_name, class: 'font-medium text-gray-900 dark:text-white' },
-                        { template: 'span', text: row.email, class: 'text-xs text-gray-500 dark:text-gray-400' }
+                        { template: 'span', text: row.full_name, class: 'font-medium truncate' },
+                        { template: 'span', text: row.email, class: 'text-xs text-gray-500 truncate' }
                     ]
                 }
             ]
         })
-    },
-    {
-        field: 'email',
-        header: 'Email',
-        sortable: true,
-        matchMode: FilterModes.CONTAINS,
-        filterType: 'text'
-    },
-    {
-        field: 'type',
-        header: 'Type',
-        sortable: false,
-        filterType: 'dropdown',
-        filterOptions: [
-            { label: 'Student', value: 'student' },
-            { label: 'Staff', value: 'staff' },
-            { label: 'Parent/Guardian', value: 'guardian' }
-        ],
-        render: (row: any) => ({
-            component: UserTypeBadge,
-            props: { type: row.type, size: 'small' }
-        })
-    },
-    {
-        field: 'roles_display',
-        header: 'Role(s)',
-        sortable: false,
-        filterType: 'multiselect',
-        filterOptions: [], // Can fetch from API if needed
-        render: (row: any) => ({
-            template: 'div',
-            class: 'flex flex-wrap gap-1.5',
-            children: (row.roles || []).map((role: string) => ({
-                template: 'span',
-                text: role,
-                class: 'px-2.5 py-1 text-xs font-medium rounded-full bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-200'
-            }))
-        })
-    },
-    {
-        field: 'department_name',
-        header: 'Department',
-        sortable: true,
-        filterType: 'text'
-    },
-    {
-        field: 'is_active',
-        header: 'Status',
-        sortable: true,
-        filterType: 'boolean',
-        render: (row: any) => ({
-            component: StatusToggle,
-            props: { userId: row.id, active: row.is_active },
-            on: { 'update:active': (value: boolean) => toggleUserStatus(row.id, value) }
-        })
-    },
-    {
-        field: 'actions',
-        header: 'Actions',
-        sortable: false,
-        bodyClass: 'text-right pr-4',
-        render: (row: any) => ({
-            component: UserActionsDropdown,
-            props: { user: row }
-        })
-    }
-])
+    })
 
-// Bulk actions handler
-const handleBulkAction = async (action: string) => {
-    if (!selectedUsers.value.length) return
-
-    const ids = selectedResourceIds.value
-
-    switch (action) {
-        case 'deactivate':
-            confirm.require({
-                message: `Deactivate ${ids.length} user(s)?`,
-                header: 'Confirm Deactivation',
-                icon: 'pi pi-exclamation-triangle',
-                acceptLabel: 'Deactivate',
-                acceptProps: { severity: 'danger' },
-                rejectProps: { severity: 'secondary' },
-                accept: async () => {
-                    loading.value = true
-                    try {
-                        await router.patch(route('api.users.bulk-deactivate'), { ids })
-                        toast.add({ severity: 'success', summary: 'Success', detail: 'Users deactivated', life: 3000 })
-                        router.reload({ only: ['users'] })
-                    } catch (err) {
-                        toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to deactivate users', life: 5000 })
-                    } finally {
-                        loading.value = false
-                    }
-                }
+    // 4. Actions column – ensure it exists exactly once
+        const hasActions = cols.some(c => c.field === 'actions')
+        if (!hasActions) {
+            cols.push({
+                field: 'actions',
+                header: 'Actions',
+                sortable: false,
+                filterable: false,
+                frozen: true,
+                align: 'right',
+                width: '100px',
+                bodyClass: 'text-right pr-4',
+                render: (row: any) => ({
+                    component: markRaw(UserActionsDropdown) as any,
+                    props: { user: row }
+                })
             })
-            break
+        }
 
-        case 'activate':
-            confirm.require({
-                message: `Activate ${ids.length} user(s)?`,
-                header: 'Confirm Activation',
-                icon: 'pi pi-check-circle',
-                acceptLabel: 'Activate',
-                acceptProps: { severity: 'success' },
-                accept: async () => {
-                    loading.value = true
-                    try {
-                        await router.patch(route('api.users.bulk-activate'), { ids })
-                        toast.add({ severity: 'success', summary: 'Success', detail: 'Users activated', life: 3000 })
-                        router.reload({ only: ['users'] })
-                    } catch (err) {
-                        toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to activate users', life: 5000 })
-                    } finally {
-                        loading.value = false
-                    }
-                }
-            })
-            break
+    return cols
+})
 
-        case 'reset-password':
-            confirm.require({
-                message: `Send password reset links to ${ids.length} user(s)?`,
-                header: 'Bulk Password Reset',
-                icon: 'pi pi-key',
-                acceptLabel: 'Send',
-                acceptProps: { severity: 'info' },
-                accept: async () => {
-                    try {
-                        await router.post(route('api.users.bulk-reset-password'), { ids })
-                        toast.add({ severity: 'info', summary: 'Sent', detail: 'Password reset emails sent', life: 5000 })
-                    } catch (err) {
-                        toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to send resets', life: 5000 })
-                    }
-                }
-            })
-            break
-    }
-
-    // Clear selection after action
-    selectedUsers.value = []
-}
-
-// Single user status toggle
-const toggleUserStatus = async (userId: string, active: boolean) => {
+// Toggle single user status
+const toggleUserStatus = async (userId: string | number, active: boolean) => {
     loading.value = true
     try {
-        await router.patch(route('api.users.toggle-status', userId), { active })
+        await router.patch(route('api.users.toggle-status', userId), { active }, {
+            preserveState: true,
+            preserveScroll: true
+        })
+
         toast.add({
             severity: active ? 'success' : 'warn',
             summary: active ? 'Activated' : 'Deactivated',
-            detail: 'User status updated',
-            life: 3000
+            detail: 'User status updated successfully',
+            life: 4000
         })
+
+        // Only reload users data
         router.reload({ only: ['users'] })
-    } catch (err) {
-        toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to update status', life: 5000 })
+    } catch (err: any) {
+        toast.add({
+            severity: 'error',
+            summary: 'Failed',
+            detail: err.response?.data?.message || 'Could not update status',
+            life: 6000
+        })
     } finally {
         loading.value = false
     }
 }
+
+// Bulk actions – fully typed and injectable
+const bulkActions = computed<BulkAction[]>(() => [
+    {
+        label: 'Activate',
+        icon: 'pi pi-check-circle',
+        severity: 'success',
+        action: 'activate',
+        confirm: { message: 'Activate selected users?', severity: 'success' }
+    },
+    {
+        label: 'Deactivate',
+        icon: 'pi pi-ban',
+        severity: 'warn',
+        action: 'deactivate',
+        confirm: { message: 'Deactivate selected users?', severity: 'warn' }
+    },
+    {
+        label: 'Reset Password',
+        icon: 'pi pi-key',
+        severity: 'info',
+        action: 'reset-password',
+        confirm: { message: 'Send password reset emails to selected users?', severity: 'info' }
+    },
+    {
+        label: 'Delete',
+        icon: 'pi pi-trash',
+        severity: 'danger',
+        action: 'delete',
+        confirm: {
+            message: 'Permanently delete selected users? This cannot be undone.',
+            header: 'Delete Users',
+            acceptLabel: 'Delete Forever',
+            severity: 'danger'
+        }
+    }
+])
+
+// Central bulk action handler
+const handleBulkAction = async (action: string, selectedRows: any[]) => {
+    if (selectedRows.length === 0) return
+
+    const ids = selectedRows.map(r => r.id)
+    const config = bulkActions.value.find(a => a.action === action)
+
+    // Special case: assign role (future modal)
+    if (action === 'assign-role') {
+        toast.add({ severity: 'info', summary: 'Coming soon', detail: 'Bulk role assignment' })
+        return
+    }
+
+    // All other actions require confirmation
+    confirm.require({
+        message: config?.confirm?.message || 'Confirm this action',
+        header: config?.confirm?.header || 'Confirm',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: config?.confirm?.acceptLabel || 'Confirm',
+        acceptProps: { severity: config?.confirm?.severity || 'secondary' },
+        rejectLabel: 'Cancel',
+        accept: async () => {
+            loading.value = true
+            try {
+                const routeMap: Record<string, string> = {
+                    activate: 'api.users.bulk-activate',
+                    deactivate: 'api.users.bulk-deactivate',
+                    'reset-password': 'api.users.bulk-reset-password',
+                    delete: 'api.users.bulk-destroy'
+                }
+
+                const routeName = routeMap[action]
+                if (!routeName) throw new Error('Unknown action')
+
+                if (action === 'delete') {
+                    await router.delete(route(routeName), { data: { ids } })
+                } else {
+                    await router.patch(route(routeName), { ids })
+                }
+
+                toast.add({
+                    severity: 'success',
+                    summary: 'Success',
+                    detail: `${selectedRows.length} user(s) processed`,
+                    life: 5000
+                })
+
+                router.reload({ only: ['users'] })
+            } catch (err: any) {
+                toast.add({
+                    severity: 'error',
+                    summary: 'Failed',
+                    detail: err.response?.data?.message || 'Action could not be completed',
+                    life: 8000
+                })
+            } finally {
+                loading.value = false
+            }
+        }
+    })
+}
+
 </script>
 
 <template>
-    <div class="relative space-y-4">
-        <!-- Bulk Actions Bar -->
-        <BulkActionsBar v-if="selectedUsers.length" :count="selectedUsers.length" @action="handleBulkAction"
-            @clear="selectedUsers = []" />
+    <div class="relative">
+        <!-- Advanced DataTable with full power -->
+        <AdvancedDataTable endpoint="/users" :columns="enhancedColumns" :initial-data="props.users"
+            :total-records="props.totalRecords" :initial-params="{ with: 'profiles,roles,schools' }"
+            :bulk-actions="bulkActions" @bulk-action="handleBulkAction" v-model:selected-rows="selectedUsers"
+            selection-mode="multiple" :loading="loading" :global-filter-fields="globalFilterFields" />
 
-        <!-- Main Table -->
-        <AdvancedDataTable endpoint="/api/users" :columns="columns" :initial-params="{ with: ['profiles', 'roles'] }"
-            v-model:selected-rows="selectedUsers" selection-mode="multiple" :loading="loading">
-            <template #empty>
-                <div class="flex flex-col items-center justify-center py-16 text-center">
-                    <i class="pi pi-users text-7xl text-gray-300 dark:text-gray-600 mb-4" />
-                    <p class="text-lg font-medium text-gray-600 dark:text-gray-400 mb-2">No users found</p>
-                    <p class="text-sm text-gray-500 dark:text-gray-500">Try adjusting your search or filters</p>
+        <!-- Full-screen overlay loader during bulk operations -->
+        <transition name="fade">
+            <div v-if="loading"
+                class="absolute inset-0 bg-white/80 dark:bg-black/80 flex items-center justify-center z-50 rounded-lg backdrop-blur-sm"
+                aria-live="polite" aria-busy="true">
+                <div class="flex flex-col items-center gap-4">
+                    <ProgressSpinner style="width: 50px; height: 50px" />
+                    <p class="text-lg font-medium text-gray-700 dark:text-gray-300">
+                        Processing...
+                    </p>
                 </div>
-            </template>
-        </AdvancedDataTable>
-
-        <!-- Global Loading Overlay -->
-        <div v-if="loading"
-            class="absolute inset-0 bg-white/50 dark:bg-gray-900/50 flex items-center justify-center z-50 rounded-xl">
-            <ProgressSpinner style="width: 50px; height: 50px" strokeWidth="4" animationDuration=".8s" />
-        </div>
+            </div>
+        </transition>
     </div>
 </template>
 
 <style scoped>
-/* Custom overrides from style.css/app.css */
-:deep(.p-datatable) {
-    @apply overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700;
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.3s ease;
 }
 
-:deep(.p-datatable-thead > tr > th) {
-    @apply bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium text-sm py-3 px-4;
-}
-
-:deep(.p-datatable-tbody > tr > td) {
-    @apply py-4 px-4 text-sm text-gray-900 dark:text-white border-t border-gray-200 dark:border-gray-700;
-}
-
-:deep(.p-datatable-tbody > tr:hover) {
-    @apply bg-gray-50 dark:bg-gray-800/50 transition-colors;
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
 }
 </style>

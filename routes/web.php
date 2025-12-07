@@ -80,6 +80,20 @@ Route::get('/', function () {
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth'])->name('dashboard');
 
+Route::middleware('auth')->group(function () {
+
+    // Academics
+    Route::resource('schools', SchoolController::class);
+    Route::resource('sections', SchoolSectionController::class);
+
+    // User Management
+    Route::get('/users', [UserController::class, 'index'])->name('users.index');
+    Route::post('/users/email', [UserController::class, 'updateEmail'])->name('users.email');
+    Route::post('/users/set-password', [UserController::class, 'setPassword'])->name('users.set-password');
+    Route::post('/users/status', [UserController::class, 'toggleStatus'])->name('users.status');
+    Route::post('/users/delete', [UserController::class, 'destroy'])->name('users.delete');
+});
+
 // Exams
 Route::resource('exam.assessment', AssessmentController::class);
 Route::resource('exam.assessment-results', AssessmentResultController::class);
@@ -88,21 +102,7 @@ Route::resource('exam.assessment-types', AssessmentTypeController::class);
 Route::resource('exam.term-results', TermResultController::class);
 Route::resource('exam.term-results.details', TermResultDetailController::class);
 
-// Academics
-Route::resource('schools', SchoolController::class);
-Route::resource('sections', SchoolSectionController::class);
-
-// User Management
-Route::get('/users', [UserController::class, 'index'])
-    ->name('users.index');
-Route::post('/users/email', [UserController::class, 'updateEmail'])
-    ->name('users.email');
-Route::post('/users/set-password', [UserController::class, 'setPassword'])
-    ->name('users.set-password');
-Route::post('/users/status', [UserController::class, 'toggleStatus'])
-    ->name('users.status');
-Route::post('/users/delete', [UserController::class, 'destroy'])
-    ->name('users.delete');
+// guardian manage
 Route::resource('guardians', GuardianController::class);
 Route::resource('staff', StaffController::class);
 Route::resource('student', StudentController::class);

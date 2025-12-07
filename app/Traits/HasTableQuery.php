@@ -56,13 +56,13 @@ trait HasTableQuery
     {
         try {
             $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
+            // if (!$school) {
+            //     throw new \Exception('No active school found.');
+            // }
 
             // Scope query to school
             if (method_exists($this, 'scopeSchool')) {
-                $query->school($school->id);
+                $query->school($school?->id);
             }
 
             // Cache column definitions

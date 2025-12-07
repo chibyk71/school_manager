@@ -1,191 +1,277 @@
-// types/datatable.ts
-import { FilterMatchMode } from '@primevue/core/api';
+// src/types/datatables.ts
+/**
+ * @file Core type definitions for the AdvancedDataTable system
+ * @description Strongly typed, fully documented, and future-proof types used across
+ *              the entire reusable DataTable ecosystem (Vue 3 + PrimeVue + Inertia + Laravel)
+ * @author Your Name <you@example.com>
+ * @version 2.0.0
+ */
 
-// Re-export FilterMatchMode for easier access
-export const FilterModes = FilterMatchMode;
+import type { DefineComponent, FunctionalComponent, VNode, VNodeChild } from 'vue'
+import { FilterMatchMode } from '@primevue/core/api'
 
+/**
+ * Re-export PrimeVue's filter match modes for convenience and consistency
+ */
+export { FilterMatchMode as FilterModes }
+
+/**
+ * Supported column filter input types
+ */
 export type ColumnFilterType =
-    | 'text'        // standard InputText
-    | 'dropdown'    // single select Dropdown
-    | 'multiselect' // multi select
-    | 'date'        // Calendar
-    | 'number'      // numeric input
-    | 'boolean'     // checkbox
-    | 'custom';     // any other custom component
+    | 'text'
+    | 'number'
+    | 'date'
+    | 'boolean'
+    | 'dropdown'
+    | 'multiselect'
 
-export interface ColumnDefinition<T = Record<string, unknown>> {
-    field: keyof T | string;           // field in your data object
-    header: string;                    // column header text
-    sortable?: boolean;                // enable sorting
-    matchMode?: typeof FilterModes | string; // PrimeVue match mode
-    filterType?: ColumnFilterType;     // type of filter UI
-    filterOptions?: any[];             // options for dropdown/multiselect
-    filterPlaceholder?: string;        // placeholder text for filter
-    bodyClass?: string;                 // CSS class for body cells
-    headerClass?: string;               // CSS class for header
-    style?: Record<string, string>;     // inline styles
-    width?: string;                     // fixed width
-    render?: (rowData: T) => any;       // custom cell rendering
+/**
+ * Simplified declarative template syntax for custom cell rendering.
+ * Allows developers to write HTML-like structures without importing `h()`.
+ *
+ * @example
+ * { template: 'div', class: 'flex items-center gap-2', children: [
+ *   { template: 'img', src: row.avatar, class: 'w-8 h-8 rounded-full' },
+ *   { template: 'span', text: row.name }
+ * ]}
+ */
+export type TemplateNode =
+    | string
+    | {
+        template: string
+        text?: string | ((row: any) => string)
+        src?: string | ((row: any) => string)
+        class?: string | string[] | Record<string, boolean> | ((row: any) => any)
+        style?: string | Record<string, string> | ((row: any) => any)
+        props?: Record<string, any>
+        on?: Record<string, ((...args: any[]) => any)>
+        children?: TemplateNode[]
+    }
+
+/**
+ * Component-based renderer – ideal for reusable Vue components like badges, toggles, etc.
+ */
+export interface ComponentRenderer<T = any> {
+    component: DefineComponent<any> | FunctionalComponent | string
+    props?: Record<string, any> | ((row: T) => Record<string, any>)
+    on?: Record<string, ((...args: any[]) => any)>
+    slots?: Record<string, () => VNodeChild>
 }
 
 /**
- * Filter operator enum.
- * @enum {string}
+ * All possible values a column's `render` function can return.
+ * Narrowed union to improve type inference and prevent "any" leakage.
+ */
+export type CellRenderer<T = any> =
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | VNode
+    | VNode[]
+    | TemplateNode
+    | TemplateNode[]
+    | ComponentRenderer<T>
+    | ((row: T) => VNode | VNode[] | TemplateNode | string | number | null | undefined)
+
+/**
+ * Main column definition – the heart of the entire table system.
+ *
+ * All properties are optional except `field` and `header` (enforced at runtime via helper).
+ */
+export interface ColumnDefinition<T = Record<string, unknown>> {
+    /** Unique field identifier – supports dot notation (e.g., 'user.profile.name') */
+    field: keyof T | (string & {})
+
+    /** Header label – string or dynamic function */
+    header: string
+
+    /** Enable sorting on this column */
+    sortable?: boolean
+
+    /** Custom comparator for complex sorting logic */
+    sortFunction?: (a: T, b: T, order: 1 | -1) => number
+
+    /** Enable filtering UI */
+    filterable?: boolean
+
+    /** Type of filter input to render */
+    filterType?: ColumnFilterType
+
+    /** For dropdown/multiselect – static or dynamic options */
+    filterOptions?: { label: string; value: any; disabled?: boolean }[]
+
+    /** PrimeVue filter match mode */
+    filterMatchMode?: keyof typeof FilterMatchMode
+
+    /** Input placeholder */
+    filterPlaceholder?: string
+
+    /** Custom cell renderer – most powerful option */
+    render?: (row: T) => CellRenderer<T>
+
+    /** Simple value formatter – used when no full render is needed */
+    formatter?: (value: any, row: T) => string | number | boolean | null | undefined
+
+    /** Hide from visibility toggle menu */
+    hidden?: boolean
+
+    /** Cannot be hidden by user */
+    frozen?: boolean
+
+    /** Text alignment */
+    align?: 'left' | 'center' | 'right'
+
+    /** Header styling */
+    headerClass?: string | ((col: ColumnDefinition<T>) => string)
+
+    /** Body cell styling */
+    bodyClass?: string | ((row: T) => string)
+
+    /** Fixed column width */
+    width?: string
+
+    minWidth?: string
+    maxWidth?: string
+
+    /** Resizable & reorderable */
+    resizable?: boolean
+    reorderable?: boolean
+
+    /** Multi-header grouping */
+    colGroup?: string
+    colSpan?: number
+    rowSpan?: number
+
+    /** Export control */
+    exportable?: boolean
+    exportFormatter?: (value: any, row: T) => string
+
+    /** Accessibility */
+    ariaLabel?: string
+
+    /** Arbitrary metadata – useful for plugins or internal flags */
+    meta?: Record<string, any>
+}
+
+/**
+ * Comprehensive filter operator set – matches Laravel Scout / Query Builder style
  */
 export type FilterOperator =
-    /**
-     * Equal
-     */
-    | '$eq'
-    /**
-     * Equal (case-sensitive)
-     */
-    | '$eqc'
-    /**
-     * Not equal
-     */
+    | '$eq' | '$eqc'
     | '$ne'
-    /**
-     * Less than
-     */
-    | '$lt'
-    /**
-     * Less than or equal to
-     */
-    | '$lte'
-    /**
-     * Greater than
-     */
-    | '$gt'
-    /**
-     * Greater than or equal to
-     */
-    | '$gte'
-    /**
-     * Included in an array
-     */
-    | '$in'
-    /**
-     * Not included in an array
-     */
-    | '$notIn'
-    /**
-     * Contains
-     */
-    | '$contains'
-    /**
-     * Does not contain
-     */
-    | '$notContains'
-    /**
-     * Contains (case-sensitive)
-     */
-    | '$containsc'
-    /**
-     * Does not contain (case-sensitive)
-     */
-    | '$notContainsc'
-    /**
-     * Is null
-     */
-    | '$null'
-    /**
-     * Is not null
-     */
-    | '$notNull'
-    /**
-     * Is between
-     */
-    | '$between'
-    /**
-     * Is not between
-     */
-    | '$notBetween'
-    /**
-     * Starts with
-     */
-    | '$startsWith'
-    /**
-     * Starts with (case-sensitive)
-     */
-    | '$startsWithc'
-    /**
-     * Ends with
-     */
-    | '$endsWith'
-    /**
-     * Ends with (case-sensitive)
-     */
-    | '$endsWithc'
-    /**
-     * Joins the filters in an "or" expression
-     */
-    | '$or'
-    /**
-     * Joins the filters in an "and" expression
-     */
-    | '$and';
+    | '$lt' | '$lte' | '$gt' | '$gte'
+    | '$in' | '$notIn'
+    | '$contains' | '$notContains' | '$containsc' | '$notContainsc'
+    | '$startsWith' | '$startsWithc'
+    | '$endsWith' | '$endsWithc'
+    | '$null' | '$notNull'
+    | '$between' | '$notBetween'
+    | '$or' | '$and'
 
 export interface FilterCondition {
-    field: string; // The field to filter on
-    operator: FilterOperator; // The operator to use
-    value: any; // The value to compare against
+    field: string
+    operator: FilterOperator
+    value: any
 }
 
 export interface FilterGroup {
-    conditions: FilterCondition[]; // Array of conditions in this group
-    operator: '$and' | '$or'; // How to combine conditions
+    operator: '$and' | '$or'
+    conditions: Array<FilterCondition | FilterGroup>
 }
 
-export type Filter = FilterCondition | FilterGroup; // A filter can be a single condition or a group of conditions
-export type Filters = Record<string, Filter>; // Filters are keyed by field name
-export type SortOrder = 'asc' | 'desc'; // Sort order for sorting operations
+export type Filter = FilterCondition | FilterGroup
+export type Filters = Record<string, Filter>
+
+/**
+ * Sorting
+ */
+export type SortOrder = 'asc' | 'desc'
 
 export interface Sort {
-    field: string; // The field to sort by
-    order: SortOrder; // The sort order
+    field: string
+    order: SortOrder
 }
 
+/**
+ * Pagination
+ */
 export interface Pagination {
-    page: number; // Current page number
-    pageSize: number; // Number of items per page
+    page: number
+    pageSize: number
 }
 
+/**
+ * API Contracts
+ */
 export interface DataTableRequest<T = Record<string, unknown>> {
-    filters?: Filters; // Filters to apply
-    sort?: Sort[]; // Sorting options
-    pagination?: Pagination; // Pagination options
-    columns?: ColumnDefinition<T>[]; // Columns to include in the response
+    filters?: Filters
+    sort?: Sort[]
+    pagination?: Pagination
+    globalSearch?: string
+    columns?: ColumnDefinition<T>[]
+    with?: string[] // eager-loaded relations
 }
 
 export interface DataTableResponse<T = Record<string, unknown>> {
-    data: T[]; // The data for the current page
-    totalRecords: number; // Total number of records available
-    page: number; // Current page number
-    pageSize: number; // Number of items per page
+    data: T[]
+    totalRecords: number
+    page: number
+    pageSize: number
+    /** Optional metadata (e.g. aggregations, summaries) */
+    meta?: Record<string, any>
 }
 
+/**
+ * Local table state (for Pinia/localStorage persistence)
+ */
 export interface DataTableState<T = Record<string, unknown>> {
-    request: DataTableRequest<T>; // Current request state
-    response: DataTableResponse<T>; // Current response state
+    request: DataTableRequest<T>
+    response: DataTableResponse<T>
 }
 
-export interface DataTableColumnState<T = Record<string, unknown>> {
-    field: keyof T | string; // Field in the data object
-    visible: boolean; // Whether the column is visible
-    width?: string; // Width of the column
-    sortOrder?: SortOrder; // Current sort order
-    filterValue?: any; // Current filter value
+export interface DataTableColumnState {
+    field: string
+    visible: boolean
+    width?: string
+    sortOrder?: SortOrder
+    filterValue?: any
 }
 
 export interface DataTableStateWithColumns<T = Record<string, unknown>> extends DataTableState<T> {
-    columns: DataTableColumnState<T>[]; // State for each column
+    columns: DataTableColumnState[]
 }
 
-export interface DataTableColumnVisibility {
-    [key: string]: boolean; // Maps column field to visibility state
-}
+/**
+ * Bulk actions configuration
+ */
+export interface BulkAction {
+    /** Display text */
+    label: string
 
-export interface DataTableColumnSort {
-    [key: string]: SortOrder; // Maps column field to sort order
+    /** PrimeIcons class */
+    icon?: string
+
+    /** Button severity */
+    severity?: 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'help'
+
+    /** Unique action identifier sent to backend */
+    action: string
+
+    /** Optional confirmation dialog */
+    confirm?: {
+        message: string
+        header?: string
+        acceptLabel?: string
+        rejectLabel?: string
+        severity?: 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'help'
+    }
+
+    /** Disable when no rows selected */
+    disabled?: boolean
+
+    /** Show only when certain conditions are met */
+    visible?: (selectedRows: any[]) => boolean
 }

@@ -86,6 +86,7 @@ class User extends Authenticatable implements LaratrustUser
     protected $hidden = [
         'password',
         'remember_token',
+        'must_change_password',
     ];
 
     /**
@@ -108,8 +109,7 @@ class User extends Authenticatable implements LaratrustUser
     protected array $globalFilterFields = [
         'email',
         'enrollment_id',
-        'profiles.first_name',
-        'profiles.last_name',
+        'full_name',
         'profiles.phone',
         'schools.name', // Relation-based filtering
     ];
@@ -125,6 +125,12 @@ class User extends Authenticatable implements LaratrustUser
         'created_at',
         'updated_at',
         'email_verified_at',
+        'must_change_password',
+    ];
+
+    protected $appends = [
+        'type',
+        'full_name'
     ];
 
     // =================================================================

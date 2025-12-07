@@ -6,6 +6,7 @@ use App\Events\UserPasswordResetByAdmin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Notifications\UserPasswordChanged;
+use App\Support\ColumnDefinitionHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
@@ -45,50 +46,79 @@ class UserController extends Controller
      */
     public function index(Request $request)
     {
-        Gate::authorize('view-users');
-
-        // Extract eager-load relations from query string (e.g., ?with=profiles,roles)
-        $with = $request->has('with')
-            ? explode(',', $request->input('with'))
-            : ['profiles', 'roles', 'schools'];
-
+        // Gate::authorize('viewAny', User::class);
         try {
-            $users = User::tableQuery(
+            // 1. Define what relations to eager load
+            $with = $request->filled('with')
+                ? explode(',', $request->input('with'))
+                : ['profiles', 'roles:name,id', 'schools:name,id'];
+
+            // 2. Define column overrides & virtual fields (shared between table & response)
+            $extraFields = [
+                'full_name' => ['header' => 'Full Name', 'sortable' => true],
+                'is_active' => ['header' => 'Status', 'filterType' => 'boolean'],
+                'schools' => ['header' => 'School'],
+                'roles' => ['header' => 'Roles'],
+                'type' => ['header' => 'Type'],
+            ];
+
+            // 3. Run the smart paginated query
+            $paginator = User::tableQuery(
                 $request,
-                extraFields: ['full_name', 'type', 'is_active'],
-                customModifiers: [
-                    fn($query) => $query->with($with)
-                ]
+                extraFields: $extraFields,
+                customModifiers: [fn($q) => $q->with($with)]
             );
 
-            // API response for DataTable
+            // 4. Transform collection to include accessors & relation data
+            $paginator->setCollection(
+                $paginator->getCollection()->transform(fn($user) => [
+                    'id' => $user->id,
+                    'full_name' => $user->full_name,
+                    'email' => $user->email,
+                    'is_active' => $user->is_active,
+                    'type' => $user->type ?? '**',
+                    'created_at' => $user->created_at?->format('Y-m-d'),
+                    'enrollment_id' => $user->enrollment_id ?? '***',
+                    'schools' => $user->schools->pluck('name')->implode(', ') ?? null,
+                    'roles' => $user->roles->pluck('name')->implode(', '),
+                ])
+            );
+
+            // 5. Generate columns using the SAME extraFields config
+            $columns = ColumnDefinitionHelper::fromModel(new User(), $extraFields);
+
+            // 6. API response
             if ($request->wantsJson() || $request->is('api/*')) {
                 return response()->json([
-                    'data' => $users->items(),
-                    'totalRecords' => $users->total(),
-                    'page' => $users->currentPage(),
-                    'pageSize' => $users->perPage(),
+                    'data' => $paginator->items(),
+                    'totalRecords' => $paginator->total(),
+                    'page' => $paginator->currentPage(),
+                    'pageSize' => $paginator->perPage(),
                 ]);
             }
 
-            // Inertia web view
+            // 7. Inertia response
             return Inertia::render('UserManagement/User', [
-                'users' => $users,
+                'users' => $paginator,
+                'columns' => $columns,
+                'global_filter_fields' => (new User())->getGlobalFilterColumns(),
                 'can' => [
-                    'create' => $request->user()->can('create-users'),
-                    'edit' => $request->user()->can('edit-users'),
-                    'delete' => $request->user()->can('delete-users'),
-                    'reset_password' => $request->user()->can('reset-user-password'),
+                    'create' => auth()->user()->hasPermission('users.create'),
+                    'edit' => auth()->user()->hasPermission('users.edit'),
+                    'delete' => auth()->user()->hasPermission('users.delete'),
                 ],
             ]);
-        } catch (\Exception $e) {
-            Log::error('User index query failed: ' . $e->getMessage());
 
-            if ($request->wantsJson()) {
-                return response()->json(['error' => 'Failed to load users.'], 500);
-            }
+        } catch (\Throwable $e) {
+            Log::error('User index failed', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => auth()->id(),
+            ]);
 
-            return redirect()->back()->with('error', 'Failed to load users.');
+            return $request->wantsJson()
+                ? response()->json(['error' => 'Failed to load users.'], 500)
+                : back()->with('error', 'Failed to load users.');
         }
     }
 
