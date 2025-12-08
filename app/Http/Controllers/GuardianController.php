@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreGuardianRequest;
 use App\Http\Requests\UpdateGuardianRequest;
 use App\Models\Guardian;
-use App\Models\School;
+use App\Services\UserService;
 use App\Support\ColumnDefinitionHelper;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
@@ -20,13 +22,14 @@ use Inertia\Inertia;
  *
  * @package App\Http\Controllers
  */
-class GuardianController extends Controller
+class GuardianController extends BaseSchoolController
 {
+    public function __construct(protected UserService $userService) {}
+
     /**
      * Display a listing of guardians.
      *
      * @param Request $request
-     * @return \Inertia\Response
      */
     public function index(Request $request)
     {
@@ -43,49 +46,54 @@ class GuardianController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch guardians: ' . $e->getMessage());
-            return redirect()->route('dashboard')->with('error', 'Unable to load guardians: ' . $e->getMessage());
+            return $this->respondWithError($request, 'Unable to load guardians: ' . $e->getMessage());
         }
     }
 
     /**
      * Show the form for creating a new guardian.
      *
-     * @return \Inertia\Response
+     * @return \Inertia\Response| JsonResponse
      */
-    public function create()
+    public function create(Request $request)
     {
         try {
             $school = $this->getActiveSchool();
-            $customFields = Guardian::getCustomFieldsForForm($school->id, 'App\Models\Guardian');
+            $customFields = $this->getCustomFieldsForForm($school->id, 'App\Models\Guardian');
 
             return Inertia::render('Guardians/Create', [
                 'customFields' => $customFields,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to load guardian creation form: ' . $e->getMessage());
-            return redirect()->route('guardians.index')->with('error', 'Unable to load creation form: ' . $e->getMessage());
+            return $this->respondWithError($request, 'Unable to load creation form: ' . $e->getMessage());
         }
     }
 
     /**
-     * Store a newly created guardian in storage.
+     * Store a newly created guardian in storage using UserService.
      *
      * @param StoreGuardianRequest $request
-     * @return \Illuminate\Http\RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
      */
     public function store(StoreGuardianRequest $request)
     {
         try {
-            DB::transaction(function () use ($request) {
-                $school = $this->getActiveSchool();
-                $data = $request->validated();
+            $school = $this->getActiveSchool();
+            $data = $request->validated();
+            $data['profile_type'] = 'guardian';
+            $data['profilable'] = [
+                'school_id' => $school->id,
+                // Add guardian-specific fields if any
+            ];
 
-                // Create guardian
-                $guardian = Guardian::create([
-                    'user_id' => $data['user_id'],
-                    'school_id' => $school->id,
-                ]);
+            // Use UserService to create user + profile + profilable
+            $user = $this->userService->create($data);
 
+            // Get the created guardian
+            $guardian = $user->guardian;
+
+            DB::transaction(function () use ($data, $guardian) {
                 // Save custom fields
                 if (!empty($data['custom_fields'])) {
                     $guardian->saveCustomFieldResponses($data['custom_fields']);
@@ -97,10 +105,10 @@ class GuardianController extends Controller
                 }
             });
 
-            return redirect()->route('guardians.index')->with('success', 'Guardian created successfully.');
+            return $this->respondWithSuccess($request, 'Guardian created successfully.', 'guardians.index');
         } catch (\Exception $e) {
             Log::error('Failed to create guardian: ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Unable to create guardian: ' . $e->getMessage())->withInput();
+            return $this->respondWithError($request, 'Unable to create guardian: ' . $e->getMessage());
         }
     }
 
@@ -108,12 +116,12 @@ class GuardianController extends Controller
      * Display the specified guardian.
      *
      * @param Guardian $guardian
-     * @return \Inertia\Response
+     * @return \Inertia\Response| JsonResponse
      */
-    public function show(Guardian $guardian)
+    public function show(Request $request, Guardian $guardian)
     {
         try {
-            $this->authorize('view', $guardian);
+            Gate::authorize('view', $guardian);
             $guardian->load(['user', 'children', 'customFields']);
 
             return Inertia::render('Guardians/Show', [
@@ -121,7 +129,7 @@ class GuardianController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch guardian ID ' . $guardian->id . ': ' . $e->getMessage());
-            return redirect()->route('guardians.index')->with('error', 'Unable to load guardian: ' . $e->getMessage());
+            return $this->respondWithError($request, 'Unable to load guardian: ' . $e->getMessage());
         }
     }
 
@@ -129,14 +137,14 @@ class GuardianController extends Controller
      * Show the form for editing the specified guardian.
      *
      * @param Guardian $guardian
-     * @return \Inertia\Response
+     *
      */
-    public function edit(Guardian $guardian)
+    public function edit(Request $request, Guardian $guardian)
     {
         try {
-            $this->authorize('update', $guardian);
+            Gate::authorize('update', $guardian);
             $school = $this->getActiveSchool();
-            $customFields = Guardian::getCustomFieldsForForm($school->id, 'App\Models\Guardian');
+            $customFields = $this->getCustomFieldsForForm($school->id, 'App\Models\Guardian');
 
             return Inertia::render('Guardians/Edit', [
                 'guardian' => $guardian->load(['user', 'children']),
@@ -144,30 +152,29 @@ class GuardianController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to load guardian edit form for ID ' . $guardian->id . ': ' . $e->getMessage());
-            return redirect()->route('guardians.index')->with('error', 'Unable to load edit form: ' . $e->getMessage());
+            return $this->respondWithError($request, 'Unable to load edit form: ' . $e->getMessage());
         }
     }
 
     /**
-     * Update the specified guardian in storage.
+     * Update the specified guardian in storage using UserService.
      *
      * @param UpdateGuardianRequest $request
      * @param Guardian $guardian
-     * @return \Illuminate\Http\RedirectResponse
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
      */
     public function update(UpdateGuardianRequest $request, Guardian $guardian)
     {
         try {
-            $this->authorize('update', $guardian);
+            Gate::authorize('update', $guardian);
 
-            DB::transaction(function () use ($request, $guardian) {
-                $data = $request->validated();
+            $data = $request->validated();
+            $user = $guardian->user;
 
-                // Update guardian
-                $guardian->update([
-                    'user_id' => $data['user_id'] ?? $guardian->user_id,
-                ]);
+            // Use UserService to update user + profile
+            $this->userService->update($user, $data);
 
+            DB::transaction(function () use ($data, $guardian) {
                 // Save custom fields
                 if (!empty($data['custom_fields'])) {
                     $guardian->saveCustomFieldResponses($data['custom_fields']);
@@ -179,10 +186,10 @@ class GuardianController extends Controller
                 }
             });
 
-            return redirect()->route('guardians.index')->with('success', 'Guardian updated successfully.');
+            return $this->respondWithSuccess($request, 'Guardian updated successfully.', 'guardians.index');
         } catch (\Exception $e) {
             Log::error('Failed to update guardian ID ' . $guardian->id . ': ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Unable to update guardian: ' . $e->getMessage())->withInput();
+            return $this->respondWithError($request, 'Unable to update guardian: ' . $e->getMessage());
         }
     }
 
@@ -192,64 +199,21 @@ class GuardianController extends Controller
      * @param Guardian $guardian
      * @return \Illuminate\Http\JsonResponse
      */
-    public function destroy(Guardian $guardian)
+    public function destroy(Request $request, Guardian $guardian)
     {
         try {
-            $this->authorize('delete', $guardian);
+            Gate::authorize('delete', $guardian);
+            // TODO see how this works with my already esosting logic for delete composable
             $guardian->delete();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Guardian deleted successfully.',
-            ]);
+            return $request->wantsJson()
+                ? response()->json(['success' => true, 'message' => 'Guardian deleted successfully.'])
+                : $this->respondWithSuccess($request, 'Guardian deleted successfully.', 'guardians.index');
         } catch (\Exception $e) {
             Log::error('Failed to delete guardian ID ' . $guardian->id . ': ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'error' => 'Unable to delete guardian: ' . $e->getMessage(),
-            ], 500);
+            return $request->wantsJson()
+                ? response()->json(['success' => false, 'error' => 'Unable to delete guardian: ' . $e->getMessage()], 500)
+                : $this->respondWithError($request, 'Unable to delete guardian: ' . $e->getMessage(), 500);
         }
-    }
-
-    /**
-     * Get the active school model.
-     *
-     * @return \App\Models\School
-     * @throws \Exception
-     */
-    protected function getActiveSchool(): School
-    {
-        $school = GetSchoolModel();
-        if (!$school) {
-            throw new \Exception('No active school found.');
-        }
-        return $school;
-    }
-
-    /**
-     * Get custom fields for a form, scoped to the school and model type.
-     *
-     * @param int $schoolId
-     * @param string $modelType
-     * @return \Illuminate\Support\Collection
-     */
-    public static function getCustomFieldsForForm(int $schoolId, string $modelType)
-    {
-        return \App\Models\CustomField::where('school_id', $schoolId)
-            ->where('model_type', $modelType)
-            ->orderBy('sort', 'asc')
-            ->get()
-            ->map(function ($field) {
-                return [
-                    'id' => $field->id,
-                    'name' => $field->name,
-                    'label' => $field->label,
-                    'field_type' => $field->field_type,
-                    'options' => $field->options,
-                    'required' => $field->required,
-                    'placeholder' => $field->placeholder,
-                    'hint' => $field->hint,
-                ];
-            });
     }
 }

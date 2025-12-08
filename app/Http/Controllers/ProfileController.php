@@ -4,176 +4,218 @@ namespace App\Http\Controllers;
 
 use App\Models\Profile;
 use App\Models\User;
-use Illuminate\Http\Request;
+use App\Services\UserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Profile Management Controller
+ * Profile Management Controller – Enterprise Edition
  *
- * Handles self-editing of user profiles (email, name, phone, etc.).
- * Admins can edit any profile with override.
- *
- * @group Profiles
- * @authenticated
+ * Features:
+ *   • Self-profile editing
+ *   • Admin override (via policy)
+ *   • Avatar upload with Spatie Media Library
+ *   • 2FA status display
+ *   • Full policy-based authorization
+ *   • Multi-role profile merging support
  */
 class ProfileController extends Controller
 {
+    public function __construct(protected UserService $userService) {}
+
     /**
-     * Display the current user's primary profile for editing.
+     * Show profile edit form.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Inertia\Response|\Illuminate\Http\RedirectResponse
+     * Supports:
+     *   • Regular users editing their own profile
+     *   • Admins editing any profile (via ?profile_id=123)
      */
     public function edit(Request $request): Response|RedirectResponse
     {
-        $user = $request->user();
-        $profile = $user->primaryProfile;
+        $actingUser = $request->user();
+        $profileId = $request->query('profile_id');
 
-        if (!$profile) {
-            return redirect()->route('dashboard')->with('error', 'No profile found.');
+        // Determine which profile to edit
+        if ($profileId) {
+            $profile = Profile::with('user')->findOrFail($profileId);
+            // Policy: can this user edit this specific profile?
+            Gate::authorize('update', $profile);
+        } else {
+            $profile = $actingUser->primaryProfile;
+            if (! $profile) {
+                return redirect()->route('dashboard')->with('error', 'You do not have a profile yet.');
+            }
         }
 
         return Inertia::render('Profile/Edit', [
-            'profile' => $profile->load('user'),
+            'profile' => [
+                'id'               => $profile->id,
+                'user_id'          => $profile->user_id,
+                'first_name'       => $profile->first_name,
+                'last_name'        => $profile->last_name,
+                'title'            => $profile->title,
+                'gender'           => $profile->gender,
+                'phone'            => $profile->phone,
+                'email'            => $profile->user->email,
+                'photo_url'        => $profile->photo_url,
+                'profile_type'     => $profile->profile_type,
+                'school_name'      => $profile->school?->name,
+                'two_factor_enabled' => $profile->user->hasTwoFactorAuth(),
+                'is_primary'       => $profile->is_primary,
+            ],
+            'is_admin_override' => $profile->user_id !== $actingUser->id,
             'can' => [
-                'edit_others' => $request->user()->can('edit-profiles'),
+                'edit_any_profile' => $actingUser->can('update', Profile::class), // viewAny-like for profiles
             ],
         ]);
     }
 
     /**
-     * Update the authenticated user's primary profile.
-     *
-     * - Regular users can only edit their own profile
-     * - Admins can edit any profile via `profile_id` (override)
-     * - Email uniqueness enforced
-     * - Activity logged
-     *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
+     * Update profile + user data via UserService.
      */
     public function update(Request $request): JsonResponse|RedirectResponse
     {
-        $actingUser = $request->user();
-
-        // Determine which profile to edit
         $profileId = $request->input('profile_id');
-        $isAdminOverride = $actingUser->can('edit-profiles') && $profileId;
+        $profile   = $profileId ? Profile::findOrFail($profileId) : $request->user()->primaryProfile;
 
-        $profile = $isAdminOverride
-            ? Profile::findOrFail($profileId)
-            : $actingUser->primaryProfile;
+        // Full policy authorization
+        Gate::authorize('update', $profile);
 
-        if (!$profile) {
-            return $this->errorResponse('Profile not found.', 404);
-        }
-
-        // Authorization: non-admins can only edit their own
-        if (!$isAdminOverride && $profile->user_id !== $actingUser->id) {
-            return $this->errorResponse('You cannot edit this profile.', 403);
-        }
-
-        // Validate input
         $request->validate([
             'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $profile->user->id,
-            'phone' => 'nullable|string|max:20',
-            'title' => 'nullable|string|max:20',
-            'gender' => 'nullable|in:male,female,other,prefer_not',
+            'last_name'  => 'required|string|max:255',
+            'title'      => 'nullable|string|max:50',
+            'gender'     => 'nullable|in:male,female,other,prefer_not',
+            'phone'      => 'nullable|string|max:20',
+            'email'      => 'required|email|unique:users,email,' . $profile->user->id,
         ]);
 
-        // Update User (email)
-        $oldEmail = $profile->user->email;
-        $profile->user->update([
-            'email' => $request->email,
-            'email_verified_at' => $oldEmail === $request->email ? $profile->user->email_verified_at : null,
+        $data = $request->only([
+            'first_name', 'last_name', 'title', 'gender', 'phone', 'email'
         ]);
 
-        // Update Profile
-        $profile->update($request->only([
-            'first_name',
-            'last_name',
-            'phone',
-            'title',
-            'gender'
-        ]));
+        $this->userService->update($profile->user, $data);
 
-        activity()
-            ->performedOn($profile)
-            ->causedBy($actingUser)
-            ->withProperties([
-                'admin_override' => $isAdminOverride,
-                'old_email' => $oldEmail,
-            ])
-            ->log('Profile updated');
-
-        $msg = 'Profile updated successfully.';
-
-        return $request->wantsJson()
-            ? response()->json(['message' => $msg, 'profile' => $profile->fresh()])
-            : redirect()->back()->with('success', $msg);
+        return $this->successResponse('Profile updated successfully.');
     }
 
     /**
-     * [OPTIONAL] Admin-only: List all profiles with filtering/sorting/pagination.
-     *
-     * Uses Profile::tableQuery() for DataTable support.
-     *
-     * @param \Illuminate\Http\Request $request
-     * @return \Inertia\Response|\Illuminate\Http\JsonResponse
+     * Upload avatar – now fully policy-driven.
+     */
+    public function uploadAvatar(Request $request): JsonResponse
+    {
+        $request->validate([
+            'photo'      => 'required|image|mimes:jpeg,png,webp|max:5120',
+            'profile_id' => 'sometimes|exists:profiles,id',
+        ]);
+
+        $profileId = $request->input('profile_id');
+        $profile   = $profileId ? Profile::findOrFail($profileId) : $request->user()->primaryProfile;
+
+        // Policy-based authorization
+        Gate::authorize('update', $profile);
+
+        $profile->clearMediaCollection('photo');
+
+        $media = $profile->addMediaFromRequest('photo')
+            ->usingFileName("avatar-{$profile->user->id}-" . now()->timestamp)
+            ->toMediaCollection('photo');
+
+        activity()
+            ->performedOn($profile)
+            ->causedBy($request->user())
+            ->log('Profile avatar updated');
+
+        return response()->json([
+            'message'    => 'Avatar uploaded successfully.',
+            'photo_url'  => $media->getUrl('medium'),
+            'thumb_url'  => $media->getUrl('thumb'),
+        ]);
+    }
+
+    /**
+     * Admin: List all profiles with search/filtering.
      */
     public function index(Request $request): Response|JsonResponse
     {
         Gate::authorize('viewAny', Profile::class);
 
-        $with = $request->has('with')
-            ? explode(',', $request->input('with'))
-            : ['user', 'school'];
-
-        $profiles = Profile::tableQuery(
-            $request,
-            extraFields: ['full_name', 'email', 'profile_type', 'school.name'],
-            customModifiers: [
-                fn($query) => $query->with($with)
-            ]
-        );
+        $profiles = Profile::tableQuery($request, extraFields: [
+            'full_name',
+            'email'        => ['relation' => 'user', 'field' => 'email'],
+            'profile_type',
+            'school.name',
+            'photo_url',
+        ])->with(['user', 'school']);
 
         if ($request->wantsJson()) {
-            return response()->json([
-                'data' => $profiles->items(),
-                'total' => $profiles->total(),
-            ]);
+            return response()->json($profiles);
         }
 
         return Inertia::render('Profile/Index', [
             'profiles' => $profiles,
             'can' => [
-                'edit' => $request->user()->can('edit-profiles'),
+                'edit_any' => $request->user()->can('update', Profile::class),
             ],
         ]);
     }
 
+    /**
+     * Merge duplicate profiles (Admin only)
+     *
+     * Use case: User accidentally created as both Staff + Guardian → merge into one user
+     */
+    public function merge(Request $request): JsonResponse
+    {
+        Gate::authorize('merge', Profile::class); // Custom policy ability
+
+        $request->validate([
+            'primary_profile_id'   => 'required|exists:profiles,id',
+            'duplicate_profile_id' => 'required|exists:profiles,id|different:primary_profile_id',
+        ]);
+
+        $primary   = Profile::findOrFail($request->primary_profile_id);
+        $duplicate = Profile::findOrFail($request->duplicate_profile_id);
+
+        // Optional: Add business rules (e.g., same school, compatible roles)
+        if ($primary->user_id === $duplicate->user_id) {
+            return response()->json(['error' => 'Profiles already belong to the same user.'], 400);
+        }
+
+        $this->userService->mergeUsers(
+            fromUser: $duplicate->user,
+            intoUser: $primary->user,
+            keepPrimaryProfile: $primary
+        );
+
+        return response()->json([
+            'message' => 'Profiles merged successfully.',
+            'redirect' => route('profiles.edit', ['profile_id' => $primary->id]),
+        ]);
+    }
+
     // =================================================================
-    // PRIVATE HELPERS
+    // Response Helpers
     // =================================================================
 
-    /**
-     * Standardized error response.
-     *
-     * @param string $message
-     * @param int $status
-     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
-     */
-    private function errorResponse(string $message, int $status): JsonResponse|RedirectResponse
+    private function successResponse(string $message, array $extra = []): JsonResponse|RedirectResponse
+    {
+        $response = ['message' => $message] + $extra;
+
+        return request()->wantsJson()
+            ? response()->json($response)
+            : redirect()->back()->with('success', $message);
+    }
+
+    private function errorResponse(string $message, int $status = 400): JsonResponse|RedirectResponse
     {
         return request()->wantsJson()
             ? response()->json(['error' => $message], $status)
-            : redirect()->back()->with('error', $message);
+            : redirect()->back()->with('error', $message)->withInput();
     }
 }

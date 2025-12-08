@@ -7,7 +7,7 @@ use App\Http\Requests\UpdateStaffRequest;
 use App\Models\Employee\DepartmentRole;
 use App\Models\Employee\Staff;
 use App\Models\SchoolSection;
-use App\Notifications\StaffUpdatedNotification;
+use App\Services\UserService;
 use App\Support\ColumnDefinitionHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,32 +16,20 @@ use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 /**
- * Controller for managing staff members in the school management system.
- *
- * Handles CRUD operations for staff, including custom fields and school section relationships.
- * Scoped to the active school for multi-tenancy.
- *
- * @package App\Http\Controllers
+ * StaffController – Fully aligned with the new polymorphic User + Profile architecture
  */
-class StaffController extends Controller
+class StaffController extends BaseSchoolController
 {
+    public function __construct(protected UserService $userService) {}
+
     /**
-     * Display a listing of staff members with dynamic querying.
-     *
-     * @param Request $request
-     * @return \Inertia\Response|\Illuminate\Http\JsonResponse
+     * Display a listing of staff members.
      */
     public function index(Request $request)
     {
-        Gate::authorize('viewAny', Staff::class); // Policy-based authorization
-
         try {
-            $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
+            $school = $this->getActiveSchool();
 
-            // Define extra fields for table query
             $extraFields = [
                 [
                     'field' => 'user_name',
@@ -69,7 +57,6 @@ class StaffController extends Controller
                 ],
             ];
 
-            // Build query
             $query = Staff::where('school_id', $school->id)
                 ->with([
                     'user:id,name,email',
@@ -79,7 +66,6 @@ class StaffController extends Controller
                 ])
                 ->when($request->boolean('with_trashed'), fn($q) => $q->withTrashed());
 
-            // Apply dynamic table query (search, filter, sort, paginate)
             $staff = $query->tableQuery($request, $extraFields);
 
             if ($request->wantsJson()) {
@@ -92,68 +78,54 @@ class StaffController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch staff: ' . $e->getMessage());
-            return $request->wantsJson()
-                ? response()->json(['error' => 'Unable to load staff'], 500)
-                : redirect()->route('dashboard')->with(['error' => 'Unable to load staff']);
+            return $this->respondWithError($request, 'Unable to load staff list.');
         }
     }
 
     /**
-     * Show the form for creating a new staff member.
-     *
-     * @return \Inertia\Response
+     * Show form for creating a new staff member.
      */
-    public function create()
+    public function create(Request $request)
     {
-        Gate::authorize('create', Staff::class); // Policy-based authorization
-
         try {
-            $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
+            $school = $this->getActiveSchool();
 
             return Inertia::render('HRM/Staffs/Create', [
-                'customFields' => Staff::getCustomFieldsForForm($school->id, Staff::class),
+                'customFields' => $this->getCustomFieldsForForm($school->id, Staff::class),
                 'schoolSections' => SchoolSection::where('school_id', $school->id)->select('id', 'name')->get(),
                 'departmentRoles' => DepartmentRole::where('school_id', $school->id)->select('id', 'name')->get(),
-                'users' => \App\Models\User::where('school_id', $school->id)->select('id', 'name', 'email')->get(),
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to load staff creation form: ' . $e->getMessage());
-            return redirect()->route('staff.index')->with(['error' => 'Unable to load creation form']);
+            return $this->respondWithError($request, 'Unable to load creation form.');
         }
     }
 
     /**
-     * Store a newly created staff member in storage.
-     *
-     * @param StoreStaffRequest $request
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     * Store a new staff member using UserService.
      */
     public function store(StoreStaffRequest $request)
     {
-        Gate::authorize('create', Staff::class); // Policy-based authorization
-
         try {
-            $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
+            $school = $this->getActiveSchool();
+            $data = $request->validated();
 
-            $staff = DB::transaction(function () use ($request, $school) {
-                $data = $request->validated();
-                $data['school_id'] = $school->id;
+            // Enrich data for UserService
+            $data['profile_type'] = 'staff';
+            $data['profilable'] = [
+                'school_id' => $school->id,
+                'department_role_id' => $data['department_role_id'] ?? null,
+                'staff_id_number' => $data['staff_id_number'] ?? null,
+                'date_of_employment' => $data['date_of_employment'] ?? now(),
+            ];
 
-                // Create staff
-                $staff = Staff::create([
-                    'id' => \Illuminate\Support\Str::uuid(),
-                    'user_id' => $data['user_id'],
-                    'school_id' => $school->id,
-                    'department_role_id' => $data['department_role_id'] ?? null,
-                ]);
+            // Create user + profile + staff record
+            $user = $this->userService->create($data);
 
-                // Save custom fields
+            $staff = $user->staff; // Thanks to HasProfile trait
+
+            DB::transaction(function () use ($data, $staff) {
+                // Custom fields
                 if (!empty($data['custom_fields'])) {
                     $staff->saveCustomFieldResponses($data['custom_fields']);
                 }
@@ -162,149 +134,117 @@ class StaffController extends Controller
                 if (!empty($data['section_ids'])) {
                     $staff->syncSections($data['section_ids']);
                 }
-
-                // Notify the user
-                $staff->user->notify(new StaffUpdatedNotification($staff));
-
-                return $staff;
             });
 
-            return $request->wantsJson()
-                ? response()->json(['message' => 'Staff created successfully'], 201)
-                : redirect()->route('staff.index')->with(['success' => 'Staff created successfully']);
+            return $this->respondWithSuccess(
+                $request,
+                'Staff member created successfully.',
+                'staff.index'
+            );
         } catch (\Exception $e) {
             Log::error('Failed to create staff: ' . $e->getMessage());
-            return $request->wantsJson()
-                ? response()->json(['error' => 'Unable to create staff'], 500)
-                : redirect()->back()->with(['error' => 'Unable to create staff'])->withInput();
+            return $this->respondWithError($request, 'Unable to create staff member: ' . $e->getMessage());
         }
     }
 
     /**
-     * Display the specified staff member.
-     *
-     * @param Request $request
-     * @param Staff $staff
-     * @return \Illuminate\Http\JsonResponse
+     * Show a single staff member (API only).
      */
     public function show(Request $request, Staff $staff)
     {
-        Gate::authorize('view', $staff); // Policy-based authorization
-
         try {
+            Gate::authorize('view', $staff);
+
             $staff->load([
                 'user:id,name,email',
                 'schoolSections:id,name',
                 'departmentRole:id,name',
                 'customFields',
             ]);
+
             return response()->json(['staff' => $staff]);
         } catch (\Exception $e) {
-            Log::error('Failed to fetch staff ID ' . $staff->id . ': ' . $e->getMessage());
-            return response()->json(['error' => 'Unable to load staff'], 500);
+            Log::error('Failed to load staff ID ' . $staff->id . ': ' . $e->getMessage());
+            return response()->json(['error' => 'Unable to load staff member'], 500);
         }
     }
 
     /**
-     * Show the form for editing the specified staff member.
-     *
-     * @param Staff $staff
-     * @return \Inertia\Response
+     * Edit form for staff member.
      */
-    public function edit(Staff $staff)
+    public function edit(Request $request, Staff $staff)
     {
-        Gate::authorize('update', $staff); // Policy-based authorization
-
         try {
-            $school = GetSchoolModel();
-            if (!$school) {
-                throw new \Exception('No active school found.');
-            }
+            Gate::authorize('update', $staff);
+            $school = $this->getActiveSchool();
 
             $staff->load([
                 'user:id,name,email',
                 'schoolSections:id,name',
                 'departmentRole:id,name',
-                'customFields',
             ]);
 
             return Inertia::render('HRM/Staffs/Edit', [
                 'staff' => $staff,
-                'customFields' => Staff::getCustomFieldsForForm($school->id, Staff::class),
+                'customFields' => $this->getCustomFieldsForForm($school->id, Staff::class),
                 'schoolSections' => SchoolSection::where('school_id', $school->id)->select('id', 'name')->get(),
                 'departmentRoles' => DepartmentRole::where('school_id', $school->id)->select('id', 'name')->get(),
-                'users' => \App\Models\User::where('school_id', $school->id)->select('id', 'name', 'email')->get(),
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to load staff edit form for ID ' . $staff->id . ': ' . $e->getMessage());
-            return redirect()->route('staff.index')->with(['error' => 'Unable to load edit form']);
+            Log::error('Failed to load staff edit form: ' . $e->getMessage());
+            return $this->respondWithError($request, 'Unable to load edit form.');
         }
     }
 
     /**
-     * Update the specified staff member in storage.
-     *
-     * @param UpdateStaffRequest $request
-     * @param Staff $staff
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     * Update staff member using UserService.
      */
     public function update(UpdateStaffRequest $request, Staff $staff)
     {
-        Gate::authorize('update', $staff); // Policy-based authorization
-
         try {
-            $staff = DB::transaction(function () use ($request, $staff) {
-                $data = $request->validated();
+            Gate::authorize('update', $staff);
+            $data = $request->validated();
+            $user = $staff->user;
 
-                // Update staff
+            // Update core user + profile via UserService
+            $this->userService->update($user, $data);
+
+            DB::transaction(function () use ($data, $staff) {
+                // Update staff-specific fields
                 $staff->update([
-                    'user_id' => $data['user_id'] ?? $staff->user_id,
                     'department_role_id' => $data['department_role_id'] ?? $staff->department_role_id,
+                    'staff_id_number' => $data['staff_id_number'] ?? $staff->staff_id_number,
+                    'date_of_employment' => $data['date_of_employment'] ?? $staff->date_of_employment,
                 ]);
 
-                // Save custom fields
+                // Custom fields
                 if (!empty($data['custom_fields'])) {
                     $staff->saveCustomFieldResponses($data['custom_fields']);
                 }
 
-                // Sync school sections
+                // Sync sections
                 if (isset($data['section_ids'])) {
                     $staff->syncSections($data['section_ids']);
                 }
-
-                // Notify the user
-                $staff->user->notify(new StaffUpdatedNotification($staff));
-
-                if (isset($data['department_role_id']) && $data['department_role_id'] !== $staff->department_role_id) {
-                    $departmentRole = DepartmentRole::find($data['department_role_id']);
-                    if ($departmentRole) {
-                        $staff->user->notify(new \App\Notifications\DepartmentRoleUpdatedNotification($departmentRole));
-                    }
-                }
-
-                return $staff;
             });
 
-            return $request->wantsJson()
-                ? response()->json(['message' => 'Staff updated successfully'])
-                : redirect()->route('staff.index')->with(['success' => 'Staff updated successfully']);
+            return $this->respondWithSuccess(
+                $request,
+                'Staff member updated successfully.',
+                'staff.index'
+            );
         } catch (\Exception $e) {
             Log::error('Failed to update staff ID ' . $staff->id . ': ' . $e->getMessage());
-            return $request->wantsJson()
-                ? response()->json(['error' => 'Unable to update staff'], 500)
-                : redirect()->back()->with(['error' => 'Unable to update staff'])->withInput();
+            return $this->respondWithError($request, 'Unable to update staff member.');
         }
     }
 
     /**
-     * Remove the specified staff member(s) from storage.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     * Bulk delete staff members.
      */
     public function destroy(Request $request)
     {
-        Gate::authorize('delete', Staff::class); // Policy-based authorization
+        Gate::authorize('delete', Staff::class);
 
         try {
             $request->validate([
@@ -312,40 +252,34 @@ class StaffController extends Controller
                 'ids.*' => 'exists:staff,id',
             ]);
 
-            $forceDelete = $request->boolean('force');
+            $force = $request->boolean('force');
             $ids = $request->input('ids');
-            $deleted = $forceDelete
+
+            $deleted = $force
                 ? Staff::whereIn('id', $ids)->forceDelete()
                 : Staff::whereIn('id', $ids)->delete();
 
-            $message = $deleted ? 'Staff deleted successfully' : 'No staff were deleted';
+            $message = $deleted ? "Deleted {$deleted} staff member(s)" : 'No staff were deleted';
 
-            return $request->wantsJson()
-                ? response()->json(['message' => $message])
-                : redirect()->route('staff.index')->with(['success' => $message]);
+            return $this->respondWithSuccess($request, $message, 'staff.index');
         } catch (\Exception $e) {
             Log::error('Failed to delete staff: ' . $e->getMessage());
-            return $request->wantsJson()
-                ? response()->json(['error' => 'Failed to delete staff'], 500)
-                : redirect()->back()->with(['error' => 'Failed to delete staff']);
+            return $this->respondWithError($request, 'Failed to delete staff members.');
         }
     }
 
     /**
-     * Restore a soft-deleted staff member.
-     *
-     * @param Request $request
-     * @param string $id
-     * @return \Illuminate\Http\JsonResponse
+     * Restore soft-deleted staff.
      */
-    public function restore(Request $request, $id)
+    public function restore(Request $request, string $id)
     {
         $staff = Staff::withTrashed()->findOrFail($id);
-        Gate::authorize('restore', $staff); // Policy-based authorization
+        Gate::authorize('restore', $staff);
 
         try {
             $staff->restore();
-            $staff->user->notify(new StaffUpdatedNotification($staff));
+            $staff->user->notify(new \App\Notifications\StaffUpdatedNotification($staff));
+
             return response()->json(['message' => 'Staff restored successfully']);
         } catch (\Exception $e) {
             Log::error('Failed to restore staff ID ' . $id . ': ' . $e->getMessage());

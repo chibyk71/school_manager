@@ -41,7 +41,7 @@ class PermissionController extends Controller
             $formattedPermissions = $this->formatPermissions($allPermissions);
             $formattedAssignedPermissions = $this->formatPermissions($assignedPermissions);
 
-            return Inertia::render('Settings/School/Permission', [
+            return Inertia::render('UserManagement/Permission', [
                 'role' => [
                     'id' => $role->id,
                     'name' => $role->name,
@@ -76,7 +76,7 @@ class PermissionController extends Controller
                 continue;
             }
 
-            [$action, $module] = explode('-', $permission, 2);
+            [$action, $module] = explode('.', $permission, 2);
 
             if (!isset($formatted[$module])) {
                 $formatted[$module] = [];

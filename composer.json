@@ -12,9 +12,9 @@
         "php": "^8.2",
         "abbasudo/laravel-purity": "^3.3",
         "djunehor/laravel-sms": "^2.2",
-        "farhanshares/laravel-mediaman": "^0.10.0",
         "ichtrojan/laravel-otp": "*",
         "inertiajs/inertia-laravel": "^2.0",
+        "laragear/two-factor": "^3.0",
         "laravel/framework": "^11.31",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
@@ -23,6 +23,7 @@
         "santigarcor/laratrust": "^8.3",
         "spatie/laravel-activitylog": "^4.9",
         "spatie/laravel-database-mail-templates": "^3.7",
+        "spatie/laravel-medialibrary": "^11.17",
         "spatie/laravel-schemaless-attributes": "^2.5",
         "tightenco/ziggy": "^2.0"
     },

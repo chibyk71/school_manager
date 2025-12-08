@@ -3,150 +3,94 @@
 namespace App\Models\Employee;
 
 use App\Models\Misc\AttendanceLedger;
-use App\Models\Model;
 use App\Models\Profile;
-use App\Models\School;
-use App\Models\User;
-use App\Traits\BelongsToPrimaryModel;
 use App\Traits\BelongsToSchool;
 use App\Traits\BelongsToSections;
+use App\Traits\HasAvatar;                    // ← NEW: Unified avatar system
 use App\Traits\HasCustomFields;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Class Staff
+ * Staff Model – Clean & Enterprise-Ready
  *
- * Represents a staff member in the school management system, linked to a user, school sections, and attendance.
- * Supports custom fields and tenancy scoping.
- *
- * @property string $id
- * @property string $user_id
- * @property string $school_id
- * @property string|null $department_role_id
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
- * @package App\Models\Employee
+ * All personal data (name, email, phone, photo) now comes from Profile.
+ * No more duplicated accessors. Single source of truth.
  */
 class Staff extends Model
 {
-    /** @use HasFactory<\Database\Factories\StaffFactory> */
-    use HasFactory, BelongsToSections, HasCustomFields, HasTableQuery, SoftDeletes, LogsActivity, HasUuids, BelongsToPrimaryModel;
+    use HasFactory,
+        HasUuids,
+        SoftDeletes,
+        BelongsToSchool,
+        BelongsToSections,
+        HasCustomFields,
+        HasTableQuery,
+        LogsActivity,
+        HasAvatar; // ← Replaces old media handling + gives photo_url
 
-    /**
-     * The table associated with the model.
-     *
-     * @var string
-     */
     protected $table = 'staff';
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<string>
-     */
     protected $fillable = [
         'date_of_employment',
         'date_of_termination',
         'staff_id_number',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-        'deleted_at' => 'datetime',
+        'date_of_employment' => 'date',
+        'date_of_termination' => 'date',
     ];
 
-    /**
-     * Columns that should never be searchable, sortable, or filterable.
-     *
-     * @var array<string>
-     */
+    protected $appends = [
+        // Removed: full_name, short_name, phone, email, photo_url
+    ];
+
     protected array $hiddenTableColumns = [
         'created_at',
         'updated_at',
         'deleted_at',
     ];
 
-    protected $appends = [
-        'full_name',
-        'short_name',
-        'phone',
-        'email',
-        'photo_url',
-    ];
-
-    /**
-     * Columns used for global search on the model.
-     *
-     * @var array<string>
-     */
     protected array $globalFilterFields = [
-        'full_name', 'staff_id_number',
+        'staff_id_number',
+        'profile.full_name',
+        'profile.phone',
+        'profile.user.email',
     ];
 
-    /**
-     * Configure activity logging options.
-     *
-     * @return LogOptions
-     */
-    public function getActivitylogOptions(): LogOptions
-    {
-        return LogOptions::defaults()
-            ->useLogName('staff')
-            ->logFillable()
-            ->logOnlyDirty()
-            ->setDescriptionForEvent(fn(string $eventName) =>
-                "Staff {$this->full_name} ({$this->staff_id_number}) was {$eventName}"
-            );
-    }
-
-    public function profile(): HasOneThrough
-    {
-        return $this->hasOneThrough(
-            Profile::class,
-            Profile::class,
-            'profilable_id',
-            'id',
-            'id',
-            'profilable_id'
-        )->where('profilable_type', static::class);
-    }
-
-    public function getRelationshipToPrimaryModel(): string
-    {
-        return 'profile';
-    }
-
+    // =================================================================
+    // RELATIONSHIPS
+    // =================================================================
 
     /**
-     * Get the user that owns the staff.
-     *
-     * @return mixed
+     * The Profile that owns this Staff record (polymorphic).
+     * Now a clean BelongsTo instead of hasOneThrough.
      */
-    public function user()
+    public function profile(): BelongsTo
+    {
+        return $this->belongsTo(Profile::class, 'id', 'profilable_id')
+            ->where('profilable_type', self::class);
+    }
+
+    /**
+     * Shortcut to the User via Profile.
+     */
+    public function user(): BelongsTo
     {
         return $this->profile()->with('user')->select('user_id');
     }
 
     /**
-     * Get the department role associated with the staff.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * Department roles (many-to-many)
      */
     public function departmentRoles(): BelongsToMany
     {
@@ -163,18 +107,13 @@ class Staff extends Model
         return $this->departmentRoles()->with('department')->get()->pluck('department')->unique();
     }
 
-    /**
-     * Get the attendance records for the staff.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
-     */
     public function attendance(): MorphMany
     {
         return $this->morphMany(AttendanceLedger::class, 'attendable');
     }
 
     // =================================================================
-    // ACCESSORS — USED EVERYWHERE (Dashboard, Reports, SMS, PDF)
+    // ACCESSORS – Only business logic here
     // =================================================================
 
     public function getFullNameAttribute(): string
@@ -197,34 +136,83 @@ class Staff extends Model
         return $this->profile?->user?->email;
     }
 
+    /**
+     * Avatar – powered by HasAvatar trait (Spatie MediaLibrary)
+     */
     public function getPhotoUrlAttribute(): string
     {
-        return $this->getFirstMediaUrl('photo') ?: asset('images/staff-avatar.png');
+        return $this->avatarUrl('medium', $this->profile?->gender);
     }
 
     public function getYearsOfServiceAttribute(): ?int
     {
-        if (!$this->date_of_employment) return null;
-        return $this->date_of_employment->diffInYears(now());
+        return $this->date_of_employment?->diffInYears(now());
     }
 
     public function getIsActiveAttribute(): bool
     {
-        return $this->date_of_termination === null;
+        return is_null($this->date_of_termination);
     }
 
-    /**
-     * Get the school ID column name.
-     *
-     * @return string
-     */
-    public static function getSchoolIdColumn(): string
-    {
-        return 'school_id';
-    }
+    // =================================================================
+    // SCOPES
+    // =================================================================
 
     public function scopeActive($query)
     {
         return $query->whereNull('date_of_termination');
+    }
+
+    // =================================================================
+    // BOOT – Cascade soft delete safely
+    // =================================================================
+
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        static::deleting(function (self $staff) {
+            if ($staff->isForceDeleting())
+                return;
+
+            // Delete the associated Profile (which will clear avatar via HasAvatar trait)
+            if ($profile = $staff->profile) {
+                $profile->delete();
+            }
+
+            // Optional: Soft-delete User if they have no other profiles
+            if ($user = $staff->user?->first()) {
+                $remainingProfiles = $user->profiles()
+                    ->where('id', '!=', $profile?->id)
+                    ->count();
+
+                if ($remainingProfiles === 0) {
+                    $user->delete(); // Soft delete user account
+                }
+            }
+        });
+
+        // Restore cascade
+        static::restoring(function (self $staff) {
+            if ($profile = $staff->profile()->withTrashed()->first()) {
+                $profile->restore();
+            }
+        });
+    }
+
+    // =================================================================
+    // ACTIVITY LOGGING
+    // =================================================================
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->useLogName('staff')
+            ->logFillable()
+            ->logOnlyDirty()
+            ->setDescriptionForEvent(
+                fn(string $eventName) =>
+                "Staff {$this->full_name} ({$this->staff_id_number}) was {$eventName}"
+            );
     }
 }

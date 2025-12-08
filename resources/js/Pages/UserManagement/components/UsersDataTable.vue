@@ -211,6 +211,7 @@ const handleBulkAction = async (action: string, selectedRows: any[]) => {
             loading.value = true
             try {
                 const routeMap: Record<string, string> = {
+                    // TODO make sure this route are correct and active
                     activate: 'api.users.bulk-activate',
                     deactivate: 'api.users.bulk-deactivate',
                     'reset-password': 'api.users.bulk-reset-password',
@@ -220,10 +221,11 @@ const handleBulkAction = async (action: string, selectedRows: any[]) => {
                 const routeName = routeMap[action]
                 if (!routeName) throw new Error('Unknown action')
 
+                const axios = (await import('axios')).default
                 if (action === 'delete') {
-                    await router.delete(route(routeName), { data: { ids } })
+                    await axios.delete(route(routeName), { data: { ids } })
                 } else {
-                    await router.patch(route(routeName), { ids })
+                    await axios.patch(route(routeName), { ids })
                 }
 
                 toast.add({

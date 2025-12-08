@@ -33,6 +33,37 @@ class PermissionSeeder extends Seeder
             ['name' => 'update-school', 'display_name' => 'Update School', 'description' => 'Update an existing school'],
             ['name' => 'delete-school', 'display_name' => 'Delete School', 'description' => 'Delete a school'],
 
+            // Students
+            ['name' => 'student.view-any', 'display_name' => 'View All Students', 'description' => 'View list of all students in a school'],
+            ['name' => 'student.view', 'display_name' => 'View Student', 'description' => 'View individual student details'],
+            ['name' => 'student.create', 'display_name' => 'Create Student', 'description' => 'Create new students'],
+            ['name' => 'student.update', 'display_name' => 'Update Student', 'description' => 'Update student information'],
+            ['name' => 'student.delete', 'display_name' => 'Delete Student', 'description' => 'Soft delete students'],
+            ['name' => 'student.restore', 'display_name' => 'Restore Student', 'description' => 'Restore deleted students'],
+            ['name' => 'student.force-delete', 'display_name' => 'Force Delete Student', 'description' => 'Permanently delete students'],
+
+            // Staff
+            ['name' => 'staff.view-any', 'display_name' => 'View All Staff', 'description' => 'View all staff in a school'],
+            ['name' => 'staff.view', 'display_name' => 'View Staff', 'description' => 'View individual staff details'],
+            ['name' => 'staff.create', 'display_name' => 'Create Staff', 'description' => 'Create new staff'],
+            ['name' => 'staff.update', 'display_name' => 'Update Staff', 'description' => 'Update staff information'],
+            ['name' => 'staff.delete', 'display_name' => 'Delete Staff', 'description' => 'Soft delete staff'],
+            ['name' => 'staff.restore', 'display_name' => 'Restore Staff', 'description' => 'Restore deleted staff'],
+            ['name' => 'staff.force-delete', 'display_name' => 'Force Delete Staff', 'description' => 'Permanently delete staff'],
+
+            // Guardians
+            ['name' => 'guardian.view-any', 'display_name' => 'View All Guardians', 'description' => 'View list of all guardians in a school'],
+            ['name' => 'guardian.view', 'display_name' => 'View Guardian', 'description' => 'View individual guardian details'],
+            ['name' => 'guardian.create', 'display_name' => 'Create Guardian', 'description' => 'Create new guardians'],
+            ['name' => 'guardian.update', 'display_name' => 'Update Guardian', 'description' => 'Update guardian information'],
+            ['name' => 'guardian.delete', 'display_name' => 'Delete Guardian', 'description' => 'Soft delete guardians'],
+            ['name' => 'guardian.restore', 'display_name' => 'Restore Guardian', 'description' => 'Restore deleted guardians'],
+            ['name' => 'guardian.force-delete', 'display_name' => 'Force Delete Guardian', 'description' => 'Permanently delete guardians'],
+
+            ['name' => 'profile.view-any', 'display_name' => 'View All Profiles', 'description' => 'View list of all profiles (admin)'],
+            ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any user profile (admin override)'],
+            ['name' => 'profile.merge', 'display_name' => 'Merge Profiles', 'description' => 'Merge duplicate user accounts'],
+
             // Class Sections
             ['name' => 'class-sections.view', 'display_name' => 'View Class Sections', 'description' => 'View all class sections for a school'],
             ['name' => 'class-sections.create', 'display_name' => 'Create Class Sections', 'description' => 'Create new class sections for a school'],

@@ -92,6 +92,13 @@ Route::middleware('auth')->group(function () {
     Route::post('/users/set-password', [UserController::class, 'setPassword'])->name('users.set-password');
     Route::post('/users/status', [UserController::class, 'toggleStatus'])->name('users.status');
     Route::post('/users/delete', [UserController::class, 'destroy'])->name('users.delete');
+
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
+    // Admin can edit any profile
+    Route::get('/profile/{profile}/edit', [ProfileController::class, 'edit'])
+        ->name('profile.edit.override');
 });
 
 // Exams

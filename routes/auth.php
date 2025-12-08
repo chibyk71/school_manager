@@ -8,7 +8,7 @@ use App\Http\Controllers\Auth\{
     NewPasswordController,
     PasswordController,
     PasswordResetLinkController,
-    RegisteredUserController,
+    RegisteredUserController, TwoFactorController,
     VerifyEmailController          // ← this one controller handles both link & OTP
 };
 use Illuminate\Support\Facades\Route;
@@ -42,7 +42,8 @@ Route::middleware('guest')->group(function () {
     Route::post('reset-password', [NewPasswordController::class, 'store'])
         ->name('password.store');
 });
-
+Route::middleware('auth')->group(function () {
+});
 /*
 |--------------------------------------------------------------------------
 | Authenticated Routes
@@ -80,4 +81,14 @@ Route::middleware('auth')->group(function () {
     // ── Logout ────────────────────────────────────────────────────────────────
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');                     // POST is safer & matches Inertia default
+
+    // Two-Factor Authentication Challenge
+    Route::get('/2fa/enable', [TwoFactorController::class, 'enable'])->name('2fa.enable');
+    Route::post('/2fa/confirm', [TwoFactorController::class, 'confirm'])->name('2fa.confirm');
+    Route::post('/2fa/disable', [TwoFactorController::class, 'disable'])->name('2fa.disable');
 });
+
+
+Route::get('/2fa/challenge', [TwoFactorController::class, 'challenge'])->name('2fa.challenge');
+Route::post('/2fa/verify', [TwoFactorController::class, 'verify'])->name('2fa.verify');
+
