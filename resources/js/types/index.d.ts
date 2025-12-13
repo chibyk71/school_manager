@@ -5,39 +5,70 @@ export interface User {
     name: string;
     email: string;
     email_verified_at?: string;
-    schools: [{id:string, name: string}]
+    schools: [{ id: string, name: string }]
 }
 
-export type PageProps<
-    T extends Record<string, unknown> = Record<string, unknown>,
-> = T & {
+export type PageProps<T extends Record<string, unknown> = Record<string, unknown>> = T & {
+    /**
+     * Authentication & RBAC data shared globally via HandleInertiaRequests
+     */
     auth: {
-        user: User;
-    };
+        user: User | null
+
+        /**
+         * All permissions the user has (direct + inherited from roles)
+         * e.g., ['view-users', 'edit-users', 'delete-users', 'manage-students.*']
+         */
+        permissions: string[]
+
+        /**
+         * Role names the user belongs to
+         * e.g., ['admin', 'teacher', 'accountant']
+         */
+        roles: string[]
+    }
+
+    /**
+     * Flash messages from Laravel session
+     */
     flash: {
-        error: string,
-        success: string
-    };
-    darkMode: boolean;
-    school?: {id: string, name: string, image: string}
-};
+        success?: string | null
+        error?: string | null
+        info?: string | null
+        warning?: string | null
+    }
+
+    /**
+     * Dark mode toggle state (if you're using it)
+     */
+    darkMode: boolean
+
+    /**
+     * Current active school context (multi-tenant)
+     */
+    school?: {
+        id: string
+        name: string
+        logo?: string | null // renamed from 'image' → 'logo' for clarity (optional)
+    } | null
+}
 
 // resources/js/types.ts
 export interface StatisticData {
-  /** Main number to display */
-  value: number;
-  /** Title (e.g. "Total Students") */
-  title: string;
-  /** Background image for avatar */
-  image: string;
-  /** Tailwind background class (e.g. "bg-red-200/50") */
-  severity: string;
-  /** Growth change */
-  growth: number;
-  /** Active count */
-  active: number;
-  /** Inactive count */
-  inactive: number;
+    /** Main number to display */
+    value: number;
+    /** Title (e.g. "Total Students") */
+    title: string;
+    /** Background image for avatar */
+    image: string;
+    /** Tailwind background class (e.g. "bg-red-200/50") */
+    severity: string;
+    /** Growth change */
+    growth: number;
+    /** Active count */
+    active: number;
+    /** Inactive count */
+    inactive: number;
 }
 
 export interface Student {
@@ -105,31 +136,31 @@ export interface Category {
  * Represents a single menu item (leaf node or parent with submenu)
  */
 export interface MenuItem {
-  /** Display title */
-  title: string;
+    /** Display title */
+    title: string;
 
-  /** Tabler icon class (e.g., "ti ti-layout-dashboard") */
-  icon?: string;
+    /** Tabler icon class (e.g., "ti ti-layout-dashboard") */
+    icon?: string;
 
-  /** Direct route – if present, this is a clickable link */
-  link?: string;
+    /** Direct route – if present, this is a clickable link */
+    link?: string;
 
-  /** Optional badge (e.g., version number) */
-  badge?: string;
+    /** Optional badge (e.g., version number) */
+    badge?: string;
 
-  /** Nested submenu – if present, this item opens a dropdown */
-  submenu?: MenuItem[];
+    /** Nested submenu – if present, this item opens a dropdown */
+    submenu?: MenuItem[];
 }
 
 /**
  * A menu section/group that appears in the sidebar
  */
 export interface MenuSection {
-  /** Header text shown above the group */
-  header: string;
+    /** Header text shown above the group */
+    header: string;
 
-  /** List of menu items under this header */
-  items: MenuItem[];
+    /** List of menu items under this header */
+    items: MenuItem[];
 }
 
 /**
