@@ -22,15 +22,16 @@ abstract class BaseSchoolController extends Controller
     /**
      * Get the active school model.
      *
-     * @return School
+     * @return ?School
      * @throws \Exception
      */
-    protected function getActiveSchool(): School
+    protected function getActiveSchool(): School|null
     {
         $school = GetSchoolModel();
-        if (!$school) {
-            throw new \Exception('No active school found.');
-        }
+        // if (!$school) {
+        // TODO instead of this redirect to an error page with error message and maybe let he user set a school
+        //     throw new \Exception('No active school found.');
+        // }
         return $school;
     }
 
