@@ -4,13 +4,19 @@ namespace App\Models;
 
 use Abbasudo\Purity\Traits\Filterable;
 use Abbasudo\Purity\Traits\Sortable;
-use App\Traits\HasProfile; 
+use App\Models\Employee\Department;
+use App\Models\Finance\FeeConcession;
+use App\Models\Transport\Route;
+use App\Models\Transport\Vehicle\Vehicle;
+use App\Notifications\TimeTableGeneratedNotification;
+use App\Traits\HasProfile;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laragear\TwoFactor\Contracts\TwoFactorAuthenticatable;
@@ -125,7 +131,7 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
     public function canAddRole(string $roleType): bool
     {
         $current = $this->profiles->pluck('profile_type')->unique()->sort()->values();
-        
+
         if ($current->contains($roleType)) {
             return true; // Already has this role
         }
@@ -177,6 +183,72 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
             ->toArray();
     }
 
+
+        /**
+     * Get primary category (legacy fallback).
+     *
+     * @return string|null
+     */
+    public function getPrimaryCategory(): ?string
+    {
+        return $this->departments()->exists()
+            ? parent::getPrimaryCategory()
+            : null;
+    }
+
+    /**
+     * Legacy: departments relationship.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function departments(): BelongsToMany
+    {
+        return $this->belongsToMany(Department::class, 'department_user');
+    }
+
+    /**
+     * Legacy: fee concessions.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function feeConcessions(): BelongsToMany
+    {
+        return $this->belongsToMany(FeeConcession::class, 'user_fee_concessions');
+    }
+
+    /**
+     * Legacy: transport routes.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function routes(): BelongsToMany
+    {
+        return $this->belongsToMany(Route::class, 'route_vehicle', 'user_id', 'route_id')
+            ->withPivot('vehicle_id');
+    }
+
+    /**
+     * Legacy: vehicles.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function vehicles(): BelongsToMany
+    {
+        return $this->belongsToMany(Vehicle::class, 'route_vehicle', 'user_id', 'vehicle_id')
+            ->withPivot('route_id');
+    }
+
+    /**
+     * Legacy: broadcast notifications.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
+     */
+    public function receiveBroadcastNotifications(): MorphMany
+    {
+        return $this->morphMany(\Illuminate\Notifications\DatabaseNotification::class, 'notifiable')
+            ->where('type', TimeTableGeneratedNotification::class);
+    }
+
     // =================================================================
     // QUERY OPTIMIZATION
     // =================================================================
@@ -188,12 +260,6 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
             'profiles' => fn($q) => $q->select('id', 'user_id', 'profile_type', 'is_primary', 'school_id'),
             'schools:id,name',
         ]);
-    }
-
-    // Optional: Override tableQuery to always eager load
-    public function scopeTableQuery($query, $request, array $extraFields = [], array $customModifiers = [])
-    {
-        return parent::tableQuery($query->withCommonRelations(), $request, $extraFields, $customModifiers);
     }
 
     // =================================================================

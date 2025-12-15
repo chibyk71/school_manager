@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Controller for managing permissions in a single-tenant school system.
+ * @deprecated all action have been moved to roles controller
  */
 class PermissionController extends Controller
 {

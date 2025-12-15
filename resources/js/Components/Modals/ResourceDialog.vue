@@ -72,23 +72,16 @@ watch(
 
 <template>
     <Dialog v-if="current" :key="key" :visible="true" :modal="true" :closable="true" :dismissable-mask="true"
-        :block-scroll="true" :close-on-escape="true" @update:visible="closeModal" class="max-w-4xl w-full mx-4" :pt="{
+        :close-on-escape="true" @update:visible="closeModal" blockScroll class="max-w-4xl w-full mx-4" :show-header="false" :pt="{
             root: { class: 'rounded-xl shadow-2xl' },
-            header: { class: 'text-xl font-bold' },
             content: { class: 'p-6' },
-            footer: { class: 'border-t pt-4' },
+            footer: { class: 'hidden' },
         }">
-        <!-- Header -->
-        <template #header>
-            <component :is="ModalComponent" v-if="ModalComponent" v-bind="payload" @close="closeModal" />
-            <!-- Header is rendered by the modal component itself -->
-        </template>
-
         <!-- Body -->
         <template #default>
             <Suspense>
                 <template #default>
-                    <component :is="ModalComponent" v-bind="payload" @close="closeModal" />
+                    <component :is="ModalComponent" v-bind="payload" @close="closeModal" class="w-full block" />
                 </template>
 
                 <template #fallback>

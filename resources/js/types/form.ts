@@ -31,32 +31,32 @@ export type FieldType =
 export interface BaseCustomField {
     id: number;
     name: string;                    // DB: name (unique per model + school)
-    label: string | null;            // DB: label
-    placeholder: string | null;      // DB: placeholder
+    label?: string | undefined;            // DB: label
+    placeholder?: string | undefined;      // DB: placeholder
     field_type: FieldType;           // DB: field_type
-    default_value: string | null;    // DB: text (we'll parse later)
-    description: string | null;      // DB: text
-    hint: string | null;             // DB: hint
-    category: string | null;         // DB: category
+    default_value?: string | undefined;    // DB: text (we'll parse later)
+    description?: string | undefined;      // DB: text
+    hint?: string | undefined;             // DB: hint
+    category?: string | undefined;         // DB: category
     sort: number;                    // DB: sort (default 0)
     has_options: boolean;           // DB: has_options
 
     // JSON columns (stored as JSON in DB)
-    rules?: string[] | null;                    // DB: json('rules')
-    classes?: string | null;                  // DB: json('classes') → we'll convert to string
-    options?: Array<{ label: string; value: any }> | null; // DB: json('options')
-    extra_attributes?: Record<string, any> | null;         // DB: json('extra_attributes')
-    field_options?: Record<string, any> | null;           // DB: json('field_options')
+    rules?: string[] | undefined;                    // DB: json('rules')
+    classes?: string | undefined;                  // DB: json('classes') → we'll convert to string
+    options?: Array<{ label: string; value: any }> | undefined; // DB: json('options')
+    extra_attributes?: Record<string, any> | undefined;         // DB: json('extra_attributes')
+    field_options?: Record<string, any> | undefined;           // DB: json('field_options')
 
     // Casting & relations
-    cast_as?: string | null;         // DB: cast_as
+    cast_as?: string | undefined;         // DB: cast_as
     model_type: string;              // DB: model_type (e.g. App\Models\Student)
-    school_id?: string | null;       // DB: foreignUuid('school_id')
+    school_id?: string | undefined;       // DB: foreignUuid('school_id')
 
     // Timestamps
     created_at?: string;
     updated_at?: string;
-    deleted_at?: string | null;
+    deleted_at?: string | undefined;
 }
 
 // ------------------------------------------------------------------
@@ -74,14 +74,14 @@ export interface FieldCategory {
 export interface CustomField extends BaseCustomField {
     // Normalized values (converted from DB format)
     label: string;
-    placeholder: string;
-    default_value: any;
-    description: string;
-    hint: string;
-    category: string;
+    placeholder?: string;
+    default_value?: any;
+    description?: string;
+    hint?: string;
+    category?: string;
 
     // Converted from JSON string[] → string
-    classes: string;
+    classes?: string;
 
     // Parsed options (from JSON string or null)
     options: Array<{ label: string; value: any }>;
@@ -97,7 +97,7 @@ export interface CustomField extends BaseCustomField {
     search_key?: string;
     search_delay?: number;
     multiple?: boolean;
-    icon: string;
+    icon?: string;
 }
 
 // ------------------------------------------------------------------

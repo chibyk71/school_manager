@@ -24,12 +24,6 @@ Route::group(['prefix' => 'settings'], function () {
     Route::get('profile/general', [GeneralController::class, 'index'])->name('profile.setting');
     Route::post('profile/general', [GeneralController::class, 'update'])->name('profile.setting.update');
 
-    Route::get('/school/permission', [PermissionController::class, 'index'])->name('settings.permission');
-    Route::post('/school/permission', [PermissionController::class, 'store']);
-
-    Route::get('/school/roles', [RolesController::class, 'index'])->name('settings.roles');
-    Route::post('/school/roles', [RolesController::class, 'store']);
-
     Route::get('/website/localization', [LocalizationController::class, 'index'])->name('website.localization');
     Route::post('/website/localization', [LocalizationController::class, 'store'])->name('website.localization.post');
 
@@ -69,3 +63,50 @@ Route::group(['prefix' => 'settings'], function () {
     Route::get('/others/storage', [StorageController::class, 'index'])->name('settings.storage');
     Route::post('/others/storage', [StorageController::class, 'store']);
 })->middleware('auth');
+
+
+Route::prefix('admin')->middleware(['auth'])->group(function () {
+
+    // ===================================================================
+    // Roles Index & Data Table
+    // ===================================================================
+    Route::get('roles', [RolesController::class, 'index'])
+        ->name('admin.roles.index');
+
+    // // ===================================================================
+    // // Modal Data Endpoints (for Create/Edit modals)
+    // // ===================================================================
+    // // Load blank data for "Create Role" modal
+    // Route::get('roles/create-data', [RolesController::class, 'createData'])
+    //     ->name('admin.roles.create-data');
+
+    // // Load existing role data for "Edit Role" modal
+    // Route::get('roles/{role}/edit-data', [RolesController::class, 'editData'])
+    //     ->name('admin.roles.edit-data');
+
+    // ===================================================================
+    // CRUD Actions (used by modals)
+    // ===================================================================
+    Route::post('roles', [RolesController::class, 'store'])
+        ->name('admin.roles.store');
+
+    Route::put('roles/{role}', [RolesController::class, 'update'])
+        ->name('admin.roles.update');
+
+    Route::delete('roles/', [RolesController::class, 'destroy'])
+        ->name('admin.roles.destroy');
+
+    // ===================================================================
+    // Permission Management (Dedicated Page)
+    // ===================================================================
+    Route::get('roles/{role}/permissions', [RolesController::class, 'managePermissions'])
+        ->name('admin.roles.permissions.manage');
+
+    Route::put('roles/{role}/permissions', [RolesController::class, 'updatePermissions'])
+        ->name('admin.roles.permissions.update');
+
+    Route::post('roles/{role}/permissions/merge', [RolesController::class, 'mergePermissionsFrom'])
+        ->name('admin.roles.permissions.merge');
+
+    Route::get('roles/search', [RolesController::class, 'search'])->name('admin.roles.search');
+});
