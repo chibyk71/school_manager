@@ -125,7 +125,7 @@ class RolesController extends Controller
             return Inertia::render('UserManagement/Roles', [
                 'roles' => $rolesPaginated, // Paginated collection with metadata
                 'columns' => $columns,
-                'globalFliters' => ['name', 'department.name']
+                'globalFilters' => ['name', 'department.name']
             ]);
 
         } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
@@ -656,7 +656,7 @@ class RolesController extends Controller
             // ------------------------------------------------------------------
             // 6. Render Inertia Page with All Required Props
             // ------------------------------------------------------------------
-            return Inertia::render('Settings/School/Roles/Permissions', [
+            return Inertia::render('UserManagement/Permission', [
                 'role' => $role->only(['id', 'name', 'display_name']),
                 'permissionsGrouped' => $permissionsGrouped,
                 'assignedPermissionIds' => $assignedPermissionIds,

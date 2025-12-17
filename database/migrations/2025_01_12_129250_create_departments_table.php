@@ -22,15 +22,6 @@ return new class extends Migration
             $table->softDeletes();
             $table->unique(['school_id', 'name'], 'departments_school_name_unique');
         });
-
-        Schema::create('department_user', function (Blueprint $table) {
-            $table->id();
-            $table->foreignUuid('school_id')->constrained('schools')->cascadeOnDelete();
-            $table->foreignUuid('department_id')->constrained('departments')->cascadeOnDelete();
-            $table->foreignUuid('user_id')->constrained('users')->cascadeOnDelete()->index();
-            $table->timestamps();
-            $table->unique(['department_id', 'user_id'], 'department_user_unique');
-        });
     }
 
     /**
@@ -38,7 +29,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('department_user');
         Schema::dropIfExists('departments');
     }
 };

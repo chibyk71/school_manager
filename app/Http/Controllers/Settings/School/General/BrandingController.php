@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 
 /**
  * Controller for managing branding settings for schools.
+ * @deprecated All properties have been moved to School model
  */
 class BrandingController extends Controller
 {

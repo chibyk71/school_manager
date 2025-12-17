@@ -2,35 +2,56 @@
 
 namespace App\Models\Employee;
 
-use App\Models\School;
-use App\Models\SchoolSection;
-use App\Traits\BelongsToSchool;
-use App\Traits\HasTableQuery;
+use App\Traits\BelongsToSections;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * DepartmentRole model representing a pivot between Department, Role, and optionally SchoolSection.
+ * DepartmentRole – Custom Pivot Model for the department_role table
  *
- * @property string $id
- * @property string $school_id
- * @property string $department_id
- * @property string $role_id
- * @property string|null $school_section_id
- * @property string $name
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
+ * Purpose & Design Decisions (as of December 2025):
+ *
+ * 1. Why this is a full Pivot model (extends Pivot) instead of a simple pivot table:
+ *    - We need extra metadata beyond the basic department_id + role_id foreign keys.
+ *    - Specifically, we want to support optional scoping to one or more School Sections
+ *      (e.g., "HOD – Junior Section", "Subject Teacher – Senior Section").
+ *    - Using the BelongsToSections trait gives us a polymorphic many-to-many relationship
+ *      between a DepartmentRole and SchoolSection(s), allowing the same role (e.g. "teacher")
+ *      to exist in multiple sections within the same department without duplicating rows.
+ *
+ * 2. Why we kept a dedicated model even after simplifying the architecture:
+ *    - Standard Laratrust role assignment (User ↔ Role) handles permissions perfectly.
+ *    - Department ↔ Role assignment handles functional grouping.
+ *    - The additional section scoping provides real-world flexibility for schools that
+ *      separate Junior/Secondary, Primary, Boarding, etc.
+ *    - This avoids creating duplicate global roles like "teacher_junior" and "teacher_senior".
+ *
+ * 3. Current relationships:
+ *    - DepartmentRole belongsTo Department
+ *    - DepartmentRole belongsTo Role (global Laratrust role)
+ *    - DepartmentRole belongsToMany SchoolSection (via BelongsToSections trait)
+ *
+ * 4. Future considerations:
+ *    - If a school never uses sections, the school_section links will simply remain empty.
+ *    - Custom display names per department/section can be derived in the frontend by
+ *      combining Role::display_name + Department::name + Section names.
+ *    - No direct User ↔ DepartmentRole assignment – permissions and base assignment
+ *      come from global Role → User (Laratrust), organizational grouping from Department → Role.
+ *
+ * This design strikes the right balance:
+ *   • Keeps RBAC simple and standard (Laratrust)
+ *   • Provides meaningful department + section grouping
+ *   • Avoids redundant direct user-department pivots
+ *   • Remains performant and maintainable
  */
 class DepartmentRole extends Pivot
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
+    use HasFactory, SoftDeletes, LogsActivity, HasUuids, BelongsToSections;
 
     /**
      * The table associated with the model.
@@ -40,16 +61,22 @@ class DepartmentRole extends Pivot
     protected $table = 'department_role';
 
     /**
+     * Indicates if the model should increment the primary key.
+     * Pivot models with UUIDs do not auto-increment.
+     *
+     * @var bool
+     */
+    public $incrementing = false;
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array<string>
      */
     protected $fillable = [
-        'school_id',
         'department_id',
         'role_id',
-        'school_section_id',
-        'name',
+        // school_section links are managed through the BelongsToSections trait
     ];
 
     /**
@@ -64,30 +91,6 @@ class DepartmentRole extends Pivot
     ];
 
     /**
-     * Columns that should never be searchable, sortable, or filterable.
-     *
-     * @var array<string>
-     */
-    protected array $hiddenTableColumns = [
-        'school_id',
-        'created_at',
-        'updated_at',
-        'deleted_at',
-    ];
-
-    /**
-     * Columns used for global search on the model.
-     *
-     * @var array<string>
-     */
-    protected array $globalFilterFields = [
-        'name',
-        'department.name',
-        'role.name',
-        'school_section.name',
-    ];
-
-    /**
      * Configure activity logging options.
      *
      * @return LogOptions
@@ -98,61 +101,22 @@ class DepartmentRole extends Pivot
             ->useLogName('department_role')
             ->logFillable()
             ->logOnlyDirty()
-            ->setDescriptionForEvent(fn(string $eventName) => "Department role '{$this->name}' was {$eventName}");
+            ->setDescriptionForEvent(fn(string $eventName) => "Department role assignment was {$eventName}");
     }
 
     /**
-     * Get the school associated with the department role.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function school(): BelongsTo
-    {
-        return $this->belongsTo(School::class);
-    }
-
-    /**
-     * Get the department associated with the department role.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * Get the department that this role assignment belongs to.
      */
     public function department(): BelongsTo
     {
-        return $this->belongsTo(Department::class);
+        return $this->belongsTo(\App\Models\Employee\Department::class);
     }
 
     /**
-     * Get the role associated with the department role.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * Get the global role (Laratrust) that is assigned to the department.
      */
     public function role(): BelongsTo
     {
         return $this->belongsTo(\App\Models\Role::class);
-    }
-
-    /**
-     * Get the school section associated with the department role.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function schoolSection(): BelongsTo
-    {
-        return $this->belongsTo(SchoolSection::class);
-    }
-
-    /**
-     * Get the staff members associated with the department role.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
-     */
-    public function staff(): BelongsToMany
-    {
-        return $this->belongsToMany(
-            \App\Models\Employee\Staff::class,
-            'staff_department_role',
-            'department_role_id',
-            'staff_id'
-        );
     }
 }
