@@ -1,270 +1,553 @@
-// resources/js/composables/useDataTable.ts
-import { shallowRef, ref, watch, computed, onMounted, type ShallowRef, readonly } from 'vue'
-import { router } from '@inertiajs/vue3'
-import axios from 'axios'
-import { useToast } from 'primevue/usetoast'
+import axios from 'axios';
 import type {
     ColumnDefinition,
-    DataTableResponse,
     Sort,
-    BulkAction
-} from '@/types/datatables'
-import { debounce } from 'lodash'
+    BulkAction,
+    FilterOperator
+} from '@/types/datatables';
+
+import { useToast } from 'primevue/usetoast';
+import { computed, readonly, ref, shallowRef, onMounted } from 'vue';
+import { LRUCache } from 'lru-cache';
+import debounce from 'lodash/debounce';
+import qs from 'qs'; // Make sure to: npm install qs
+import throttle from 'lodash/throttle';
 
 interface UseDataTableOptions<T> {
-    initialParams?: Record<string, any>
-    initialData?: T[]
-    bulkActions?: BulkAction[]
-    useInertia?: boolean
-    /** Max retry attempts on network failure */
-    maxRetries?: number
+    initialParams?: Record<string, any>;
+    initialData?: T[];
+    bulkActions?: BulkAction[];
+    maxRetries?: number;
+    clientSideThreshold?: number;
+    windowSize?: number;
+    pageSize?: number;
+    cacheMaxWindows?: number;
+    /** Key to access the actual rows array from API response (e.g., 'data', 'rows', 'items') */
+    dataProperty?: string;
 }
 
-/**
- * Enterprise-grade DataTable composable
- * • Fully supports Inertia + Axios
- * • Multi-column sorting
- * • Shallow refs for 10k+ rows performance
- * • Safe filter initialization (no PrimeVue crashes)
- * • Exponential backoff retry
- * • SSR-friendly
- */
 export function useDataTable<T extends { id?: string | number } = any>(
     endpoint: string,
     columns: ColumnDefinition<T>[],
     options: UseDataTableOptions<T> = {}
 ) {
-    const toast = useToast()
+    const toast = useToast();
 
     const {
         initialParams = {},
-        initialData,
+        initialData = [] as T[],
         bulkActions = [],
-        useInertia = true,
-        maxRetries = 3
-    } = options
+        maxRetries = 3,
+        clientSideThreshold = 1000,
+        windowSize = 200,
+        pageSize = 20,
+        cacheMaxWindows = 5,
+        dataProperty = undefined, // default: response.data.data → now configurable
+    } = options;
 
     // =================================================================
-    // 1. STATE – optimized with shallowRef for large datasets
+    // STATE
     // =================================================================
-    const rows = shallowRef<T[]>(initialData ?? [])
-    const totalRecords = ref(0)
-    const loading = ref(false)
-    const fetching = ref(false) // prevents double-fetch on rapid triggers
-    const error = ref<string | null>(null)
 
-    // Pagination
-    const currentPage = ref(1)
-    const perPage = ref(10)
+    const rows = shallowRef<T[]>(initialData);           // Visible page (server-side)
+    const allRows = shallowRef<T[]>([]);                 // Full dataset (client-side)
+    const totalRecords = ref(0);
+    const loading = ref(false);
+    const fetching = ref(false);
+    const error = ref<string | null>(null);
 
-    // Sorting – now supports multi-column
-    const sorts = ref<Sort[]>([])
+    const currentPage = ref(1);
+    const perPage = ref(pageSize);
 
-    // Selection & visibility
-    const selectedRows = shallowRef<T[]>([])
-    const hiddenColumns = ref<string[]>([])
-
-    // Filters – shallowRef + guaranteed initialization
+    const sorts = ref<Sort[]>([]);
     const filters = shallowRef<Record<string, { value: any; matchMode: string }>>({
-        global: { value: '', matchMode: 'contains' }
-    })
+        global: { value: '', matchMode: 'contains' },
+    });
 
-    // Ensure every column has a filter model (PrimeVue requires this)
-    // Ensure every filterable column has a model (PrimeVue requires this)
+    const selectedRows = shallowRef<T[]>([]);
+    const hiddenColumns = ref<string[]>([]);
+
+    const isClientSide = ref(false);
+
+    // Server-side window cache: windowKey → array of rows in that window
+    const windowCache = new LRUCache<number, T[]>({
+        max: cacheMaxWindows,
+    });
+
+    // =================================================================
+    // FILTER INITIALIZATION
+    // =================================================================
+
     const ensureFiltersInitialized = () => {
         for (const col of columns) {
-            const key = String(col.field)
-            if (Object.prototype.hasOwnProperty.call(filters.value, key)) continue
-            if (!col.filterable) continue
+            const key = String(col.field);
+            if (key in filters.value || !col.filterable) continue;
             filters.value[key] = {
                 value: null,
-                matchMode: col.filterMatchMode ?? 'contains'
+                matchMode: col.filterMatchMode ?? 'contains',
+            };
+
+            if (col.hidden) {
+                hiddenColumns.value.push(col.field as string)
             }
         }
-    }
-    ensureFiltersInitialized()
+    };
+    ensureFiltersInitialized();
 
     // =================================================================
-    // 2. FETCH LOGIC – with retry + exponential backoff
+    // HELPER: Extract data array from response using dataProperty
     // =================================================================
-    const fetchWithRetry = async (attempt = 1): Promise<DataTableResponse<T>> => {
-        const params = {
-            page: currentPage.value,
-            per_page: perPage.value,
-            sorts: sorts.value.length ? JSON.stringify(sorts.value) : undefined,
-            search: filters.value.global.value || undefined,
-            filters: JSON.stringify(filters.value),
-            ...initialParams
-        }
 
-        if (useInertia) {
-            router.get(endpoint, params, {
-                preserveState: true,
-                preserveScroll: true,
-                replace: true,
-                only: ['data', 'totalRecords'], // optional: only reload table data
-            })
-            return { data: [], totalRecords: 0, page: 1, pageSize: perPage.value }
-        }
+    const extractData = (responseData: any): T[] => {
+        return dataProperty ? responseData[dataProperty].data ?? [] : responseData.data ?? [];
+    };
 
-        const response = await axios.get<DataTableResponse<T>>(endpoint, { params })
-        return response.data
-    }
+    const extractTotal = (responseData: any): number => {
+        return dataProperty ? responseData[dataProperty].total : responseData.total ?? 0;
+    };
 
-    const fetchData = async () => {
-        if (fetching.value) return
-        fetching.value = true
-        loading.value = true
-        error.value = null
 
-        let attempt = 1
-        while (attempt <= maxRetries) {
-            try {
-                const data = await fetchWithRetry(attempt)
+    // =================================================================
+    // CORE FETCH – Fully Revised with qs + Laravel Purity Support
+    // =================================================================
 
-                rows.value = data.data ?? []
-                totalRecords.value = data.totalRecords ?? 0
-                break // success → exit retry loop
-            } catch (err: any) {
-                if (attempt === maxRetries) {
-                    const msg = err.response?.data?.message || err.message || 'Network error'
-                    error.value = msg
-                    toast.add({
-                        severity: 'error',
-                        summary: 'Failed to load data',
-                        detail: msg,
-                        life: 8000
-                    })
-                } else {
-                    // Exponential backoff: 300 → 900 → 2700ms
-                    await new Promise(r => setTimeout(r, 300 * 2 ** (attempt - 1)))
-                    attempt++
+    /**
+     * Core data fetching function with hybrid mode support:
+     * - full_load: Fetch entire dataset (client-side when ≤ threshold)
+     * - window: Fetch larger chunk for server-side prefetching
+     * - regular: Single paginated page
+     *
+     * Now uses 'qs' library to properly format filters & sorts for Laravel Purity
+     */
+    const fetchData = async (page: number, fullLoad = false, isWindow = false) => {
+        if (fetching.value) return; // Prevent concurrent requests
+
+        fetching.value = true;
+        loading.value = true;
+        error.value = null;
+
+        try {
+            // =================================================================
+            // 1. Calculate pagination / window parameters
+            // =================================================================
+            const pagesPerWindow = windowSize / perPage.value; // e.g., 200 rows / 20 per page = 10 pages per window
+            const windowPage = isWindow
+                ? Math.floor((page - 1) / pagesPerWindow) + 1 // Which window contains the requested page
+                : page;
+
+            // =================================================================
+            // 2. Map PrimeVue filters → Laravel Purity format
+            // =================================================================
+            const purityFilters: Record<string, any> = {};
+
+            /**
+             * Maps PrimeVue's FilterMatchMode (or string equivalents) to Laravel Purity operators
+             * 
+             * PrimeVue match modes: https://primevue.org/datatable/#filtermatchmode
+             * Laravel Purity operators: https://abbasudo.github.io/laravel-purity/#operators
+             */
+            const matchModeToOperator: Record<string, FilterOperator> = {
+                // Text-based filters
+                contains: '$contains',
+                notContains: '$notContains',
+                startsWith: '$startsWith',
+                endsWith: '$endsWith',
+
+                // Equality
+                equals: '$eq',
+                notEquals: '$ne',
+
+                // Case-insensitive variants (Purity supports them)
+                containsCaseInsensitive: '$containsc',
+                notContainsCaseInsensitive: '$notContainsc',
+                startsWithCaseInsensitive: '$startsWithc',
+                endsWithCaseInsensitive: '$endsWithc',
+                equalsCaseInsensitive: '$eqc',
+
+                // Numeric & date comparisons
+                lt: '$lt',           // less than
+                lte: '$lte',         // less than or equal
+                gt: '$gt',           // greater than
+                gte: '$gte',         // greater than or equal
+
+                // Array-based
+                in: '$in',
+                notIn: '$notIn',
+
+                // Range
+                between: '$between',
+                notBetween: '$notBetween',
+
+                // Null checks
+                is: '$null',         // PrimeVue uses "is" for null
+                isNot: '$notNull',   // PrimeVue uses "isNot" for not null
+
+                // Date-specific (PrimeVue provides these)
+                dateIs: '$eq',           // exact date match
+                dateIsNot: '$ne',
+                dateBefore: '$lt',
+                dateAfter: '$gt',
+            } as const;
+
+            // Process all column filters (skip 'global' – handled separately as 'search')
+            Object.keys(filters.value).forEach((field) => {
+                const filter = filters.value[field];
+                if (field === 'global' || filter.value === null || filter.value === '') {
+                    return; // Skip empty or global (already sent as 'search')
                 }
-            } finally {
-                loading.value = false
-                fetching.value = false
+
+                const operator = matchModeToOperator[filter.matchMode] || '$eq';
+                purityFilters[field] = { [operator]: filter.value };
+            });
+
+            // =================================================================
+            // 3. Map PrimeVue multi-sort → Laravel Purity format
+            // =================================================================
+            const puritySorts: string[] = sorts.value.map((sort) => {
+                const order = sort.order === 'asc' ? 'asc' : 'desc';
+                return `${sort.field}:${order}`;
+            });
+
+            // =================================================================
+            // 4. Build base request parameters
+            // =================================================================
+            const baseParams: Record<string, any> = {
+                // Pagination / window control
+                page: fullLoad ? 1 : windowPage,
+                per_page: fullLoad
+                    ? clientSideThreshold + 100 // Fetch slightly more than threshold to be safe
+                    : isWindow
+                        ? windowSize
+                        : perPage.value,
+
+                // Global search (handled separately in backend HasTableQuery)
+                search: filters.value.global?.value?.trim() || undefined,
+
+                // Laravel Purity sorting (multi-sort supported)
+                ...(puritySorts.length > 0 && { sort: puritySorts }),
+
+                // Laravel Purity filtering (nested bracket format via qs)
+                ...(Object.keys(purityFilters).length > 0 && { filters: purityFilters }),
+
+                // Hybrid mode flags
+                full_load: fullLoad || undefined,
+
+                // Any static params (e.g., tenant_id, status=active)
+                ...initialParams,
+            };
+
+            // =================================================================
+            // 5. Serialize params using 'qs' for correct bracket/array encoding
+            // =================================================================
+            const queryString = qs.stringify(baseParams, {
+                arrayFormat: 'indices',   // Ensures sort[0], sort[1], filters[field][$eq], etc.
+                encode: true,             // Proper URL encoding
+                skipNulls: true,          // Don't send undefined/null values
+            });
+
+            const url = queryString ? `${endpoint}?${queryString}` : endpoint;
+
+            // =================================================================
+            // 6. Perform request with retry logic
+            // =================================================================
+            let attempts = 0;
+            let response;
+
+            while (attempts < maxRetries) {
+                try {
+                    response = await axios.get(url);
+                    break; // Success → exit retry loop
+                } catch (err: any) {
+                    attempts++;
+
+                    if (attempts >= maxRetries) {
+                        // Final failure
+                        const msg = err.response?.data?.message || err.message || 'Network error';
+                        error.value = msg;
+                        toast.add({
+                            severity: 'error',
+                            summary: 'Failed to load data',
+                            detail: msg,
+                            life: 8000,
+                        });
+                        throw err; // Re-throw to exit
+                    }
+
+                    // Exponential backoff before retry
+                    await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempts)));
+                }
+            }
+
+            // =================================================================
+            // 7. Extract and process response data
+            // =================================================================
+            const data = response!.data;
+
+            // Support nested data (e.g., dataProperty = 'roles.data')
+            const rowsData = extractData(data);
+            const total = extractTotal(data);
+
+            // =================================================================
+            // 8. Update state based on fetch mode
+            // =================================================================
+            if (fullLoad) {
+                // Client-side mode: store everything
+                allRows.value = rowsData;
+                totalRecords.value = total || rowsData.length;
+                isClientSide.value = true;
+            } else if (isWindow) {
+                // Server-side: cache window for fast scrolling
+                windowCache.set(windowPage, rowsData);
+                totalRecords.value = total || totalRecords.value;
+            } else {
+                // Single page (fallback or initial load)
+                rows.value = rowsData;
+                totalRecords.value = total || 0;
+            }
+        } catch (finalError) {
+            // Ensure loading state is cleared even on error
+            console.error('[useDataTable] Fetch failed after retries:', finalError);
+        } finally {
+            // Always reset loading flags
+            loading.value = false;
+            fetching.value = false;
+        }
+    };
+
+    // =================================================================
+    // CACHE HELPERS
+    // =================================================================
+
+    const getPageFromCache = (page: number): T[] => {
+        const pagesPerWindow = windowSize / perPage.value;
+        const windowKey = Math.floor((page - 1) / pagesPerWindow) + 1;
+        const windowData = windowCache.get(windowKey);
+        if (!windowData) return [];
+
+        const offset = ((page - 1) % pagesPerWindow) * perPage.value;
+        return windowData.slice(offset, offset + perPage.value);
+    };
+
+    // =================================================================
+    // PREFETCH
+    // =================================================================
+
+    const prefetchNextWindow = throttle(async (currPage: number) => {
+        if (isClientSide.value) return;
+
+        const pagesPerWindow = windowSize / perPage.value;
+        const positionInWindow = (currPage - 1) % pagesPerWindow;
+
+        if (positionInWindow / pagesPerWindow >= 0.75) {
+            const nextWindowKey = Math.floor((currPage - 1) / pagesPerWindow) + 2;
+            if (!windowCache.has(nextWindowKey)) {
+                const startPage = (nextWindowKey - 1) * pagesPerWindow + 1;
+                await fetchData(startPage, false, true);
             }
         }
-    }
+    }, 500);
 
     // =================================================================
-    // 3. WATCHERS – shallow + debounced
+    // LAZY LOAD (server-side only)
     // =================================================================
-    const debouncedFetch = debounce(() => {
-        currentPage.value = 1 // reset page on filter/sort change
-        fetchData()
-    }, 400)
 
-    watch([filters, sorts], debouncedFetch, { deep: false }) // shallow = fast
-    watch([currentPage, perPage], fetchData)
+    const loadLazyData = async () => {
+        if (isClientSide.value || fetching.value) return;
 
-    // =================================================================
-    // 4. EVENT HANDLERS
-    // =================================================================
-    const onPage = (event: { page: number; rows: number }) => {
-        currentPage.value = event.page + 1
-        perPage.value = event.rows
-    }
-
-    const onSort = (event: { sortField: string; sortOrder: 1 | -1; multiSortMeta: Sort[] }) => {
-        if (event.multiSortMeta && event.multiSortMeta.length) {
-            sorts.value = event.multiSortMeta
-        } else {
-            // Single sort fallback
-            sorts.value = [{ field: event.sortField, order: event.sortOrder === 1 ? 'asc' : 'desc' }]
+        // Try cache first
+        const cached = getPageFromCache(currentPage.value);
+        if (cached.length > 0) {
+            rows.value = cached;
+            prefetchNextWindow(currentPage.value);
+            return;
         }
-        fetchData()
-    }
+
+        // Cache miss → fetch centered window
+        const pagesPerWindow = windowSize / perPage.value;
+        const centeredStart = Math.max(1, currentPage.value - Math.floor(pagesPerWindow / 2));
+        await fetchData(centeredStart, false, true);
+        rows.value = getPageFromCache(currentPage.value);
+        prefetchNextWindow(currentPage.value);
+    };
+
+    // =================================================================
+    // EVENT HANDLERS
+    // =================================================================
+
+    const onPage = (event: { page: number; rows: number }) => {
+        currentPage.value = event.page + 1;
+        perPage.value = event.rows;
+
+        if (isClientSide.value) {
+            // PrimeVue handles pagination automatically
+            return;
+        }
+
+        loadLazyData();
+    };
+
+    const onSort = (event: { multiSortMeta?: Sort[] }) => {
+        if (event.multiSortMeta) {
+            sorts.value = event.multiSortMeta;
+        }
+
+        if (isClientSide.value) {
+            // PrimeVue handles sorting
+            return;
+        }
+
+        windowCache.clear();
+        currentPage.value = 1;
+        loadLazyData();
+    };
+
+    const onFilter = debounce(() => {
+        if (isClientSide.value) {
+            // PrimeVue handles filtering
+            return;
+        }
+
+        windowCache.clear();
+        currentPage.value = 1;
+        loadLazyData();
+    }, 400);
+
+    // =================================================================
+    // INITIAL LOAD
+    // =================================================================
+
+    onMounted(async () => {
+
+        // Step 1: Load first page to get total count
+        if (!totalRecords.value && !rows.value) {
+            await fetchData(1);
+        }
+
+        if (totalRecords.value <= clientSideThreshold) {
+            // Small dataset → full client-side
+            await fetchData(1, true);
+            rows.value = allRows.value; // Bind full data
+        } else {
+            // Large dataset → server-side with first window
+            await fetchData(1, false, true);
+            rows.value = getPageFromCache(1);
+        }
+    });
+
+    // =================================================================
+    // REFRESH & BULK
+    // =================================================================
 
     const refresh = () => {
-        selectedRows.value = []
-        currentPage.value = 1
-        fetchData()
-    }
+        selectedRows.value = [];
+        currentPage.value = 1;
+        if (!isClientSide.value) windowCache.clear();
+        if (isClientSide.value) {
+            fetchData(1, true);
+        } else {
+            fetchData(1, false, true);
+        }
+    };
 
-    // =================================================================
-    // 5. BULK ACTIONS & EXPORT
-    // =================================================================
-    const performBulkAction = async (action: string, payload = {}) => {
-        loading.value = true
+    const performBulkAction = async (action: string) => {
+        if (!selectedRows.value.length) return;
+
         try {
             await axios.post(`${endpoint}/bulk`, {
                 action,
                 ids: selectedRows.value.map(r => r.id),
-                ...payload
-            })
-            toast.add({ severity: 'success', summary: 'Success', detail: 'Action completed' })
-            selectedRows.value = []
-            refresh()
+            });
+            toast.add({ severity: 'success', summary: 'Bulk action completed' });
+            refresh();
         } catch (err: any) {
-            toast.add({
-                severity: 'error',
-                summary: 'Failed',
-                detail: err.response?.data?.message || 'Action failed',
-                life: 8000
-            })
-        } finally {
-            loading.value = false
+            toast.add({ severity: 'error', summary: 'Bulk action failed', detail: err.message });
         }
-    }
+    };
 
-    const exportData = async (format: 'csv' | 'excel' = 'csv') => {
-        try {
-            const resp = await axios.get(`${endpoint}/export`, {
-                params: { format, filters: JSON.stringify(filters.value) },
-                responseType: 'blob'
-            })
-            const url = URL.createObjectURL(resp.data)
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `export.${format === 'csv' ? 'csv' : 'xlsx'}`
-            a.click()
-            URL.revokeObjectURL(url)
-        } catch {
-            toast.add({ severity: 'error', summary: 'Export failed' })
+    // =================================================================
+    // EXPORT
+    // =================================================================
+
+    const exportData = async (exportAll = false, visibleOnly = false) => {
+        // Same logic as before, but using extractData if needed
+        // Simplified here — adapt if your export endpoint returns nested data
+        if (isClientSide.value) {
+            const dataToExport = visibleOnly ? rows.value : exportAll ? allRows.value : rows.value;
+            if (!dataToExport.length) {
+                toast.add({ severity: 'warn', summary: 'Nothing to export' });
+                return;
+            }
+
+            const headers = Object.keys(dataToExport[0] as any).join(',');
+            const lines = dataToExport.map(row => Object.values(row as any).join(','));
+            const csv = [headers, ...lines].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            downloadBlob(blob, 'export.csv');
+        } else {
+            const params = {
+                export_all: exportAll,
+                visible_only: visibleOnly,
+                sorts: JSON.stringify(sorts.value),
+                filters: JSON.stringify(filters.value),
+                search: filters.value.global.value,
+                ...initialParams,
+            };
+
+            try {
+                const response = await axios.get(`${endpoint}/export`, {
+                    params,
+                    responseType: 'blob',
+                });
+                downloadBlob(response.data, 'export.csv');
+            } catch {
+                toast.add({ severity: 'error', summary: 'Export failed' });
+            }
         }
-    }
+    };
+
+    const downloadBlob = (blob: Blob, filename: string) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
 
     // =================================================================
-    // 6. LIFECYCLE – SSR safe
+    // RETURNED API
     // =================================================================
-    onMounted(() => {
-        if (!initialData?.length) fetchData()
-    })
 
-    // =================================================================
-    // 7. RETURN – clean & typed API
-    // =================================================================
+    const tableData = computed(() => isClientSide.value ? allRows.value : rows.value);
+    const isLazy = computed(() => !isClientSide.value);
+
     return {
-        // Data
-        rows: computed(() => rows.value),
+        // Bind these to DataTable
+        tableData,                    // :value="tableData"
+        isLazy,                       // :lazy="isLazy"
         totalRecords: readonly(totalRecords),
-        loading: loading,
+        loading: readonly(loading),
         error: readonly(error),
 
-        // Pagination
-        currentPage: readonly(currentPage),
         perPage,
+        currentPage: readonly(currentPage),
+
         onPage,
-
-        // Sorting
-        sorts: readonly(sorts),
         onSort,
+        onFilter,
 
-        // Selection & visibility
+        sorts: readonly(sorts),
+        filters,
+
         selectedRows,
         hiddenColumns,
 
-        // Filters – safe to bind directly to PrimeVue
-        filters: filters,
-
-        // Computed visible columns (memoized)
         visibleColumns: computed(() => columns.filter(c => !hiddenColumns.value.includes(String(c.field)))),
 
-        // Actions
         refresh,
         performBulkAction,
         exportData,
         bulkActions: computed(() => bulkActions),
-    }
+        isClientSide: readonly(isClientSide),
+    };
 }

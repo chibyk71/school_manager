@@ -3,6 +3,7 @@ import { useConfirm, useToast, type MenuEmits } from "primevue";
 import { InertiaForm, router } from '@inertiajs/vue3';
 import { computed, reactive, ref } from "vue";
 import { useTemplateRef } from 'vue'
+import type { ColumnDefinition } from "./types/datatables";
 
 export const getClass = (cls: string) => {
     const documentStyle = getComputedStyle(document.documentElement);
@@ -20,6 +21,8 @@ export function useDeleteResource() {
      * @param {Array<number|string>} ids - The IDs of the resources to delete.
      * @param {string} [url] - The URL to make the request to. Defaults to `/api/${resource}/${id}`.
      * @returns {Promise<void>}
+     * @deprecated Use `deleteResource` instead, from composable/useDelete.ts it has been standardized, and supports bulk deletion and force delete
+     * TODO: Remove this function
      */
     const deleteResource = async (resource: string, ids: Array<number | string>, url?: string): Promise<void> => {
         if (!ids || ids.length === 0) {
@@ -141,8 +144,8 @@ export const populateForm = (data: ResourceData, form: InertiaForm<{ [x: string]
  * @param {Date} value - The date to be formatted.
  * @return {string} The formatted date string.
  */
-export const formatDate = (value: Date) => {
-    return value.toLocaleDateString('en-US', {
+export const formatDate = (value: string | Date) => {
+    return new Date(value).toLocaleDateString('en-US', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric'
