@@ -7,7 +7,7 @@ import { useToast } from 'primevue/usetoast'
 import UserTypeBadge from './UserTypeBadge.vue'
 import StatusToggle from './StatusToggle.vue'
 import UserActionsDropdown from './UserActionsDropdown.vue'
-import AdvancedDataTable from '@/composables/datatable/AdvancedDataTable.vue'
+import AdvancedDataTable from '@/Components/datatable/AdvancedDataTable.vue'
 import { ProgressSpinner } from 'primevue'
 
 import type { BulkAction, ColumnDefinition } from '@/types/datatables'

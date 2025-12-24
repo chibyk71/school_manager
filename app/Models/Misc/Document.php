@@ -4,10 +4,12 @@ namespace App\Models\Misc;
 
 use App\Models\Model;
 use App\Traits\HasConfig;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class Document extends Model
+class Document extends Model implements HasMedia
 {
-    use HasConfig;
+    use InteractsWithMedia;
 
     protected $fillable = [
         'name',

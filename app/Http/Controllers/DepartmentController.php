@@ -7,8 +7,6 @@ use App\Http\Requests\UpdateDepartmentRequest;
 use App\Models\Employee\Department;
 use App\Models\Employee\DepartmentRole;
 use App\Models\Role;
-use App\Models\User;
-use App\Support\ColumnDefinitionHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -92,7 +90,7 @@ class DepartmentController extends Controller
     public function index(Request $request)
     {
         // Enforce RBAC: only users with permission to view any department can access this endpoint
-        // Gate::authorize('viewAny', Department::class);
+        Gate::authorize('viewAny', Department::class);
 
         try {
             // Define virtual/extra columns for the DataTable
@@ -127,12 +125,6 @@ class DepartmentController extends Controller
             // Apply dynamic querying via HasTableQuery trait
             // Handles: global search, column filters, sorting, pagination
             $departments = $query->tableQuery($request, $extraFields);
-
-            // This uses your powerful ColumnDefinitionHelper to auto-detect types,
-            // apply casts, enums, relations, and HasConfig dropdowns
-            $model = new Department();
-            $columns = ColumnDefinitionHelper::fromModel($model, $extraFields, false);
-
             // API response for DataTable refresh or modal calls
             if ($request->wantsJson()) {
                 return response()->json($departments);
@@ -141,9 +133,7 @@ class DepartmentController extends Controller
             // Full page render for initial load
             // Pre-load all roles once for create/edit modal dropdown
             return Inertia::render('HRM/Department', [
-                'departments' => $departments,
-                'columns' => $columns,
-                'globalFilter' => $model->getGlobalFilterColumns(),
+                ...$departments,
                 'roles' => Role::query()->select('id', 'display_name')
                     ->orderBy('display_name')
                     ->get(),

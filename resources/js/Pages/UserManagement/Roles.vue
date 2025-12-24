@@ -7,7 +7,7 @@ import { useToast } from 'primevue/usetoast';
 import { modals } from '@/helpers';
 import { useDeleteResource, useSelectedResources } from '@/helpers';
 import axios from 'axios';
-import type { BulkAction, ColumnDefinition } from '@/types/datatables';
+import type { BulkAction, ColumnDefinition, TableAction } from '@/types/datatables';
 import { computed, markRaw } from 'vue';
 import DepartmentBadges from './components/roles/DepartmentBadges.vue';
 import RoleActionsDropdown from './components/roles/RoleActionsDropdown.vue';
@@ -15,11 +15,9 @@ import RoleActionsDropdown from './components/roles/RoleActionsDropdown.vue';
 // Props from Inertia (SSR)
 const props = defineProps<{
     columns: ColumnDefinition<any>[];
-    roles: {
-        data: any[];
-        // pagination meta if needed
-    };
-    globalFlters: string[]
+    data: any[];
+    totalRecords: number
+    globalFilters: string[]
 }>();
 
 const toast = useToast();
@@ -86,8 +84,8 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
         width: '100px',
         render: (row: any) => ({
             template: 'span',
-            text: row.users_count ?? 0,
-            class: 'font-medium text-gray-900 dark:text-gray-100',
+            text: row.users_count ?? '0',
+            class: 'font-medium text-gray-900 dark:text-gray-100 hello',
         }),
     });
 
@@ -117,35 +115,37 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
 
     upsert('name', {
         hidden: true
-    })
+    });
 
-    // 4. Actions Column – Dropdown with Edit, Permissions, Delete
-    const hasActions = cols.some(c => c.field === 'actions');
-    if (!hasActions) {
-        cols.push({
-            field: 'actions',
-            header: 'Actions',
-            sortable: false,
-            filterable: false,
-            frozen: true,
-            align: 'right',
-            width: '100px',
-            bodyClass: 'text-right pr-4',
-            render: (row: any) => ({
-                component: markRaw(RoleActionsDropdown) as any,
-                props: { role: row },
-                on: {
-                    edit: () => openEditModal(row),
-                    'manage-permissions': () => router.visit(route('admin.roles.permissions.manage', row.id)),
-                    delete: () => deleteRole([row.id]),
-                },
-            }),
-        });
-    }
+    upsert('school', {
+        formatter: (row) => {
+            return row.name
+        }
+    })
 
     return cols;
 });
 
+const roleActions: TableAction<any>[] = [
+    {
+        label: 'Edit Role',
+        icon: 'pi pi-pencil',
+        severity: 'secondary',
+        handler: (role) => openEditModal(role),
+    },
+    {
+        label: 'Manage Permissions',
+        icon: 'pi pi-shield',
+        severity: 'info',
+        handler: (role) => router.visit(route('admin.roles.permissions.manage', role.id)),
+    },
+    {
+        label: 'Delete Role',
+        icon: 'pi pi-trash',
+        severity: 'danger',
+        handler: (role) => deleteRole([role.id]),
+    },
+];
 </script>
 
 <template>
@@ -161,8 +161,9 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
         }
     ]">
         <div class="space-y-6">
-            <AdvancedDataTable endpoint="/admin/roles" :columns="enhancedColumns" :initial-data="roles.data"
-                :bulk-actions="bulkActions" @bulk-action="(action) => action === 'delete' && handleBulkDelete()" :global-filter-fields="globalFlters">
+            <AdvancedDataTable :actions="roleActions" endpoint="/admin/roles" :columns="enhancedColumns" :initial-data="data"
+                :bulk-actions="bulkActions" @bulk-action="(action) => action === 'delete' && handleBulkDelete()"
+                :global-filter-fields="globalFilters" :total-records="totalRecords">
             </AdvancedDataTable>
         </div>
     </AuthenticatedLayout>

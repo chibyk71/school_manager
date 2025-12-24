@@ -13,6 +13,7 @@ import RenderCell from './RenderCell.vue'                      // Handles comple
 
 // PrimeVue components used in the table and filters
 import {
+    Button,
     Column,
     DataTable,
     DatePicker,
@@ -23,10 +24,11 @@ import {
 } from 'primevue'
 
 // Type imports for strong typing
-import type { BulkAction, ColumnDefinition } from '@/types/datatables'
+import type { BulkAction, ColumnDefinition, TableAction } from '@/types/datatables'
 
 // Helper for consistent date formatting across the app
 import { formatDate } from '@/helpers'
+import ActionsDropdown from './ActionsDropdown.vue'
 
 /**
  * Props definition – everything the parent page needs to pass
@@ -59,6 +61,9 @@ const props = defineProps<{
     /** Property to access the rows array from the json result */
     dataProperty?: string
 
+    /** Optional actions for each row (e.g., edit, delete) */
+    actions?: TableAction<T>[]
+
 }>()
 
 /**
@@ -78,6 +83,7 @@ const tableRef = ref<InstanceType<typeof DataTable> | null>(null)
  * Destructure everything from our enhanced useDataTable composable
  */
 const {
+    dtRef,                  // Reference to DataTable instance
     tableData,                  // Current page rows (shallowRef – reactive but shallow for performance)
     totalRecords: totalFromStore, // Total count from API / client-side calculation
     loading,              // Global loading state for spinner/skeleton
@@ -159,13 +165,13 @@ const handleExportAll = () => exportData(true, false)
       - :value="rows" → direct shallowRef binding (no unnecessary spread)
       - virtualScroller → renders only visible rows for huge windows
     -->
-        <DataTable ref="tableRef" :value="tableData" :loading="loading" :lazy="!isClientSide" :paginator="true"
+        <DataTable :ref="(el) => (dtRef = el)" :value="tableData" :loading="loading" :lazy="!isClientSide" paginator
             :rows="perPage" :total-records="totalRecords"
             :virtual-scroller-options="virtualScroller ? { itemSize: 56 } : undefined" @page="onPage"
-            @sort="onSortHandler"
+            @sort="onSortHandler" :rowsPerPageOptions="[10, 20, 50, 100, 150, 200]"
             paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
             current-page-report-template="{first} - {last} of {totalRecords}" v-model:selection="selectedRows"
-            data-key="id" responsive-layout="scroll" class="p-datatable-sm !rounded-none" striped-rows removable-sort
+            data-key="id" class="p-datatable-sm !rounded-none" striped-rows removable-sort
             scrollable :scroll-height="virtualScroller ? '600px' : undefined"
             :global-filter-fields="safeGlobalFilterFields" filter-display="menu" :filters="filters">
             <!-- Checkbox column for multi-selection -->
@@ -255,6 +261,13 @@ const handleExportAll = () => exportData(true, false)
                 </template>
             </Column>
 
+            <!-- Actions column if any actions are defined -->
+            <Column v-if="actions && actions.length" header="Actions" header-style="width: 3.5rem" body-style="text-align: center; width: 3.5rem;" :sortable="false" frozen>
+                <template #body="slotProps">
+                    <ActionsDropdown :actions="actions" :row="slotProps.data" />
+                </template>
+            </Column>
+
             <!-- Empty state when no rows match current filters -->
             <template #empty>
                 <DataTableEmptyState />
@@ -263,6 +276,9 @@ const handleExportAll = () => exportData(true, false)
             <!-- Loading overlay with skeleton rows -->
             <template #loading>
                 <DataTableLoadingState />
+            </template>
+            <template #paginatorend>
+                <Button label='Export' icon='pi pi-file-excel' severity="contrast" @click="()=> exportData(true)"></Button>
             </template>
         </DataTable>
     </div>

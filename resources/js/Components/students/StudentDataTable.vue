@@ -3,11 +3,11 @@
 import type { Student } from '@/types/student'
 import { formatDate } from '@/helpers' // Assumed
 import { ColumnDefinition } from '@/types/datatables';
-import { useDataTable } from '@/composables/datatable/useDataTable';
-import DataTableHeader from '@/composables/datatable/DataTableHeader.vue';
+import { useDataTable } from '@/composables/useDataTable';
+import DataTableHeader from '@/Components/datatable/DataTableHeader.vue';
 import { Column, DataTable } from 'primevue';
-import DataTableEmptyState from '@/composables/datatable/DataTableEmptyState.vue';
-import DataTableLoadingState from '@/composables/datatable/DataTableLoadingState.vue';
+import DataTableEmptyState from '@/Components/datatable/DataTableEmptyState.vue';
+import DataTableLoadingState from '@/Components/datatable/DataTableLoadingState.vue';
 
 const props = defineProps<{
   endpoint: string

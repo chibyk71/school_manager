@@ -15,6 +15,21 @@ class Role extends RoleModel
     use Filterable, Sortable, HasUuids, BelongsToSchool, HasTableQuery;
     public $guarded = [];
 
+    protected array $hiddenTableColumns = [
+        'id'
+    ];  
+
+    protected $defaultHiddenColumns = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
+    protected $casts = [
+        'created_at' => 'date',
+        'updated_at' => 'datetime',
+    ];
+
     public function departments()
     {
         return $this->belongsToMany(Department::class, 'department_role', 'role_id', 'department_id')

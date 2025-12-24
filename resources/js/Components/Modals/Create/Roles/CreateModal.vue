@@ -39,9 +39,7 @@ const props = defineProps<{
         display_name: string;
         description: string | null;
         department_id: number | null; // Assuming role has department_id
-    };
-    departments: Array<{ value: number; label: string }>; // Pre-loaded department options
-    existingRoles?: Array<{ value: number; label: string }>; // Only for create
+    }
 }>();
 
 // Detect mode
@@ -121,7 +119,7 @@ const showProceed = computed(() => !isEdit.value);
                     Department <span class="text-red-500">*</span>
                 </label>
                 <AsyncSelect id="department_id" :field="{
-                    search_url: '/departments/search', // Your API endpoint
+                    search_url: '/search/department', // Your API endpoint
                     multiple: false,
                     field_options: {
                         option_label: 'label',
@@ -153,11 +151,12 @@ const showProceed = computed(() => !isEdit.value);
                     Copy Permissions From (Optional)
                 </label>
                 <AsyncSelect id="copy_from_role_id" :field="{
-                    search_url: '/roles/search', // Your API endpoint for searching roles
+                    search_url: '/search/role', // Your API endpoint for searching roles
                     multiple: false,
                     field_options: {
                         option_label: 'label',
                         option_value: 'value',
+                        label_field: 'display_name',
                         search_key: 'q',
                         search_delay: 300,
                         search_params: { exclude_current: true } // Optional: exclude self in edit mode if needed

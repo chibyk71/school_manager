@@ -1,58 +1,55 @@
-<!-- resources/js/Components/Form/AsyncSelect.vue -->
 <!--
-  AsyncSelect.vue
+  resources/js/Components/Form/AsyncSelect.vue v8.0 – Production-Ready Async Select with Explicit Clear Option
 
-  Purpose:
-  - A reusable, fully-featured async select/multi-select component for dynamic dropdowns
-  - Designed for cases where options are loaded from an API (e.g., search users, schools, subjects)
-  - Supports both single and multiple selection
-  - Features: server-side search, infinite scroll (load more), loading states, error handling
-  - Built on top of useAsyncOptions composable for clean separation of concerns
-  - Integrates seamlessly with PrimeVue Select/MultiSelect and your form system
+  Purpose & Problems Solved:
+  - Provides a reusable, fully-featured async dropdown (single or multi-select) for dynamic options loaded from an API.
+  - Integrates seamlessly with custom fields system (e.g., relation fields like guardian, department, class, etc.).
+  - Solves the common UX issue where users need to explicitly "unset" an optional relation field – PrimeVue's built-in show-clear only works after a value is selected.
+  - Introduces a persistent "None" / clear option that is always visible at the top, even during search or loading.
+  - Supports virtual scrolling for large datasets (>300 items) to maintain performance.
+  - Handles initial loading, search debouncing, infinite scroll, error states, and helpful user feedback.
+  - Fully typed with TypeScript, accessible, and styled consistently with Tailwind + PrimeVue.
+  - Used extensively in student/teacher/staff registration and edit forms where optional relations are common.
 
-  Key Features:
-  - Debounced search (configurable delay)
-  - Infinite scroll loading of additional pages
-  - Preserves selected value(s) even during reloads
-  - Displays user-friendly loading and error messages
-  - Emits standard v-model updates
-  - Fully typed with TypeScript
+  Key Features (v8.0 improvements):
+  - Persistent "None" option with customizable label (default: "— None —").
+  - Selecting "None" explicitly clears the value (null for single, [] for multi).
+  - Smart pre-loading: fetches current value labels on edit, loads all if ≤300 items, otherwise lazy.
+  - Virtual scroller with lazy loading for smooth performance on large lists (e.g., all students/teachers).
+  - Helpful messages: shows result count hint and error feedback.
+  - Full loading overlay on initial fetch for better perceived performance.
+  - Consistent styling: height, chip colors, italic "None" option.
+  - Proper v-model two-way binding with emit handling for Inertia forms.
+  - Accessible via unique `id` prop and PrimeVue's built-in accessibility.
 
-  Future improvements:
-  - Add "selected label" display when no search results (common in multi-select)
-  - Support placeholder customization via prop
-  - Add clear button control
-  - Allow custom empty state slot
-  - Cache results per unique search_url + params (advanced)
+  Dependencies:
+  - PrimeVue: Select, MultiSelect
+  - Composables: useAsyncOptions.ts
+  - Types: CustomField from '@/types/form'
 
-  Usage Example:
-  <AsyncSelect
-    id="teacher"
-    :field="customField"
-    v-model="form.teacher_id"
-    :invalid="form.errors.teacher_id"
-  />
+  Best Practices Applied:
+  - Reactive internal value to avoid direct mutation issues.
+  - Watchers for sync with external v-model.
+  - Computed properties for configuration to avoid repeated logic.
+  - Proper event handling (@filter instead of custom input).
+  - Performance: virtual scroller, debounced search, conditional full-load.
+  - UX: clear feedback, loading states, persistent clear option.
 -->
-
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue';
-import { MultiSelect, Select } from 'primevue';
+import { ref, watch, computed, onMounted, nextTick } from 'vue';
+import Select from 'primevue/select';
+import MultiSelect from 'primevue/multiselect';
 import { useAsyncOptions } from '@/composables/useAsyncOptions';
 import type { CustomField } from '@/types/form';
 
-/** 
- * Props for AsyncSelect component
+/**
+ * Component Props
  */
 const props = defineProps<{
+    /** Unique ID for the input (required for label association and accessibility) */
     id: string;
 
-    /**
-     * Custom field configuration focused on async select behavior.
-     * 
-     * We use Omit to exclude all base/irrelevant fields from CustomField
-     * and only keep the ones relevant for rendering + async loading.
-     * Then intersect with required/optional async-specific fields.
-     */
+    /** Custom field configuration – contains API endpoint and display options */
     field: Omit<
         CustomField,
         | 'id'
@@ -76,73 +73,138 @@ const props = defineProps<{
         | 'updated_at'
         | 'deleted_at'
     > & {
-        /** Required: API endpoint for searching options */
+        /** API endpoint that returns paginated options */
         search_url: string;
 
-        /** Optional: Allow multiple selection */
+        /** Enable multi-select mode */
         multiple?: boolean;
 
+        /** Placeholder text */
         placeholder?: string;
 
-        /** Optional: Fine-tune async behavior and option mapping */
+        /** Custom label for the "clear/none" option */
+        none_label?: string;
+
+        /** Advanced options for API behavior and display mapping */
         field_options?: {
             option_label?: string;
             option_value?: string;
             search_key?: string;
             search_delay?: number;
             search_params?: Record<string, any>;
+            label_field?: string;
+            value_field?: string;
+            search_fields?: string | string[];
         };
     };
 
+    /** v-model value */
     modelValue: any;
+
+    /** Show invalid state (e.g., from Inertia validation) */
     invalid?: boolean;
+
+    /** Disable the input */
     disabled?: boolean;
 }>();
 
-// ------------------------------------------------------------------
-// Emits
-// ------------------------------------------------------------------
+/**
+ * Emits
+ */
 const emit = defineEmits<{
     (e: 'update:modelValue', value: any): void;
 }>();
 
-// ------------------------------------------------------------------
-// Computed: Selection Mode & Option Mapping
-// ------------------------------------------------------------------
+/**
+ * Computed Configuration
+ */
 const multiple = computed(() => props.field.multiple ?? false);
 
 const optionLabel = computed(() => props.field.field_options?.option_label ?? 'label');
-
 const optionValue = computed(() => props.field.field_options?.option_value ?? 'value');
 
-// ------------------------------------------------------------------
-// Async Options Logic via Composable
-// ------------------------------------------------------------------
+const noneLabel = computed(() => props.field.none_label ?? '— None —');
+const noneOption = computed(() => ({
+    [optionValue.value]: null,
+    [optionLabel.value]: noneLabel.value,
+}));
+
+/**
+ * API Parameters – merged static + dynamic (label/value fields)
+ */
+const dynamicParams = computed(() => {
+    const opts = props.field.field_options ?? {};
+    const params: Record<string, any> = {};
+
+    params.label_field = opts.label_field ?? 'name';
+    params.value_field = opts.value_field ?? 'id';
+
+    if (opts.search_fields) {
+        params.search_fields = Array.isArray(opts.search_fields)
+            ? opts.search_fields.join(',')
+            : opts.search_fields;
+    }
+
+    return params;
+});
+
+const apiParams = computed(() => ({
+    ...props.field.field_options?.search_params ?? {},
+    ...dynamicParams.value,
+}));
+
+/**
+ * Async Options Composable
+ */
 const {
-    options,        // Reactive array of loaded options
-    loading,        // True during API request
-    error,          // Error message if request fails
-    search,         // Function to trigger search (debounced)
-    loadMore,       // Load next page on scroll-end
-    hasMore,        // True if more pages available
+    options,
+    total,
+    loading,
+    error,
+    search,
+    loadMore,
+    hasMore,
+    refresh,
 } = useAsyncOptions({
     url: props.field.search_url,
-    params: props.field.field_options?.search_params ?? {},
+    params: apiParams.value,
     searchKey: props.field.field_options?.search_key ?? 'search',
-    delay: props.field.field_options?.search_delay ?? 400, // 400ms debounce
+    delay: props.field.field_options?.search_delay ?? 400,
 });
 
-// ------------------------------------------------------------------
-// Two-way v-model Sync
-// ------------------------------------------------------------------
-const internal = ref(props.modelValue);
+/**
+ * Display Options – always prepend the static "None" option
+ */
+const displayOptions = computed(() => {
+    const loaded = options.value ?? [];
+    return [noneOption.value, ...loaded];
+});
 
-// Emit changes upward
+/**
+ * Internal reactive value for v-model handling
+ */
+const internal = ref<any>(props.modelValue);
+
+/**
+ * Sync internal → external (with special "None" handling)
+ */
 watch(internal, (newVal) => {
-    emit('update:modelValue', newVal);
+    // Detect if "None" (null) was selected
+    const selectedNone =
+        newVal === null ||
+        (Array.isArray(newVal) && newVal.includes(null));
+
+    if (selectedNone) {
+        // Clear selection: null for single, empty array for multi
+        emit('update:modelValue', multiple.value ? [] : null);
+    } else {
+        emit('update:modelValue', newVal);
+    }
 });
 
-// Sync external changes (e.g., form reset) → internal
+/**
+ * Sync external → internal (Inertia form updates)
+ */
 watch(
     () => props.modelValue,
     (newVal) => {
@@ -150,58 +212,110 @@ watch(
     }
 );
 
-// ------------------------------------------------------------------
-// Initial Load Behavior
-// ------------------------------------------------------------------
-onMounted(() => {
-    // For single select: pre-load options if no value selected (better UX)
-    // For multiple: usually starts empty, so only load on user interaction
-    if (!multiple.value && !internal.value) {
-        search(''); // Load initial full list
+/**
+ * Optional: Load all options if dataset is reasonably small (≤300)
+ */
+const loadAllIfSmall = async () => {
+    if (total.value > 0 && total.value <= 300 && hasMore.value) {
+        await loadMore();
+        if (hasMore.value) await loadAllIfSmall(); // Recurse until complete
     }
-    // For multiple, we wait for user to open dropdown or type
+};
+
+/**
+ * Initial Load Logic
+ * - On edit forms: refresh to load current value labels
+ * - On create forms: initial empty search
+ * - Auto-load all if small dataset
+ */
+onMounted(async () => {
+    const hasExistingValue =
+        internal.value !== null &&
+        internal.value !== undefined &&
+        (!Array.isArray(internal.value) || internal.value.length > 0);
+
+    if (hasExistingValue) {
+        await refresh(); // Load labels for selected value(s)
+    } else if (!multiple.value) {
+        search(''); // Trigger initial empty search for single select
+    }
+
+    await nextTick();
+
+    if (total.value > 0 && total.value <= 300) {
+        await loadAllIfSmall();
+    }
 });
 </script>
 
 <template>
     <div class="relative">
-        <!-- Multi-Select Mode -->
-        <MultiSelect v-if="multiple" :id="id" v-model="internal" :options="options" :optionLabel="optionLabel"
+        <!-- MultiSelect Mode -->
+        <MultiSelect v-if="multiple" :id="id" v-model="internal" :options="displayOptions" :optionLabel="optionLabel"
             :optionValue="optionValue" :loading="loading" :disabled="disabled" :invalid="invalid" display="chip" filter
-            @filter="search($event.value)" @scroll-end="loadMore" class="w-full" :pt="{
-                root: { class: 'w-full' },
-                // Hide PrimeVue's default 'Load more' trigger – we use scroll-end
-                loadMore: { class: 'hidden' }
-            }" :placeholder="field.placeholder ?? 'Select items...'" :show-clear="true" />
+            @filter="search($event.value)" :virtualScrollerOptions="{
+                lazy: true,
+                onLazyLoad: () => { if (hasMore && !loading) loadMore(); },
+                itemSize: 38,
+                showLoader: total > 300,
+                loading: loading && hasMore && total > 300,
+                delay: 200
+            }" class="w-full" :placeholder="field.placeholder ?? 'Select items...'" :show-clear="true" :pt="{
+        root: { class: 'w-full' },
+        panel: { class: 'max-h-96 overflow-auto' }
+    }" />
 
         <!-- Single Select Mode -->
-        <Select v-else :id="id" v-model="internal" :options="options" :optionLabel="optionLabel"
+        <Select v-else :id="id" v-model="internal" :options="displayOptions" :optionLabel="optionLabel"
             :optionValue="optionValue" :loading="loading" :disabled="disabled" :invalid="invalid" filter
-            @filter="search($event.value)" @scroll-end="loadMore" class="w-full" :placeholder="field.placeholder ?? 'Select an option...'"
-            :show-clear="true" />
+            @filter="search($event.value)" :virtualScrollerOptions="{
+                lazy: true,
+                onLazyLoad: () => { if (hasMore && !loading) loadMore(); },
+                itemSize: 38,
+                showLoader: total > 300,
+                loading: loading && hasMore && total > 300,
+                delay: 200
+            }" class="w-full" :placeholder="field.placeholder ?? 'Select an option...'" :show-clear="true" :pt="{
+        root: { class: 'w-full' },
+        panel: { class: 'max-h-96 overflow-auto' }
+    }" />
+
+        <!-- User Guidance Message -->
+        <small class="text-amber-700 dark:text-amber-400 text-xs mt-1 block">
+            {{ total > 300
+                ? `Showing ${total}+ results. Type to narrow down.`
+                : 'Type to search for faster results.'
+            }}
+        </small>
 
         <!-- Error Message -->
-        <small v-if="error" class="text-red-600 text-xs mt-1 block">
+        <small v-if="error" class="text-red-600 dark:text-red-500 text-xs mt-1 block">
             {{ error }}
         </small>
 
-        <!-- Initial Loading State (when no options yet) -->
+        <!-- Full Overlay Loader (only on initial empty load) -->
         <div v-if="loading && options.length === 0"
-            class="absolute inset-x-0 bottom-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 py-3 text-center text-sm text-gray-500">
-            Loading options...
+            class="absolute inset-0 bg-white/90 dark:bg-gray-900/90 flex items-center justify-center rounded-md z-10 pointer-events-none">
+            <span class="text-sm text-gray-700 dark:text-gray-300">Loading options...</span>
         </div>
     </div>
 </template>
 
 <style scoped lang="postcss">
-/* Ensure consistent height and alignment */
-:deep(.p-multiselect),
-:deep(.p-select) {
+/* Consistent input height */
+:deep(.p-select),
+:deep(.p-multiselect) {
     @apply h-11;
 }
 
-/* Improve chip appearance in multi-select */
+/* Chip styling for multi-select */
 :deep(.p-multiselect-chip) {
-    @apply bg-primary/10 text-primary border-primary/20;
+    @apply bg-primary/10 text-primary border border-primary/20;
+}
+
+/* Visual distinction for the "None" option */
+:deep(.p-select-option[value="null"]),
+:deep(.p-multiselect-option[value="null"]) {
+    @apply italic text-gray-500 dark:text-gray-400;
 }
 </style>

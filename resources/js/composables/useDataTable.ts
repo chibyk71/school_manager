@@ -48,7 +48,7 @@ export function useDataTable<T extends { id?: string | number } = any>(
     // =================================================================
     // STATE
     // =================================================================
-
+    const dtRef = ref<any>(null);
     const rows = shallowRef<T[]>(initialData);           // Visible page (server-side)
     const allRows = shallowRef<T[]>([]);                 // Full dataset (client-side)
     const totalRecords = ref(0);
@@ -142,7 +142,7 @@ export function useDataTable<T extends { id?: string | number } = any>(
 
             /**
              * Maps PrimeVue's FilterMatchMode (or string equivalents) to Laravel Purity operators
-             * 
+             *
              * PrimeVue match modes: https://primevue.org/datatable/#filtermatchmode
              * Laravel Purity operators: https://abbasudo.github.io/laravel-purity/#operators
              */
@@ -415,7 +415,6 @@ export function useDataTable<T extends { id?: string | number } = any>(
     // =================================================================
     // INITIAL LOAD
     // =================================================================
-
     onMounted(async () => {
 
         // Step 1: Load first page to get total count
@@ -472,17 +471,18 @@ export function useDataTable<T extends { id?: string | number } = any>(
         // Same logic as before, but using extractData if needed
         // Simplified here — adapt if your export endpoint returns nested data
         if (isClientSide.value) {
-            const dataToExport = visibleOnly ? rows.value : exportAll ? allRows.value : rows.value;
-            if (!dataToExport.length) {
-                toast.add({ severity: 'warn', summary: 'Nothing to export' });
-                return;
-            }
+            // const dataToExport = visibleOnly ? rows.value : exportAll ? allRows.value : rows.value;
+            // if (!dataToExport.length) {
+            //     toast.add({ severity: 'warn', summary: 'Nothing to export' });
+            //     return;
+            // }
 
-            const headers = Object.keys(dataToExport[0] as any).join(',');
-            const lines = dataToExport.map(row => Object.values(row as any).join(','));
-            const csv = [headers, ...lines].join('\n');
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            downloadBlob(blob, 'export.csv');
+            // const headers = Object.keys(dataToExport[0] as any).join(',');
+            // const lines = dataToExport.map(row => Object.values(row as any).join(','));
+            // const csv = [headers, ...lines].join('\n');
+            // const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            // downloadBlob(blob, 'export.csv');
+            dtRef.value.exportCSV();
         } else {
             const params = {
                 export_all: exportAll,
@@ -523,6 +523,7 @@ export function useDataTable<T extends { id?: string | number } = any>(
 
     return {
         // Bind these to DataTable
+        dtRef,
         tableData,                    // :value="tableData"
         isLazy,                       // :lazy="isLazy"
         totalRecords: readonly(totalRecords),

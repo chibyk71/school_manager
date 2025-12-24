@@ -3,9 +3,7 @@
 namespace App\Models\Academic;
 
 use App\Models\Employee\Staff;
-use App\Models\School;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Spatie\Activitylog\LogOptions;
@@ -26,7 +24,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class TeacherClassSectionSubject extends Pivot
 {
-    use LogsActivity, HasConfig, BelongsToSchool, HasTableQuery;
+    use LogsActivity, BelongsToSchool, HasTableQuery;
 
     /**
      * Indicates if the IDs are auto-incrementing.

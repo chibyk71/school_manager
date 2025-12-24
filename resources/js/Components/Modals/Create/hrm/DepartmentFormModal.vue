@@ -50,7 +50,7 @@ import { useToast } from 'primevue/usetoast'
 import AsyncSelect from '@/Components/forms/AsyncSelect.vue'
 import { modals } from '@/helpers'
 
-import { InputText, Textarea, Calendar, MultiSelect, Card, Button } from 'primevue'
+import { InputText, Textarea, Calendar, MultiSelect, Card, Button, DatePicker } from 'primevue'
 
 const toast = useToast()
 const { hasPermission } = usePermissions()
@@ -147,7 +147,7 @@ const availableRoles = computed(() => {
 
             <div>
                 <label class="block text-sm font-medium mb-2">Effective Date</label>
-                <Calendar v-model="form.effective_date" dateFormat="dd/mm/yy" showIcon fluid />
+                <DatePicker v-model="form.effective_date" dateFormat="dd/mm/yy" showIcon fluid />
             </div>
 
             <!-- Role Assignments (Permission Gated) -->
@@ -174,7 +174,7 @@ const availableRoles = computed(() => {
                             <div>
                                 <label for="school_section" class="block text-sm font-medium mb-2">School Sections (Optional)</label>
                                 <AsyncSelect id="school_section" v-model="assignment.section_ids"
-                                    :field="{ search_url:'/school-sections', multiple: true, field_options:{option_label: 'name', option_value:'id', search_delay: 300, search_key: 'q'} }"
+                                    :field="{ search_url:'search/school-section', multiple: true, field_options:{option_label: 'name', option_value:'id', search_delay: 300, search_key: 'q'} }"
                                     placeholder="All sections (department-wide)" />
                                 <small class="text-xs text-gray-500">Leave empty for department-wide role</small>
                             </div>

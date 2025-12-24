@@ -3,6 +3,7 @@
 use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Laratrust\LaratrustFacade;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
@@ -173,53 +174,80 @@ if (!function_exists('array_get')) {
     }
 }
 
+/**
+ * Model Class Resolver Helper
+ *
+ * This file defines a helper function `modelClassFromName` that resolves the fully qualified class name (FQCN)
+ * of an Eloquent model based on its base name (e.g., 'Student' resolves to 'App\Models\Student\Student').
+ * It solves the problem of dynamically locating models in a namespaced structure, especially in large applications
+ * with models organized into subdirectories (e.g., App\Models\Academic\Student).
+ *
+ * Key Features:
+ * - Scans the 'app/Models' directory recursively to build a map of model base names to their FQCN.
+ * - Uses Laravel's Cache facade to store the model map forever, reducing filesystem I/O on subsequent calls.
+ * - Handles StudlyCase conversion for input names (e.g., 'student' becomes 'Student').
+ * - Only includes classes that extend Illuminate\Database\Eloquent\Model.
+ * - Logs errors if resolution fails, preventing silent failures.
+ * - In development, clear the cache with `php artisan cache:clear` after adding/removing models to rebuild the map.
+ *
+ * Problems Solved:
+ * - Avoids hardcoding model namespaces in controllers, services, or other helpers.
+ * - Supports dynamic model resolution in polymorphic or configurable features (e.g., custom fields, permissions).
+ * - Improves performance by caching the directory scan, which can be expensive in large codebases.
+ * - Gracefully handles non-existent models by returning null, allowing callers to implement fallbacks.
+ *
+ * Usage Example:
+ * $studentClass = modelClassFromName('Student');
+ * if ($studentClass) {
+ *     $student = new $studentClass();
+ * }
+ *
+ * Best Practices Applied:
+ * - Uses RecursiveIteratorIterator for efficient directory traversal.
+ * - Ensures only valid Model subclasses are mapped.
+ * - Error handling with logging for debugging.
+ * - No external dependencies beyond Laravel core.
+ */
 if (!function_exists('modelClassFromName')) {
     /**
-     * Get an instance of a model class from its name.
+     * Get the fully qualified class name of a model from its base name.
      *
-     * @param string $name The name of the model (e.g., 'School', 'Branch').
-     * @return Model|null The model instance, or null if not found.
-     *
-     * @throws \Exception If model resolution fails.
+     * @param string $name The base name of the model (e.g., 'School', 'Student').
+     * @return string|null The fully qualified class name, or null if not found.
      */
-    function modelClassFromName(string $name): ?Model
+    function modelClassFromName(string $name): ?string
     {
         try {
-            $baseNamespace = 'App\\Models\\';
             $className = Str::studly($name);
+            $baseNamespace = 'App\\Models\\';
+            $cacheKey = 'model_class_map';
 
-            // Cache model mappings to improve performance
-            static $modelCache = [];
-            if (isset($modelCache[$className])) {
-                return new $modelCache[$className];
-            }
+            $map = Cache::rememberForever($cacheKey, function () use ($baseNamespace) {
+                $map = [];
+                $modelsPath = app_path('Models');
 
-            // Check if class exists in the expected namespace
-            $modelNamespace = $baseNamespace . $className;
-            if (class_exists($modelNamespace) && is_subclass_of($modelNamespace, Model::class)) {
-                $modelCache[$className] = $modelNamespace;
-                return new $modelNamespace;
-            }
+                if (!is_dir($modelsPath)) {
+                    Log::warning('Models directory does not exist: ' . $modelsPath);
+                    return $map;
+                }
 
-            // Fallback to scanning Models directory (less frequent)
-            $modelsPath = app_path('Models');
-            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($modelsPath));
+                $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($modelsPath));
 
-            foreach ($iterator as $file) {
-                if ($file->isFile() && $file->getExtension() === 'php') {
-                    $relativePath = str_replace($modelsPath . DIRECTORY_SEPARATOR, '', $file->getPathname());
-                    $modelNamespace = $baseNamespace . str_replace(['/', '\\', '.php'], ['\\', '\\', ''], $relativePath);
+                foreach ($iterator as $file) {
+                    if ($file->isFile() && $file->getExtension() === 'php') {
+                        $relativePath = str_replace($modelsPath . DIRECTORY_SEPARATOR, '', $file->getPathname());
+                        $modelNamespace = $baseNamespace . str_replace(['/', '\\', '.php'], ['\\', '\\', ''], $relativePath);
 
-                    if (class_exists($modelNamespace) && is_subclass_of($modelNamespace, Model::class)) {
-                        if (class_basename($modelNamespace) === $className) {
-                            $modelCache[$className] = $modelNamespace;
-                            return new $modelNamespace;
+                        if (class_exists($modelNamespace) && is_subclass_of($modelNamespace, Model::class)) {
+                            $map[class_basename($modelNamespace)] = $modelNamespace;
                         }
                     }
                 }
-            }
 
-            return null;
+                return $map;
+            });
+
+            return $map[$className] ?? null;
         } catch (\Exception $e) {
             Log::error("Failed to resolve model '$name': " . $e->getMessage());
             return null;

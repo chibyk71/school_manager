@@ -275,3 +275,44 @@ export interface BulkAction {
     /** Show only when certain conditions are met */
     visible?: (selectedRows: any[]) => boolean
 }
+
+/**
+ * Central type definition for table row actions used throughout the application.
+ * This interface powers the reusable ActionField component and ensures consistent, secure, and professional type-safe action definitions across all DataTables.
+ *
+ * Features Supported:
+ * - Dynamic labels based on row data
+ * - Icons and severity styling
+ * - Async handlers
+ * - Fine-grained visibility and disable controls
+ * - Optional confirmation dialogs with customizable appearance
+ *
+ * This file should be imported wherever table actions are defined.
+*/
+export interface TableAction<T = any> {
+    /** Action label – static string or dynamic function returning string */
+    label: string | ((row: T) => string);
+
+    /** PrimeVue icon class (e.g., 'pi pi-eye', 'pi pi-trash') */
+    icon?: string;
+
+    /** PrimeVue severity for button/menu item styling */
+    severity?: 'secondary' | 'success' | 'info' | 'warning' | 'help' | 'danger';
+
+    /** Handler executed when action is triggered – supports async operations */
+    handler: (row: T) => void | Promise<void>;
+
+    /** Control visibility – boolean or callback for row-specific/permission checks */
+    show?: boolean | ((row: T) => boolean);
+
+    /** Disable the action (grayed out) – boolean or row-specific callback */
+    disabled?: boolean | ((row: T) => boolean);
+
+    /** Require confirmation dialog before executing handler */
+    confirm?: {
+        message: string;
+        header?: string;
+        icon?: string;
+        acceptClass?: string; // e.g., 'p-button-danger'
+    };
+}

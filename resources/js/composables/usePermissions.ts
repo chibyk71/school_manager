@@ -8,7 +8,7 @@ export function usePermissions() {
     const userPermissions = computed(() => page.props.auth?.permissions || []);
     const userRoles = computed(() => page.props.auth?.roles || []);
 
-    const hasPermission = (permission: string) => {
+    const hasPermission = (permission?: string) => {
         if (!permission) return false;
         // Support wildcards (e.g., 'students.*' allows 'students.view')
         return userPermissions.value.some(p =>
@@ -17,7 +17,11 @@ export function usePermissions() {
         );
     };
 
-    const hasRole = (role: string) => userRoles.value.includes(role);
+    const hasRole = (role?: string) => {
+        if (!role) return false
+
+        return userRoles.value.includes(role);
+    }
 
     const hasAnyPermission = (permissions: string[]) => permissions.some(hasPermission);
     const hasAllPermissions = (permissions: string[]) => permissions.every(hasPermission);
