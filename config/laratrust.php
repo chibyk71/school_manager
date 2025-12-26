@@ -35,7 +35,7 @@ return [
         |           This method doesn't support cache yet.
         | - class that extends Laratrust\Checkers\User\UserChecker
         */
-        'user' => 'default',
+        'user' => \App\Checkers\CustomUserChecker::class,
 
         /*
         |--------------------------------------------------------------------------
@@ -121,7 +121,7 @@ return [
         /**
          * Will be used only if the teams functionality is enabled.
          */
-        'team' => \App\Models\Team::class,
+        'team' => \App\Models\SchoolSection::class,
     ],
 
     /*
@@ -177,7 +177,7 @@ return [
         /**
          * Role foreign key on Laratrust's role_user and permission_user tables.
          */
-        'team' => 'team_id',
+        'team' => 'school_section_id',
     ],
 
     /*
@@ -251,7 +251,7 @@ return [
         | it will check only if the user has added that role/permission ignoring the team.
         |
         */
-        'strict_check' => true,
+        'strict_check' => false,
     ],
 
     /*
