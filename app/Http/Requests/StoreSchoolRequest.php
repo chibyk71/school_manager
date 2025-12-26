@@ -1,5 +1,36 @@
 <?php
 
+/**
+ * StoreSchoolRequest
+ *
+ * Purpose & Context:
+ * ------------------
+ * This Form Request handles validation and authorization for creating a new school
+ * (tenant onboarding) in the multi-tenant school management SaaS application.
+ *
+ * Key Design Decisions:
+ * ---------------------
+ * - Supports both public onboarding (unauthenticated users creating their first school)
+ *   and authenticated flows (super-admins or existing users creating additional schools).
+ * - Admin assignment is fully decoupled: no forced admin creation during school creation.
+ * - Admin fields are optional and conditionally validated:
+ *   • admin_id: optional existing user to assign as admin
+ *   • admin_name / admin_email / admin_password: required only when creating a new admin user
+ * - Nigerian-specific validation: state must be one of the 36 states + FCT.
+ * - Media validation tailored for Spatie Media Library with sensible limits.
+ * - Authorization: allows unauthenticated public onboarding while requiring permission for logged-in users.
+ *
+ * Usage Flow:
+ * -----------
+ * - Controller calls SchoolService::createSchool() with validated data.
+ * - After school creation, controller optionally calls SchoolService::assignAdmin()
+ *   if admin data is provided in the request.
+ * - This keeps the service layer thin and focused while providing maximum flexibility.
+ *
+ * Extensibility:
+ * --------------
+ * Easy to add more conditional fields (e.g., subscription plan, trial options) in the future.
+ */
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;

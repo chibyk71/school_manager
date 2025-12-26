@@ -17,6 +17,39 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Throwable;
 
+/**
+ * SchoolController
+ *
+ * Purpose & Context:
+ * ------------------
+ * This controller handles all HTTP operations related to School (tenant/branch) management
+ * in the multi-tenant school SaaS application. It serves both administrative users
+ * (super-admins managing multiple schools) and public onboarding flows.
+ *
+ * Key Design Principles:
+ * ----------------------
+ * - Thin controller: Business logic is delegated to SchoolService and traits
+ * - Inertia-first: Returns Inertia responses for SPA reactivity
+ * - Secure by default: Uses Gates/Policies for authorization, validated Form Requests,
+ *   and robust error handling with logging
+ * - Flexible onboarding: Supports public school creation (unauthenticated) and
+ *   authenticated flows with optional admin assignment
+ * - Media handling: Uses Spatie Media Library directly in controller (HTTP concern)
+ * - Cache-aware: Invalidates relevant caches after create/update/delete operations
+ *
+ * Important Notes:
+ * ----------------
+ * - The store() method is the primary entry point for tenant onboarding
+ * - Admin creation is fully decoupled — handled optionally after school creation
+ * - Section context is managed via SchoolService (active section resolution)
+ * - All destructive actions (deactivate, forceDelete, restore) include safety checks
+ *   and support bulk operations
+ *
+ * Future Extensibility:
+ * ---------------------
+ * - Easy to add API-specific responses or additional onboarding steps
+ * - Bulk operations can be extended with queued jobs for large datasets
+ */
 class SchoolController extends BaseSchoolController
 {
     protected $schoolService;
@@ -213,7 +246,7 @@ class SchoolController extends BaseSchoolController
 
             // Example of additional data you might add later:
             // 'schoolTypes' => config('constants.school_types'),
-            'timezones'   => DateTimeZone::listIdentifiers(),
+            'timezones' => DateTimeZone::listIdentifiers(),
             // 'currencies'  => Currency::orderBy('name')->pluck('name', 'code'),
         ]);
     }
@@ -221,83 +254,155 @@ class SchoolController extends BaseSchoolController
     /**
      * Store a new school in the system.
      *
-     * This method handles the creation of a new School (branch) record.
-     * It uses a dedicated Form Request (StoreSchoolRequest) for validation,
-     * delegates the actual creation logic to SchoolService for separation of concerns,
-     * and ensures proper authorization, cache invalidation, and user feedback.
+     * Purpose & Context:
+     * ------------------
+     * This method is the primary HTTP entry point for creating a new School (tenant/branch)
+     * in the multi-tenant school management SaaS application. It serves two distinct flows:
      *
-     * Key features:
-     * - Authorization: Verifies the user has permission to create schools.
-     * - Validation: Handled automatically by StoreSchoolRequest before reaching this method.
-     * - Business logic: Delegated to SchoolService to keep the controller thin.
-     * - Cache management: Clears relevant caches to ensure fresh data on next listing.
-     * - User feedback: Redirects back to the index page with a success message.
-     * - Error handling: Catches any unexpected exceptions, logs them with context,
-     *   and redirects with a user-friendly error message.
+     * 1. Public Onboarding:
+     *    - Unauthenticated users creating their first school
+     *    - No prior permissions exist — authorization is bypassed (handled in StoreSchoolRequest)
+     *
+     * 2. Authenticated Administrative Creation:
+     *    - Super-admins or existing users creating additional schools
+     *    - Requires 'school.create' permission
+     *
+     * Key Design Decisions & Improvements:
+     * ------------------------------------
+     * - Fully decoupled: Core creation logic lives in SchoolService::createSchool()
+     * - Admin creation is optional and handled separately via SchoolService::assignAdmin()
+     *   (called conditionally if admin data is provided)
+     * - Media handling (logos, favicon) is performed here using Spatie Media Library
+     *   — appropriate since file uploads are an HTTP concern
+     * - Active school context is set immediately after creation for seamless onboarding
+     * - Cache invalidation ensures fresh data in listings
+     * - Robust error handling with detailed logging and user-friendly feedback
+     * - Supports both traditional redirects and Inertia JSON responses
+     *
+     * Flow Overview:
+     * --------------
+     * 1. Authorization (skipped for public onboarding via Form Request)
+     * 2. Create school record + address via SchoolService
+     * 3. Handle optional admin creation/assignment
+     * 4. Upload media files (logo, favicon, etc.)
+     * 5. Set newly created school as active context
+     * 6. Invalidate caches
+     * 7. Redirect to success/onboarding page with appropriate message
+     *
+     * Security & Safety:
+     * ------------------
+     * - Validation fully delegated to StoreSchoolRequest
+     * - All database operations wrapped in transaction inside SchoolService
+     * - Media uploads validated and restricted by Form Request
+     * - Errors are logged with full context (validated data, user ID, trace)
+     *
+     * Extensibility:
+     * --------------
+     * - Easy to add post-creation steps (e.g., welcome email, trial subscription)
+     * - Can extend to return JSON for API or Inertia partial updates
      *
      * @param  \App\Http\Requests\StoreSchoolRequest  $request
-     *         The validated request containing school data (name, code, email, phones, type, etc.)
-     *         along with optional address and media uploads.
-     * @return \Illuminate\Http\RedirectResponse
+     *         Validated request containing school details, optional address,
+     *         optional admin data (for new or existing user), and media uploads.
+     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
      */
     public function store(StoreSchoolRequest $request)
     {
-        // ---------------------------------------------------------------------
-        // 1. Authorization
-        // ---------------------------------------------------------------------
-        // Ensure the authenticated user has the 'create' ability on the School model.
-        // Uses Laravel's Gate/Policy system. Throws 403 if unauthorized.
-        Gate::authorize('create', School::class);
-
         try {
             // -----------------------------------------------------------------
-            // 2. Create the school via service layer
+            // 1. Create the school record
             // -----------------------------------------------------------------
-            // All creation logic (including slug generation, address creation,
-            // media handling via Spatie, settings initialization, etc.)
-            // is encapsulated in SchoolService::createSchool().
-            // This keeps the controller focused on HTTP concerns.
-            // $request->validated() returns a clean array of only validated fields.
+            // All core creation (name, slug, email, type, extra_data) and address attachment
+            // is handled in SchoolService. This keeps the controller thin and focused on HTTP.
             $school = $this->schoolService->createSchool($request->validated());
 
             // -----------------------------------------------------------------
-            // 3. Invalidate caches
+            // 2. Optional: Assign or create admin user
             // -----------------------------------------------------------------
-            // Since a new school was added, any cached lists or aggregates are now stale.
-            // We clear both a specific key and tagged caches used elsewhere in the app.
+            // Only executed if admin-related fields are present in the request.
+            // Supports:
+            // - Creating a brand new admin (public onboarding)
+            // - Assigning an existing user as admin (super-admin flow)
+            if ($request->hasAny(['admin_id', 'admin_name', 'admin_email'])) {
+                $adminData = [
+                    'name' => $request->input('admin_name'),
+                    'email' => $request->input('admin_email'),
+                    'password' => $request->input('admin_password'),
+                    'id' => $request->input('admin_id'), // if assigning existing
+                ];
+
+                // assignAdmin() handles firstOrCreate, role assignment, notification
+                $this->schoolService->assignAdmin($adminData, $school);
+            }
+
+            // -----------------------------------------------------------------
+            // 3. Handle media uploads (Spatie Media Library)
+            // -----------------------------------------------------------------
+            // Each collection is single-file — new upload replaces old.
+            // Only processes if file is actually uploaded.
+            $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];
+
+            foreach ($mediaCollections as $collection) {
+                if ($request->hasFile($collection)) {
+                    $school->addMediaFromRequest($collection)
+                        ->toMediaCollection($collection);
+                }
+            }
+
+            // -----------------------------------------------------------------
+            // 4. Set the newly created school as active context
+            // -----------------------------------------------------------------
+            // Critical for immediate onboarding experience — user starts working in their new school
+            $this->schoolService->setActiveSchool($school);
+
+            // -----------------------------------------------------------------
+            // 5. Invalidate caches
+            // -----------------------------------------------------------------
+            // Ensures school lists and related data reflect the new school immediately
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
             // -----------------------------------------------------------------
-            // 4. Successful response
+            // 6. Success response
             // -----------------------------------------------------------------
-            // Redirect back to the schools index page with a flash success message.
-            // The message will be available via session('success') in the Inertia/Vue component.
-            return redirect()
-                ->route('schools.index')
-                ->with('success', 'School created successfully');
+            $successMessage = 'School created successfully! Welcome to your new school dashboard.';
 
-            // ---------------------------------------------------------------------
-            // 5. Error handling
-            // ---------------------------------------------------------------------
+            // Support both traditional redirects and Inertia JSON responses
+            if ($request->wantsJson() || $request->header('X-Inertia')) {
+                return response()->json([
+                    'message' => $successMessage,
+                    'school' => $school->load('primaryAddress'), // optional: include fresh data
+                ]);
+            }
+
+            return redirect()
+                ->route('dashboard') // or 'onboarding.success', 'schools.index', etc.
+                ->with('success', $successMessage);
+
+            // -----------------------------------------------------------------
+            // 7. Comprehensive error handling
+            // -----------------------------------------------------------------
         } catch (Throwable $th) {
-            // Log the error with useful context:
-            // - The validated input data (safe to log since it's already validated)
-            // - The exception message
-            // This helps with debugging issues like database constraints, media upload failures, etc.
-            Log::error('Failed to create school', [
-                'data' => $request->validated(),
+            // Log full context for debugging — safe because data is already validated
+            Log::error('Failed to create school during onboarding', [
+                'validated_data' => $request->validated(),
+                'user_id' => auth()->id() ?? 'guest (public onboarding)',
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
                 'error' => $th->getMessage(),
-                'trace' => $th->getTraceAsString(), // Optional: include full trace in non-production if needed
-                'user_id' => auth()->id() ?? null,
+                'trace' => $th->getTraceAsString(),
             ]);
 
-            // Redirect back to the form with input preserved and an error flash message.
-            // The user will see the error and can correct any issues (though validation should catch most).
+            $errorMessage = 'Failed to create your school. Please try again or contact support.';
+
+            if ($request->wantsJson() || $request->header('X-Inertia')) {
+                return response()->json(['error' => $errorMessage], 500);
+            }
+
             return redirect()
                 ->back()
-                ->withInput() // Preserves old input for form repopulation
-                ->with('error', 'Failed to create school.');
+                ->withInput()
+                ->with('error', $errorMessage);
         }
     }
 

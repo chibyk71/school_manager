@@ -65,7 +65,7 @@ class SchoolScope implements Scope
         // -----------------------------------------------------------------
         // 2. Resolve table name & school_id column.
         // -----------------------------------------------------------------
-        $table          = $model->getTable();
+        $table = $model->getTable();
         $schoolIdColumn = method_exists($model, 'getSchoolIdColumn')
             ? $model->getSchoolIdColumn()
             : 'school_id';
