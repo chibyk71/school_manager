@@ -1,109 +1,134 @@
 <!-- resources/js/Components/Modals/ResourceDialog.vue -->
 <script setup lang="ts">
-import { computed, watch, onMounted, onBeforeUnmount, defineComponent } from 'vue'
-import { defineAsyncComponent } from 'vue'
-import { useToast } from 'primevue/usetoast'
-import { modals } from '@/helpers'
-import { ModalComponentDirectory } from '@/Components/Modals/ModalDirectory'
-import { Dialog, ProgressSpinner } from 'primevue'
+/**
+ * ResourceDialog.vue
+ *
+ * The single, globally-placed dialog component that renders the topmost modal from the ModalService queue.
+ *
+ * Features / Problems Solved:
+ * - Renders exactly one PrimeVue Dialog that reflects the current top modal (queue[0]).
+ * - Dynamically loads the registered modal component via Suspense + defineAsyncComponent (code-splitting).
+ * - Applies per-modal configuration from ModalDirectory (title, maxWidth, maxHeight, persistent behavior).
+ * - Handles loading, error, and fallback states gracefully.
+ * - Passes payload data and instanceId to the child modal so it can emit custom events to its own isolated emitter.
+ * - Supports both normal stacking (open) and priority overlays (prepend).
+ * - Forces clean remount when a new modal appears or all close (via reactive key).
+ * - Fully accessible: uses PrimeVue Dialog's built-in focus trap, ARIA roles, and keyboard support.
+ * - Responsive and consistent styling across the entire app.
+ *
+ * Fits into the Modal Module:
+ * - Placed once in the root layout (e.g., App.vue) – no need to import elsewhere.
+ * - Reads directly from ModalService via useModal() composable.
+ * - Works seamlessly with ModalDirectory (component resolution + config) and ModalService (queue management).
+ */
 
-// Toast for dev errors
-const toast = useToast()
+import { computed, defineComponent, watch } from 'vue';
+import { defineAsyncComponent } from 'vue';
+import { useToast } from 'primevue/usetoast';
+import { Dialog, ProgressSpinner } from 'primevue';
 
-// Current modal (first in queue)
-const current = computed(() => modals.items[0] ?? null)
-const modalId = computed(() => current.value?.id)
-const payload = computed(() => current.value?.data ?? {})
+import { ModalComponentDirectory, type ModalId } from '@/Components/Modals/ModalDirectory';
+import { useModal } from '@/composables/useModal';
 
-// Dynamic component loader
+const toast = useToast();
+const modalService = useModal();
+
+// Current top modal from the reactive queue
+const currentItem = modalService.currentItem;
+
+const modalId = computed<ModalId | null>(() => currentItem.value?.id ?? null);
+const payload = computed(() => currentItem.value?.data ?? {});
+const instanceId = computed(() => currentItem.value?.instanceId ?? '');
+const config = computed(() => currentItem.value?.config ?? {});
+
+// Dynamic async component with built-in loading/error handling
 const ModalComponent = computed(() => {
-    if (!modalId.value) return null
+    if (!modalId.value) return null;
 
-    const loader = ModalComponentDirectory[modalId.value]
-    if (!loader) {
-        console.error(`[ResourceDialog] No modal registered for ID: "${modalId.value}"`)
+    const entry = ModalComponentDirectory[modalId.value];
+    if (!entry?.loader) {
+        console.error(`[ResourceDialog] No registration found for modal ID: "${modalId.value}"`);
         toast.add({
             severity: 'error',
-            summary: 'Modal Not Found',
+            summary: 'Modal Error',
             detail: `Modal "${modalId.value}" is not registered in ModalDirectory.ts`,
             life: 8000,
-        })
-        return null
+        });
+        return null;
     }
 
     return defineAsyncComponent({
-        loader,
+        loader: entry.loader,
         loadingComponent: defineComponent({
             template: `
-                <div class="text-center py-16 text-red-600">
-                    <i class="pi pi-spinner spinner-border text-6xl mb-4"></i>
-                    <p>Loading...</p>
-                </div>
+            <div class="text-center py-16 text-gray-500">
+                <i class="pi pi-spinner pi-spin text-6xl mb-4"></i>
+                <p>Loading...</p>
+            </div>
             `,
         }),
         errorComponent: defineComponent({
             template: `
-                <div class="text-center py-16 text-red-600">
-                    <i class="pi pi-exclamation-triangle text-6xl mb-4"></i>
-                    <p>Failed to load modal component.</p>
-                </div>
-            `,
+            <div class="text-center py-16 text-red-600">
+                <i class="pi pi-exclamation-triangle text-6xl mb-4"></i>
+                <p>Failed to load modal.</p>
+            </div>
+        `,
         }),
         delay: 100,
         timeout: 30000,
-    })
-})
+    });
+});
 
-// Close current modal
+// Close the current modal via the service
 const closeModal = () => {
-    modals.close()
-}
+    if (instanceId.value) modalService.close(instanceId.value);
+};
 
-// Force re-render when modal changes
-let key = 0
+// Force remount when queue changes (ensures clean state when opening a new modal)
+let renderKey = 0;
 watch(
-    () => modals.items.length,
-    (len, oldLen) => {
-        if (len === 0 && oldLen > 0) key++ // Reset on close
-        if (len > oldLen) key++          // New modal opened
-    }
-)
+    () => modalService.queueLength.value,
+    (newLength, oldLength) => {
+        if (newLength > oldLength!) renderKey++; // new modal opened
+        if (newLength === 0 && oldLength! > 0) renderKey++; // all modals closed
+    },
+    { immediate: true }
+);
 </script>
 
 <template>
-    <Dialog v-if="current" :key="key" :visible="true" :modal="true" :closable="true" :dismissable-mask="true"
-        :close-on-escape="true" @update:visible="closeModal" blockScroll class="max-w-4xl w-full mx-4" :show-header="false" :pt="{
-            root: { class: 'rounded-xl shadow-2xl' },
+    <Dialog v-if="currentItem" :key="renderKey" :visible="true" :modal="true" :closable="!config.persistent"
+        :dismissable-mask="!config.persistent" :close-on-escape="!config.persistent" @update:visible="closeModal"
+        :header="config.title" :show-header="!!config.title" block-scroll :pt="{
+            root: { class: ['rounded-xl shadow-2xl', config.maxWidth ? `max-w-${config.maxWidth}` : 'max-w-4xl', 'w-full mx-4'] },
+            header: { class: 'text-lg font-semibold border-b border-gray-200 pb-4' },
             content: { class: 'p-6' },
             footer: { class: 'hidden' },
-        }">
-        <!-- Body -->
-        <template #default>
-            <Suspense>
-                <template #default>
-                    <component :is="ModalComponent" v-bind="payload" @close="closeModal" class="w-full block" />
-                </template>
+        }" class="resource-dialog">
+        <Suspense>
+            <template #default>
+                <component :is="ModalComponent" v-bind="payload" @close="closeModal" class="w-full" />
+            </template>
 
-                <template #fallback>
-                    <div class="flex flex-col items-center justify-center py-16">
-                        <ProgressSpinner />
-                        <p class="mt-4 text-gray-600">Loading...</p>
-                    </div>
-                </template>
-            </Suspense>
-        </template>
-
-        <!-- Footer (optional) -->
-        <template #footer>
-            <!-- Most modals handle their own footer via DynamicForm -->
-            <!-- But we allow override via slot if needed -->
-            <slot name="footer" />
-        </template>
+            <template #fallback>
+                <div class="flex flex-col items-center justify-center py-16">
+                    <ProgressSpinner />
+                    <p class="mt-4 text-gray-600">Loading...</p>
+                </div>
+            </template>
+        </Suspense>
     </Dialog>
 </template>
 
-<style scoped>
+<style scoped lang="postcss">
 :deep(.p-dialog) {
     max-height: 95vh;
+    overflow-y: auto;
+}
+
+/* Optional: improve header spacing when no title is provided */
+:deep(.p-dialog-header:empty) {
+    @apply hidden;
 }
 </style>

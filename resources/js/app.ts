@@ -12,6 +12,7 @@ import PrimeVue from 'primevue/config';
 import { DialogService, Tooltip, ToastService, ConfirmationService } from 'primevue';
 import VueApexCharts from "vue3-apexcharts";
 import Aura from '@primeuix/themes/aura';
+import { ModalPlugin } from './Components/Modals/ModalService';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -43,6 +44,7 @@ createInertiaApp({
             .use(DialogService)
             .use(ConfirmationService)
             .use(VueApexCharts)
+            .use(ModalPlugin)
             .directive('tooltip', Tooltip)
             .mount(el);
     },
