@@ -41,6 +41,7 @@ use App\Http\Controllers\LeaveTypeController;
 use App\Http\Controllers\LessonPlanController;
 use App\Http\Controllers\LessonPlanDetailController;
 use App\Http\Controllers\NoticeController;
+use App\Http\Controllers\NotificationLogController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PromotionBatchController;
@@ -50,7 +51,7 @@ use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\SalaryStructureController;
 use App\Http\Controllers\SchoolController;
 use App\Http\Controllers\SchoolSectionController;
-use App\Http\Controllers\SelectOptionsController;
+use App\Http\Controllers\SearchController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
@@ -80,11 +81,24 @@ Route::get('/', function () {
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth'])->name('dashboard');
 
+Route::get('search/{resource}', [SearchController::class, 'search'])
+            ->name('search.select.options')
+            ->where('resource', '[a-zA-Z0-9_-]+');
+
 Route::middleware('auth')->group(function () {
 
     // Academics
     Route::resource('schools', SchoolController::class);
+    Route::delete('/schools', [SchoolController::class, 'destroy'])->name('schools.destroy');
+    Route::post('schools/force-delete', [SchoolController::class, 'forceDelete'])
+        ->name('schools.force-delete');
+    Route::post('schools/restore', [SchoolController::class, 'restore'])
+        ->name('schools.restore');
+    Route::post('schools/bulk-toggle', [SchoolController::class, 'bulkToggleStatus'])
+        ->name('schools.bulk-toggle');
+
     Route::resource('sections', SchoolSectionController::class);
+
 
     // User Management
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
@@ -195,11 +209,6 @@ Route::resource('admissions', AdmissionController::class);
 Route::delete('admissions/bulk', [AdmissionController::class, 'destroy'])->name('admissions.bulk.destroy');
 Route::post('admissions/restore', [AdmissionController::class, 'restore'])->name('admissions.restore');
 
-
-
-// HRM Employee Management
-Route::resource('departments', DepartmentController::class);
-Route::resource('department-roles', DepartmentRoleController::class);
 Route::resource('leave-allocations', LeaveAllocationController::class);
 Route::resource('leave-requests', LeaveRequestController::class);
 Route::resource('leave-types', LeaveTypeController::class);
@@ -359,3 +368,4 @@ Route::get('/notifications/history', [NotificationLogController::class, 'index']
 require __DIR__ . '/auth.php';
 require __DIR__ . '/options.php';
 require __DIR__ . '/settings.php';
+require __DIR__ . '/employee_management.php';

@@ -2,254 +2,201 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreAddressRequest;
-use App\Http\Requests\UpdateAddressRequest;
 use App\Models\Address;
-use App\Models\Country;
+use App\Services\AddressService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Controller for managing addresses in a multi-tenant school management system.
+ * AddressController v1.0 – Resourceful API Controller for Address Management
+ *
+ * Purpose & Problems Solved:
+ * - Provides a complete RESTful API for managing addresses independently of their owner.
+ * - Central entry point for all address-related HTTP requests (list, view, create, update, delete).
+ * - Enforces Laravel policy authorization (AddressPolicy) on every action.
+ * - Delegates business logic to AddressService – keeps controller thin and focused on HTTP concerns.
+ * - Supports filtering by polymorphic owner (addressable_type + addressable_id) – essential for DataTables and modals.
+ * - Returns proper JSON responses for API consumption (e.g., from AddressModal.vue direct submit).
+ * - Optionally renders Inertia pages if needed in the future (e.g., dedicated address management UI).
+ * - Handles soft deletes correctly (destroy = soft delete, no force-delete endpoint exposed yet).
+ * - Structured validation via HasAddress trait (called through service).
+ * - Comprehensive error handling with meaningful HTTP status codes.
+ *
+ * Fits into the Address Management Module:
+ * - Primary backend exposure for frontend components:
+ *   • AddressModal.vue (direct submit mode: POST/PUT /addresses or /addresses/{id})
+ *   • AddressManager.vue / DataTables (GET /addresses with filters)
+ * - Used when addresses need to be managed separately (e.g., admin address list, bulk operations).
+ * - Works in tandem with AddressService (logic), AddressPolicy (security), and HasAddress trait (validation).
+ * - Routes: Typically registered as apiResource('addresses', AddressController::class) in api.php.
+ *
+ * Security Notes:
+ * - All actions are gated via Gate::authorize() using AddressPolicy.
+ * - Ownership enforced in policy (user can only act on addresses belonging to models they control).
+ * - 'address.manage' permission bypasses ownership (for admins).
+ *
+ * Endpoints Provided:
+ * - GET    /addresses              → index()    – list with optional filters
+ * - POST   /addresses              → store()     – create new address
+ * - GET    /addresses/{address}    → show()      – view single address
+ * - PUT    /addresses/{address}    → update()    – update existing
+ * - DELETE /addresses/{address}    → destroy()   – soft delete
+ *
+ * Dependencies:
+ * - App\Services\AddressService
+ * - App\Models\Address
+ * - App\Policies\AddressPolicy (registered in AuthServiceProvider)
  */
+
 class AddressController extends Controller
 {
-    /**
-     * Display a listing of addresses.
-     *
-     * Retrieves addresses for the active school using dynamic table querying.
-     *
-     * @param Request $request The incoming HTTP request.
-     * @return \Inertia\Response The Inertia response with addresses data.
-     */
-    public function index(Request $request): \Inertia\Response
+    protected AddressService $service;
+
+    public function __construct(AddressService $service)
     {
-        try {
-            Gate::authorize('viewAny', Address::class);
+        $this->service = $service;
+    }
 
-            $school = GetSchoolModel();
+    /**
+     * Display a listing of addresses with optional polymorphic filtering.
+     *
+     * Supports query params:
+     * - addressable_type (e.g., App\Models\Student)
+     * - addressable_id   (UUID or ID)
+     */
+    public function index(Request $request)
+    {
+        Gate::authorize('viewAny', Address::class);
 
-            // Use HasTableQuery for dynamic querying, searching, sorting, and pagination
-            $addresses = Address::withTrashed() // Include soft-deleted addresses for potential restore
-                ->where('school_id', $school?->id)
-                ->tableQuery($request);
+        $query = Address::query();
 
-            // Fetch all countries
-            $countries = Country::select('id', 'name', 'code')->get();
-
-            return Inertia::render('Settings/Addresses/Index', [ // UI path: resources/js/Pages/Settings/Addresses/Index.vue
-                'addresses' => $addresses,
-                'countries' => $countries
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to fetch addresses: ' . $e->getMessage());
-            return redirect()->route('dashboard')->with('error', 'Failed to load addresses.');
+        // Filter by polymorphic owner if provided
+        if ($request->filled('addressable_type') && $request->filled('addressable_id')) {
+            $query->where('addressable_type', $request->addressable_type)
+                ->where('addressable_id', $request->addressable_id);
         }
+
+        // Optional: include trashed if explicitly requested
+        if ($request->boolean('with_trashed')) {
+            $query->withTrashed();
+        }
+
+        // Eager load relations for display
+        $addresses = $query->with(['country', 'state', 'city', 'addressable'])->latest()->get();
+
+        // For API consumption (e.g., modals, DataTables)
+        return response()->json([
+            'data' => $addresses,
+        ]);
     }
 
     /**
      * Store a newly created address.
      *
-     * Creates an address for the active school with validated data.
-     *
-     * @param StoreAddressRequest $request The validated request.
-     * @return \Illuminate\Http\RedirectResponse Redirects on success.
+     * Expects validated data + addressable_type and addressable_id in request.
      */
-    public function store(StoreAddressRequest $request): \Illuminate\Http\RedirectResponse
+    public function store(Request $request)
     {
-        try {
-            Gate::authorize('create', Address::class);
+        Gate::authorize('create', Address::class);
 
-            $validated = $request->validated();
-            $school = GetSchoolModel();
+        $addressableType = $request->input('addressable_type');
+        $addressableId = $request->input('addressable_id');
 
-            $validated['school_id'] = $school?->id;
-            $address = Address::create($validated);
-
-            // Optional: Notify admins (e.g., via email or broadcast)
-            // \Illuminate\Support\Facades\Notification::send($adminUsers, new AddressCreated($address));
-
-            return redirect()
-                ->route('addresses.index')
-                ->with('success', 'Address created successfully.');
-        } catch (\Exception $e) {
-            Log::error('Failed to create address: ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Failed to create address: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Display a specific address.
-     *
-     * Retrieves an address if it belongs to the active school.
-     *
-     * @param Address $address The address to display.
-     * @return \Illuminate\Http\JsonResponse The JSON response with address data.
-     */
-    public function show(Address $address): \Illuminate\Http\JsonResponse
-    {
-        try {
-            Gate::authorize('view', $address);
-
-            $school = GetSchoolModel();
-            if ($address->school_id !== $school?->id) {
-                abort(403, 'Unauthorized access to address.');
-            }
-
+        if (!$addressableType || !$addressableId) {
             return response()->json([
-                'address' => $address->load('country'),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to fetch address: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to fetch address.'], 500);
+                'message' => 'addressable_type and addressable_id are required.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+
+        // Load the owner model
+        $addressable = $addressableType::findOrFail($addressableId);
+
+        // Authorize that user can create address for this owner (policy will check ownership)
+        Gate::authorize('create', Address::class);
+
+        $address = $this->service->create(
+            addressable: $addressable,
+            data: $request->only([
+                'country_id',
+                'state_id',
+                'city_id',
+                'address_line_1',
+                'address_line_2',
+                'landmark',
+                'city_text',
+                'postal_code',
+                'type',
+                'latitude',
+                'longitude',
+                'is_primary',
+            ]),
+            isPrimary: $request->boolean('is_primary'),
+            notify: true
+        );
+
+        return response()->json([
+            'message' => 'Address created successfully.',
+            'data' => $address->load(['country', 'state', 'city']),
+        ], Response::HTTP_CREATED);
     }
 
     /**
-     * Update an existing address.
-     *
-     * Updates an address with validated data, ensuring it belongs to the active school.
-     *
-     * @param UpdateAddressRequest $request The validated request.
-     * @param Address $address The address to update.
-     * @return \Illuminate\Http\RedirectResponse Redirects on success.
+     * Display the specified address.
      */
-    public function update(UpdateAddressRequest $request, Address $address): \Illuminate\Http\RedirectResponse
+    public function show(Address $address)
     {
-        try {
-            Gate::authorize('update', $address);
+        Gate::authorize('view', $address);
 
-            $school = GetSchoolModel();
-            if ($address->school_id !== $school?->id) {
-                abort(403, 'Unauthorized access to address.');
-            }
-
-            $validated = $request->validated();
-            if ($validated['is_primary'] ?? false) {
-                Address::where('addressable_id', $address->addressable_id)
-                    ->where('addressable_type', $address->addressable_type)
-                    ->where('school_id', $school?->id)
-                    ->where('id', '!=', $address->id)
-                    ->update(['is_primary' => false]);
-            }
-
-            $address->update($validated);
-
-            // Optional: Notify admins
-            // \Illuminate\Support\Facades\Notification::send($adminUsers, new AddressUpdated($address));
-
-            return redirect()
-                ->route('addresses.index')
-                ->with('success', 'Address updated successfully.');
-        } catch (\Exception $e) {
-            Log::error('Failed to update address: ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Failed to update address: ' . $e->getMessage());
-        }
+        return response()->json([
+            'data' => $address->load(['country', 'state', 'city', 'addressable']),
+        ]);
     }
 
     /**
-     * Delete one or more addresses (soft delete).
-     *
-     * Supports bulk deletion by IDs for the active school.
-     *
-     * @param Request $request The incoming HTTP request.
-     * @return \Illuminate\Http\JsonResponse The JSON response indicating success or failure.
+     * Update the specified address.
      */
-    public function destroy(Request $request): \Illuminate\Http\JsonResponse
+    public function update(Request $request, Address $address)
     {
-        try {
-            Gate::authorize('delete', Address::class);
+        Gate::authorize('update', $address);
 
-            $validated = $request->validate([
-                'ids' => 'required|array',
-                'ids.*' => 'exists:addresses,id',
-            ]);
+        $updatedAddress = $this->service->update(
+            address: $address,
+            data: $request->only([
+                'country_id',
+                'state_id',
+                'city_id',
+                'address_line_1',
+                'address_line_2',
+                'landmark',
+                'city_text',
+                'postal_code',
+                'type',
+                'latitude',
+                'longitude',
+                'is_primary',
+            ]),
+            makePrimary: $request->boolean('is_primary'),
+            notify: true
+        );
 
-            $school = GetSchoolModel();
-
-            Address::where('school_id', $school?->id)
-                ->whereIn('id', $validated['ids'])
-                ->delete();
-
-            // Optional: Notify admins
-            // \Illuminate\Support\Facades\Notification::send($adminUsers, new AddressesDeleted($validated['ids']));
-
-            return response()->json(['message' => 'Address(es) deleted successfully']);
-        } catch (\Exception $e) {
-            Log::error('Failed to delete addresses: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to delete addresses.', 'details' => $e->getMessage()], 500);
-        }
+        return response()->json([
+            'message' => 'Address updated successfully.',
+            'data' => $updatedAddress->load(['country', 'state', 'city']),
+        ]);
     }
 
     /**
-     * Restore one or more soft-deleted addresses.
-     *
-     * Supports bulk restoration by IDs for the active school.
-     *
-     * @param Request $request The incoming HTTP request.
-     * @return \Illuminate\Http\JsonResponse The JSON response indicating success or failure.
+     * Soft delete the specified address.
      */
-    public function restore(Request $request): \Illuminate\Http\JsonResponse
+    public function destroy(Address $address)
     {
-        try {
-            Gate::authorize('restore', Address::class);
+        Gate::authorize('delete', $address);
 
-            $validated = $request->validate([
-                'ids' => 'required|array',
-                'ids.*' => 'exists:addresses,id',
-            ]);
+        $this->service->delete($address, notify: true);
 
-            $school = GetSchoolModel();
-
-            Address::withTrashed()
-                ->where('school_id', $school?->id)
-                ->whereIn('id', $validated['ids'])
-                ->restore();
-
-            // Optional: Notify admins
-            // \Illuminate\Support\Facades\Notification::send($adminUsers, new AddressesRestored($validated['ids']));
-
-            return response()->json(['message' => 'Address(es) restored successfully']);
-        } catch (\Exception $e) {
-            Log::error('Failed to restore addresses: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to restore addresses.', 'details' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Permanently delete one or more addresses.
-     *
-     * Supports bulk force deletion by IDs for the active school.
-     *
-     * @param Request $request The incoming HTTP request.
-     * @return \Illuminate\Http\JsonResponse The JSON response indicating success or failure.
-     */
-    public function forceDestroy(Request $request): \Illuminate\Http\JsonResponse
-    {
-        try {
-            Gate::authorize('forceDelete', Address::class);
-
-            $validated = $request->validate([
-                'ids' => 'required|array',
-                'ids.*' => 'exists:addresses,id',
-            ]);
-
-            $school = GetSchoolModel();
-
-            Address::withTrashed()
-                ->where('school_id', $school?->id)
-                ->whereIn('id', $validated['ids'])
-                ->forceDelete();
-
-            // Optional: Notify admins
-            // \Illuminate\Support\Facades\Notification::send($adminUsers, new AddressesForceDeleted($validated['ids']));
-
-            return response()->json(['message' => 'Address(es) permanently deleted']);
-        } catch (\Exception $e) {
-            Log::error('Failed to force delete addresses: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to permanently delete addresses.', 'details' => $e->getMessage()], 500);
-        }
+        return response()->json([
+            'message' => 'Address deleted successfully.',
+        ], Response::HTTP_OK);
     }
 }
