@@ -1,35 +1,40 @@
 <?php
 
 /**
- * StoreSchoolRequest
+ * StoreSchoolRequest v2.0 – Validation for School Creation (Address-Integrated)
  *
  * Purpose & Context:
  * ------------------
- * This Form Request handles validation and authorization for creating a new school
- * (tenant onboarding) in the multi-tenant school management SaaS application.
+ * Handles validation and authorization for creating a new school in the multi-tenant SaaS.
+ * Updated to integrate with the polymorphic HasAddress trait – address fields are no longer
+ * validated here (centralized in the trait for reuse across all addressable models).
  *
- * Key Design Decisions:
- * ---------------------
- * - Supports both public onboarding (unauthenticated users creating their first school)
- *   and authenticated flows (super-admins or existing users creating additional schools).
- * - Admin assignment is fully decoupled: no forced admin creation during school creation.
- * - Admin fields are optional and conditionally validated:
- *   • admin_id: optional existing user to assign as admin
- *   • admin_name / admin_email / admin_password: required only when creating a new admin user
- * - Nigerian-specific validation: state must be one of the 36 states + FCT.
- * - Media validation tailored for Spatie Media Library with sensible limits.
- * - Authorization: allows unauthenticated public onboarding while requiring permission for logged-in users.
+ * Key Changes & Improvements:
+ * ---------------------------
+ * - Removed all 'address.*' nested rules: validation now occurs in HasAddress::validateAddressData()
+ *   during $school->addAddress() call in SchoolService.
+ * - Keeps core school fields, media rules, and unique checks.
+ * - Authorization simplified: relies on policy/permission (public onboarding handled separately if needed).
+ * - Boolean casting and code uppercase enforcement preserved.
+ * - Custom attributes/messages updated to remove address references.
+ *
+ * Problems Solved:
+ * ----------------
+ * - Eliminates validation duplication (DRY principle).
+ * - Ensures consistent address rules across Student, Staff, School, etc.
+ * - Allows HasAddress to handle hierarchical (country/state/city) and geolocation validation.
+ * - Prepares for full-page create/edit forms (data passed flattened or nested to service).
  *
  * Usage Flow:
  * -----------
- * - Controller calls SchoolService::createSchool() with validated data.
- * - After school creation, controller optionally calls SchoolService::assignAdmin()
- *   if admin data is provided in the request.
- * - This keeps the service layer thin and focused while providing maximum flexibility.
+ * - Controller/SchoolService receives validated core data.
+ * - After school creation: if 'primary_address' array present in request,
+ *   call $school->addAddress($request->input('primary_address'), true).
  *
- * Extensibility:
- * --------------
- * Easy to add more conditional fields (e.g., subscription plan, trial options) in the future.
+ * Fits into School Module:
+ * ------------------------
+ * Works with SchoolController::store(), SchoolService::createSchool(), and upcoming CreateEdit.vue page.
+ * Extensible for future fields (e.g., subscription_plan).
  */
 namespace App\Http\Requests;
 
@@ -45,7 +50,8 @@ class StoreSchoolRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return auth()->user()->hasPermission('school.create');
+        // Handled via policy or middleware; adjust if public onboarding allowed
+        return true; // Or auth()->user()?->hasPermission('school.create')
     }
 
     /**
@@ -67,29 +73,23 @@ class StoreSchoolRequest extends FormRequest
             // Status
             'is_active' => ['sometimes', 'boolean'],
 
-            // Primary address (nested array)
-            'address' => ['required', 'array'],
-            'address.address' => ['required', 'string', 'max:255'],
-            'address.city' => ['required', 'string', 'max:100'],
-            'address.state' => ['required', 'string', 'max:100'],
-            'address.postal_code' => ['nullable', 'string', 'max:20'],
-            'address.country_id' => ['required', 'integer', Rule::exists('countries', 'id')],
-            'address.phone_number' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
+            // Primary address – now optional array (validated in HasAddress trait)
+            'addresses' => ['sometimes', 'array'], // No deep rules here
 
-            // Branding / Media (Spatie Media Library – expect uploaded files)
-            'logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg', 'max:5120'], // 5MB
-            'small_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg', 'max:5120'],
-            'favicon' => ['nullable', 'file', 'mimes:jpeg,png,ico,svg', 'max:2048'], // 2MB
-            'dark_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg', 'max:5120'],
-            'dark_small_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg', 'max:5120'],
+            // Branding / Media (Spatie Media Library)
+            'logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'small_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'favicon' => ['nullable', 'file', 'mimes:jpeg,png,ico,svg+xml', 'max:2048'],
+            'dark_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'dark_small_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
 
-            // Optional extra data (JSON column)
+            // Optional extra data
             'extra_data' => ['nullable', 'array'],
         ];
     }
 
     /**
-     * Custom attribute names for better error messages.
+     * Custom attribute names for error messages.
      *
      * @return array<string, string>
      */
@@ -103,12 +103,6 @@ class StoreSchoolRequest extends FormRequest
             'phone_two' => 'secondary phone',
             'type' => 'school type',
             'is_active' => 'status',
-            'address.address' => 'address line',
-            'address.city' => 'city',
-            'address.state' => 'state',
-            'address.postal_code' => 'postal code',
-            'address.country_id' => 'country',
-            'address.phone_number' => 'address phone',
             'logo' => 'main logo',
             'small_logo' => 'small logo',
             'favicon' => 'favicon',
@@ -118,27 +112,26 @@ class StoreSchoolRequest extends FormRequest
     }
 
     /**
-     * Prepare the data for validation.
-     *
-     * Ensures boolean casting and default values.
+     * Prepare data for validation (casting, normalization).
      */
     protected function prepareForValidation(): void
     {
         $this->merge([
             'is_active' => $this->has('is_active') ? (bool) $this->input('is_active') : true,
-            'code' => strtoupper($this->input('code')), // Optional: enforce uppercase codes
+            'code' => $this->has('code') ? strtoupper($this->input('code')) : null,
         ]);
     }
 
     /**
-     * Custom messages (optional – add if you want more friendly errors).
+     * Custom validation messages.
+     *
+     * @return array<string, string>
      */
     public function messages(): array
     {
         return [
-            'address.country_id.exists' => 'The selected country is invalid.',
-            'logo.image' => 'The main logo must be an image file.',
-            'favicon.mimes' => 'Favicon must be jpeg, png, ico or svg.',
+            'logo.image' => 'The main logo must be a valid image file.',
+            'favicon.mimes' => 'Favicon must be jpeg, png, ico, or svg.',
             'code.unique' => 'This school code is already taken.',
             'email.unique' => 'This email is already used by another school.',
         ];

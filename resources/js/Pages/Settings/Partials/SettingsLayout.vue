@@ -1,3 +1,4 @@
+<!-- resources/js/Pages/Settings/Partials/SettingsLayout.vue -->
 <script setup lang="ts">
 const { hasSidebar } = defineProps<{
     hasSidebar?: boolean;

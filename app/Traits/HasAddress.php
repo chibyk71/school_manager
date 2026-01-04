@@ -3,6 +3,7 @@
 namespace App\Traits;
 
 use App\Models\Address;
+use App\Rules\InDynamicEnum;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -262,8 +263,7 @@ trait HasAddress
             'postal_code'    => ['nullable', 'string', 'max:20'],
 
             // Classification
-            // TODO: Consider making the validation use options from config model
-            'type' => ['nullable', 'in:residential,school_campus,office,postal,temporary,billing,other'],
+            'type' => [ new InDynamicEnum('type', Address::class), 'required'],
 
             // Geolocation
             'latitude'  => ['nullable', 'numeric', 'between:-90,90'],

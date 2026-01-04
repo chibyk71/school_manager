@@ -195,125 +195,81 @@ class SchoolController extends BaseSchoolController
         Gate::authorize('create', School::class);
 
         // ---------------------------------------------------------------------
-        // 2. Fetch supporting data for the form
-        // ---------------------------------------------------------------------
-        // Load countries in alphabetical order, selecting only needed fields.
-        // This is used in the address section of the create form (country dropdown).
-        $countries = Country::query()->orderBy('name')
-            ->get(['id', 'name'])
-            ->makeHidden(['created_at', 'updated_at']);
-
-        // You can extend this with more shared data:
-        // - School types (if enum or config-based)
-        // - Timezones, currencies, etc., depending on your form requirements.
-
-        // ---------------------------------------------------------------------
-        // 3. Render the Inertia page
+        // 2. Render the Inertia page
         // ---------------------------------------------------------------------
         // Renders resources/js/Pages/Settings/School/Create.vue
         // The passed props will be available in the Vue component as:
         //   props.countries: Array of { id, name }
-        return Inertia::render('Settings/School/Create', [
-            'countries' => $countries,
-
-            // Example of additional data you might add later:
-            // 'schoolTypes' => config('constants.school_types'),
-            'timezones' => DateTimeZone::listIdentifiers(),
-            // 'currencies'  => Currency::orderBy('name')->pluck('name', 'code'),
-        ]);
+        return Inertia::render('Settings/School/CreateEdit');
     }
 
     /**
-     * Store a new school in the system.
+     * SchoolController::store() v2.0 – Create School with Multi-Address Support
      *
      * Purpose & Context:
      * ------------------
-     * This method is the primary HTTP entry point for creating a new School (tenant/branch)
-     * in the multi-tenant school management SaaS application. It serves two distinct flows:
+     * Handles HTTP POST for creating a new school (tenant/branch) in the multi-tenant SaaS.
+     * Updated to support **multiple addresses** via the AddressManager component and polymorphic HasAddress trait.
      *
-     * 1. Public Onboarding:
-     *    - Unauthenticated users creating their first school
-     *    - No prior permissions exist — authorization is bypassed (handled in StoreSchoolRequest)
+     * Key Changes & Improvements (v2.0):
+     * ----------------------------------
+     * - Removed manual primary address handling – now fully delegated to AddressManager.vue.
+     * - Expects 'addresses' array in request (array of AddressFormData from frontend).
+     * - Passes entire validated payload to SchoolService::createSchool() – service handles core creation.
+     * - Address creation now handled in a dedicated loop using $school->addAddress($addrData, $isPrimary).
+     *   • First address marked as primary, others as regular.
+     * - Media handling unchanged (Spatie single-file collections).
+     * - Cache invalidation and active school context preserved.
+     * - Success response supports Inertia (JSON) and traditional redirect.
+     * - Comprehensive logging on failure.
      *
-     * 2. Authenticated Administrative Creation:
-     *    - Super-admins or existing users creating additional schools
-     *    - Requires 'school.create' permission
+     * Problems Solved:
+     * ----------------
+     * - Supports full multi-address workflow (add/edit/delete via AddressManager).
+     * - Eliminates outdated single-address logic.
+     * - Keeps controller thin – business logic (address creation loop) could move to service if preferred.
+     * - Ensures only one primary address (first in array).
      *
-     * Key Design Decisions & Improvements:
-     * ------------------------------------
-     * - Fully decoupled: Core creation logic lives in SchoolService::createSchool()
-     * - Admin creation is optional and handled separately via SchoolService::assignAdmin()
-     *   (called conditionally if admin data is provided)
-     * - Media handling (logos, favicon) is performed here using Spatie Media Library
-     *   — appropriate since file uploads are an HTTP concern
-     * - Active school context is set immediately after creation for seamless onboarding
-     * - Cache invalidation ensures fresh data in listings
-     * - Robust error handling with detailed logging and user-friendly feedback
-     * - Supports both traditional redirects and Inertia JSON responses
-     *
-     * Flow Overview:
-     * --------------
-     * 1. Authorization (skipped for public onboarding via Form Request)
-     * 2. Create school record + address via SchoolService
-     * 3. Handle optional admin creation/assignment
-     * 4. Upload media files (logo, favicon, etc.)
-     * 5. Set newly created school as active context
-     * 6. Invalidate caches
-     * 7. Redirect to success/onboarding page with appropriate message
-     *
-     * Security & Safety:
-     * ------------------
-     * - Validation fully delegated to StoreSchoolRequest
-     * - All database operations wrapped in transaction inside SchoolService
-     * - Media uploads validated and restricted by Form Request
-     * - Errors are logged with full context (validated data, user ID, trace)
-     *
-     * Extensibility:
-     * --------------
-     * - Easy to add post-creation steps (e.g., welcome email, trial subscription)
-     * - Can extend to return JSON for API or Inertia partial updates
-     *
-     * @param  \App\Http\Requests\StoreSchoolRequest  $request
-     *         Validated request containing school details, optional address,
-     *         optional admin data (for new or existing user), and media uploads.
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     * Integration:
+     * ------------
+     * - Frontend: AddressManager v-model="form.addresses" sends full array.
+     * - Request: StoreSchoolRequest validates core fields + 'addresses' => 'sometimes|array'.
+     * - Service: createSchool() only creates core record.
+     * - Trait: HasAddress handles validation/storage per address.
      */
     public function store(StoreSchoolRequest $request)
     {
         try {
-            // -----------------------------------------------------------------
-            // 1. Create the school record
-            // -----------------------------------------------------------------
-            // All core creation (name, slug, email, type, extra_data) and address attachment
-            // is handled in SchoolService. This keeps the controller thin and focused on HTTP.
+            // 1. Create core school record via service (validated data passed through)
             $school = $this->schoolService->createSchool($request->validated());
 
-            // -----------------------------------------------------------------
-            // 2. Optional: Assign or create admin user
-            // -----------------------------------------------------------------
-            // Only executed if admin-related fields are present in the request.
-            // Supports:
-            // - Creating a brand new admin (public onboarding)
-            // - Assigning an existing user as admin (super-admin flow)
+            // 2. Handle multiple addresses if provided
+            if ($request->has('addresses') && is_array($request->input('addresses'))) {
+                $addresses = $request->input('addresses');
+
+                foreach ($addresses as $index => $addressData) {
+                    // First address = primary, others = regular
+                    $isPrimary = $index === 0;
+
+                    // HasAddress trait validates and assigns school_id automatically
+                    $school->addAddress($addressData, $isPrimary);
+                }
+            }
+
+            // 3. Optional admin assignment (unchanged – supports onboarding flows)
             if ($request->hasAny(['admin_id', 'admin_name', 'admin_email'])) {
                 $adminData = [
                     'name' => $request->input('admin_name'),
                     'email' => $request->input('admin_email'),
                     'password' => $request->input('admin_password'),
-                    'id' => $request->input('admin_id'), // if assigning existing
+                    'id' => $request->input('admin_id'),
                 ];
 
-                // assignAdmin() handles firstOrCreate, role assignment, notification
                 $this->schoolService->assignAdmin($adminData, $school);
             }
 
-            // -----------------------------------------------------------------
-            // 3. Handle media uploads (Spatie Media Library)
-            // -----------------------------------------------------------------
-            // Each collection is single-file — new upload replaces old.
-            // Only processes if file is actually uploaded.
+            // 4. Handle media uploads (Spatie – single-file collections)
             $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];
-
             foreach ($mediaCollections as $collection) {
                 if ($request->hasFile($collection)) {
                     $school->addMediaFromRequest($collection)
@@ -321,51 +277,37 @@ class SchoolController extends BaseSchoolController
                 }
             }
 
-            // -----------------------------------------------------------------
-            // 4. Set the newly created school as active context
-            // -----------------------------------------------------------------
-            // Critical for immediate onboarding experience — user starts working in their new school
+            // 5. Set active context for immediate onboarding
             $this->schoolService->setActiveSchool($school);
 
-            // -----------------------------------------------------------------
-            // 5. Invalidate caches
-            // -----------------------------------------------------------------
-            // Ensures school lists and related data reflect the new school immediately
+            // 6. Cache invalidation
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
-            // -----------------------------------------------------------------
-            // 6. Success response
-            // -----------------------------------------------------------------
-            $successMessage = 'School created successfully! Welcome to your new school dashboard.';
+            // 7. Success response
+            $message = 'School created successfully!';
 
-            // Support both traditional redirects and Inertia JSON responses
             if ($request->wantsJson() || $request->header('X-Inertia')) {
                 return response()->json([
-                    'message' => $successMessage,
-                    'school' => $school->load('primaryAddress'), // optional: include fresh data
+                    'message' => $message,
+                    'school' => $school->load('addresses'), // Include all addresses
                 ]);
             }
 
             return redirect()
-                ->route('dashboard') // or 'onboarding.success', 'schools.index', etc.
-                ->with('success', $successMessage);
+                ->route('dashboard')
+                ->with('success', $message);
 
-            // -----------------------------------------------------------------
-            // 7. Comprehensive error handling
-            // -----------------------------------------------------------------
         } catch (Throwable $th) {
-            // Log full context for debugging — safe because data is already validated
-            Log::error('Failed to create school during onboarding', [
+            Log::error('Failed to create school', [
                 'validated_data' => $request->validated(),
-                'user_id' => auth()->id() ?? 'guest (public onboarding)',
+                'user_id' => auth()->id() ?? 'guest',
                 'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
                 'error' => $th->getMessage(),
                 'trace' => $th->getTraceAsString(),
             ]);
 
-            $errorMessage = 'Failed to create your school. Please try again or contact support.';
+            $errorMessage = 'Failed to create school. Please try again.';
 
             if ($request->wantsJson() || $request->header('X-Inertia')) {
                 return response()->json(['error' => $errorMessage], 500);
@@ -470,88 +412,70 @@ class SchoolController extends BaseSchoolController
         }
     }
 
+    public function edit(School $school)
+    {
+        Gate::authorize('update', $school);
+
+        // Pre-load primary address data for form population
+        $school->load(['primaryAddress']);
+
+        return Inertia::render('Settings/School/CreateEdit', [
+            'school' => $school->append(['logo_url', 'small_logo_url', 'favicon_url', 'dark_logo_url', 'dark_small_logo_url']),
+        ]);
+    }
+
     /**
-     * Update an existing school record.
+     * SchoolController::update() v2.0 – Update School with Multi-Address Support
      *
-     * This method handles both full updates (via form submission) and partial updates
-     * (e.g., toggling the `is_active` status from the table row).
-     * It supports updating core school attributes, the primary address, and uploading/replacing
-     * media files (logos, favicon) using Spatie Media Library.
+     * Purpose & Context:
+     * ------------------
+     * Handles full or partial updates to an existing school.
+     * Now supports **multiple addresses** via AddressManager workflow.
      *
-     * Key features:
-     * - Authorization: Ensures the user has permission to update this specific school.
-     * - Partial update support: Detects quick toggle of `is_active` and handles it separately
-     *   to avoid unnecessary validation or media/address processing.
-     * - Address handling: Updates the existing primary address or creates a new one if none exists.
-     * - Media management: Replaces media in single-file collections (logo, favicon, etc.)
-     *   when new files are uploaded.
-     * - Cache invalidation: Clears relevant caches after any change.
-     * - Flexible response: Supports both full page redirects (form submission) and JSON responses
-     *   (for Inertia partial updates, e.g., toggling active status inline).
-     * - Robust error handling: Logs detailed context and returns appropriate user-friendly errors.
+     * Key Changes & Improvements (v2.0):
+     * ----------------------------------
+     * - Removed outdated single-address handling.
+     * - If 'addresses' array present: deletes all existing addresses, then recreates from payload.
+     *   • First = primary, others = regular.
+     *   • Alternative: Could implement diff-based updates (future enhancement).
+     * - Partial is_active toggle preserved (for inline actions).
+     * - Media handling unchanged.
+     * - Cache invalidation on any change.
      *
-     * @param  \App\Http\Requests\UpdateSchoolRequest  $request
-     *         The validated request containing updated school data, optional address array,
-     *         and/or uploaded media files.
-     * @param  \App\Models\School  $school
-     *         The School instance resolved via route model binding.
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     * Problems Solved:
+     * ----------------
+     * - Full sync with AddressManager (replace all addresses on save).
+     * - Consistent with create flow.
+     * - Simple, reliable implementation (full replace avoids complex diff logic).
      */
     public function update(UpdateSchoolRequest $request, School $school)
     {
-        // ---------------------------------------------------------------------
-        // 1. Authorization
-        // ---------------------------------------------------------------------
-        // Verify that the authenticated user has permission to update this specific school.
-        // Uses Laravel's Gate/Policy system with the 'update' ability.
-        // Throws 403 if not authorized.
         Gate::authorize('update', $school);
 
         try {
-            // -----------------------------------------------------------------
-            // 2. Handle partial update: toggling is_active status
-            // -----------------------------------------------------------------
-            // This is commonly used for inline table actions (e.g., Activate/Deactivate button).
-            // We handle it separately to avoid running full validation, address/media logic.
+            // 1. Handle quick status toggle (inline table actions)
             if ($request->has('is_active')) {
-                $school->update([
-                    'is_active' => $request->boolean('is_active') // Safely casts 'true'/true to boolean
-                ]);
+                $school->update(['is_active' => $request->boolean('is_active')]);
             } else {
-                // -------------------------------------------------------------
-                // 3. Full update: core school attributes
-                // -------------------------------------------------------------
-                // Update basic fields from validated data (name, code, email, phones, type, etc.)
-                $school->update($request->validated());
+                // 2. Full update: core attributes
+                $school->update($request->safe()->except(['addresses']));
 
-                // -------------------------------------------------------------
-                // 4. Update or create primary address
-                // -------------------------------------------------------------
-                if ($request->has('address')) {
-                    $addressData = $request->input('address');
+                // 3. Sync addresses – full replace (simplest reliable approach)
+                if ($request->has('addresses') && is_array($request->input('addresses'))) {
+                    // Delete all existing addresses (soft or force depending on Address model)
+                    $school->addresses()->delete(); // or forceDelete() if needed
 
-                    // If a primary address already exists, update it
-                    if ($school->primaryAddress()) {
-                        $school->primaryAddress()->update($addressData);
-                    } else {
-                        // Otherwise, create a new address and mark it as primary
-                        // Assumes HasAddress trait provides addAddress($data, $isPrimary = false)
-                        $school->addAddress($addressData, true);
+                    $addresses = $request->input('addresses');
+
+                    foreach ($addresses as $index => $addressData) {
+                        $isPrimary = $index === 0;
+                        $school->addAddress($addressData, $isPrimary);
                     }
                 }
 
-                // -------------------------------------------------------------
-                // 5. Handle media uploads (Spatie Media Library)
-                // -------------------------------------------------------------
-                // Each collection is configured as singleFile(), so uploading a new file
-                // automatically replaces the old one.
-                foreach ([
-                    'logo',
-                    'small_logo',
-                    'favicon',
-                    'dark_logo',
-                    'dark_small_logo'
-                ] as $collection) {
+                // 4. Handle media replacements
+                $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];
+                foreach ($mediaCollections as $collection) {
                     if ($request->hasFile($collection)) {
                         $school->addMediaFromRequest($collection)
                             ->toMediaCollection($collection);
@@ -559,48 +483,33 @@ class SchoolController extends BaseSchoolController
                 }
             }
 
-            // -----------------------------------------------------------------
-            // 6. Invalidate caches
-            // -----------------------------------------------------------------
-            // Any change to a school invalidates list caches and tagged caches.
+            // 5. Cache invalidation
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
-            // -----------------------------------------------------------------
-            // 7. Prepare success response
-            // -----------------------------------------------------------------
+            // 6. Success response
             $message = 'School updated successfully';
 
-            // JSON response for Inertia partial updates (e.g., after toggling active status)
             if ($request->wantsJson()) {
                 return response()->json(['message' => $message]);
             }
 
-            // Full page redirect after form submission
             return redirect()
                 ->route('schools.index')
                 ->with('success', $message);
 
-            // ---------------------------------------------------------------------
-            // 8. Comprehensive error handling
-            // ---------------------------------------------------------------------
         } catch (Throwable $th) {
-            // Log error with context for easier debugging
             Log::error('Failed to update school', [
                 'school_id' => $school->id,
                 'user_id' => auth()->id() ?? null,
                 'error' => $th->getMessage(),
-                'trace' => $th->getTraceAsString(), // Optional: remove in production if sensitive
+                'trace' => $th->getTraceAsString(),
             ]);
 
-            // Return appropriate error response based on request type
             if ($request->wantsJson()) {
-                return response()->json([
-                    'error' => 'Failed to update school.'
-                ], 500);
+                return response()->json(['error' => 'Failed to update school.'], 500);
             }
 
-            // For form submissions: redirect back with input and error message
             return redirect()
                 ->back()
                 ->withInput()
