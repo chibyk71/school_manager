@@ -9,8 +9,6 @@ defineProps<{
 
 import { ref, computed } from 'vue'
 import { useForm } from '@inertiajs/vue3'
-import AppLayout from '@/Layouts/AppLayout.vue'
-import { Switch } from '@headlessui/vue'
 import { Link } from '@inertiajs/vue3'
 
 // Props from controller
@@ -122,7 +120,9 @@ const orderedProviders = computed(() => {
                                 <div class="flex items-center justify-between bg-white p-3 border rounded mb-3">
                                     <span class="block"><img src="assets/img/icons/sms-icon-01.svg" alt="Img"></span>
                                     <div class="flex items-center gap-x-2.5">
-                                        <ToggleSwitch />
+                                        <ToggleSwitch >
+                                          <template #handle="slotProps"></template>
+                                        </ToggleSwitch>
                                         <Button v-tooltip.focus.top="'view integeation'" size="small" icon="ti ti-settings-cog" severity="secondary" variant="outlined" />
                                     </div>
                                 </div>

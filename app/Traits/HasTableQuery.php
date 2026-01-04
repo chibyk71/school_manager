@@ -138,6 +138,9 @@ trait HasTableQuery
                 if ($request->hasAny(['sorts', 'sort'])) {
                     $query->sort();
                 }
+                if ($request->boolean('trashed')) {
+                    $query->trashed();
+                }
             } catch (\Exception $e) {
                 Log::warning('Laravel Purity failed to apply filter/sort', [
                     'model'   => get_class($this),

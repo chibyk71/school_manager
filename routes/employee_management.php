@@ -34,8 +34,4 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::delete('departments/{id}/force', [DepartmentController::class, 'forceDestroy'])
         ->name('departments.force-delete');
-
-    // Optional: Full resource for managing custom DepartmentRoles (if you want a separate page)
-    Route::resource('department-roles', DepartmentRoleController::class)
-        ->names('department-roles');
 });

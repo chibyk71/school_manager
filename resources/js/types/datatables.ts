@@ -9,6 +9,7 @@
 
 import type { DefineComponent, FunctionalComponent, VNode, VNodeChild } from 'vue'
 import { FilterMatchMode } from '@primevue/core/api'
+import type { ButtonProps } from 'primevue'
 
 /**
  * Re-export PrimeVue's filter match modes for convenience and consistency
@@ -247,7 +248,7 @@ export interface DataTableStateWithColumns<T = Record<string, unknown>> extends 
 /**
  * Bulk actions configuration
  */
-export interface BulkAction {
+export interface BulkAction<T =any> {
     /** Display text */
     label: string
 
@@ -255,25 +256,31 @@ export interface BulkAction {
     icon?: string
 
     /** Button severity */
-    severity?: 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'help'
+    severity?: ButtonProps['severity']
 
     /** Unique action identifier sent to backend */
-    action: string
+    action?: string
 
     /** Optional confirmation dialog */
     confirm?: {
-        message: string
+        message: string | ((selectedRows: T[]) => string)
         header?: string
         acceptLabel?: string
         rejectLabel?: string
         severity?: 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | 'help'
+        icon?: string
+        acceptClass?: string
+        rejectClass?: string
     }
+
+    /** Handler executed when action is triggered */
+    handler: (selectedRows: T[]) => void | Promise<void>
 
     /** Disable when no rows selected */
     disabled?: boolean
 
     /** Show only when certain conditions are met */
-    visible?: (selectedRows: any[]) => boolean
+    visible?: ((selectedRows: T[]) => boolean) | boolean
 }
 
 /**
@@ -294,10 +301,10 @@ export interface TableAction<T = any> {
     label: string | ((row: T) => string);
 
     /** PrimeVue icon class (e.g., 'pi pi-eye', 'pi pi-trash') */
-    icon?: string;
+    icon?: string| ((row: T) => string);
 
     /** PrimeVue severity for button/menu item styling */
-    severity?: 'secondary' | 'success' | 'info' | 'warning' | 'help' | 'danger';
+    severity?: ButtonProps['severity'] | ((row: T) => ButtonProps['severity']);
 
     /** Handler executed when action is triggered – supports async operations */
     handler: (row: T) => void | Promise<void>;
@@ -310,9 +317,9 @@ export interface TableAction<T = any> {
 
     /** Require confirmation dialog before executing handler */
     confirm?: {
-        message: string;
-        header?: string;
-        icon?: string;
+        message: string | ((row: T)=> string);
+        header?: string | ((row: T)=> string);
+        icon?: string | ((row: T)=> string);
         acceptClass?: string; // e.g., 'p-button-danger'
     };
 }

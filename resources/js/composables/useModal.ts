@@ -41,7 +41,7 @@ export function useModal() {
     const queueItems = computed(() => service.queueItems);
 
     // Quick access to the emitter of the topmost modal (very useful for one-off listeners)
-    const emitter = computed(() => service.currentItem?.emitter ?? null);
+    const emitter = computed(() => currentItem.value?.emitter ?? null);
 
     return {
         /**

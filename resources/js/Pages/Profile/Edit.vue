@@ -1,4 +1,4 @@
-<!-- resources/js/Pages/Profile/Edit.vue -->
+<!-- resources/js/Pages/Profile/Edit.vue
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useForm, usePage } from '@inertiajs/vue3'
@@ -146,7 +146,7 @@ const showToast = (message, type = 'success') => {
             <div class="bg-white shadow-xl rounded-lg overflow-hidden">
                 <div class="p-8">
 
-                    <!-- Avatar Section -->
+                    <!-- Avatar Section --
                     <div class="mb-10 text-center">
                         <div class="relative inline-block" @dragover.prevent="dragOver" @dragleave="dragLeave"
                             @drop="drop" :class="{ 'ring-4 ring-blue-400 ring-opacity-50': isDragging }">
@@ -172,7 +172,7 @@ const showToast = (message, type = 'success') => {
                         </div>
                     </div>
 
-                    <!-- Form -->
+                    <!-- Form --
                     <form @submit.prevent="submit" class="space-y-8">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
@@ -222,7 +222,7 @@ const showToast = (message, type = 'success') => {
                             </div>
                         </div>
 
-                        <!-- 2FA Status -->
+                        <!-- 2FA Status --
                         <div class="bg-gray-50 rounded-lg p-6 border border-gray-200">
                             <div class="flex items-center justify-between">
                                 <div>
@@ -239,7 +239,7 @@ const showToast = (message, type = 'success') => {
                             </div>
                         </div>
 
-                        <!-- Submit -->
+                        <!-- Submit --
                         <div class="flex items-center gap-4">
                             <PrimaryButton :disabled="form.processing">
                                 {{ form.processing ? 'Saving...' : 'Save Changes' }}
@@ -253,4 +253,4 @@ const showToast = (message, type = 'success') => {
             </div>
         </div>
     </AuthenticatedLayout>
-</template>
+</template> -->

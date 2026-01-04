@@ -14,6 +14,7 @@ use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\DepartmentRoleController;
+use App\Http\Controllers\DynamicEnumController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventTypeController;
 use App\Http\Controllers\Exam\AssessmentController;
@@ -81,11 +82,25 @@ Route::get('/', function () {
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth'])->name('dashboard');
 
-Route::get('search/{resource}', [SearchController::class, 'search'])
-            ->name('search.select.options')
-            ->where('resource', '[a-zA-Z0-9_-]+');
+Route::get('/dynamic-enums/options/{appliesTo}/{name}', [DynamicEnumController::class, 'options'])
+    ->name('dynamic-enums.options');
 
 Route::middleware('auth')->group(function () {
+
+    Route::prefix('admin')
+        ->name('admin.')
+        ->group(function () {
+            Route::resource('dynamic-enums', DynamicEnumController::class)
+                ->except(['show']) // No dedicated show page needed
+                ->names([
+                    'index' => 'dynamic-enums.index',
+                    'create' => 'dynamic-enums.create',
+                    'store' => 'dynamic-enums.store',
+                    'edit' => 'dynamic-enums.edit',
+                    'update' => 'dynamic-enums.update',
+                    'destroy' => 'dynamic-enums.destroy',
+                ]);
+        });
 
     // Academics
     Route::resource('schools', SchoolController::class);

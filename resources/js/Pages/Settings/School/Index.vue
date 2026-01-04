@@ -1,36 +1,86 @@
 <!-- resources/js/Pages/Settings/Schools/Index.vue -->
+
+<!--
+Comprehensive File Overview: Schools Management Page (Index.vue) – Updated Actions
+
+This updated version refactors all row and bulk actions to exclusively use the reusable composables:
+- useDeleteResource() → for soft-delete and force-delete (single + bulk via same function)
+- useRestoreResource() → for restore (single + bulk via same function)
+
+Key Changes & Improvements:
+- Removed direct router.post/delete calls in bulk handlers
+- Unified single/bulk delete & restore logic through composables → consistent confirmation dialogs, toasts, error handling
+- Added onSuccess callbacks to refresh table data after any destructive/action (partial reload)
+- Force delete now uses deleteResource with { force: true } option
+- Separate bulk status toggle actions (activate/deactivate) kept as lightweight router.post (no confirmation needed via composable)
+- Dynamic visibility & labels preserved
+- Better icons and confirmation messages
+- Permission checks aligned (schools.delete, schools.force-delete, schools.restore, schools.update, schools.create)
+- Tooltip added for disabled status toggle on trashed schools
+
+Problems Solved:
+- Code duplication eliminated
+- Consistent UX across all delete/restore operations (same dialogs, toasts, loading states)
+- Easier maintenance – changes in confirmation/toast logic only in composables
+- Proper bulk support without custom handlers
+- Clear separation: destructive actions (delete/restore) use composables; non-destructive (status toggle) use direct calls
+
+Dependencies:
+- useDeleteResource, useRestoreResource, useTrashedToggle, usePermissions
+-->
+
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, markRaw } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
-import { useConfirm } from 'primevue/useconfirm';
 import AdvancedDataTable from '@/Components/datatable/AdvancedDataTable.vue';
 import { usePermissions } from '@/composables/usePermissions';
-import { ToggleSwitch } from 'primevue';
+import ToggleSwitch from 'primevue/toggleswitch';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import type { BulkAction } from '@/types/datatables';
+import type { BulkAction, ColumnDefinition, TableAction } from '@/types/datatables';
+import { useRestoreResource } from '@/composables/useRestoreResource';
+import { useTrashedToggle } from '@/composables/useTrashedToggle';
+import { useDeleteResource } from '@/composables/useDelete';
 
-// Inertia page props
+type School = {
+    id: number;
+    name: string;
+    slug: string;
+    code: string;
+    email: string;
+    phone: string | null;
+    logo_url: string | null;
+    is_active: boolean;
+    deleted_at: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+};
+
 const props = defineProps<{
-    schools: any; // Paginated response from controller
-    columns: any[]; // From ColumnDefinitionHelper
+    data: School[];
+    columns: ColumnDefinition<School>[];
+    globalFilterables: string[];
+    totalRecords: number
 }>();
 
-// Toast & Confirm
 const toast = useToast();
-const confirm = useConfirm();
-
-// Permissions
+const { deleteResource } = useDeleteResource();
+const { restoreResource } = useRestoreResource();
+const { showTrashed } = useTrashedToggle();
 const { hasPermission } = usePermissions();
 
-// Enhanced columns with custom renderers (actions + status toggle + logo preview)
-const enhancedColumns = computed(() => {
-    return props.columns.map((col: any) => {
-        // Logo preview
+// Helper: refresh table after action
+const refreshTable = () => {
+    router.reload({ only: ['data', 'totalRecords'] });
+};
+
+// Enhanced columns (logo preview + status toggle)
+const enhancedColumns = computed<ColumnDefinition<School>[]>(() => {
+    return props.columns.map((col) => {
         if (col.field === 'logo_url') {
             return {
                 ...col,
-                render: (row: any) => ({
+                render: (row) => ({
                     template: 'img',
                     src: row.logo_url || '/images/default-school-logo.png',
                     class: 'w-12 h-12 rounded-full object-cover border-2 border-gray-200 dark:border-gray-700',
@@ -38,177 +88,148 @@ const enhancedColumns = computed(() => {
                 }),
             };
         }
-
-        // Active status toggle
         if (col.field === 'is_active') {
             return {
                 ...col,
-                render: (row: any) => ({
-                    component: ToggleSwitch,
-                    props: { modelValue: row.is_active, disabled: !hasPermission('update-school') },
+                render: (row) => ({
+                    component: markRaw(ToggleSwitch) as any,
+                    props: {
+                        modelValue: row.is_active,
+                        disabled: !!row.deleted_at || !hasPermission('schools.update'),
+                        pt: { root: { 'data-pc-tooltip': !!row.deleted_at ? 'Cannot toggle status on trashed schools' : undefined } }
+                    },
                     on: {
-                        'update:modelValue': () => toggleStatus(row),
+                        'update:modelValue': (newValue: boolean) => toggleStatus(row, newValue),
                     },
                 }),
             };
         }
-
-        // Actions column (always last)
-        if (col.field === 'actions') {
-            return {
-                ...col,
-                frozen: true,
-                align: 'right',
-                width: '140px',
-                render: (row: any) => ({
-                    template: 'div',
-                    class: 'flex items-center justify-end gap-2',
-                    children: [
-                        {
-                            template: 'button',
-                            icon: 'pi pi-pencil',
-                            class: 'p-button p-button-rounded p-button-success p-button-sm',
-                            props: { disabled: !hasPermission('update-school') },
-                            on: { click: () => openEditModal(row) },
-                            'aria-label': `Edit ${row.name}`,
-                        },
-                        {
-                            template: 'button',
-                            icon: 'pi pi-trash',
-                            class: 'p-button-rounded p-button-danger p-button-sm',
-                            props: { disabled: !hasPermission('delete-school') },
-                            on: { click: () => deactivateSchool(row) },
-                            'aria-label': `Deactivate ${row.name}`,
-                        },
-                    ],
-                }),
-            };
-        }
-
         return col;
     });
 });
 
-// Bulk actions
-const bulkActions: BulkAction[] = [
+// Open create/edit form
+const openSchoolForm = (school?: School) => {
+    const canEdit = school ? hasPermission('schools.update') : hasPermission('schools.create');
+    if (!canEdit) {
+        toast.add({ severity: 'warn', summary: 'Unauthorized', detail: 'Insufficient permissions.', life: 4000 });
+        return;
+    }
+    router.visit(school ? route('settings.schools.edit', school.id) : route('settings.schools.create'));
+};
+
+// Optimistic status toggle
+const toggleStatus = async (school: School, newValue: boolean) => {
+    const original = school.is_active;
+    school.is_active = newValue;
+    try {
+        router.patch(route('schools.update', school.id), { is_active: newValue }, { preserveScroll: true });
+        toast.add({ severity: 'success', summary: 'Updated', detail: 'School status changed.', life: 3000 });
+    } catch {
+        school.is_active = original;
+        toast.add({ severity: 'error', summary: 'Failed', detail: 'Could not update status.', life: 5000 });
+    }
+};
+
+/**
+ * Row Actions – Now fully powered by useDeleteResource & useRestoreResource composables
+ */
+const schoolActions: TableAction<School>[] = [
     {
-        label: 'Deactivate Selected',
-        action: 'deactivate',
-        severity: 'danger',
+        label: 'Edit',
+        icon: 'pi pi-pencil',
+        severity: 'success',
+        handler: (row) => openSchoolForm(row),
+        show: () => hasPermission('schools.update'),
+    },
+    {
+        label: 'Restore',
+        icon: 'pi pi-undo',
+        severity: 'info',
+        handler: (row) => restoreResource('schools', [row.id], { onSuccess: refreshTable }),
+        show: (row) => !!row.deleted_at && hasPermission('schools.restore') && showTrashed.value,
+    },
+    {
+        label: 'Delete',
         icon: 'pi pi-trash',
-        confirm: {
-            message: 'Are you sure you want to deactivate the selected schools?',
-            header: 'Confirm Bulk Deactivation',
-            acceptLabel: 'Yes, Deactivate',
-            severity: 'danger',
-        },
+        severity: 'danger',
+        handler: (row) => deleteResource('schools', [row.id], { onSuccess: refreshTable }),
+        show: (row) => !row.deleted_at && hasPermission('schools.delete'),
+    },
+    {
+        label: 'Force Delete',
+        icon: 'pi pi-times-circle',
+        severity: 'danger',
+        handler: (row) => deleteResource('schools', [row.id], { force: true, onSuccess: refreshTable }),
+        show: (row) => !!row.deleted_at && hasPermission('schools.force-delete') && showTrashed.value,
+    },
+    {
+        label: (row) => row.is_active ? 'Deactivate' : 'Activate',
+        icon: (row) => row.is_active ? 'pi pi-power-off' : 'pi pi-check-circle',
+        severity: (row) => row.is_active ? 'warning' : 'success',
+        handler: (row) => toggleStatus(row, !row.is_active),
+        show: () => hasPermission('schools.update'),
+        disabled: (row) => !!row.deleted_at,
     },
 ];
 
-// Compute students array for grid view
-const schoolsArray = computed(() => props.schools?.data ?? [])
-
-// Open edit modal (using DynamicDialog from layout)
-const openEditModal = (school: any) => {
-    if (!hasPermission('update-school')) {
-        toast.add({ severity: 'warn', summary: 'Unauthorized', detail: 'You cannot edit schools.', life: 4000 });
-        return;
-    }
-
-    // Assuming you have a registered dynamic component 'SchoolFormDialog'
-    // Or import and use <DynamicDialog> programmatically
-    import('@/Components/Modals/Create/SchoolForm.vue').then((module) => {
-        // Use PrimeVue DialogService if configured, or fallback
-        // For simplicity: router.visit with query or separate route
-        router.visit(route('settings.schools.edit', school.id));
-    });
-};
-
-// Toggle status (optimistic + partial update)
-const toggleStatus = async (school: any) => {
-    const original = school.is_active;
-    school.is_active = !original; // Optimistic UI
-
-    try {
-        await router.patch(route('settings.schools.update', school.id), { is_active: school.is_active }, { preserveScroll: true });
-        toast.add({ severity: 'success', summary: 'Updated', detail: 'School status changed.', life: 3000 });
-    } catch (error: any) {
-        school.is_active = original; // Rollback
-        toast.add({
-            severity: 'error',
-            summary: 'Failed',
-            detail: error.response?.data?.message || 'Could not update status.',
-            life: 5000,
-        });
-    }
-};
-
-// Deactivate single school
-const deactivateSchool = (school: any) => {
-    if (!hasPermission('delete-school')) {
-        toast.add({ severity: 'warn', summary: 'Unauthorized', detail: 'You cannot deactivate schools.', life: 4000 });
-        return;
-    }
-
-    confirm.require({
-        message: `Deactivate "${school.name}"? This will prevent access but keep data.`,
-        header: 'Confirm Deactivation',
-        icon: 'pi pi-exclamation-triangle',
-        acceptClass: 'p-button-danger',
-        accept: async () => {
-            try {
-                await router.delete(route('settings.schools.destroy', school.id), { preserveScroll: true });
-                toast.add({ severity: 'success', summary: 'Deactivated', detail: `${school.name} deactivated.`, life: 4000 });
-                router.reload({ only: ['schools'] });
-            } catch (error: any) {
-                toast.add({
-                    severity: 'error',
-                    summary: 'Error',
-                    detail: error.response?.data?.error || 'Cannot deactivate: active users/students exist.',
-                    life: 6000,
-                });
-            }
+/**
+ * Bulk Actions – Now fully powered by useDeleteResource & useRestoreResource composables
+ */
+const schoolBulkActions: BulkAction<School>[] = [
+    {
+        label: 'Delete Selected',
+        icon: 'pi pi-trash',
+        severity: 'danger',
+        handler: (selected) => deleteResource('schools', selected.map(s => s.id), { onSuccess: refreshTable }),
+        visible: (selected) => selected.every(s => !s.deleted_at) && hasPermission('schools.delete'),
+    },
+    {
+        label: 'Restore Selected',
+        icon: 'pi pi-undo',
+        severity: 'info',
+        handler: (selected) => restoreResource('schools', selected.map(s => s.id), { onSuccess: refreshTable }),
+        visible: (selected) => selected.every(s => !!s.deleted_at) && hasPermission('schools.restore'),
+    },
+    {
+        label: 'Force Delete Selected',
+        icon: 'pi pi-times-circle',
+        severity: 'danger',
+        handler: (selected) => deleteResource('schools', selected.map(s => s.id), { force: true, onSuccess: refreshTable }),
+        visible: (selected) => selected.every(s => !!s.deleted_at) && hasPermission('schools.force-delete'),
+    },
+    {
+        label: 'Activate Selected',
+        icon: 'pi pi-check-circle',
+        severity: 'success',
+        handler: async (selected) => {
+            await router.post(route('settings.schools.bulk-toggle'), { ids: selected.map(s => s.id), is_active: true }, { preserveScroll: true });
+            refreshTable();
         },
-    });
-};
-
-// Bulk action handler
-const handleBulkAction = async (action: string, selected: any[]) => {
-    if (action === 'deactivate') {
-        confirm.require({
-            message: `Deactivate ${selected.length} selected school(s)?`,
-            header: 'Bulk Deactivation',
-            acceptClass: 'p-button-danger',
-            accept: async () => {
-                try {
-                    await router.post(route('settings.schools.bulk-deactivate'), { ids: selected.map(s => s.id) });
-                    toast.add({ severity: 'success', summary: 'Success', detail: 'Schools deactivated.', life: 4000 });
-                    router.reload({ only: ['schools'] });
-                } catch (error: any) {
-                    toast.add({ severity: 'error', summary: 'Failed', detail: 'Bulk operation failed.', life: 5000 });
-                }
-            },
-        });
-    }
-};
-
-onMounted(() => {
-    // Optional: Pre-fetch or analytics
-});
+        visible: (selected) => selected.some(s => !s.is_active) && hasPermission('schools.update'),
+    },
+    {
+        label: 'Deactivate Selected',
+        icon: 'pi pi-power-off',
+        severity: 'warning',
+        handler: async (selected) => {
+            router.post(route('schools.bulk-toggle'), { ids: selected.map(s => s.id), is_active: false }, { preserveScroll: true });
+            refreshTable();
+        },
+        visible: (selected) => selected.some(s => s.is_active) && hasPermission('schools.update'),
+    },
+];
 </script>
 
 <template>
-    <AuthenticatedLayout title="Schools Management" :crumb="[{ label: 'Dashboard', url: route('dashboard') },
-        { label: 'Schools' }]" :buttons="hasPermission('create-school')?[{
+    <AuthenticatedLayout title="Schools Management"
+        :crumb="[{ label: 'Dashboard', url: route('dashboard') }, { label: 'Schools' }]" :buttons="hasPermission('schools.create') ? [{
             label: 'Add New School',
             icon: 'pi pi-plus',
             class: 'p-button-success',
-            onClick: () => router.visit(route('schools.create'))
-        }]: []">
-
-        <!-- Page Content -->
+            onClick: () => openSchoolForm()
+        }] : []">
         <div class="space-y-6">
-            <!-- Optional Page Description -->
             <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                 <p class="text-sm text-blue-800 dark:text-blue-200">
                     Manage your organization's schools. Super admins see all schools; school owners see only their
@@ -216,15 +237,14 @@ onMounted(() => {
                 </p>
             </div>
 
-            <!-- Advanced DataTable -->
-            <AdvancedDataTable endpoint="/schools" :columns="enhancedColumns" :bulk-actions="bulkActions"
-                :initial-data="schoolsArray" :total-records="schools.total" :global-filter-fields="['name','slug','code','email']" @bulk-action="handleBulkAction" />
+            <AdvancedDataTable endpoint="settings/schools" :columns="enhancedColumns" :bulk-actions="schoolBulkActions"
+                :initial-data="props.data" :total-records="props.totalRecords"
+                :global-filter-fields="props.globalFilterables" :actions="schoolActions" />
         </div>
     </AuthenticatedLayout>
 </template>
 
 <style scoped lang="postcss">
-/* Custom enhancements for this page */
 :deep(.p-datatable .p-datatable-header) {
     @apply bg-primary-600 text-white rounded-t-lg;
 }

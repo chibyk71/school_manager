@@ -91,7 +91,16 @@ class AuthenticatedSessionController extends Controller
             // -----------------------------------------------------------------
             $isSystemAdmin = $this->isSystemWideAdmin($user);
 
-            Log::debug("User ID {$user->id} is " . ($isSystemAdmin ? '' : 'not ') . "a system-wide admin.");
+            // If there is no active school, retrieve the first school
+            // associated with the user and set it as the active school.
+            if (is_null($school)) {
+                $school = $user->schools()->first();
+
+                if ($school) {
+                    // Set the retrieved school as the active school
+                    app('schoolManager')->setActiveSchool($school);
+                }
+            }
 
             // -----------------------------------------------------------------
             // 3. Enforce school-membership rule **only for non-system admins**

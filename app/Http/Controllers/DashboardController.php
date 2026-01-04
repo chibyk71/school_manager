@@ -127,7 +127,7 @@ class DashboardController extends Controller
         return [
             'cards' => [
                 app(FinanceMetric::class)->collected(['month' => now()->month]),
-                app(FinanceMetric::class)->pending(),
+                app(FinanceMetric::class)->outstanding(),
                 app(FinanceMetric::class)->collectionRate(),
             ],
             'charts' => [

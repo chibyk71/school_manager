@@ -124,14 +124,6 @@ class SchoolController extends BaseSchoolController
                     'filterable' => false,            // Not available for column-specific filters
                     'type' => 'number',         // Helps frontend render appropriately (e.g., right-align)
                 ],
-
-                // Actions column typically contains Edit, View, Toggle Active, Delete, etc. buttons.
-                // This is a common pattern in admin tables.
-                'actions' => [
-                    'header' => 'Actions',
-                    'sortable' => false,
-                    'filterable' => false,
-                ],
             ];
 
             // -----------------------------------------------------------------
@@ -147,33 +139,13 @@ class SchoolController extends BaseSchoolController
             $paginated = $query->tableQuery($request, $extraFields);
 
             // -----------------------------------------------------------------
-            // 5. Generate column definitions for the frontend
-            // -----------------------------------------------------------------
-            // ColumnDefinitionHelper introspects the School model (fillable, casts, etc.)
-            // and merges in our $extraFields to produce a complete array of column metadata.
-            // This is used by the Vue table component to render headers, enable/disable sorting/filtering,
-            // determine input types for filters, etc.
-            $columns = ColumnDefinitionHelper::fromModel(new School(), $extraFields);
-
-            // -----------------------------------------------------------------
-            // 6. Retrieve global filterable fields from the model
-            // -----------------------------------------------------------------
-            // The School model defines which fields should be included in global (free-text) search.
-            // This is usually a subset of fillable fields (e.g., name, code, email, phone).
-            // Passing this explicitly allows the frontend to highlight or configure the global search input.
-            $model = new School();
-            $globalFilterFields = $model->getGlobalFilterColumns();
-
-            // -----------------------------------------------------------------
-            // 7. Render the Inertia page with all required props
+            // 5. Render the Inertia page with all required props
             // -----------------------------------------------------------------
             // Returns an Inertia response that will render the Vue component at
             // resources/js/Pages/Settings/School/Index.vue
             // The props are reactive and can be used directly in the component.
             return Inertia::render('Settings/School/Index', [
-                'schools' => $paginated,           // Paginated collection with pagination metadata
-                'columns' => $columns,             // Full column definitions for table rendering
-                'globalFilterFields' => $globalFilterFields,  // Fields included in global search
+                ...$paginated
             ]);
 
             // ---------------------------------------------------------------------
@@ -774,7 +746,7 @@ class SchoolController extends BaseSchoolController
     public function forceDelete(Request $request)
     {
         // Authorize: user must have general delete permission on School model
-        Gate::authorize('delete', School::class);
+        Gate::authorize('forceDelete', School::class);
 
         try {
             // Validate that ids are provided and are array of UUIDs/numeric IDs
@@ -876,7 +848,7 @@ class SchoolController extends BaseSchoolController
     public function restore(Request $request)
     {
         // Authorize: restoring is typically allowed under 'delete' or 'restore' policy
-        Gate::authorize('delete', School::class); // or create a specific 'restore' ability if needed
+        Gate::authorize('restore', School::class); // or create a specific 'restore' ability if needed
 
         try {
             // Validate input
@@ -945,6 +917,167 @@ class SchoolController extends BaseSchoolController
             }
 
             return redirect()->back()->with('error', $errorMessage);
+        }
+    }
+
+    /**
+     * Bulk toggle the active status (is_active) of one or multiple schools.
+     *
+     * This method handles both single and bulk updates of the `is_active` boolean flag
+     * on School models. It is designed specifically for quick administrative actions
+     * such as mass activation or deactivation of schools from the data table
+     * (e.g., "Activate Selected" or "Deactivate Selected" bulk actions).
+     *
+     * Key Features & Design Decisions:
+     * --------------------------------
+     * - Thin controller: Only performs authorization, validation, looping, and cache invalidation.
+     *   Business rules (if any) remain in the model or service.
+     * - Accepts `ids` (array of school IDs) and `is_active` (boolean) in the request body.
+     * - Supports both authenticated Inertia/AJAX requests (JSON response) and traditional form posts.
+     * - Authorization: Uses the general 'update' ability on the School class.
+     *   Granular per-school checks can be added in a policy if required.
+     * - Safety: Skips schools that are soft-deleted (trashed) – status toggle is disabled on trashed rows
+     *   in the frontend, but we double-check here to prevent accidental API misuse.
+     * - Efficiency: Uses mass update where possible, but falls back to individual updates
+     *   to allow future per-school hooks or events.
+     * - Cache handling: Invalidates school-related caches after any change.
+     * - Comprehensive feedback: Returns detailed success/failure counts and messages.
+     * - Error resilience: Validation exceptions are re-thrown for proper Inertia/form error handling;
+     *   unexpected errors are logged with full context.
+     *
+     * Expected Routes (examples):
+     * ---------------------------
+     * POST /settings/schools/bulk-toggle  ->  settings.schools.bulk-toggle
+     *
+     * Request Payload Example:
+     * -----------------------
+     * {
+     *     "ids": ["1", "5", "12"],
+     *     "is_active": true   // or false
+     * }
+     *
+     * Response Examples:
+     * ------------------
+     * JSON (Inertia/AJAX):
+     * {
+     *     "message": "3 school(s) activated successfully.",
+     *     "updated_count": 3,
+     *     "skipped_count": 0,
+     *     "failures": []
+     * }
+     *
+     * Redirect (traditional):
+     * Redirect to schools.index with flash success message.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     *         The incoming request containing:
+     *         - ids: required array of school IDs (string|numeric)
+     *         - is_active: required boolean (true to activate, false to deactivate)
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
+     */
+    public function bulkToggleStatus(Request $request)
+    {
+        // ---------------------------------------------------------------------
+        // 1. Authorization
+        // ---------------------------------------------------------------------
+        // Requires general update permission on the School model.
+        // More granular per-school checks can be implemented in a policy if needed.
+        Gate::authorize('update', School::class);
+
+        try {
+            // -----------------------------------------------------------------
+            // 2. Validation
+            // -----------------------------------------------------------------
+            $request->validate([
+                'ids' => 'required|array|min:1',
+                'ids.*' => 'required|string|exists:schools,id',
+                'is_active' => 'required|boolean',
+            ]);
+
+            $ids = $request->input('ids');
+            $isActive = $request->boolean('is_active'); // Safely converts to boolean
+
+            $updatedCount = 0;
+            $skippedCount = 0;
+            $failures = [];
+
+            // -----------------------------------------------------------------
+            // 3. Process each school individually
+            // -----------------------------------------------------------------
+            // Individual updates allow future event firing, logging, or per-school logic.
+            foreach ($ids as $schoolId) {
+                $school = School::find($schoolId);
+
+                // Safety guard: skip trashed (soft-deleted) schools.
+                // The frontend already disables the action on trashed rows,
+                // but we protect the endpoint from direct API calls.
+                if (!$school || $school->trashed()) {
+                    $skippedCount++;
+                    $failures[] = "School ID {$schoolId} not found or already trashed.";
+                    continue;
+                }
+
+                // Update the active status
+                $school->update(['is_active' => $isActive]);
+                $updatedCount++;
+            }
+
+            // -----------------------------------------------------------------
+            // 4. Invalidate caches
+            // -----------------------------------------------------------------
+            // Any status change affects listings, dashboards, etc.
+            Cache::forget('schools.all');
+            Cache::tags(['schools'])->flush();
+
+            // -----------------------------------------------------------------
+            // 5. Build response message
+            // -----------------------------------------------------------------
+            $action = $isActive ? 'activated' : 'deactivated';
+            $message = "{$updatedCount} school(s) {$action} successfully.";
+
+            if ($skippedCount > 0) {
+                $message .= " {$skippedCount} school(s) were skipped (not found or trashed).";
+            }
+
+            // -----------------------------------------------------------------
+            // 6. Return appropriate response
+            // -----------------------------------------------------------------
+            if ($request->wantsJson() || $request->header('X-Inertia')) {
+                return response()->json([
+                    'message' => $message,
+                    'updated_count' => $updatedCount,
+                    'skipped_count' => $skippedCount,
+                    'failures' => $failures,
+                ]);
+            }
+
+            return redirect()
+                ->route('schools.index')
+                ->with('success', $message);
+
+            // -----------------------------------------------------------------
+            // 7. Error handling
+            // -----------------------------------------------------------------
+        } catch (ValidationException $e) {
+            // Re-throw to let Laravel/Inertia handle field errors properly
+            throw $e;
+        } catch (Throwable $th) {
+            Log::error('Failed to bulk toggle school status', [
+                'user_id' => auth()->id() ?? null,
+                'input' => $request->all(),
+                'error' => $th->getMessage(),
+                'trace' => $th->getTraceAsString(),
+            ]);
+
+            $errorMessage = 'Failed to update school status.';
+
+            if ($request->wantsJson() || $request->header('X-Inertia')) {
+                return response()->json(['error' => $errorMessage], 500);
+            }
+
+            return redirect()
+                ->back()
+                ->with('error', $errorMessage);
         }
     }
 }

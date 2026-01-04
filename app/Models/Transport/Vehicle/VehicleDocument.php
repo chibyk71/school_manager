@@ -3,15 +3,14 @@
 namespace App\Models\Transport\Vehicle;
 
 use App\Traits\BelongsToPrimaryModel;
-use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
-use FarhanShares\MediaMan\Traits\HasMedia;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
 /**
  * Model representing a vehicle document in the school management system.
@@ -28,9 +27,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
  */
-class VehicleDocument extends Model
+class VehicleDocument extends Model implements \Spatie\MediaLibrary\HasMedia
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToPrimaryModel, HasMedia, HasUuids;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToPrimaryModel, InteractsWithMedia, HasUuids;
 
     /**
      * The table associated with the model.

@@ -20,7 +20,7 @@ const props = defineProps<{
 const { form, submit, isLoading } = useModalForm({
     school_ids: [] as string[]
 }, {
-    url: route('api.users.sync-schools', useProps().user.id),
+    url: route('users.sync-schools', useProps().user.id),
     method: 'post',
     successMessage: 'User schools synced successfully',
     reload: ['users'],

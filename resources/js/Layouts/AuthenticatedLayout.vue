@@ -20,6 +20,7 @@ defineProps<{
     title: string;
     crumb: Array<{ icon?: string; label?: string; url?: string }>;
     buttons?: Array<ButtonProps & Partial<ButtonEmits> & { href?: string }>;
+    canSeeTrashed?: boolean;
 }>();
 
 /**
@@ -58,7 +59,7 @@ onBeforeUnmount(() => {
             <div class="content !pb-12 p-6 lg:p-8 min-h-[calc(100vh-56px)] dark:bg-dark-bg-primary ">
                 <!-- Header slot – fallback to PageHeader if not overridden -->
                 <slot name="header">
-                    <PageHeader :title="title" :crumb :buttons />
+                    <PageHeader :title="title" :crumb :buttons :can-see-trashed />
                 </slot>
 
                 <!-- Main page content -->

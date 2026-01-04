@@ -83,15 +83,18 @@ class School extends \App\Models\Model implements HasMedia
         'code',
     ];
 
-    protected array $hiddenTableColumns = [
-        'data',
+    protected array $defaultHiddenColumns = [
         'created_at',
         'updated_at',
         'deleted_at',
+    ];
+
+    protected array $hiddenTableColumns = [
+        'data',
+        'dark_logo',
+        'dark_small_logo',
         'favicon',
         'small_logo',
-        'dark_logo',
-        'dark_small_logo'
     ];
 
     /**

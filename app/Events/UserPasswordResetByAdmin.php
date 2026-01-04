@@ -18,10 +18,10 @@ class UserPasswordResetByAdmin
     /**
      * Create a new event instance.
      */
-    public function __construct(User $target, User $admin)
+    public function __construct(User $target, string $password)
     {
         $this->target = $target;
-        $this->admin  = $admin;
+        $this->password  = $password;
     }
 
     /**

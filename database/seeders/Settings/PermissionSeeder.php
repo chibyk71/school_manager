@@ -27,11 +27,37 @@ class PermissionSeeder extends Seeder
             ['name' => 'dashboard.view', 'display_name' => 'View Dashboard', 'description' => 'Access the main dashboard'],
             ['name' => 'dashboard.edit', 'display_name' => 'Edit Dashboard', 'description' => 'Edit dashboard widgets'],
 
+            // dynamic enums
+            ['name' => 'dynamic-enums.view', 'display_name' => 'View Dynamic Enums', 'description' => 'View dynamic enum definitions and options'],
+            ['name' => 'dynamic-enums.manage', 'display_name' => 'Manage Dynamic Enums', 'description' => 'Create, update, or delete dynamic enum definitions and options'],
+
+            // Address permissions
+            ['name' => 'address.view-any', 'display_name' => 'View All Addresses', 'description' => 'View list of all addresses across all owners (admin feature)',],
+            ['name' => 'address.view', 'display_name' => 'View Own Addresses', 'description' => 'View addresses belonging to models the user owns or has access to (e.g., own student/staff profile)',],
+            ['name' => 'address.create', 'display_name' => 'Create Addresses', 'description' => 'Create new addresses for models the user has access to'],
+            ['name' => 'address.update', 'display_name' => 'Update Addresses', 'description' => 'Update existing addresses belonging to models the user has access to'],
+            ['name' => 'address.delete', 'display_name' => 'Delete Addresses', 'description' => 'Soft delete addresses belonging to models the user has access to'],
+            ['name' => 'address.restore', 'display_name' => 'Restore Deleted Addresses', 'description' => 'Restore soft-deleted addresses (admin or owner recovery)',],
+
             // Schools (Tenant Management)
-            ['name' => 'view-schools', 'display_name' => 'View Schools', 'description' => 'Access the list of schools'],
-            ['name' => 'create-school', 'display_name' => 'Create School', 'description' => 'Create a new school'],
-            ['name' => 'update-school', 'display_name' => 'Update School', 'description' => 'Update an existing school'],
-            ['name' => 'delete-school', 'display_name' => 'Delete School', 'description' => 'Delete a school'],
+            ['name' => 'schools.view-any', 'display_name' => 'View All Schools', 'description' => 'Access the list of schools'],
+            ['name' => 'schools.view', 'display_name' => 'View School', 'description' => 'Access The detail of individual school'],
+            ['name' => 'school.create', 'display_name' => 'Create School', 'description' => 'Create a new school'],
+            ['name' => 'school.update', 'display_name' => 'Update School', 'description' => 'Update an existing school'],
+            ['name' => 'school.delete', 'display_name' => 'Delete School', 'description' => 'Delete a school'],
+            ['name' => 'school.forceDelete', 'display_name' => 'Force Delete School', 'description' => 'Force delete a school'],
+            ['name' => 'school.restore', 'display_name' => 'Restore School', 'description' => 'Restore a soft-deleted school'],
+
+            // User Account Management (Beyond Staff/Student/Guardian Data)
+            ['name' => 'user.assign-roles', 'display_name' => 'Assign Roles to User', 'description' => 'Grant or revoke roles and permissions for any user within scope.'],
+            ['name' => 'user.change-status', 'display_name' => 'Activate/Deactivate User Account', 'description' => 'Enable or disable a user\'s ability to log in to the system.'],
+
+            // Security & Access
+            ['name' => 'user.reset-password-any', 'display_name' => 'Reset Any User\'s Password', 'description' => 'Force a password reset for any user account.'],
+            ['name' => 'user.impersonate', 'display_name' => 'Impersonate User', 'description' => 'Log in as another user for troubleshooting and support purposes. (Highly sensitive)'],
+
+            // Cross-Entity Linking (Handles the complex relationships)
+            ['name' => 'user.link-guardian-student', 'display_name' => 'Link Guardian to Student', 'description' => 'Create or manage the official relationship between a Guardian user and one or more Students.'],
 
             // Students
             ['name' => 'student.view-any', 'display_name' => 'View All Students', 'description' => 'View list of all students in a school'],
@@ -120,6 +146,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'departments.restore', 'display_name' => 'Restore Departments', 'description' => 'Restore deleted departments for a school'],
             ['name' => 'departments.force-delete', 'display_name' => 'Force Delete Departments', 'description' => 'Permanently delete departments for a school'],
             ['name' => 'departments.assign-role', 'display_name' => 'Assign Roles to Departments', 'description' => 'Assign roles to departments'],
+            ['name' => 'departments.view-users', 'display_name' => 'View Users in Departments', 'description' => 'View users in departments'],
 
             // Notices
             ['name' => 'notices.view', 'display_name' => 'View Notices', 'description' => 'View all notices for a school'],

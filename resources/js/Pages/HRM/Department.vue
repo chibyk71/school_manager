@@ -65,14 +65,14 @@ const { hasPermission } = usePermissions()
 
 // Inertia page props (SSR)
 const props = defineProps<{
-    departments: any // Laravel pagination + data
+    data: any // Laravel pagination + data
     roles: Array<{ id: string; display_name: string }>
+    totalRecords: number
     columns: ColumnDefinition<any>[],
-    globalFilter: string[]
+    globalFilterables: string[]
 }>()
 
 const { deleteResource } = useDeleteResource()
-
 // ------------------------------------------------------------------
 // 1. Main Departments Table Configuration
 // ------------------------------------------------------------------
@@ -141,7 +141,7 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
                     })
                 },       // ← Add this: handle view/details modal
                 edit: () => openEditModal(row),
-                delete: () => deleteResource('departments', [row.id], ),     // ← Add this: row-level delete confirmation
+                delete: () => deleteResource('departments', [row.id],),     // ← Add this: row-level delete confirmation
                 restore: () => restoreDepartment(row.id),
             },
         }),
@@ -227,18 +227,9 @@ const handleBulkAction = (action: string, selected: any[]) => {
     })
 }
 
-// ------------------------------------------------------------------
-// 4. Stats
-// ------------------------------------------------------------------
-const stats = computed(() => ({
-    total: props.departments.total || 0,
-    trashed: props.departments.trashed_count || 0,
-    active: (props.departments.total || 0) - (props.departments.trashed_count || 0),
-}))
 
-
-const departmentsArray = computed(() => props.departments?.data ?? [])
-const departmentsTotal = computed(() => props.departments?.total ?? 0)
+const departmentsArray = computed(() => props.data ?? [])
+const departmentsTotal = computed(() => props.totalRecords ?? 0)
 
 
 console.log(departmentsArray.value);
@@ -248,38 +239,15 @@ console.log(departmentsArray.value);
 
     <Head title="Departments" />
 
-    <AuthenticatedLayout title="Departments" :crumb="[{ label: 'HRM' }, { label: 'Departments' }]" :buttons="[{ label: 'Archive', class: hasPermission('departments.restore') ? '' : 'hidden', size: 'small', outlined: true },
-    { label: 'New Department', icon: 'pi pi-plus', onClick: openCreateModal, class: hasPermission('departments.create') ? '' : 'hidden' }
-    ]">
-        <div class="space-y-6">
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card class="shadow-sm">
-                    <template #title>Total Departments</template>
-                    <template #content>
-                        <div class="text-3xl font-bold text-primary">{{ stats.total }}</div>
-                    </template>
-                </Card>
-                <Card class="shadow-sm">
-                    <template #title>Active</template>
-                    <template #content>
-                        <div class="text-3xl font-bold text-green-600">{{ stats.active }}</div>
-                    </template>
-                </Card>
-                <Card class="shadow-sm" v-if="hasPermission('departments.restore') && stats.trashed > 0">
-                    <template #title>Trashed</template>
-                    <template #content>
-                        <div class="text-3xl font-bold text-orange-600">{{ stats.trashed }}</div>
-                    </template>
-                </Card>
-            </div>
-            <!-- Main Table -->
-            <AdvancedDataTable :endpoint="route('departments.index')" :initial-data="departmentsArray"
-                :columns="enhancedColumns" :bulk-actions="bulkActions" @bulk-action="handleBulkAction"
-                :initial-params="{ with_trashed: showTrashed }" :global-filter-fields="globalFilter"
-                :total-records="departmentsTotal">
-            </AdvancedDataTable>
-        </div>
+    <AuthenticatedLayout title="Departments" :crumb="[{ label: 'HRM' }, { label: 'Departments' }]"
+        :buttons="[{ label: 'Archive', class: hasPermission('departments.restore') ? '' : 'hidden', size: 'small', outlined: true },
+        { label: 'New Department', icon: 'pi pi-plus', onClick: openCreateModal, class: hasPermission('departments.create') ? '' : 'hidden' }]">
+        <!--  -->
+        <AdvancedDataTable :endpoint="route('departments.index')" :initial-data="departmentsArray"
+            :columns="enhancedColumns" :bulk-actions="bulkActions" @bulk-action="handleBulkAction"
+            :initial-params="{ with_trashed: showTrashed }" :global-filter-fields="globalFilterables"
+            :total-records="departmentsTotal">
+        </AdvancedDataTable>
     </AuthenticatedLayout>
 </template>
 

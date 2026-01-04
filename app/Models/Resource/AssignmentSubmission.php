@@ -6,11 +6,12 @@ use App\Models\Employee\Staff;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
-use FarhanShares\MediaMan\Traits\HasMedia;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
 /**
  * Class AssignmentSubmission
@@ -31,9 +32,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property \Illuminate\Support\Carbon $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
  */
-class AssignmentSubmission extends Model
+class AssignmentSubmission extends Model implements HasMedia
 {
-    use BelongsToSchool, HasMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
+    use BelongsToSchool, InteractsWithMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

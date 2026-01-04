@@ -6,6 +6,7 @@ use App\Models\CustomField;
 use App\Models\CustomFieldResponse;
 use App\Models\School;
 use Exception;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -29,6 +30,11 @@ trait HasCustomFields
     public function customFields()
     {
         return $this->morphMany(CustomField::class, 'model');
+    }
+
+    public function customFieldResponses()
+    {
+        return $this->morphMany(\App\Models\CustomFieldResponse::class, 'model');
     }
 
     /**
@@ -125,10 +131,28 @@ trait HasCustomFields
      *
      * @return $this
      */
-    public function withCustomFields()
+    public function loadCustomFields()
     {
-        $this->load('customFields');
-        return $this;
+        return $this->loadMissing([
+            'customFieldResponses.customField' => function ($q) {
+                $q->where('school_id', GetSchoolModel()?->id)->orderBy('sort');
+            }
+        ]);
+    }
+
+    /**
+     * Eager load custom field responses + their field definitions.
+     * Works on query builders: Student::withCustomFields()
+     */
+    public function scopeWithCustomFields(Builder $query): Builder
+    {
+        return $query->with([
+            'customFieldResponses.customField' => function ($q) {
+                $q->select('id', 'name', 'label', 'field_type', 'options', 'required', 'placeholder', 'hint')
+                    ->where('school_id', GetSchoolModel()?->id)
+                    ->orderBy('sort', 'asc');
+            }
+        ]);
     }
 
     /**
@@ -259,12 +283,6 @@ trait HasCustomFields
             ->join('custom_fields', 'custom_field_responses.custom_field_id', '=', 'custom_fields.id')
             ->where('custom_fields.name', $fieldName)
             ->value('custom_field_responses.value');
-    }
-
-
-    public function customFieldResponses()
-    {
-        return $this->morphMany(CustomFieldResponse::class, 'model');
     }
 
     /**

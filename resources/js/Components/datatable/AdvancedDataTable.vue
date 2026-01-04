@@ -1,6 +1,6 @@
 <!-- resources/js/composables/datatable/AdvancedDataTable.vue -->
 <script setup lang="ts" generic="T extends Record<string, any>">
-import { computed, ref } from 'vue'
+import { computed, provide, readonly, ref } from 'vue'
 
 // Core composable that handles all data fetching, hybrid mode, windowed prefetching, sorting, filtering, etc.
 import { useDataTable } from '../../composables/useDataTable'
@@ -19,6 +19,7 @@ import {
     DatePicker,
     InputNumber,
     InputText,
+    Menu,
     RadioButton,
     Select,
 } from 'primevue'
@@ -27,7 +28,7 @@ import {
 import type { BulkAction, ColumnDefinition, TableAction } from '@/types/datatables'
 
 // Helper for consistent date formatting across the app
-import { formatDate } from '@/helpers'
+import { formatDate, usePopup } from '@/helpers'
 import ActionsDropdown from './ActionsDropdown.vue'
 
 /**
@@ -67,19 +68,6 @@ const props = defineProps<{
 }>()
 
 /**
- * Emits – currently only bulk-action for parent handling (e.g., open confirmation modal)
- */
-const emit = defineEmits<{
-    (e: 'bulk-action', action: string, selected: T[]): void
-}>()
-
-/**
- * Reference to the PrimeVue DataTable instance.
- * Useful in the future for programmatic actions like exportCSV() if we enhance client-side export.
- */
-const tableRef = ref<InstanceType<typeof DataTable> | null>(null)
-
-/**
  * Destructure everything from our enhanced useDataTable composable
  */
 const {
@@ -99,10 +87,11 @@ const {
     refresh,              // Manual refresh (clears selection + refetches)
     isClientSide,         // Critical flag: true → full dataset in memory, false → server-side with window prefetching
     exportData,           // Unified export function (client-side CSV or backend blob)
+    showTrashed,          // Reactive boolean: whether trashed items are shown
+    toggleTrashed,        // Function to toggle showTrashed state
 } = useDataTable<T>(props.endpoint, props.columns, {
     initialParams: props.initialParams,
     initialData: props.initialData,
-    bulkActions: props.bulkActions,
     dataProperty: props.dataProperty,
 })
 
@@ -131,6 +120,13 @@ const totalRecords = computed(() => props.totalRecords ?? totalFromStore.value)
  */
 defineExpose({ refresh, exportData })
 
+// Provide the trash toggle API to child components (PageHeader, etc.)
+provide('dataTableApi', {
+    showTrashed,
+    toggleTrashed,
+    refresh: () => refresh(), // Expose refresh too
+});
+
 /**
  * Export handlers – passed to DataTableHeader so buttons can trigger correct export mode
  * - Visible: only current page (fast)
@@ -138,6 +134,8 @@ defineExpose({ refresh, exportData })
  */
 const handleExportVisible = () => exportData(false, true)
 const handleExportAll = () => exportData(true, false)
+
+const { toggle: toggleExportMenu } = usePopup('exportMenu');
 </script>
 
 <template>
@@ -154,9 +152,7 @@ const handleExportAll = () => exportData(true, false)
       - Export buttons (visible/all)
     -->
         <DataTableHeader :selected-rows="selectedRows" :bulk-actions="safeBulkActions" :columns="columns"
-            v-model:hidden-columns="hiddenColumns" v-model:global-search="filters.global.value" @refresh="refresh"
-            @bulk-action="emit('bulk-action', $event[0], selectedRows)" @export-visible="handleExportVisible"
-            @export-all="handleExportAll" />
+            v-model:hidden-columns="hiddenColumns" v-model:global-search="filters.global.value" @refresh="refresh" />
 
         <!--
       PrimeVue DataTable – the core table component
@@ -171,9 +167,9 @@ const handleExportAll = () => exportData(true, false)
             @sort="onSortHandler" :rowsPerPageOptions="[10, 20, 50, 100, 150, 200]"
             paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
             current-page-report-template="{first} - {last} of {totalRecords}" v-model:selection="selectedRows"
-            data-key="id" class="p-datatable-sm !rounded-none" striped-rows removable-sort
-            scrollable :scroll-height="virtualScroller ? '600px' : undefined"
-            :global-filter-fields="safeGlobalFilterFields" filter-display="menu" :filters="filters">
+            data-key="id" class="p-datatable-sm !rounded-none" striped-rows removable-sort scrollable
+            :scroll-height="virtualScroller ? '600px' : undefined" :global-filter-fields="safeGlobalFilterFields"
+            filter-display="menu" :filters="filters">
             <!-- Checkbox column for multi-selection -->
             <Column selection-mode="multiple" header-style="width: 3.5rem" body-style="text-align: center" />
 
@@ -262,7 +258,8 @@ const handleExportAll = () => exportData(true, false)
             </Column>
 
             <!-- Actions column if any actions are defined -->
-            <Column v-if="actions && actions.length" header="Actions" header-style="width: 3.5rem" body-style="text-align: center; width: 3.5rem;" :sortable="false" frozen>
+            <Column v-if="actions && actions.length" header="Actions" header-style="width: 3.5rem"
+                body-style="text-align: center; width: 3.5rem;" :sortable="false" frozen>
                 <template #body="slotProps">
                     <ActionsDropdown :actions="actions" :row="slotProps.data" />
                 </template>
@@ -278,7 +275,12 @@ const handleExportAll = () => exportData(true, false)
                 <DataTableLoadingState />
             </template>
             <template #paginatorend>
-                <Button label='Export' icon='pi pi-file-excel' severity="contrast" @click="()=> exportData(true)"></Button>
+                <Button label='Export' icon='pi pi-file-excel' severity="contrast"
+                    @click="(e) => toggleExportMenu(e)"></Button>
+                <Menu :model="[
+                    { label: 'Export Visible', icon: 'pi pi-eye', command: handleExportVisible },
+                    { label: 'Export All', icon: 'pi pi-globe', command: handleExportAll }
+                ]" popup ref="exportMenu" />
             </template>
         </DataTable>
     </div>

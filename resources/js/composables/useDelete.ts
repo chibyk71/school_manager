@@ -18,9 +18,11 @@ interface DeleteOptions {
  * - Shows success/error toasts
  * - Supports bulk deletion and custom endpoints
  * 
- * @returns {Object} An object containing the `deleteResource` function.
+ * @returns {deleteResource: (resource: string, ids: (string | number)[], options?: DeleteOptions) => Promise<void>;} An object containing the `deleteResource` function.
  */
-export function useDeleteResource() {
+export function useDeleteResource(): {
+    deleteResource: (resource: string, ids: (string | number)[], options?: DeleteOptions) => Promise<void>;
+} {
     // PrimeVue toast service for displaying notifications
     const toast = useToast();
 

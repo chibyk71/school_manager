@@ -7,11 +7,11 @@ use App\Models\Academic\Subject;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
-use FarhanShares\MediaMan\Traits\HasMedia;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
 /**
  * Class BookList
@@ -33,9 +33,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property \Illuminate\Support\Carbon $updated_at
  * @property \Illuminate\Support\Carbon|null $deleted_at
  */
-class BookList extends Model
+class BookList extends Model implements \Spatie\MediaLibrary\HasMedia
 {
-    use BelongsToSchool, HasMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
+    use BelongsToSchool, InteractsWithMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

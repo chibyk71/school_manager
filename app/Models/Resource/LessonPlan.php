@@ -8,7 +8,6 @@ use App\Models\Employee\Staff;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
-use FarhanShares\MediaMan\Traits\HasMedia;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -37,7 +36,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class LessonPlan extends Model
 {
-    use BelongsToSchool, HasMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
+    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.
@@ -176,10 +175,10 @@ class LessonPlan extends Model
      *
      * @return void
      */
-    public function registerMediaCollections(): void
-    {
-        $this->addMediaCollection('lesson_plan_files')
-            ->acceptsMimeTypes(['application/pdf', 'image/jpeg', 'image/png'])
-            ->useDisk('public');
-    }
+    // public function registerMediaCollections(): void
+    // {
+    //     $this->addMediaCollection('lesson_plan_files')
+    //         ->acceptsMimeTypes(['application/pdf', 'image/jpeg', 'image/png'])
+    //         ->useDisk('public');
+    // }
 }

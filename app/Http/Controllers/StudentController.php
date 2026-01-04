@@ -21,7 +21,9 @@ use Inertia\Inertia;
  */
 class StudentController extends BaseSchoolController
 {
-    public function __construct(protected UserService $userService) {}
+    public function __construct(protected UserService $userService)
+    {
+    }
 
     /**
      * Display a listing of students.
@@ -29,21 +31,33 @@ class StudentController extends BaseSchoolController
     public function index(Request $request)
     {
         try {
-            $school = $this->getActiveSchool();
-
-            $students = Student::where('school_id', $school->id)
+            $students = Student::query()
                 ->with([
-                    'user:id,name,email,enrollment_id',
-                    'schoolSection:id,name',
-                    'guardians.user:id,name',
-                    'classSections:id,name',
+                    'profile.user:id,name,enrollment_id',
+                    'profile',
+                    'currentClassSection.classLevel',
+                    'guardians.profile.user:id,name',
+                    'guardians.profile',
+                    'attendance' => fn($q) => $q->whereDate('date', today()),
                 ])
-                ->withCustomFields()
+                ->withCustomFields() // ← This loads responses
                 ->tableQuery($request);
+
+            // Let ColumnDefinitionHelper auto-generate ALL columns including custom fields
+            $columns = ColumnDefinitionHelper::fromModel(new Student(), [], includeNonFillable: true);
+
+            // Optional: Force default hidden for custom fields
+            foreach ($columns as &$col) {
+                // Hide all custom fields by default (user can unhide via column toggle)
+                if (str_starts_with($col['field'], 'cf_')) {
+                    $col['hidden'] = true;
+                }
+            }
 
             return Inertia::render('UserManagement/Students/Index', [
                 'students' => $students,
-                'columns'  => ColumnDefinitionHelper::fromModel(new Student()),
+                'columns' => $columns,
+                'filters' => $request->only(['search', 'sort', 'perPage']),
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch students: ' . $e->getMessage());
@@ -60,12 +74,12 @@ class StudentController extends BaseSchoolController
             $school = $this->getActiveSchool();
 
             return Inertia::render('UserManagement/Students/Create', [
-                'customFields'    => $this->getCustomFieldsForForm($school->id, Student::class),
-                'schoolSections'  => SchoolSection::where('school_id', $school->id)->get(['id', 'name']),
-                'guardians'       => Guardian::where('school_id', $school->id)
+                'customFields' => $this->getCustomFieldsForForm($school->id, Student::class),
+                'schoolSections' => SchoolSection::where('school_id', $school->id)->get(['id', 'name']),
+                'guardians' => Guardian::where('school_id', $school->id)
                     ->with('user:id,name,email')
                     ->get(['id', 'user_id']),
-                'classSections'   => ClassSection::where('school_id', $school->id)
+                'classSections' => ClassSection::where('school_id', $school->id)
                     ->with('classLevel:id,name')
                     ->get(['id', 'name', 'class_level_id']),
             ]);
@@ -82,17 +96,17 @@ class StudentController extends BaseSchoolController
     {
         try {
             $school = $this->getActiveSchool();
-            $data   = $request->validated();
+            $data = $request->validated();
 
             // Enrich data for UserService
             $data['profile_type'] = 'student';
             $data['profilable'] = [
-                'school_id'         => $school->id,
+                'school_id' => $school->id,
                 'school_section_id' => $data['school_section_id'] ?? null,
             ];
 
             // Create user + profile + student record
-            $user    = $this->userService->create($data);
+            $user = $this->userService->create($data);
             $student = $user->student; // Thanks to HasProfile trait
 
             DB::transaction(function () use ($data, $student) {
@@ -165,13 +179,13 @@ class StudentController extends BaseSchoolController
             ]);
 
             return Inertia::render('UserManagement/Students/Edit', [
-                'student'         => $student,
-                'customFields'    => $this->getCustomFieldsForForm($school->id, Student::class),
-                'schoolSections'  => SchoolSection::where('school_id', $school->id)->get(['id', 'name']),
-                'guardians'       => Guardian::where('school_id', $school->id)
+                'student' => $student,
+                'customFields' => $this->getCustomFieldsForForm($school->id, Student::class),
+                'schoolSections' => SchoolSection::where('school_id', $school->id)->get(['id', 'name']),
+                'guardians' => Guardian::where('school_id', $school->id)
                     ->with('user:id,name,email')
                     ->get(['id', 'user_id']),
-                'classSections'   => ClassSection::where('school_id', $school->id)
+                'classSections' => ClassSection::where('school_id', $school->id)
                     ->with('classLevel:id,name')
                     ->get(['id', 'name', 'class_level_id']),
             ]);

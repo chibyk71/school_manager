@@ -5,7 +5,6 @@ namespace App\Models\Resource;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
-use FarhanShares\MediaMan\Traits\HasMedia;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
@@ -33,7 +32,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class SyllabusDetail extends Model
 {
-    use BelongsToSchool, HasTableQuery, HasMedia, LogsActivity, SoftDeletes, HasUuids;
+    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.
@@ -149,17 +148,5 @@ class SyllabusDetail extends Model
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn(string $eventName) => "SyllabusDetail has been {$eventName}");
-    }
-
-    /**
-     * Register media collections for the syllabus detail.
-     *
-     * @return void
-     */
-    public function registerMediaCollections(): void
-    {
-        $this->addMediaCollection('syllabus_detail_files')
-            ->acceptsMimeTypes(['application/pdf', 'image/jpeg', 'image/png'])
-            ->useDisk('public');
     }
 }

@@ -2,7 +2,6 @@ import axios from 'axios';
 import type {
     ColumnDefinition,
     Sort,
-    BulkAction,
     FilterOperator
 } from '@/types/datatables';
 
@@ -12,11 +11,11 @@ import { LRUCache } from 'lru-cache';
 import debounce from 'lodash/debounce';
 import qs from 'qs'; // Make sure to: npm install qs
 import throttle from 'lodash/throttle';
+import { provide } from 'vue';
 
 interface UseDataTableOptions<T> {
     initialParams?: Record<string, any>;
     initialData?: T[];
-    bulkActions?: BulkAction[];
     maxRetries?: number;
     clientSideThreshold?: number;
     windowSize?: number;
@@ -36,7 +35,6 @@ export function useDataTable<T extends { id?: string | number } = any>(
     const {
         initialParams = {},
         initialData = [] as T[],
-        bulkActions = [],
         maxRetries = 3,
         clientSideThreshold = 1000,
         windowSize = 200,
@@ -72,6 +70,29 @@ export function useDataTable<T extends { id?: string | number } = any>(
     // Server-side window cache: windowKey → array of rows in that window
     const windowCache = new LRUCache<number, T[]>({
         max: cacheMaxWindows,
+    });
+
+
+    // =================================================================
+    // TRASH TOGGLE SUPPORT (NEW)
+    // =================================================================
+    const showTrashed = ref(false); // Track trashed state
+
+    const toggleTrashed = () => {
+        showTrashed.value = !showTrashed.value;
+
+        // Add trashed=1 param to initialParams (passed to ALL future fetches)
+        initialParams['trashed'] = showTrashed.value ? '1' : null;
+
+        // Refresh table with new params (clears cache, refetches)
+        refresh();
+    };
+
+    // Provide the trash toggle API to child components (PageHeader, etc.)
+    provide('dataTableApi', {
+        showTrashed: readonly(showTrashed),
+        toggleTrashed,
+        refresh: () => refresh(), // Expose refresh too
     });
 
     // =================================================================
@@ -436,7 +457,6 @@ export function useDataTable<T extends { id?: string | number } = any>(
     // =================================================================
     // REFRESH & BULK
     // =================================================================
-
     const refresh = () => {
         selectedRows.value = [];
         currentPage.value = 1;
@@ -445,21 +465,6 @@ export function useDataTable<T extends { id?: string | number } = any>(
             fetchData(1, true);
         } else {
             fetchData(1, false, true);
-        }
-    };
-
-    const performBulkAction = async (action: string) => {
-        if (!selectedRows.value.length) return;
-
-        try {
-            await axios.post(`${endpoint}/bulk`, {
-                action,
-                ids: selectedRows.value.map(r => r.id),
-            });
-            toast.add({ severity: 'success', summary: 'Bulk action completed' });
-            refresh();
-        } catch (err: any) {
-            toast.add({ severity: 'error', summary: 'Bulk action failed', detail: err.message });
         }
     };
 
@@ -530,6 +535,9 @@ export function useDataTable<T extends { id?: string | number } = any>(
         loading: readonly(loading),
         error: readonly(error),
 
+        showTrashed: readonly(showTrashed),
+        toggleTrashed,
+
         perPage,
         currentPage: readonly(currentPage),
 
@@ -546,9 +554,7 @@ export function useDataTable<T extends { id?: string | number } = any>(
         visibleColumns: computed(() => columns.filter(c => !hiddenColumns.value.includes(String(c.field)))),
 
         refresh,
-        performBulkAction,
         exportData,
-        bulkActions: computed(() => bulkActions),
         isClientSide: readonly(isClientSide),
     };
 }

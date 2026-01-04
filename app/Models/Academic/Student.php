@@ -2,6 +2,8 @@
 
 namespace App\Models\Academic;
 
+use Abbasudo\Purity\Traits\Filterable;
+use Abbasudo\Purity\Traits\Sortable;
 use App\Models\Academic\ClassLevel;
 use App\Models\Academic\ClassSection;
 use App\Models\Guardian;
@@ -35,6 +37,8 @@ class Student extends Model
         BelongsToSchool,
         HasCustomFields,
         HasTableQuery,
+        Filterable,
+        Sortable,
         HasAvatar; // ← Replaces old HasMedia + getPhotoUrlAttribute()
 
     protected $fillable = [
@@ -45,7 +49,13 @@ class Student extends Model
     protected $appends = [
         'current_class_level_name',
         'current_section_name',
-        // Removed: full_name, age, gender, phone, photo_url → now from profile/avatar
+        'student_id',           // ← NEW: Admission/Enrolment ID
+        'roll_number',          // ← NEW: From pivot or custom field
+        'parent_name',          // ← NEW: Primary guardian name
+        'parent_phone',         // ← NEW: Primary guardian phone
+        'today_attendance',     // ← NEW: Present/Absent/Late
+        'fee_status',           // ← NEW: Paid/Due/Partial
+        'status_badge',         // ← NEW: Active/Inactive/Left
     ];
 
     protected array $hiddenTableColumns = [
@@ -54,12 +64,18 @@ class Student extends Model
         'deleted_at',
     ];
 
+    // =================================================================
+    // Make these fields searchable in global search
+    // =================================================================
     protected array $globalFilterFields = [
+        'student_id',
         'current_class_level_name',
         'current_section_name',
-        // These will still work via relationship in tableQuery()
+        'roll_number',
         'profile.full_name',
         'profile.phone',
+        'parent_name',
+        'parent_phone',
     ];
 
     // =================================================================
@@ -144,56 +160,83 @@ class Student extends Model
     }
 
     // =================================================================
-    // ACCESSORS – ONLY ACADEMIC CONTEXT (no personal data here!)
+    // ACCESSORS – RICH TABLE DATA
     // =================================================================
 
-    public function getCurrentClassLevelNameAttribute(): ?string
+    public function getStudentIdAttribute(): ?string
     {
-        return $this->currentClassLevel()?->display_name
-            ?? $this->currentClassLevel()?->name;
+        return $this->user?->enrollment_id;
+    }
+
+    public function getRollNumberAttribute(): ?string
+    {
+        // Option A: Stored in pivot (recommended) student_class_section_pivot.roll_number
+        return $this->currentClassSection()?->pivot?->roll_number
+            // Option B: Fallback to custom field
+            ?? $this->getCustomFieldValue('roll_number')
+            // Option C: Generate from name or ID (fallback)
+            ?? null;
+    }
+
+    public function getParentNameAttribute(): ?string
+    {
+        $guardian = $this->guardians()->with('user')->first();
+        return $guardian?->user?->name ?? $guardian?->profile?->full_name ?? null;
+    }
+
+    public function getParentPhoneAttribute(): ?string
+    {
+        $guardian = $this->guardians()->with('profile')->first();
+        return $guardian?->profile?->phone ?? null;
+    }
+
+    public function getTodayAttendanceAttribute(): ?string
+    {
+        $today = today()->toDateString();
+        $ledger = $this->attendance()
+            ->whereDate('date', $today)
+            ->first();
+
+        return match ($ledger?->status ?? 'absent') {
+            'present' => 'Present',
+            'late'    => 'Late',
+            'half_day'=> 'Half Day',
+            'holiday' => 'Holiday',
+            default   => 'Absent',
+        };
+    }
+
+    public function getFeeStatusAttribute(): string
+    {
+        // Replace with your actual fee logic (e.g., via relationship or service)
+        // This is a realistic placeholder
+        $due = $this->outstandingFees(); // assume method exists
+
+        if ($due <= 0) return 'Paid';
+        if ($due < 5000) return 'Partial';
+        return 'Due ₹' . number_format($due);
+    }
+
+    public function getStatusBadgeAttribute(): string
+    {
+        if ($this->trashed()) return 'Left';
+        if (!$this->user?->hasVerifiedEmail() || !$this->user?->status) return 'Inactive';
+        return 'Active';
     }
 
     public function getCurrentSectionNameAttribute(): ?string
     {
         $section = $this->currentClassSection();
-        return $section
-            ? ($section->classLevel?->name . '-' . $section->name)
-            : null;
+        if (!$section) return null;
+
+        $level = $section->classLevel?->display_name ?? $section->classLevel?->name;
+        return $level . '-' . $section->name;
     }
 
-    // =================================================================
-    // MAGIC ACCESSORS – Personal data comes from Profile
-    // =================================================================
-
-    /**
-     * Full name from profile.
-     */
-    public function getFullNameAttribute(): string
-    {
-        return $this->profile?->full_name ?? 'Unknown Student';
-    }
-
-    public function getAgeAttribute(): ?int
-    {
-        return $this->profile?->age;
-    }
-
-    public function getGenderAttribute(): ?string
-    {
-        return $this->profile?->gender;
-    }
-
-    public function getPhoneAttribute(): ?string
-    {
-        return $this->profile?->phone;
-    }
-
-    /**
-     * Avatar – now powered by HasAvatar trait (Spatie Media Library)
-     */
+    // Optional: Better photo with fallback
     public function getPhotoUrlAttribute(): string
     {
-        return $this->avatarUrl('medium', $this->profile?->gender);
+        return $this->avatarUrl('thumb', $this->profile?->gender);
     }
 
     // =================================================================

@@ -98,9 +98,6 @@ const props = defineProps<{
         };
     };
 
-    /** v-model value */
-    modelValue: any;
-
     /** Show invalid state (e.g., from Inertia validation) */
     invalid?: boolean;
 
@@ -108,12 +105,11 @@ const props = defineProps<{
     disabled?: boolean;
 }>();
 
-/**
- * Emits
- */
-const emit = defineEmits<{
-    (e: 'update:modelValue', value: any): void;
-}>();
+// v-model binding
+const model = defineModel<any>({
+    type: null,
+    required: true,
+});
 
 /**
  * Computed Configuration
@@ -181,43 +177,11 @@ const displayOptions = computed(() => {
 });
 
 /**
- * Internal reactive value for v-model handling
- */
-const internal = ref<any>(props.modelValue);
-
-/**
- * Sync internal → external (with special "None" handling)
- */
-watch(internal, (newVal) => {
-    // Detect if "None" (null) was selected
-    const selectedNone =
-        newVal === null ||
-        (Array.isArray(newVal) && newVal.includes(null));
-
-    if (selectedNone) {
-        // Clear selection: null for single, empty array for multi
-        emit('update:modelValue', multiple.value ? [] : null);
-    } else {
-        emit('update:modelValue', newVal);
-    }
-});
-
-/**
- * Sync external → internal (Inertia form updates)
- */
-watch(
-    () => props.modelValue,
-    (newVal) => {
-        internal.value = newVal;
-    }
-);
-
-/**
  * Optional: Load all options if dataset is reasonably small (≤300)
  */
 const loadAllIfSmall = async () => {
     if (total.value > 0 && total.value <= 300 && hasMore.value) {
-        await loadMore();
+        loadMore();
         if (hasMore.value) await loadAllIfSmall(); // Recurse until complete
     }
 };
@@ -230,12 +194,12 @@ const loadAllIfSmall = async () => {
  */
 onMounted(async () => {
     const hasExistingValue =
-        internal.value !== null &&
-        internal.value !== undefined &&
-        (!Array.isArray(internal.value) || internal.value.length > 0);
+        model.value !== null &&
+        model.value !== undefined &&
+        (!Array.isArray(model.value) || model.value.length > 0);
 
     if (hasExistingValue) {
-        await refresh(); // Load labels for selected value(s)
+        refresh(); // Load labels for selected value(s)
     } else if (!multiple.value) {
         search(''); // Trigger initial empty search for single select
     }
@@ -251,7 +215,7 @@ onMounted(async () => {
 <template>
     <div class="relative">
         <!-- MultiSelect Mode -->
-        <MultiSelect v-if="multiple" :id="id" v-model="internal" :options="displayOptions" :optionLabel="optionLabel"
+        <MultiSelect v-if="multiple" :id="id" v-model="model" :options="displayOptions" :optionLabel="optionLabel"
             :optionValue="optionValue" :loading="loading" :disabled="disabled" :invalid="invalid" display="chip" filter
             @filter="search($event.value)" :virtualScrollerOptions="{
                 lazy: true,
@@ -261,12 +225,12 @@ onMounted(async () => {
                 loading: loading && hasMore && total > 300,
                 delay: 200
             }" class="w-full" :placeholder="field.placeholder ?? 'Select items...'" :show-clear="true" :pt="{
-        root: { class: 'w-full' },
-        panel: { class: 'max-h-96 overflow-auto' }
-    }" />
+                root: { class: 'w-full' },
+                panel: { class: 'max-h-96 overflow-auto' }
+            }" />
 
         <!-- Single Select Mode -->
-        <Select v-else :id="id" v-model="internal" :options="displayOptions" :optionLabel="optionLabel"
+        <Select v-else :id="id" v-model="model" :options="displayOptions" :optionLabel="optionLabel"
             :optionValue="optionValue" :loading="loading" :disabled="disabled" :invalid="invalid" filter
             @filter="search($event.value)" :virtualScrollerOptions="{
                 lazy: true,
@@ -276,9 +240,9 @@ onMounted(async () => {
                 loading: loading && hasMore && total > 300,
                 delay: 200
             }" class="w-full" :placeholder="field.placeholder ?? 'Select an option...'" :show-clear="true" :pt="{
-        root: { class: 'w-full' },
-        panel: { class: 'max-h-96 overflow-auto' }
-    }" />
+                root: { class: 'w-full' },
+                panel: { class: 'max-h-96 overflow-auto' }
+            }" />
 
         <!-- User Guidance Message -->
         <small class="text-amber-700 dark:text-amber-400 text-xs mt-1 block">
