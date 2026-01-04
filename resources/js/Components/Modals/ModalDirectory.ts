@@ -107,7 +107,21 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
         },
     },
 
-    // Add new modal registrations here
+    'address': {
+        loader: () => import('@/Components/Modals/Create/AddressModal.vue'),
+        config: {
+            title: 'Address',
+            maxWidth: '2xl',
+        },
+    },
+
+    'dynamic-enum-metadata': {
+        loader: () => import('@/Components/Modals/Create/DynamicEnumMetadataForm.vue'),
+        config: {
+            title: 'Edit Enum Details',
+            maxWidth: 'lg',
+        },
+    },
 } as const;
 
 /**

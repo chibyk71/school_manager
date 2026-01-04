@@ -5,7 +5,9 @@ namespace App\Traits;
 use App\Models\Configuration\Config;
 use App\Models\School;
 use Illuminate\Support\Facades\Log;
-
+/**
+ * @deprecated A new trait HasDynamicConfig should be used instead.
+ */
 trait HasConfig
 {
     /* ------------------------------------------------------------------ */
