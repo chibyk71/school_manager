@@ -90,16 +90,14 @@ Route::middleware('auth')->group(function () {
     Route::prefix('admin')
         ->name('admin.')
         ->group(function () {
-            Route::resource('dynamic-enums', DynamicEnumController::class)
-                ->except(['show']) // No dedicated show page needed
-                ->names([
-                    'index' => 'dynamic-enums.index',
-                    'create' => 'dynamic-enums.create',
-                    'store' => 'dynamic-enums.store',
-                    'edit' => 'dynamic-enums.edit',
-                    'update' => 'dynamic-enums.update',
-                    'destroy' => 'dynamic-enums.destroy',
-                ]);
+            Route::get('dynamic-enums', [DynamicEnumController::class, 'index'])
+                ->name('dynamic-enums.index');
+
+            Route::patch('dynamic-enums/{dynamicEnum}/metadata', [DynamicEnumController::class, 'updateMetadata'])
+                ->name('dynamic-enums.metadata');
+
+            Route::patch('dynamic-enums/{dynamicEnum}/options', [DynamicEnumController::class, 'updateOptions'])
+                ->name('dynamic-enums.options');
         });
 
     // Academics
