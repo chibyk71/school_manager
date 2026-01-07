@@ -141,7 +141,7 @@ return [
         /**
          * Will be used only if the teams functionality is enabled.
          */
-        'teams' => 'teams',
+        'teams' => 'school_sections',
 
         'role_user' => 'role_user',
 

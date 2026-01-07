@@ -42,23 +42,11 @@ class DatabaseSeeder extends Seeder
         // -----------------------------------------------------------------
         // 2. GLOBAL SETTINGS (tenant-agnostic defaults)
         // -----------------------------------------------------------------
-        $this->callWithLog(\Database\Seeders\Settings\ApplicationTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\BrandingTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\ContactTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\EmailTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\FeesTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\LocalizationTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\MaintenanceTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\SMTPTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\TemplateTableSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\UserManagementSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\SMSSeeder::class);
-        $this->callWithLog(\Database\Seeders\Settings\AuthenticationSeeder::class);  // <-- NEW
+        $this->callWithLog(\Database\Seeders\Settings\SettingsDefaultsSeeder::class);
 
         // -----------------------------------------------------------------
         // 3. OPTIONAL: Demo data / factories (uncomment for local dev)
         // -----------------------------------------------------------------
-
         $this->callWithLog(\Database\Seeders\SchoolSectionSeeder::class);
         $this->callWithLog(\Database\Seeders\ClassLevelSeeder::class);
         $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);

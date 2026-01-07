@@ -1,6 +1,6 @@
 <?php
 
-namespace Database\Seeders;
+namespace Database\Seeders\Settings;
 
 use Illuminate\Database\Seeder;
 use RuangDeveloper\LaravelSettings\Facades\Settings;
