@@ -128,7 +128,7 @@ class EmailSettingsController extends Controller
                 $validated['ses_secret'] = encrypt($validated['ses_secret']);
             }
 
-            SaveOrUpdateSchoolSettings('email', $validated, $school);
+            SaveOrUpdateSchoolSettings('communication.email', $validated, $school);
 
             return redirect()
                 ->route('settings.communication.email')

@@ -66,7 +66,7 @@ class UserManagementController extends Controller
                 return response()->json(['settings' => $settings]);
             }
 
-            return Inertia::render('Settings/School/UserManagement', [
+            return Inertia::render('Settings/System/UserManagement', [
                 'settings' => $settings,
                 'school_id' => $school->id,
                 'crumbs' => [

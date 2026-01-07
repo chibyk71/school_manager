@@ -126,7 +126,7 @@ class SmsGatewaysController extends Controller
                 ],
             ];
 
-            return Inertia::render('Settings/System/SmsGateways', [
+            return Inertia::render('Settings/Communication/SmsGateways', [
                 'settings' => $settings,
                 'providers' => $providers,
                 'provider_logos' => [
@@ -198,7 +198,7 @@ class SmsGatewaysController extends Controller
             SaveOrUpdateSchoolSettings('sms', $validated, $school);
 
             return redirect()
-                ->route('settings.sms.index')
+                ->route('settings.communication.sms')
                 ->with('success', 'SMS settings saved successfully.');
 
         } catch (\Exception $e) {

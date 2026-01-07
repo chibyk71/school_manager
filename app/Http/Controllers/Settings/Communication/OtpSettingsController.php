@@ -64,7 +64,7 @@ class OtpSettingsController extends Controller
 
         $school = GetSchoolModel();
 
-        $settings = getMergedSettings('system.otp', $school);
+        $settings = getMergedSettings('communication.otp', $school);
 
         return Inertia::render('Settings/Communication/Otp', [
             'settings' => $settings,
@@ -97,10 +97,10 @@ class OtpSettingsController extends Controller
         ]);
 
         try {
-            SaveOrUpdateSchoolSettings('system.otp', $validated, $school);
+            SaveOrUpdateSchoolSettings('communication.otp', $validated, $school);
 
             return redirect()
-                ->route('settings.system.otp')
+                ->route('settings.communication.otp')
                 ->with('success', 'OTP settings updated successfully.');
         } catch (\Exception $e) {
             Log::error('OTP settings save failed', [

@@ -124,10 +124,10 @@ class InvoiceSettingsController extends Controller
                 $settings['logo_url'] = Storage::url($path);
             }
 
-            SaveOrUpdateSchoolSettings('app.invoice', $settings, $school);
+            SaveOrUpdateSchoolSettings('system.invoice', $settings, $school);
 
             return redirect()
-                ->route('settings.app.invoice')
+                ->route('settings.system.invoice')
                 ->with('success', 'Invoice settings updated successfully.');
         } catch (\Exception $e) {
             Log::error('Invoice settings save failed', [

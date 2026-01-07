@@ -119,10 +119,10 @@ class PrinterSettingsController extends Controller
                 $settings['header_logo_url'] = Storage::url($path);
             }
 
-            SaveOrUpdateSchoolSettings('app.printer', $settings, $school);
+            SaveOrUpdateSchoolSettings('system.printer', $settings, $school);
 
             return redirect()
-                ->route('settings.app.printer')
+                ->route('settings.system.printer')
                 ->with('success', 'Printer settings updated successfully.');
         } catch (\Exception $e) {
             Log::error('Printer settings save failed', [
