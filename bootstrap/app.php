@@ -12,10 +12,17 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->web(append: [
-            \App\Http\Middleware\HandleInertiaRequests::class,
-            \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
-        ]);
+        $middleware->web(
+            append: [
+                \App\Http\Middleware\HandleInertiaRequests::class,
+                \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
+                \App\Http\Middleware\EnsureCurrentSession::class
+            ],
+            prepend: [
+                \App\Http\Middleware\SchoolContext::class,
+                \App\Http\Middleware\CheckMaintenanceMode::class,
+            ]
+        );
 
         $middleware->alias([
             'school' => \App\Http\Middleware\SchoolContext::class,
@@ -26,10 +33,10 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withSchedule(function (Schedule $schedule) {
         $schedule->command('finance:punish-overdue')
-             ->dailyAt('00:05')  // 5 mins after midnight
-             ->withoutOverlapping()
-             ->onOneServer()
-             ->appendOutputTo(storage_path('logs/punishment.log'));
+            ->dailyAt('00:05')  // 5 mins after midnight
+            ->withoutOverlapping()
+            ->onOneServer()
+            ->appendOutputTo(storage_path('logs/punishment.log'));
 
         // $schedule->job(new App\Jobs\GenerateMonthlyStudentStatement)
         //  ->monthlyOn(1, '09:00') // 1st of every month at 9 AM

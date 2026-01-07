@@ -20,7 +20,7 @@ if (!function_exists('getMergedSettings')) {
      * @throws \InvalidArgumentException If the key is invalid.
      * @throws \Exception If settings retrieval fails.
      */
-    function getMergedSettings(string $key, $model): array
+    function getMergedSettings(string $key, Model $model): array
     {
         try {
             if (empty($key)) {

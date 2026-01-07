@@ -33,38 +33,38 @@ class AuthenticationSettingsRequest extends FormRequest
             // Login Throttling
             'login_throttle_max' => ['required', 'integer', 'min:1', 'max:20'],
             'login_throttle_lock' => ['required', 'integer', 'min:1', 'max:60'],
-            
+
             // Password Reset
             'reset_password_token_life' => ['required', 'integer', 'min:1', 'max:120'],
             'allow_password_reset' => ['required', 'boolean'],
             'password_reset_max_attempts' => ['required', 'integer', 'min:1', 'max:10'],
-            
+
             // Email Verification
             'enable_email_verification' => ['required', 'boolean'],
             'otp_length' => ['required', 'integer', 'min:4', 'max:8'],
             'otp_validity' => ['required', 'integer', 'min:1', 'max:30'],
             'allow_otp_fallback' => ['required', 'boolean'],
-            
+
             // Registration
             'allow_user_registration' => ['required', 'boolean'],
             'account_approval' => ['required', 'boolean'],
             'oAuth_registration' => ['required', 'boolean'],
             'show_terms_on_registration' => ['required', 'boolean'],
-            
+
             // Password Confirmation
             'require_password_confirmation' => ['required', 'boolean'],
             'password_confirmation_ttl' => ['required', 'integer', 'min:300', 'max:86400'],
-            
+
             // Password Change
             'allow_password_change' => ['required', 'boolean'],
-            
+
             // Password Rules
             'password_min_length' => ['required', 'integer', 'min:6', 'max:128'],
             'password_require_letters' => ['required', 'boolean'],
             'password_require_mixed_case' => ['required', 'boolean'],
             'password_require_numbers' => ['required', 'boolean'],
             'password_require_symbols' => ['required', 'boolean'],
-            
+
             // Rate Limiting
             'registration_max_attempts' => ['required', 'integer', 'min:1', 'max:10'],
             'registration_lock_minutes' => ['required', 'integer', 'min:1', 'max:60'],

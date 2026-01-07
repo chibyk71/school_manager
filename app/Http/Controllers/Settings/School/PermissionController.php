@@ -53,7 +53,7 @@ class PermissionController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch permissions: ' . $e->getMessage());
-            return redirect()->route('settings.roles.index')->with('error', 'Failed to load permissions.');
+            return redirect()->route('roles.index')->with('error', 'Failed to load permissions.');
         }
     }
 

@@ -111,7 +111,7 @@ interface Props {
 const props = defineProps<Props>();
 
 // Two-way v-model support
-const model = defineModel<string>({ required: true });
+const model = defineModel<string>();
 
 // Generate a stable, unique ID for label-input association
 // Using ref + random ensures uniqueness without external dependency

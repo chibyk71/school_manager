@@ -27,6 +27,9 @@ class PermissionSeeder extends Seeder
             ['name' => 'dashboard.view', 'display_name' => 'View Dashboard', 'description' => 'Access the main dashboard'],
             ['name' => 'dashboard.edit', 'display_name' => 'Edit Dashboard', 'description' => 'Edit dashboard widgets'],
 
+            // Your single settings permission
+            ['name' => 'settings.manage', 'display_name' => 'Manage Settings', 'description' => 'Full access to all settings pages'],
+
             // dynamic enums
             ['name' => 'dynamic-enums.view', 'display_name' => 'View Dynamic Enums', 'description' => 'View dynamic enum definitions and options'],
             ['name' => 'dynamic-enums.manage', 'display_name' => 'Manage Dynamic Enums', 'description' => 'Create, update, or delete dynamic enum definitions and options'],

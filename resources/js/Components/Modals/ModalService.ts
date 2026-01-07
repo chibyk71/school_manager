@@ -22,9 +22,8 @@
  */
 
 import { App, InjectionKey, reactive, inject } from 'vue';
-import mitt, { Emitter, Handler } from 'mitt';
+import mitt, { Emitter } from 'mitt';
 import { ModalId, ModalComponentDirectory } from './ModalDirectory';
-import { useToast } from 'primevue/usetoast';
 import { cloneDeep } from 'lodash';
 
 // ────────────────────────────────────────────────
@@ -62,7 +61,6 @@ export interface InternalModalItem {
 // ────────────────────────────────────────────────
 // Injection key
 // ────────────────────────────────────────────────
-
 export const MODAL_SERVICE_KEY = Symbol('ModalService') as InjectionKey<ModalService>;
 
 // ────────────────────────────────────────────────
@@ -70,7 +68,6 @@ export const MODAL_SERVICE_KEY = Symbol('ModalService') as InjectionKey<ModalSer
 // ────────────────────────────────────────────────
 
 export class ModalService {
-    private toast = useToast();
     private queue = reactive<InternalModalItem[]>([]);
     private instanceCounter = 0;
 
@@ -118,12 +115,6 @@ export class ModalService {
     ): ModalInstance<T> {
         const entry = ModalComponentDirectory[id];
         if (!entry) {
-            this.toast.add({
-                severity: 'error',
-                summary: 'Modal not found',
-                detail: `No registration for modal id: "${id}"`,
-                life: 6000,
-            });
             throw new Error(`Modal "${id}" not registered`);
         }
 

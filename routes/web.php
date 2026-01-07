@@ -10,10 +10,7 @@ use App\Http\Controllers\BookListController;
 use App\Http\Controllers\BookOrderController;
 use App\Http\Controllers\ClassLevelController;
 use App\Http\Controllers\ClassSectionController;
-use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\DepartmentController;
-use App\Http\Controllers\DepartmentRoleController;
 use App\Http\Controllers\DynamicEnumController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventTypeController;
@@ -281,15 +278,6 @@ Route::group(['prefix' => 'finance'], function () {
         Route::get('/export', [FinancialReportController::class, 'export'])->name('export');
     });
 });
-
-// Miscellenous
-Route::get('/configs', [ConfigController::class, 'index'])->name('configs.index');
-Route::post('/configs', [ConfigController::class, 'store'])->name('configs.store');
-Route::get('/configs/{config}', [ConfigController::class, 'show'])->name('configs.show');
-Route::put('/configs/{config}', [ConfigController::class, 'update'])->name('configs.update');
-Route::delete('/configs', [ConfigController::class, 'destroy'])->name('configs.destroy');
-Route::post('/configs/restore', [ConfigController::class, 'restore'])->name('configs.restore');
-
 
 Route::get('/events', [EventController::class, 'index'])->name('events.index');
 Route::post('/events', [EventController::class, 'store'])->name('events.store');

@@ -1,112 +1,205 @@
 <?php
 
-use App\Http\Controllers\Settings\Finance\FeesController;
-use App\Http\Controllers\Settings\Finance\TaxController;
-use App\Http\Controllers\Settings\Others\MaintenanceController;
-use App\Http\Controllers\Settings\Others\StorageController;
-use App\Http\Controllers\Settings\Profile\GeneralController;
-use App\Http\Controllers\Settings\School\Email\EmailController;
-use App\Http\Controllers\Settings\School\Email\TemplateController;
-use App\Http\Controllers\Settings\School\General\CustomFieldController;
-use App\Http\Controllers\Settings\School\InvoiceController;
-use App\Http\Controllers\Settings\School\LocalizationController;
-use App\Http\Controllers\Settings\Financial\PaymentsController;
-use App\Http\Controllers\Settings\School\SMSController;
-use App\Http\Controllers\Settings\School\GDPRController;
-use App\Http\Controllers\Settings\School\OtpController;
-use App\Http\Controllers\Settings\School\PermissionController;
+use App\Http\Controllers\Settings\Academic\AcademicYearController;
+use App\Http\Controllers\Settings\Academic\AttendanceRulesController;
+use App\Http\Controllers\Settings\Academic\GradingScalesController;
+use App\Http\Controllers\Settings\Advanced\BackupRestoreController;
+use App\Http\Controllers\Settings\Advanced\IpBanController;
+use App\Http\Controllers\Settings\Advanced\MaintenanceSettingsController;
+use App\Http\Controllers\Settings\Advanced\StorageSettingsController;
+use App\Http\Controllers\Settings\Communication\EmailSettingsController;
+use App\Http\Controllers\Settings\Communication\EmailTemplatesController;
+use App\Http\Controllers\Settings\Communication\OtpSettingsController;
+use App\Http\Controllers\Settings\Communication\SmsGatewaysController;
+use App\Http\Controllers\Settings\Financial\BankAccountsController;
+use App\Http\Controllers\Settings\Financial\FeesSettingsController;
+use App\Http\Controllers\Settings\Financial\PaymentGatewaysController;
+use App\Http\Controllers\Settings\Financial\TaxRatesController;
+use App\Http\Controllers\Settings\General\ApiKeysController;
+use App\Http\Controllers\Settings\General\ConnectedAppsController;
+use App\Http\Controllers\Settings\General\NotificationsSettingsController;
+use App\Http\Controllers\Settings\General\SecuritySettingsController;
+use App\Http\Controllers\Settings\System\CustomFieldController;
+use App\Http\Controllers\Settings\System\GdprSettingsController;
+use App\Http\Controllers\Settings\System\InvoiceSettingsController;
+use App\Http\Controllers\Settings\System\PrinterSettingsController;
+use App\Http\Controllers\Settings\System\UserManagementController;
+use App\Http\Controllers\Settings\Website\CompanySettingsController;
+use App\Http\Controllers\Settings\Website\LocalizationController;
+use App\Http\Controllers\Settings\Website\PrefixesSettingsController;
+use App\Http\Controllers\Settings\Website\SocialAuthSettingsController;
+use App\Http\Controllers\Settings\Website\ThemesSettingsController;
+use App\Http\Controllers\Settings\Website\WebTranslationsController;
 use App\Http\Controllers\Settings\School\RolesController;
+use App\Http\Controllers\SubjectController;
 use Illuminate\Support\Facades\Route;
 
-Route::group(['prefix' => 'settings'], function () {
-
-    // settings
-    Route::get('profile/general', [GeneralController::class, 'index'])->name('profile.setting');
-    Route::post('profile/general', [GeneralController::class, 'update'])->name('profile.setting.update');
-
-    Route::get('/website/localization', [LocalizationController::class, 'index'])->name('website.localization');
-    Route::post('/website/localization', [LocalizationController::class, 'store'])->name('website.localization.post');
-
-    Route::get('/website/invoice', [InvoiceController::class, 'index'])->name('website.invoice');
-    Route::post('/website/invoice', [InvoiceController::class, 'store'])->name('website.invoice.post');
-
-    Route::get('/website/custom_field', [CustomFieldController::class, 'index'])->name('website.custom-field');
-    Route::post('/website/custom_field', [CustomFieldController::class, 'store'])->name('website.custom-field.post');
-
-    Route::get('/system/email', [EmailController::class, 'index'])->name('system.email');
-    Route::post('/system/email', [EmailController::class, 'store'])->name('system.email.post');
-
-    Route::get('/system/email/templates', [TemplateController::class, 'index'])->name('system.email.template');
-    Route::post('/system/email/templates', [TemplateController::class, 'store'])->name('system.email.template.post');
-
-    Route::get('/system/sms', [SMSController::class, 'index'])->name('system.sms');
-    Route::post('/system/sms', [SMSController::class, 'store']);
-
-    Route::get('/system/otp', [OtpController::class, 'index'])->name('system.otp');
-    Route::post('/system/otp', [OtpController::class, 'store'])->name('system.otp.post');
-
-    Route::get('/system/gdpr_cookies', [GDPRController::class, 'index'])->name('system.gdpr');
-    Route::post('/system/gdpr_cookies', [GDPRController::class, 'store'])->name('system.gdpr.post');
-
-    Route::get('/finance/payment', [PaymentsController::class, 'index'])->name('settings.payment-gate-ways');
-    Route::post('/finance/payment', [PaymentsController::class, 'store']);
-
-    Route::get('/finance/tax', [TaxController::class, 'index'])->name('settings.tax');
-    Route::post('/finance/tax', [TaxController::class, 'store']);
-
-    Route::get('/finance/fees', [FeesController::class, 'index'])->name('settings.fees');
-    Route::post('/finance/fees', [FeesController::class, 'store']);
-
-    Route::get('/others/maintainance', [MaintenanceController::class, 'index'])->name('settings.maintainance');
-    Route::post('/others/maintainance', [MaintenanceController::class, 'store']);
-
-    Route::get('/others/storage', [StorageController::class, 'index'])->name('settings.storage');
-    Route::post('/others/storage', [StorageController::class, 'store']);
-})->middleware('auth');
-
-
+// ===================================================================
+// Admin → Roles & Permissions (existing – untouched)
+// ===================================================================
 Route::prefix('admin')->middleware(['auth'])->group(function () {
+    Route::get('roles', [RolesController::class, 'index'])->name('admin.roles.index');
+    Route::post('roles', [RolesController::class, 'store'])->name('admin.roles.store');
+    Route::put('roles/{role}', [RolesController::class, 'update'])->name('admin.roles.update');
+    Route::delete('roles', [RolesController::class, 'destroy'])->name('admin.roles.destroy');
 
-    // ===================================================================
-    // Roles Index & Data Table
-    // ===================================================================
-    Route::get('roles', [RolesController::class, 'index'])
-        ->name('admin.roles.index');
-
-    // // ===================================================================
-    // // Modal Data Endpoints (for Create/Edit modals)
-    // // ===================================================================
-    // // Load blank data for "Create Role" modal
-    // Route::get('roles/create-data', [RolesController::class, 'createData'])
-    //     ->name('admin.roles.create-data');
-
-    // // Load existing role data for "Edit Role" modal
-    // Route::get('roles/{role}/edit-data', [RolesController::class, 'editData'])
-    //     ->name('admin.roles.edit-data');
-
-    // ===================================================================
-    // CRUD Actions (used by modals)
-    // ===================================================================
-    Route::post('roles', [RolesController::class, 'store'])
-        ->name('admin.roles.store');
-
-    Route::put('roles/{role}', [RolesController::class, 'update'])
-        ->name('admin.roles.update');
-
-    Route::delete('roles/', [RolesController::class, 'destroy'])
-        ->name('admin.roles.destroy');
-
-    // ===================================================================
-    // Permission Management (Dedicated Page)
-    // ===================================================================
     Route::get('roles/{role}/permissions', [RolesController::class, 'managePermissions'])
         ->name('admin.roles.permissions.manage');
-
     Route::put('roles/{role}/permissions', [RolesController::class, 'updatePermissions'])
         ->name('admin.roles.permissions.update');
-
     Route::post('roles/{role}/permissions/merge', [RolesController::class, 'mergePermissionsFrom'])
         ->name('admin.roles.permissions.merge');
 
     Route::get('roles/search', [RolesController::class, 'search'])->name('admin.roles.search');
+});
+
+// ===================================================================
+// Settings → Website & Branding
+// ===================================================================
+Route::prefix('settings/website')->name('settings.website.')->group(function () {
+    Route::get('company', [CompanySettingsController::class, 'index'])->name('company');
+    Route::post('company', [CompanySettingsController::class, 'store'])->name('company.store');
+
+    Route::get('localization', [LocalizationController::class, 'index'])->name('localization');
+    Route::post('localization', [LocalizationController::class, 'store'])->name('localization.store');
+
+    Route::get('themes', [ThemesSettingsController::class, 'index'])->name('themes');
+    Route::post('themes', [ThemesSettingsController::class, 'store'])->name('themes.store');
+
+    Route::get('prefixes', [PrefixesSettingsController::class, 'index'])->name('prefixes');
+    Route::post('prefixes', [PrefixesSettingsController::class, 'store'])->name('prefixes.store');
+
+    Route::get('social', [SocialAuthSettingsController::class, 'index'])->name('social');
+    Route::post('social', [SocialAuthSettingsController::class, 'store'])->name('social.store');
+
+    Route::get('language', [WebTranslationsController::class, 'index'])->name('language');
+    Route::post('language', [WebTranslationsController::class, 'store'])->name('language.store');
+});
+
+// ===================================================================
+// Settings → General
+// ===================================================================
+Route::prefix('settings/general')->name('settings.general.')->group(function () {
+    Route::get('profile', function (string $school) {
+        $school = GetSchoolModel()?->id ?? $school;
+
+        if (!$school) {
+            abort(404);
+        }
+        redirect()->route('schools.edit', ['school' => $school]);
+    })->name('profile');
+
+    Route::get('security', [SecuritySettingsController::class, 'index'])->name('security');
+    Route::post('security', [SecuritySettingsController::class, 'store'])->name('security.store');
+
+    Route::get('notifications', [NotificationsSettingsController::class, 'index'])->name('notifications');
+    Route::post('notifications', [NotificationsSettingsController::class, 'store'])->name('notifications.store');
+
+    Route::get('connected-apps', [ConnectedAppsController::class, 'index'])->name('connected_apps');
+    Route::post('connected-apps', [ConnectedAppsController::class, 'store'])->name('connected_apps.store');
+
+    Route::get('api-keys', [ApiKeysController::class, 'index'])->name('api_keys');
+    Route::post('api-keys', [ApiKeysController::class, 'store'])->name('api_keys.store');
+    Route::post('api-keys/revoke', [ApiKeysController::class, 'destroy'])->name('api_keys.destroy');
+});
+
+// ===================================================================
+// Settings → Financial
+// ===================================================================
+Route::prefix('settings/financial')->name('settings.financial.')->group(function () {
+    Route::get('gateways', [PaymentGatewaysController::class, 'index'])->name('gateways');
+    Route::post('gateways', [PaymentGatewaysController::class, 'store'])->name('gateways.store');
+
+    Route::get('taxes', [TaxRatesController::class, 'index'])->name('taxes');
+    Route::post('taxes', [TaxRatesController::class, 'store'])->name('taxes.store');
+    Route::put('taxes/{id}', [TaxRatesController::class, 'update'])->name('taxes.update');
+    Route::post('taxes/delete', [TaxRatesController::class, 'destroy'])->name('taxes.destroy');
+
+    Route::get('banks', [BankAccountsController::class, 'index'])->name('banks');
+    Route::post('banks', [BankAccountsController::class, 'store'])->name('banks.store');
+    Route::put('banks/{id}', [BankAccountsController::class, 'update'])->name('banks.update');
+    Route::post('banks/delete', [BankAccountsController::class, 'destroy'])->name('banks.destroy');
+
+    Route::get('fees', [FeesSettingsController::class, 'index'])->name('fees');
+    Route::post('fees', [FeesSettingsController::class, 'store'])->name('fees.store');
+});
+
+// ===================================================================
+// Settings → Academic
+// ===================================================================
+Route::prefix('settings/academic')->name('settings.academic.')->group(function () {
+    Route::get('year', [AcademicYearController::class, 'index'])->name('year');
+    Route::post('year', [AcademicYearController::class, 'store'])->name('year.store');
+    Route::put('year/{id}', [AcademicYearController::class, 'update'])->name('year.update');
+    Route::post('year/delete', [AcademicYearController::class, 'destroy'])->name('year.destroy');
+
+    Route::get('attendance', [AttendanceRulesController::class, 'index'])->name('attendance');
+    Route::post('attendance', [AttendanceRulesController::class, 'store'])->name('attendance.store');
+
+    Route::resource('subjects', SubjectController::class);
+    Route::post('subjects/delete', [SubjectController::class, 'destroy'])->name('subjects.destroy');
+    Route::post('subjects/restore/{id}', [SubjectController::class, 'restore'])->name('subjects.restore');
+
+    Route::get('grading', [GradingScalesController::class, 'index'])->name('grading');
+    Route::post('grading', [GradingScalesController::class, 'store'])->name('grading.store');
+    Route::put('grading/{id}', [GradingScalesController::class, 'update'])->name('grading.update');
+    Route::post('grading/delete', [GradingScalesController::class, 'destroy'])->name('grading.destroy');
+});
+
+// ===================================================================
+// Settings → App & Customization
+// ===================================================================
+Route::prefix('settings/system')->name('settings.system.')->group(function () {
+    Route::get('invoice', [InvoiceSettingsController::class, 'index'])->name('invoice');
+    Route::post('invoice', [InvoiceSettingsController::class, 'store'])->name('invoice.store');
+
+    Route::get('gdpr', [GdprSettingsController::class, 'index'])->name('gdpr');
+    Route::post('gdpr', [GdprSettingsController::class, 'store'])->name('gdpr.store');
+
+    Route::resource('fields', CustomFieldController::class);
+
+    Route::get('printer', [PrinterSettingsController::class, 'index'])->name('printer');
+    Route::post('printer', [PrinterSettingsController::class, 'store'])->name('printer.store');
+
+    Route::get('user-management', [UserManagementController::class, 'index'])->name('user-management');
+    Route::post('user-management', [UserManagementController::class, 'store'])->name('user-management.store');
+});
+
+// ===================================================================
+// Settings → System & Communication
+// ===================================================================
+Route::prefix('settings/communication')->name('settings.communication.')->group(function () {
+    Route::get('email', [EmailSettingsController::class, 'index'])->name('email');
+    Route::post('email', [EmailSettingsController::class, 'store'])->name('email.store');
+    Route::post('email/test', [EmailSettingsController::class, 'test'])->name('email.test');
+
+    Route::get('templates', [EmailTemplatesController::class, 'index'])->name('templates');
+    Route::post('templates', [EmailTemplatesController::class, 'store'])->name('templates.store');
+
+    Route::get('sms', [SmsGatewaysController::class, 'index'])->name('sms');
+    Route::post('sms', [SmsGatewaysController::class, 'store'])->name('sms.store');
+
+    Route::get('otp', [OtpSettingsController::class, 'index'])->name('otp');
+    Route::post('otp', [OtpSettingsController::class, 'store'])->name('otp.store');
+    Route::post('otp/test', [OtpSettingsController::class, 'test'])->name('otp.test');
+});
+
+// ===================================================================
+// Settings → Advanced / Other
+// ===================================================================
+Route::prefix('settings/advanced')->name('settings.advanced.')->group(function () {
+    Route::get('storage', [StorageSettingsController::class, 'index'])->name('storage');
+    Route::post('storage', [StorageSettingsController::class, 'store'])->name('storage.store');
+
+    Route::get('backup', [BackupRestoreController::class, 'index'])->name('backup');
+    Route::post('backup/create', [BackupRestoreController::class, 'create'])->name('backup.create');
+    Route::get('backup/download/{filename}', [BackupRestoreController::class, 'download'])->name('backup.download');
+    Route::delete('backup/{filename}', [BackupRestoreController::class, 'destroy'])->name('backup.destroy');
+
+    Route::get('ip', [IpBanController::class, 'index'])->name('ip');
+    Route::post('ip', [IpBanController::class, 'store'])->name('ip.store');
+    Route::post('ip/delete', [IpBanController::class, 'destroy'])->name('ip.destroy');
+
+    Route::get('maintenance', [MaintenanceSettingsController::class, 'index'])->name('maintenance');
+    Route::post('maintenance', [MaintenanceSettingsController::class, 'store'])->name('maintenance.store');
 });

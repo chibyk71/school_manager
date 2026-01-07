@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use Database\Seeders\Settings\PermissionSeeder;
 use Database\Seeders\Settings\RolesTableSeeder;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Log;
@@ -62,10 +63,14 @@ class DatabaseSeeder extends Seeder
         $this->callWithLog(\Database\Seeders\ClassLevelSeeder::class);
         $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
         $this->callWithLog(RolesTableSeeder::class);
+        $this->callWithLog(PermissionSeeder::class);
 
 
-        $this->callWithLog(\Database\Seeders\ConfigSeeder::class);
+        $this->callWithLog(\Database\Seeders\DynamicEnumSeeder::class);
 
+        // assign all roles to admin role
+        $role = \App\Models\Role::query()->where('name', 'admin')->first();
+        $role->permissions()->sync(\App\Models\Permission::all()->pluck('id'));
 
         \App\Models\User::factory()->create([
             'email' => 'admin@demo.academy',

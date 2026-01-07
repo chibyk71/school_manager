@@ -42,22 +42,7 @@ class UserManagementSettingsRequest extends FormRequest
             'max_guardian_students'          => ['required', 'integer', 'min:1', 'max:50'],
 
             // ── Bulk & custom fields ───────────────────────────────
-            'allow_bulk_user_creation'       => ['required', 'boolean'],
-            'custom_field_requirements'      => ['nullable', 'array'],
-            'custom_field_requirements.*.type' => [
-                'required_with:custom_field_requirements',
-                'string',
-                'in:student,staff,guardian',
-            ],
-            'custom_field_requirements.*.fields' => [
-                'required_with:custom_field_requirements',
-                'array',
-            ],
-            'custom_field_requirements.*.fields.*' => [
-                'string',
-                'max:255',
-                'distinct',
-            ],
+            'allow_bulk_user_creation'       => ['required', 'boolean']
         ];
     }
 
@@ -77,7 +62,6 @@ class UserManagementSettingsRequest extends FormRequest
             'require_guardian_email'         => 'require guardian email',
             'max_guardian_students'          => 'max students per guardian',
             'allow_bulk_user_creation'       => 'allow bulk user creation',
-            'custom_field_requirements'      => 'custom field requirements',
         ];
     }
 

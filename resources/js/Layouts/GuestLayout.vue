@@ -1,7 +1,6 @@
 <script setup lang="ts">
-    import { Button, Card, DynamicDialog, IconField, Image, InputChips, InputIcon, InputText } from 'primevue';
+    import { DynamicDialog, Image, type Toast } from 'primevue';
     import '../../css/auth.postcss';
-    import { Link } from '@inertiajs/vue3';
 </script>
 
 <template>
@@ -41,4 +40,6 @@
     </div>
     <!-- /Main Wrapper -->
      <DynamicDialog />
+     <Toast />
+     <ConfirmDialog />
 </template>
