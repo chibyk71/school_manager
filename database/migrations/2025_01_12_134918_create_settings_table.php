@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id('id');
             $table->string(config('laravel-settings.key_name'));
             $table->json(config('laravel-settings.value_name'))->nullable();
-            $table->nullableMorphs(config('laravel-settings.morph_name'));
+            $table->nullableUuidMorphs(config('laravel-settings.morph_name'));
             $table->timestamps();
         });
     }

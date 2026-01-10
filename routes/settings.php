@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\Academic\AcademicSessionSettingsController;
 use App\Http\Controllers\Settings\Academic\AcademicYearController;
 use App\Http\Controllers\Settings\Academic\AttendanceRulesController;
 use App\Http\Controllers\Settings\Academic\GradingScalesController;
@@ -128,10 +129,8 @@ Route::prefix('settings/financial')->name('settings.financial.')->group(function
 // Settings → Academic
 // ===================================================================
 Route::prefix('settings/academic')->name('settings.academic.')->group(function () {
-    Route::get('year', [AcademicYearController::class, 'index'])->name('year');
-    Route::post('year', [AcademicYearController::class, 'store'])->name('year.store');
-    Route::put('year/{id}', [AcademicYearController::class, 'update'])->name('year.update');
-    Route::post('year/delete', [AcademicYearController::class, 'destroy'])->name('year.destroy');
+    Route::get('/session', [AcademicSessionSettingsController::class, 'index'])->name('session');
+    Route::post('/session', [AcademicSessionSettingsController::class, 'store'])->name('session.store');
 
     Route::get('attendance', [AttendanceRulesController::class, 'index'])->name('attendance');
     Route::post('attendance', [AttendanceRulesController::class, 'store'])->name('attendance.store');

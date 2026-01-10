@@ -1,4 +1,5 @@
 import { InputTypeHTMLAttribute } from "vue";
+import type { AcademicSession } from "./academic";
 
 export interface User {
     id: number;
@@ -50,7 +51,9 @@ export type PageProps<T extends Record<string, unknown> = Record<string, unknown
         id: string
         name: string
         logo?: string | null // renamed from 'image' → 'logo' for clarity (optional)
-    } | null
+    } | null;
+
+    currentSession?: AcademicSession
 }
 
 // resources/js/types.ts

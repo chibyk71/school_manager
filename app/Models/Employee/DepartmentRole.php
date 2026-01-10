@@ -76,7 +76,6 @@ class DepartmentRole extends Pivot
     protected $fillable = [
         'department_id',
         'role_id',
-        // school_section links are managed through the BelongsToSections trait
     ];
 
     /**

@@ -480,7 +480,7 @@ class SettingsDefaultsSeeder extends Seeder
         ];
 
         foreach ($defaults as $key => $value) {
-            SaveOrUpdateSchoolSettings($key, $value);
+            SaveOrUpdateSchoolSettings($key, $value, null);
         }
     }
 }

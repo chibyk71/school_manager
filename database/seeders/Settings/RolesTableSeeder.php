@@ -221,15 +221,7 @@ class RolesTableSeeder extends Seeder
                 // --------------------------------------------------------------
                 // 3. Link Role → Department (department_role pivot)
                 // --------------------------------------------------------------
-                DepartmentRole::updateOrCreate(
-                    [
-                        'school_id' => $department->school_id,
-                        'department_id' => $department->id,
-                        'role_id' => $role->id,
-                        'school_section_id' => null, // optional
-                    ],
-                    ['name' => $role->display_name]
-                );
+                $role->departments()->attach($department->id);
             }
         }
     }

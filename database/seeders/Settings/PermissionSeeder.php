@@ -125,6 +125,22 @@ class PermissionSeeder extends Seeder
             ['name' => 'terms.restore', 'display_name' => 'Restore Terms', 'description' => 'Restore deleted terms for a school'],
             ['name' => 'terms.force-delete', 'display_name' => 'Force Delete Terms', 'description' => 'Permanently delete terms for a school'],
 
+            // Academic Sessions permissions (full CRUD + lifecycle)
+            ['name' => 'academic-sessions.view', 'display_name' => 'View Academic Sessions', 'description' => 'View all academic sessions for a school'],
+            ['name' => 'academic-sessions.create', 'display_name' => 'Create Academic Sessions', 'description' => 'Create new academic sessions for a school'],
+            ['name' => 'academic-sessions.update', 'display_name' => 'Update Academic Sessions', 'description' => 'Update existing academic sessions for a school'],
+            ['name' => 'academic-sessions.delete', 'display_name' => 'Delete Academic Sessions', 'description' => 'Delete academic sessions for a school'],
+            ['name' => 'academic-sessions.restore', 'display_name' => 'Restore Academic Sessions', 'description' => 'Restore deleted academic sessions for a school'],
+            ['name' => 'academic-sessions.force-delete', 'display_name' => 'Force Delete Academic Sessions', 'description' => 'Permanently delete academic sessions for a school'],
+
+            // Specialized lifecycle permissions (highly recommended for separation of duties)
+            ['name' => 'academic-sessions.activate', 'display_name' => 'Activate Academic Sessions', 'description' => 'Activate academic sessions (make current/active)'],
+            ['name' => 'academic-sessions.close', 'display_name' => 'Close Academic Sessions', 'description' => 'Close academic sessions'],
+
+            // Term lifecycle permissions (already discussed, added here for completeness)
+            ['name' => 'terms.close', 'display_name' => 'Close Terms', 'description' => 'Close active terms'],
+            ['name' => 'terms.reopen', 'display_name' => 'Reopen Terms', 'description' => 'Reopen previously closed terms (restricted)'],
+
             // Timetables
             ['name' => 'timetables.view', 'display_name' => 'View Timetables', 'description' => 'View all timetables for a school'],
             ['name' => 'timetables.create', 'display_name' => 'Create Timetables', 'description' => 'Create new timetables for a school'],
