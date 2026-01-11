@@ -1,6 +1,8 @@
 <?php
 
-use App\Http\Controllers\AcademicSessionController;
+use App\Http\Controllers\Academic\AcademicSessionController;
+use App\Http\Controllers\Academic\SessionActivationController;
+use App\Http\Controllers\Academic\TermController;
 use App\Http\Controllers\AdmissionController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\AssignmentSubmissionController;
@@ -49,13 +51,12 @@ use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\SalaryStructureController;
 use App\Http\Controllers\SchoolController;
 use App\Http\Controllers\SchoolSectionController;
-use App\Http\Controllers\SearchController;
+use App\Http\Controllers\Settings\Academic\TermClosureController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SyllabusController;
 use App\Http\Controllers\SyllabusDetailController;
-use App\Http\Controllers\TermController;
 use App\Http\Controllers\Exam\TermResultController;
 use App\Http\Controllers\Exam\TermResultDetailController;
 use App\Http\Controllers\TimeTableController;
@@ -123,6 +124,53 @@ Route::middleware('auth')->group(function () {
     // Admin can edit any profile
     Route::get('/profile/{profile}/edit', [ProfileController::class, 'edit'])
         ->name('profile.edit.override');
+
+
+
+    // ────────────────────────────────────────────────────────────────
+// Academic Sessions (CRUD + Quick Actions)
+// ────────────────────────────────────────────────────────────────
+    Route::prefix('academic-sessions')->name('academic-sessions.')->group(function () {
+        // Main listing & management
+        Route::get('/', [AcademicSessionController::class, 'index'])->name('index');
+
+        // CRUD operations
+        Route::post('/', [AcademicSessionController::class, 'store'])->name('store');
+        Route::get('/{academicSession}', [AcademicSessionController::class, 'show'])->name('show');
+        Route::post('/{academicSession}', [AcademicSessionController::class, 'update'])->name('update');
+        Route::delete('/', [AcademicSessionController::class, 'destroy'])->name('destroy'); // Bulk delete
+
+        // Quick state actions (single active session enforcement)
+        Route::patch('/{academicSession}/current', [AcademicSessionController::class, 'setCurrent'])->name('set-current');
+
+        // Specialized lifecycle actions (activation & closure)
+        Route::patch('/{academicSession}/activate', [SessionActivationController::class, 'activate'])->name('activate');
+        Route::patch('/{academicSession}/close', [SessionActivationController::class, 'close'])->name('close');
+    });
+
+    // ────────────────────────────────────────────────────────────────
+// Terms (CRUD + Quick Actions)
+// ────────────────────────────────────────────────────────────────
+    Route::prefix('terms')->name('terms.')->group(function () {
+        // Main listing (can filter by session via query param ?academicSession=id)
+        Route::get('/', [TermController::class, 'index'])->name('index');
+
+        // CRUD operations
+        Route::post('/', [TermController::class, 'store'])->name('store');
+        Route::get('/{term}', [TermController::class, 'show'])->name('show');
+        Route::patch('/{term}', [TermController::class, 'update'])->name('update');
+        Route::delete('/', [TermController::class, 'destroy'])->name('destroy'); // Bulk delete
+
+        // Quick state action (set active in its session)
+        Route::patch('/{term}/active', [TermController::class, 'setActive'])->name('set-active');
+
+        // Restore soft-deleted term
+        Route::post('/{id}/restore', [TermController::class, 'restore'])->name('restore');
+
+        // Sensitive lifecycle actions (close & reopen)
+        Route::patch('/{term}/close', [TermClosureController::class, 'close'])->name('close');
+        Route::patch('/{term}/reopen', [TermClosureController::class, 'reopen'])->name('reopen');
+    });
 });
 
 // Exams
@@ -137,11 +185,6 @@ Route::resource('exam.term-results.details', TermResultDetailController::class);
 Route::resource('guardians', GuardianController::class);
 Route::resource('staff', StaffController::class);
 Route::resource('student', StudentController::class);
-
-// Academics
-Route::resource('academic.session', AcademicSessionController::class);
-Route::delete('/', [AcademicSessionController::class, 'destroy'])->name('academic.session.destroy');
-Route::post('/{session}/current', [AcademicSessionController::class, 'setCurrent'])->name('academic.session.setCurrent');
 
 Route::resource('promotions', PromotionBatchController::class)
     ->only(['index', 'review']);

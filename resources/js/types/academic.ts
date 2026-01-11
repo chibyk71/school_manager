@@ -3,32 +3,33 @@
  * Academic Calendar Type Definitions
  * ──────────────────────────────────────────────────────────────────────────────
  *
- * Central place for all type definitions related to:
- *   - Academic Sessions (school years)
- *   - Academic Terms (semesters/trimesters within sessions)
+ * Central, strongly-typed definitions for Academic Sessions and Terms.
+ * Covers:
+ *   - Full entity shapes (from Laravel)
+ *   - Form payloads (create/update)
+ *   - Minimal/select options (dropdowns, badges, quick views)
+ *   - UI/status mappings (badges, colors, labels)
+ *   - Combined/extended types (when relations are loaded)
  *
- * Main goals:
- * - Strong typing for Inertia props, forms, modals & DataTables
- * - Clear separation between full entity, form payloads & minimal options
- * - Support for common relationships (session ↔ terms)
- * - Status & state discrimination
- * - Ready for both Laravel API responses and frontend usage
+ * Goals:
+ * - Strict typing across Inertia props, forms, modals, DataTables
+ * - Single source of truth for status → label/severity mapping
+ * - Clear separation: full entity vs form data vs UI-only
+ * - Ready for both API responses and frontend usage
  *
- * Usage recommendations:
- *   - Import as: import type { AcademicSession, Term, ... } from '@/types/academic-calendar'
- *   - Use AcademicSessionFormData / TermFormData for forms
- *   - Use SessionOption / TermOption for dropdowns/selects
+ * Usage:
+ *   import type { AcademicSession, Term, TermFormData, ... } from '@/types/academic-calendar'
  */
 
 export interface AcademicSession {
     id: number | string;
     school_id: number;
 
-    name: string;                    // e.g. "2025/2026", "2024/2025 Second Session"
+    name: string;                    // e.g. "2025/2026"
     slug?: string;
 
-    start_date: string;              // ISO: "2025-09-01"
-    end_date: string;                // ISO: "2026-08-31"
+    start_date: string;              // ISO date string "YYYY-MM-DD"
+    end_date: string;
 
     is_current: boolean;
     status: 'pending' | 'active' | 'closed' | 'archived';
@@ -42,20 +43,17 @@ export interface AcademicSession {
     terms?: Term[];
     terms_count?: number;
 
-    // Optional authorization/derived fields (often added by backend)
-    can_activate?: boolean;
-    can_close?: boolean;
-    can_delete?: boolean;
+    // Optional derived/authorization fields
     has_active_terms?: boolean;
-    progress_percentage?: number;    // 0–100, optional frontend/backend calc
+    progress_percentage?: number;    // 0–100, optional
 }
 
 export interface Term {
     id: number | string;
     academic_session_id: number;
 
-    name: string;                    // "First Term", "Second Semester", "Harmattan"
-    display_name?: string;           // optional more formal name
+    name: string;                    // e.g. "First Term", "Harmattan"
+    display_name?: string;           // optional formal name
 
     start_date: string;
     end_date: string;
@@ -63,8 +61,10 @@ export interface Term {
     is_current: boolean;
     status: 'pending' | 'active' | 'closed' | 'archived';
 
-    // Optional visual / UI related fields
-    color?: string;                  // HEX color for calendar/timeline
+    // UI/Visual
+    color?: string;                  // HEX for calendars/timelines
+
+    // Ordering
     ordinal_number?: number;         // 1,2,3... for sorting/display
 
     // Timestamps
@@ -72,7 +72,7 @@ export interface Term {
     updated_at: string;
     deleted_at?: string | null;
 
-    // Optional relations / counts
+    // Optional counts
     classes_count?: number;
     assessments_count?: number;
 }
@@ -83,9 +83,9 @@ export interface Term {
 
 export interface AcademicSessionFormData {
     name: string;
-    start_date: string | null;       // usually string after DatePicker submit
+    start_date: string | null;
     end_date: string | null;
-    is_current?: boolean;            // often false on create
+    is_current?: boolean;
 }
 
 export interface TermFormData {
@@ -99,7 +99,7 @@ export interface TermFormData {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Minimal types for dropdowns, selects, badges, etc.
+   Minimal types for dropdowns, selects, badges, quick views
    ───────────────────────────────────────────────────────────────────────────── */
 
 export interface SessionOption {
@@ -127,21 +127,35 @@ export interface TermOption {
    ───────────────────────────────────────────────────────────────────────────── */
 
 export const SESSION_STATUS_CONFIG = {
-    pending: { label: 'Upcoming', severity: 'info' as const },
-    active: { label: 'Active', severity: 'success' as const },
-    closed: { label: 'Closed', severity: 'warning' as const },
-    archived: { label: 'Archived', severity: 'danger' as const },
+    pending:  { label: 'Upcoming',  severity: 'info'    as const },
+    active:   { label: 'Active',    severity: 'success' as const },
+    closed:   { label: 'Closed',    severity: 'warning' as const },
+    archived: { label: 'Archived',  severity: 'danger'  as const },
 } as const;
 
 export const TERM_STATUS_CONFIG = {
-    pending: { label: 'Upcoming', severity: 'info' as const },
-    active: { label: 'In Progress', severity: 'success' as const },
-    closed: { label: 'Completed', severity: 'warning' as const },
-    archived: { label: 'Archived', severity: 'danger' as const },
+    pending:  { label: 'Upcoming',    severity: 'info'    as const },
+    active:   { label: 'In Progress', severity: 'success' as const },
+    closed:   { label: 'Completed',   severity: 'warning' as const },
+    archived: { label: 'Archived',    severity: 'danger'  as const },
+} as const;
+
+export const SESSION_STATUS_LABEL = {
+    pending:  'Upcoming',
+    active:   'Active',
+    closed:   'Closed',
+    archived: 'Archived',
+} as const;
+
+export const TERM_STATUS_LABEL = {
+    pending:  'Upcoming',
+    active:   'In Progress',
+    closed:   'Completed',
+    archived: 'Archived',
 } as const;
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Combined / Extended types (when you need both in one view)
+   Combined / Extended types (when relations are loaded)
    ───────────────────────────────────────────────────────────────────────────── */
 
 export interface AcademicSessionWithTerms extends AcademicSession {
@@ -161,6 +175,6 @@ export interface CurrentSessionInfo {
     name: string;
     start_date: string;
     end_date: string;
-    is_current: true;
-    status: 'active';
+    is_current: boolean;
+    status: AcademicSession['status'];
 }

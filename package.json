@@ -34,6 +34,7 @@
         "@tailwindcss/vite": "^4.1.12",
         "apexcharts": "^5.3.6",
         "chart.js": "^4.5.1",
+        "date-fns": "^4.1.0",
         "lru-cache": "^11.2.4",
         "mitt": "^3.0.1",
         "primeicons": "^7.0.0",

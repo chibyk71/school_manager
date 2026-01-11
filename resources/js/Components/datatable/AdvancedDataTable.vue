@@ -267,7 +267,9 @@ const { toggle: toggleExportMenu } = usePopup('exportMenu');
 
             <!-- Empty state when no rows match current filters -->
             <template #empty>
-                <DataTableEmptyState />
+                <slot name="empty">
+                    <DataTableEmptyState />
+                </slot>
             </template>
 
             <!-- Loading overlay with skeleton rows -->

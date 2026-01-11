@@ -122,6 +122,52 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
             maxWidth: 'lg',
         },
     },
+    'activate-session': {
+        loader() {
+            return import('@/Components/Modals/Show/ActivateSessionModal.vue')
+        },
+        config: {
+            title: 'Activate Session'
+        }
+    },
+    'delete-session': {
+        loader: () => import('@/Components/Modals/Show/DeleteSessionModal.vue')
+    },
+    'close-session': {
+        loader: () => import('@/Components/Modals/Show/CloseSessionModal.vue')
+    },
+    'session-terms': {
+        loader: () => import('@/Components/Academic/SessionTerms/TermListTable.vue'),
+        config: {
+            title: 'Manage Terms',
+            maxWidth: '2xl',
+            persistent: false,  // allow close even if form is open (user can cancel)
+        },
+    },
+    'term-form': {
+        loader: () => import('@/Components/Academic/SessionTerms/TermFormModal.vue'),
+        config: {
+            title: 'Academic Term',
+            maxWidth: 'lg',
+            persistent: true,           // prevent accidental close during form work
+        },
+    },
+    'close-term': {
+        loader: () => import('@/Components/Academic/SessionTerms/CloseTermModal.vue'),
+        config: {
+            title: 'Close Academic Term',
+            maxWidth: 'md',
+            persistent: true,           // Prevent accidental close during confirmation
+        },
+    },
+    'reopen-term': {
+        loader: () => import('@/Components/Academic/SessionTerms/ReopenTermModal.vue'),
+        config: {
+            title: 'Reopen Closed Term',
+            maxWidth: 'md',
+            persistent: true,           // Prevent accidental close during sensitive action
+        },
+    },
 } as const;
 
 /**

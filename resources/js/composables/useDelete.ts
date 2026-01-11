@@ -5,19 +5,19 @@ interface DeleteOptions {
     force?: boolean;
     url?: string;
     onSuccess?: () => void;
-    onError?: () => void;
+    onError?: (e:string) => void;
 }
 
 /**
  * Custom hook for handling resource deletion with confirmation dialog and toast notifications.
- * 
+ *
  * This hook provides a reusable `deleteResource` function that:
  * - Checks for valid selection
  * - Displays a PrimeVue confirmation dialog
  * - Performs an Inertia.js DELETE request (with optional force-delete)
  * - Shows success/error toasts
  * - Supports bulk deletion and custom endpoints
- * 
+ *
  * @returns {deleteResource: (resource: string, ids: (string | number)[], options?: DeleteOptions) => Promise<void>;} An object containing the `deleteResource` function.
  */
 export function useDeleteResource(): {
@@ -31,7 +31,7 @@ export function useDeleteResource(): {
 
     /**
      * Deletes one or more resources with user confirmation.
-     * 
+     *
      * @param resource - The resource name (e.g., 'users', 'posts') used for route naming.
      * @param ids - Array of resource IDs to delete (string or number).
      * @param options - Optional configuration for the deletion process.
@@ -103,7 +103,7 @@ export function useDeleteResource(): {
                             detail: errorMsg,
                             life: 5000
                         });
-                        if (onError) onError();
+                        if (onError) onError(errorMsg);
                     },
                 });
             },

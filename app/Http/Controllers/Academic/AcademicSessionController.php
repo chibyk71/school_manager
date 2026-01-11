@@ -105,7 +105,7 @@ class AcademicSessionController extends Controller
             // Transform data rows using the dedicated resource (consistent formatting, computed fields)
             $sessions = AcademicSessionResource::collection($result['data']);
 
-            return Inertia::render('Academic/AcademicSessions/Index', [
+            return Inertia::render('Settings/Academic/AcademicSession', [
                 'sessions' => $sessions,                    // Resource collection
                 'totalRecords' => $result['totalRecords'],
                 'currentPage' => $result['currentPage'],
@@ -121,7 +121,8 @@ class AcademicSessionController extends Controller
                 'user_id' => auth()->id() ?? 'system',
             ]);
 
-            return Inertia::render('Academic/AcademicSessions/Index', [
+            // Change to error page
+            return Inertia::render('Settings/Academic/AcademicSession', [
                 'sessions' => [],
                 'error' => 'Unable to load academic sessions at this time.',
             ]);
