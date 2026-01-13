@@ -141,6 +141,26 @@ class PermissionSeeder extends Seeder
             ['name' => 'terms.close', 'display_name' => 'Close Terms', 'description' => 'Close active terms'],
             ['name' => 'terms.reopen', 'display_name' => 'Reopen Terms', 'description' => 'Reopen previously closed terms (restricted)'],
 
+            // Custom Fields
+            [ 'name' => 'custom-fields.viewAny', 'display_name' => 'View Custom Fields List', 'description' => 'View the list of all custom fields (global + school overrides)',
+            ],
+            [ 'name' => 'custom-fields.view', 'display_name' => 'View Custom Field Details', 'description' => 'View detailed information about a specific custom field',
+            ],
+            [ 'name' => 'custom-fields.create', 'display_name' => 'Create Custom Field', 'description' => 'Create new custom fields (global or school-specific overrides)',
+            ],
+            [ 'name' => 'custom-fields.update', 'display_name' => 'Edit Custom Field', 'description' => 'Update existing custom fields (restricted for global fields)',
+            ],
+            [ 'name' => 'custom-fields.delete', 'display_name' => 'Delete Custom Field', 'description' => 'Soft-delete custom fields (restricted for global fields)',
+            ],
+            [ 'name' => 'custom-fields.restore', 'display_name' => 'Restore Custom Field', 'description' => 'Restore soft-deleted custom fields',
+            ],
+            [ 'name' => 'custom-fields.forceDelete', 'display_name' => 'Permanently Delete Custom Field', 'description' => 'Force-delete custom fields (permanent removal)',
+            ],
+            [ 'name' => 'custom-fields.reorder', 'display_name' => 'Reorder Custom Fields', 'description' => 'Change sort order of custom fields via drag & drop',
+            ],
+            [ 'name' => 'custom-fields.apply-preset', 'display_name' => 'Apply Custom Field Preset', 'description' => 'Apply a global preset/template to the current school',
+            ],
+
             // Timetables
             ['name' => 'timetables.view', 'display_name' => 'View Timetables', 'description' => 'View all timetables for a school'],
             ['name' => 'timetables.create', 'display_name' => 'Create Timetables', 'description' => 'Create new timetables for a school'],

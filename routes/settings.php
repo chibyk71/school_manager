@@ -21,6 +21,7 @@ use App\Http\Controllers\Settings\General\ConnectedAppsController;
 use App\Http\Controllers\Settings\General\NotificationsSettingsController;
 use App\Http\Controllers\Settings\General\SecuritySettingsController;
 use App\Http\Controllers\Settings\System\CustomFieldController;
+use App\Http\Controllers\Settings\System\CustomFieldsController;
 use App\Http\Controllers\Settings\System\GdprSettingsController;
 use App\Http\Controllers\Settings\System\InvoiceSettingsController;
 use App\Http\Controllers\Settings\System\PrinterSettingsController;
@@ -155,7 +156,22 @@ Route::prefix('settings/system')->name('settings.system.')->group(function () {
     Route::get('gdpr', [GdprSettingsController::class, 'index'])->name('gdpr');
     Route::post('gdpr', [GdprSettingsController::class, 'store'])->name('gdpr.store');
 
-    Route::resource('fields', CustomFieldController::class);
+    Route::prefix('custom-fields')->name('custom-fields.')->group(function () {
+
+        // Full resourceful routes (index, create, store, show, edit, update, destroy)
+        Route::resource('/', CustomFieldsController::class)->parameters(['' => 'customField']);
+        Route::delete('/', [CustomFieldsController::class, 'destroy'])->name('destroy');
+
+        // Extra / custom actions (outside standard REST)
+        Route::patch('order', [CustomFieldsController::class, 'reorder'])->name('reorder');
+
+        // Bulk / trash actions
+        Route::post('restore', [CustomFieldsController::class, 'restore'])->name('restore');
+        Route::delete('force', [CustomFieldsController::class, 'forceDestroy'])->name('force-destroy');
+
+        // Export schema (API-style)
+        Route::get('export', [CustomFieldsController::class, 'exportSchema'])->name('export-schema');
+    });
 
     Route::get('printer', [PrinterSettingsController::class, 'index'])->name('printer');
     Route::post('printer', [PrinterSettingsController::class, 'store'])->name('printer.store');

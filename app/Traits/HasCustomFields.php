@@ -5,295 +5,295 @@ namespace App\Traits;
 use App\Models\CustomField;
 use App\Models\CustomFieldResponse;
 use App\Models\School;
-use Exception;
+use App\Services\CustomFieldService;
+use App\Support\CustomFieldType;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Spatie\MediaLibrary\MediaCollections\Exceptions\FileCannotBeAdded;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 /**
  * Trait HasCustomFields
  *
- * Provides functionality to manage custom fields for a model in a multi-tenant SaaS environment.
- * Supports dynamic field definitions with validation, scoped to schools and branches.
+ * Adds custom field capabilities to any Eloquent model (Student, Teacher, Staff, etc.).
  *
- * @package App\Traits
+ * Main responsibilities:
+ *   - Define relationships: customFields() and customFieldResponses()
+ *   - Provide CRUD helpers for fields (scoped to current school)
+ *   - Bulk save responses with validation, file uploads, and transactions
+ *   - Fetch effective (merged) fields: global + school overrides
+ *   - Eager loading helpers
+ *   - Cache management
+ *   - Integrate Spatie Media Library for file/image fields
+ *
+ * Usage on a model:
+ *   use HasCustomFields;
+ *
+ *   $student->saveCustomFieldResponses(['profile_photo' => $uploadedFile]);
+ *   $student->getCustomFieldValue('emergency_contact');
+ *   $student->effectiveCustomFields();
  */
 trait HasCustomFields
 {
     /**
-     * Define a polymorphic relationship to custom fields.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
+     * Relationship: all custom field definitions attached to this model type
+     * (mostly used internally — most queries go through effectiveFor())
      */
     public function customFields()
     {
         return $this->morphMany(CustomField::class, 'model');
     }
 
+    /**
+     * Relationship: all saved values for this specific record
+     */
     public function customFieldResponses()
     {
-        return $this->morphMany(\App\Models\CustomFieldResponse::class, 'model');
+        return $this->morphMany(CustomFieldResponse::class, 'model');
     }
 
     /**
-     * Add a new custom field to the model, scoped to the active school and optional branch.
+     * Get all effective custom fields for this model instance (global + current school overrides)
      *
-     * @param array $fieldData The custom field data (e.g., name, label, rules, branch_id).
-     * @return \App\Models\CustomField The created custom field.
-     * @throws \Exception If creation fails or no active school is found.
+     * @return Collection<CustomField>
      */
-    public function addCustomField(array $fieldData): CustomField
+    public function effectiveCustomFields(): Collection
     {
-        try {
-            $school = $this->getActiveSchool();
-            $fieldData['school_id'] = $school->id;
+        $school = $this->getActiveSchool();
 
-            // Validate field data before creation
-            $this->validateFieldData($fieldData);
+        $cacheKey = "effective_fields:{$school->id}:" . md5(get_class($this));
 
-            // Create the custom field
-            $customField = $this->customFields()->create($fieldData);
-
-            // Invalidate cache to ensure updated fields are fetched
-            $this->invalidateCustomFieldCache($school);
-
-            return $customField;
-        } catch (\Exception $e) {
-            Log::error('Failed to add custom field for model ' . get_class($this) . ': ' . $e->getMessage());
-            throw new \Exception('Unable to add custom field: ' . $e->getMessage());
-        }
+        return Cache::remember($cacheKey, now()->addMinutes(60), function () use ($school) {
+            return CustomField::effectiveFor($school, get_class($this));
+        });
     }
 
     /**
-     * Update an existing custom field, ensuring school and branch scoping.
+     * Bulk save custom field values for this record.
      *
-     * @param int $fieldId The custom field ID.
-     * @param array $fieldData The updated field data.
-     * @return bool True if updated, false otherwise.
-     * @throws \Exception If update fails or no active school is found.
-     */
-    public function updateCustomField(int $fieldId, array $fieldData): bool
-    {
-        try {
-            $school = $this->getActiveSchool();
-
-            // Validate field data
-            $this->validateFieldData($fieldData);
-
-            // Update the custom field
-            $updated = $this->customFields()
-                ->where('id', $fieldId)
-                ->where('school_id', $school->id)
-                ->update($fieldData);
-
-            // Invalidate cache
-            $this->invalidateCustomFieldCache($school);
-
-            return $updated;
-        } catch (\Exception $e) {
-            Log::error('Failed to update custom field ID ' . $fieldId . ': ' . $e->getMessage());
-            throw new \Exception('Unable to update custom field: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Delete a custom field, ensuring school scoping.
+     * Handles:
+     *   - Validation (delegated to service)
+     *   - File/image uploads via Spatie Media Library
+     *   - Basic quota check
+     *   - Transactional safety
      *
-     * @param int $fieldId The custom field ID.
-     * @return bool True if deleted, false otherwise.
-     * @throws \Exception If deletion fails or no active school is found.
-     */
-    public function deleteCustomField(int $fieldId): bool
-    {
-        try {
-            $school = $this->getActiveSchool();
-
-            // Delete the custom field
-            $deleted = $this->customFields()
-                ->where('id', $fieldId)
-                ->where('school_id', $school->id)
-                ->delete();
-
-            // Invalidate cache
-            $this->invalidateCustomFieldCache($school);
-
-            return $deleted;
-        } catch (\Exception $e) {
-            Log::error('Failed to delete custom field ID ' . $fieldId . ': ' . $e->getMessage());
-            throw new \Exception('Unable to delete custom field: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Load custom fields for the model with eager loading.
-     *
-     * @return $this
-     */
-    public function loadCustomFields()
-    {
-        return $this->loadMissing([
-            'customFieldResponses.customField' => function ($q) {
-                $q->where('school_id', GetSchoolModel()?->id)->orderBy('sort');
-            }
-        ]);
-    }
-
-    /**
-     * Eager load custom field responses + their field definitions.
-     * Works on query builders: Student::withCustomFields()
-     */
-    public function scopeWithCustomFields(Builder $query): Builder
-    {
-        return $query->with([
-            'customFieldResponses.customField' => function ($q) {
-                $q->select('id', 'name', 'label', 'field_type', 'options', 'required', 'placeholder', 'hint')
-                    ->where('school_id', GetSchoolModel()?->id)
-                    ->orderBy('sort', 'asc');
-            }
-        ]);
-    }
-
-    /**
-     * Save custom field responses for the model, with validation and caching.
-     *
-     * @param array $responses Key-value pairs of custom field names and values.
-     * @param bool $validate Whether to validate the responses.
-     * @return array The successfully saved responses.
-     * @throws \Illuminate\Validation\ValidationException If validation fails.
-     * @throws \Exception If saving fails or no active school is found.
+     * @param array $responses [field_name => value|UploadedFile]
+     * @param bool $validate Whether to run validation (usually true)
+     * @return array Saved values [name => final_value]
+     * @throws ValidationException
+     * @throws \Exception
      */
     public function saveCustomFieldResponses(array $responses, bool $validate = true): array
     {
-        try {
-            $school = $this->getActiveSchool();
-            $savedResponses = [];
-
-            // Cache custom fields
-            $cacheKey = 'custom_fields_' . $school->id . '_' . md5(get_class($this));
-            $customFields = Cache::remember($cacheKey, now()->addHour(), function () use ($school) {
-                return CustomField::where('model_type', get_class($this))
-                    ->where('school_id', $school->id)
-                    ->get()
-                    ->keyBy('name');
-            });
-
-            $rules = [];
-            $customAttributes = [];
-            $validResponses = [];
-
-            foreach ($responses as $fieldName => $value) {
-                $customField = $customFields->get($fieldName);
-
-                if (!$customField) {
-                    throw new \Exception("Custom field '{$fieldName}' not found.");
-                }
-
-                // Collect validation rules
-                if ($validate && !empty($customField->rules)) {
-                    $rules[$fieldName] = $customField->rules;
-                    $customAttributes[$fieldName] = $customField->label ?? $fieldName;
-                }
-
-                $validResponses[$fieldName] = [
-                    'custom_field_id' => $customField->id,
-                    'value' => $value,
-                ];
-            }
-
-            // Validate all at once
-            if ($validate && !empty($rules)) {
-                $validator = Validator::make($responses, $rules, [], $customAttributes);
-                if ($validator->fails()) {
-                    throw new ValidationException($validator);
-                }
-            }
-
-            // Use database transaction
-            \DB::transaction(function () use ($validResponses, $savedResponses) {
-                foreach ($validResponses as $fieldName => $data) {
-                    CustomFieldResponse::updateOrCreate(
-                        [
-                            'custom_field_id' => $data['custom_field_id'],
-                            'model_type' => get_class($this),
-                            'model_id' => $this->id,
-                        ],
-                        ['value' => $data['value']]
-                    );
-
-                    $savedResponses[$fieldName] = $data['value'];
-                }
-            });
-
-            return $savedResponses;
-
-        } catch (ValidationException $e) {
-            throw $e;
-        } catch (\Exception $e) {
-            Log::error('Failed to save custom responses: ' . $e->getMessage());
-            throw new \Exception('Unable to save custom field responses: ' . $e->getMessage());
+        if (empty($responses)) {
+            return [];
         }
+
+        $school = $this->getActiveSchool();
+        $fields = $this->effectiveCustomFields()->keyBy('name');
+
+        // 1. Prepare data + validate
+        $service = app(CustomFieldService::class);
+        $prepared = $service->prepareAndValidateResponses($this, $responses, $fields, $validate);
+
+        $saved = [];
+
+        \DB::transaction(function () use ($prepared, &$saved, $fields) {
+            foreach ($prepared as $name => $data) {
+                $field = $fields->get($name);
+
+                // Handle file uploads if this is a file/image field
+                if ($field->isFileField() && $data['value'] instanceof \Illuminate\Http\UploadedFile) {
+                    $media = $this->handleFileUpload($field, $data['value']);
+                    $data['value'] = json_encode(['media_id' => $media->id]);
+                }
+
+                CustomFieldResponse::updateOrCreate(
+                    [
+                        'custom_field_id' => $field->id,
+                        'model_type'      => get_class($this),
+                        'model_id'        => $this->getKey(),
+                    ],
+                    ['value' => $data['value']]
+                );
+
+                $saved[$name] = $data['value'];
+            }
+        });
+
+        // Invalidate cache after successful save
+        $this->invalidateCustomFieldCache($school);
+
+        return $saved;
     }
 
     /**
-     * Get the active school model, throwing an exception if not found.
+     * Handle file/image upload using Spatie Media Library
      *
-     * @return \App\Models\School
-     * @throws \Exception
+     * @throws FileCannotBeAdded
      */
+    protected function handleFileUpload(CustomField $field, \Illuminate\Http\UploadedFile $file): Media
+    {
+        $collection = $field->field_type === 'image' ? 'images' : 'files';
+
+        // Basic quota check (configurable)
+        $maxMb = config('custom_fields.max_upload_mb_per_record', 50);
+        if ($this->media()->where('collection_name', $collection)->sum('size') / 1024 / 1024 > $maxMb) {
+            throw new \Exception("Upload quota exceeded for this record (max {$maxMb}MB).");
+        }
+
+        return $this->addMedia($file)
+            ->withCustomProperties([
+                'custom_field_id' => $field->id,
+                'field_name'      => $field->name,
+            ])
+            ->toMediaCollection($collection);
+    }
+
+    /**
+     * Get a single custom field value (with fallback)
+     */
+    public function getCustomFieldValue(string $fieldName, $default = null)
+    {
+        $response = $this->customFieldResponses()
+            ->whereHas('customField', fn ($q) => $q->where('name', $fieldName))
+            ->first();
+
+        if (!$response) {
+            return $default;
+        }
+
+        $value = $response->value;
+
+        // If it's JSON (e.g. media ID), decode
+        if (is_string($value) && str_starts_with($value, '{')) {
+            $decoded = json_decode($value, true);
+            if (isset($decoded['media_id'])) {
+                $media = Media::find($decoded['media_id']);
+                return $media ? $media->getUrl() : $default;
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * Eager load fields + responses for this instance
+     */
+    public function loadCustomFields()
+    {
+        $schoolId = $this->getActiveSchool()?->id;
+
+        return $this->loadMissing([
+            'customFieldResponses.customField' => fn ($q) => $q
+                ->where('school_id', $schoolId)
+                ->orderBy('sort'),
+        ]);
+    }
+
+    /**
+     * Scope: eager load with custom fields on query
+     */
+    public function scopeWithCustomFields(Builder $query): Builder
+    {
+        $schoolId = GetSchoolModel()?->id;
+
+        return $query->with([
+            'customFieldResponses.customField' => fn ($q) => $q
+                ->select([
+                    'id', 'name', 'label', 'field_type', 'options',
+                    'placeholder', 'hint', 'sort', 'rules'
+                ])
+                ->where('school_id', $schoolId)
+                ->orderBy('sort'),
+        ]);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Field CRUD helpers (scoped to current school)
+    // ──────────────────────────────────────────────────────────────
+
+    public function addCustomField(array $fieldData): CustomField
+    {
+        $school = $this->getActiveSchool();
+        $fieldData['school_id'] = $school->id;
+        $fieldData['model_type'] = get_class($this);
+
+        $service = app(CustomFieldService::class);
+        $field = $this->customFields()->create($service->validateAndPrepareField($fieldData));
+
+        $this->invalidateCustomFieldCache($school);
+
+        return $field;
+    }
+
+    public function updateCustomField(int $fieldId, array $fieldData): bool
+    {
+        $school = $this->getActiveSchool();
+
+        $updated = $this->customFields()
+            ->where('id', $fieldId)
+            ->where('school_id', $school->id)
+            ->update(app(CustomFieldService::class)->validateAndPrepareField($fieldData, true));
+
+        if ($updated) {
+            $this->invalidateCustomFieldCache($school);
+        }
+
+        return (bool) $updated;
+    }
+
+    public function deleteCustomField(int $fieldId): bool
+    {
+        $school = $this->getActiveSchool();
+
+        $deleted = $this->customFields()
+            ->where('id', $fieldId)
+            ->where('school_id', $school->id)
+            ->delete();
+
+        if ($deleted) {
+            $this->invalidateCustomFieldCache($school);
+        }
+
+        return (bool) $deleted;
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Internal helpers
+    // ──────────────────────────────────────────────────────────────
+
     protected function getActiveSchool(): School
     {
         $school = GetSchoolModel();
+
         if (!$school) {
-            throw new \Exception('No active school found for this operation.');
+            throw new \RuntimeException('No active school context available.');
         }
+
         return $school;
     }
 
-    /**
-     * Validate custom field data before creation or update.
-     *
-     * @param array $fieldData
-     * @return void
-     * @throws \Illuminate\Validation\ValidationException
-     */
-    protected function validateFieldData(array $fieldData): void
-    {
-        Validator::make($fieldData, [
-            'name' => 'required|string|max:255',
-            'label' => 'required|string|max:255',
-            'field_type' => 'required|string|in:text,textarea,select,radio,checkbox',
-            'rules' => 'nullable|array',
-            'rules.*' => 'string',
-            'options' => 'nullable|array',
-            'options.*' => 'string|max:255',
-        ])->validate();
-    }
-
-    /**
-     * Get the value of a custom field for the current model.
-     *
-     * @param string $fieldName The name of the custom field.
-     * @return mixed The value of the custom field.
-     */
-    public function getCustomFieldValue(string $fieldName)
-    {
-        return $this->customFieldResponses()
-            ->join('custom_fields', 'custom_field_responses.custom_field_id', '=', 'custom_fields.id')
-            ->where('custom_fields.name', $fieldName)
-            ->value('custom_field_responses.value');
-    }
-
-    /**
-     * Invalidate the custom fields cache for a given school.
-     *
-     * @param \App\Models\School $school
-     * @return void
-     */
     protected function invalidateCustomFieldCache(School $school): void
     {
-        $cacheKey = 'custom_fields_' . $school->id . '_' . md5(get_class($this));
-        Cache::forget($cacheKey);
+        Cache::forget("effective_fields:{$school->id}:" . md5(get_class($this)));
+        // You can also flush broader tags if needed
+        // Cache::tags(["custom_fields:school:{$school->id}"])->flush();
+    }
+
+    // Placeholder for future conditional evaluation
+    protected function evaluateConditionalRules(CustomField $field, array $allValues): bool
+    {
+        if (empty($field->conditional_rules)) {
+            return true;
+        }
+
+        // TODO: implement visibility logic based on other field values
+        // e.g. if other_field == 'yes' then show this field
+        return true;
     }
 }

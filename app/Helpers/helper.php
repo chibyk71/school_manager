@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\ModelResolver;
 use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
@@ -217,41 +218,7 @@ if (!function_exists('modelClassFromName')) {
      */
     function modelClassFromName(string $name): ?string
     {
-        try {
-            $className = Str::studly($name);
-            $baseNamespace = 'App\\Models\\';
-            $cacheKey = 'model_class_map';
-
-            $map = Cache::rememberForever($cacheKey, function () use ($baseNamespace) {
-                $map = [];
-                $modelsPath = app_path('Models');
-
-                if (!is_dir($modelsPath)) {
-                    Log::warning('Models directory does not exist: ' . $modelsPath);
-                    return $map;
-                }
-
-                $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($modelsPath));
-
-                foreach ($iterator as $file) {
-                    if ($file->isFile() && $file->getExtension() === 'php') {
-                        $relativePath = str_replace($modelsPath . DIRECTORY_SEPARATOR, '', $file->getPathname());
-                        $modelNamespace = $baseNamespace . str_replace(['/', '\\', '.php'], ['\\', '\\', ''], $relativePath);
-
-                        if (class_exists($modelNamespace) && is_subclass_of($modelNamespace, Model::class)) {
-                            $map[class_basename($modelNamespace)] = $modelNamespace;
-                        }
-                    }
-                }
-
-                return $map;
-            });
-
-            return $map[$className] ?? null;
-        } catch (\Exception $e) {
-            Log::error("Failed to resolve model '$name': " . $e->getMessage());
-            return null;
-        }
+        return ModelResolver::get($name);
     }
 }
 

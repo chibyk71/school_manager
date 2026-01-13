@@ -2,30 +2,49 @@
 
 namespace App\Models;
 
+use Abbasudo\Purity\Traits\Filterable;
+use Abbasudo\Purity\Traits\Sortable;
+use App\Support\CustomFieldType;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
  * Class CustomField
  *
- * Represents a custom field definition for a model in a multi-tenant school management system.
+ * Represents a single custom field definition.
+ * Can be:
+ *   - Global preset (school_id = null) — visible to all schools unless overridden
+ *   - School-specific override (school_id filled) — takes priority over global
  *
- * @package App\Models
+ * Key behaviors:
+ *   - Protects global fields from being edited/deleted by school admins
+ *   - Invalidates cache on any change
+ *   - Provides merged/effective view via scopeEffectiveFor()
+ *   - Logs changes via Spatie Activitylog
+ *
+ * Relationships:
+ *   - responses() → all values ever saved for this field
+ *   - model()    → polymorphic (rarely used — usually the field belongs to the system)
  */
 class CustomField extends Model
 {
-    /** @use HasFactory<\Database\Factories\CustomFieldFactory> */
-    use HasFactory, BelongsToSchool, HasTableQuery, SoftDeletes;
+    use HasFactory,
+        BelongsToSchool,
+        HasTableQuery,
+        SoftDeletes,
+        Filterable,
+        Sortable,
+        LogsActivity;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<string>
-     */
     protected $fillable = [
         'name',
         'label',
@@ -45,109 +64,238 @@ class CustomField extends Model
         'has_options',
         'model_type',
         'school_id',
+        // File/image support
+        'file_path',
+        'file_paths',
+        'file_type',
+        'max_file_size_kb',
+        'allowed_extensions',
+        // Advanced
+        'conditional_rules',
+        'preset_key',
+        'is_preset',
+        'visibility_scope',
+        'role_restrictions',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'rules' => 'array',
         'classes' => 'array',
         'options' => 'array',
         'extra_attributes' => 'array',
         'field_options' => 'array',
+        'file_paths' => 'array',
+        'allowed_extensions' => 'array',
+        'conditional_rules' => 'array',
+        'role_restrictions' => 'array',
         'has_options' => 'boolean',
+        'is_preset' => 'boolean',
+        'max_file_size_kb' => 'integer',
     ];
 
-    /**
-     * The table associated with the model.
-     *
-     * @var string
-     */
-    protected $table = 'custom_fields';
-
-    /**
-     * The attributes that should be appended to the model's array form.
-     *
-     * @var array<string>
-     */
     protected $appends = [
         'required',
+        'is_global',
+        'is_override',
     ];
 
-    /**
-     * Boot the model with global scopes and event listeners.
-     */
-    protected static function boot()
+    // ──────────────────────────────────────────────────────────────
+    // Activity Logging (Spatie)
+    // ──────────────────────────────────────────────────────────────
+    public function getActivitylogOptions(): LogOptions
     {
-        parent::boot();
+        return LogOptions::defaults()
+            ->logOnlyDirty()
+            ->logOnly([
+                'name',
+                'label',
+                'field_type',
+                'rules',
+                'options',
+                'school_id',
+                'model_type',
+                'preset_key',
+                'is_preset',
+            ])
+            ->dontLogIfAttributesChangedOnly(['updated_at'])
+            ->useLogName('custom-field');
+    }
 
-        // Apply default ordering by sort and ID
-        static::addGlobalScope('ordered', function ($query) {
-            $query->orderBy('sort', 'asc')->orderBy('id', 'asc');
+    // ──────────────────────────────────────────────────────────────
+    // Boot / Global protections
+    // ──────────────────────────────────────────────────────────────
+    protected static function booted()
+    {
+        // Default ordering
+        static::addGlobalScope(
+            'ordered',
+            fn(Builder $q) =>
+            $q->orderBy('sort')->orderBy('id')
+        );
+
+        // Protect global fields (school_id = null) from school-level users
+        static::updating(function (self $field) {
+            if (is_null($field->school_id) && GetSchoolModel() !== null) {
+                Log::warning('Blocked attempt to update global custom field', [
+                    'field_id' => $field->id,
+                    'user_id' => auth()->id(),
+                ]);
+                abort(403, 'Global default fields can only be modified by tenant/super administrators.');
+            }
         });
 
-        // Invalidate cache on create/update/delete
-        static::saved(function ($model) {
-            $cacheKey = 'custom_fields_' . $model->school_id . '_' . md5($model->model_type);
-            Cache::forget($cacheKey);
-        });
-
-        static::deleted(function ($model) {
-            $cacheKey = 'custom_fields_' . $model->school_id . '_' . md5($model->model_type);
-            Cache::forget($cacheKey);
+        static::deleting(function (self $field) {
+            if (is_null($field->school_id) && GetSchoolModel() !== null) {
+                Log::warning('Blocked attempt to delete global custom field', [
+                    'field_id' => $field->id,
+                    'user_id' => auth()->id(),
+                ]);
+                abort(403, 'Global default fields cannot be deleted by school administrators.');
+            }
         });
     }
 
+    // ──────────────────────────────────────────────────────────────
+    // Accessors
+    // ──────────────────────────────────────────────────────────────
+
+    public function getRequiredAttribute(): bool
+    {
+        return in_array('required', $this->rules ?? [], true);
+    }
+
+    public function getIsGlobalAttribute(): bool
+    {
+        return is_null($this->school_id);
+    }
+
+    public function getIsOverrideAttribute(): bool
+    {
+        return !is_null($this->school_id);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Scopes – Core merging logic
+    // ──────────────────────────────────────────────────────────────
+
     /**
-     * Define the polymorphic relationship to the owning model.
+     * Get the effective (merged) fields for a given school and model type.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\MorphTo
+     * Logic:
+     *   1. Include all global fields (school_id = null)
+     *   2. Include school overrides (school_id = given school)
+     *   3. Order by school_id DESC → overrides come first
+     *   4. Deduplicate by name (school override wins)
+     *   5. Final sort by 'sort' column
      */
+    public function scopeEffectiveFor(Builder $query, ?School $school, string $modelType): Collection
+    {
+        return $query
+            ->where('model_type', $modelType)
+            ->where(function ($q) use ($school) {
+                $q->whereNull('school_id')
+                    ->orWhere('school_id', $school?->id);
+            })
+            ->orderByRaw('school_id IS NULL ASC') // globals last
+            ->orderBy('sort')
+            ->orderBy('id')
+            ->get()
+            ->keyBy('name')          // school override wins (later in collection)
+            ->values()               // reset keys
+            ->sortBy('sort');        // enforce final display order
+    }
+
+    /**
+     * Scope: Get the base query for effective fields (global + school overrides)
+     * Returns Builder — ready for filters, sorts, pagination
+     *
+     * Use this when you need to apply additional query constraints (Purity, etc.)
+     * For simple merged list without filters, use effectiveFor() which returns Collection
+     */
+    public function scopeEffectiveQuery(Builder $query, ?School $school, string $modelType): Builder
+    {
+        return $query
+            ->where('model_type', $modelType)
+            ->where(function ($q) use ($school) {
+                $q->whereNull('school_id')
+                    ->orWhere('school_id', $school?->id);
+            })
+            ->orderByRaw('school_id IS NULL ASC') // school overrides first
+            ->orderBy('sort')
+            ->orderBy('id');
+    }
+
+    public function scopeGlobalDefaults(Builder $query): Builder
+    {
+        return $query->whereNull('school_id');
+    }
+
+    public function scopeOverridesForSchool(Builder $query, School $school): Builder
+    {
+        return $query->where('school_id', $school->id);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Relationships
+    // ──────────────────────────────────────────────────────────────
+
     public function model()
     {
         return $this->morphTo();
     }
 
-    /**
-     * Get the required attribute based on the rules.
-     *
-     * @return bool
-     */
-    public function getRequiredAttribute(): bool
-    {
-        return in_array('required', $this->rules ?? []);
-    }
-
-    public function scopeForSchool($query, $school)
-    {
-        return $query->where('school_id', $school->id ?? $school);
-    }
-
-    public function scopeForModel($query, $model)
-    {
-        return $query->where('model_type', is_string($model) ? $this->resources[$model] ?? $model : $model);
-    }
-
-    public function scopeOrdered($query)
-    {
-        return $query->orderBy('sort')->orderBy('id');
-    }
-
     public function responses()
     {
-        return $this->hasMany(CustomFieldResponse::class, 'custom_field_id', 'id');
+        return $this->hasMany(CustomFieldResponse::class);
     }
 
-    /**
-     * Get the school ID column name.
-     *
-     * @return string
-     */
+    // ──────────────────────────────────────────────────────────────
+    // Cache invalidation
+    // ──────────────────────────────────────────────────────────────
+
+    public function invalidateRelatedCache(): void
+    {
+        $tags = [
+            'custom_fields',
+            $this->school_id
+            ? "custom_fields:school:{$this->school_id}"
+            : 'custom_fields:global',
+            "custom_fields:model:" . md5($this->model_type),
+        ];
+
+        Cache::tags($tags)->flush();
+
+        if (!app()->environment('production')) {
+            Log::debug('Custom field cache flushed', [
+                'field_id' => $this->id,
+                'school_id' => $this->school_id,
+                'model_type' => $this->model_type,
+            ]);
+        }
+    }
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saved(fn(self $model) => $model->invalidateRelatedCache());
+        static::deleted(fn(self $model) => $model->invalidateRelatedCache());
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Helpers
+    // ──────────────────────────────────────────────────────────────
+
     public static function getSchoolIdColumn(): string
     {
         return 'school_id';
+    }
+
+    /**
+     * Quick helper: is this field a file/image upload type?
+     */
+    public function isFileField(): bool
+    {
+        return CustomFieldType::tryFrom($this->field_type)?->isFileType() ?? false;
     }
 }
