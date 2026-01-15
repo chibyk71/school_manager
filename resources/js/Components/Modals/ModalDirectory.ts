@@ -64,7 +64,7 @@ export interface ModalRegistration {
  */
 export const ModalComponentDirectory: Record<string, ModalRegistration> = {
     'custom-field': {
-        loader: () => import('@/Components/Modals/Create/CustomFields.vue'),
+        loader: () => import('@/Components/Modals/CreateEdit/CustomFieldModal.vue'),
         config: {
             title: 'Custom Field',
             maxWidth: 'md',

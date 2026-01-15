@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Accordion, AccordionTab } from 'primevue';
-import DynamicInput from './DynamicInput.vue';
-import type { FieldCategory } from '@/types/form';
+import DynamicInput from './CustomFieldRenderer.vue';
+import type { FieldCategory } from '@/types/custom-fields';
+
+// TODO: add support for nested categories and use in form fields renderer
 
 defineProps<{
     category: FieldCategory;

@@ -323,3 +323,13 @@ export interface TableAction<T = any> {
         acceptClass?: string; // e.g., 'p-button-danger'
     };
 }
+
+export interface TableQueryProps<T = unknown> {
+    data: T[];
+    totalRecords: number;
+    currentPage: number;
+    lastPage: number;
+    perPage: number;
+    columns: ColumnDefinition<T>[];
+    globalFilterables: string[]; // ← Added for frontend
+}

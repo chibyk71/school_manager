@@ -75,7 +75,7 @@ class CustomFieldsController extends Controller
             $modelClass = ModelResolver::get($alias);
 
             if (!$modelClass) {
-                return Inertia::render('Settings/CustomFields/Index', [
+                return Inertia::render('Settings/System/CustomField', [
                     'error' => "Invalid resource type: {$alias}",
                 ]);
             }
@@ -103,11 +103,10 @@ class CustomFieldsController extends Controller
         );
 
         // Prepare Inertia props
-        return Inertia::render('Settings/CustomFields/Index', [
-            'tableData' => $tableData,
+        return Inertia::render('Settings/System/CustomField', [
+            ...$tableData,
             'fieldTypes' => CustomFieldType::toFrontendArray(),
             'currentResource' => $request->string('resource', null),
-            'currentSchool' => $school ? $school->only(['id', 'name']) : null,
         ]);
     }
 

@@ -79,6 +79,7 @@ const navigationGroups: NavGroup[] = [
             { label: 'Printer Settings', href: route('settings.system.printer') },
             { label: 'GDPR & Cookies', href: route('settings.system.gdpr') },
             { label: 'User Management', href: route('settings.system.user-management') },
+            {label: 'Custom Fields', href: route('settings.system.custom-fields')},
         ],
     },
     {

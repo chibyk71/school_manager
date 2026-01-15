@@ -96,11 +96,12 @@ const labelClasses = computed(() => ({
         <!-- Label Text + Required Asterisk -->
         <span>
             {{ props.value }}
-            <span v-if="props.required" class="text-red-500 ml-1" aria-label="required">*</span>
+            <span v-if="props.required" class="text-red-600 dark:text-red-400 font-semibold text-base leading-none ml-1" aria-label="required">*</span>
         </span>
 
         <!-- Hint Tooltip Icon (only when hint provided) -->
-        <i v-if="hasHint" class="pi pi-question-circle text-gray-400 hover:text-gray-600 cursor-help text-lg"
+        <i v-if="hasHint"
+            class="pi pi-question-circle pi pi-question-circle text-gray-400 dark:text-gray-500 hover:text-primary-500 dark:hover:text-primary-400 ml-1.5 text-sm cursor-help transition-colors"
             v-tooltip.top="{ value: props.hint, escape: true }" aria-hidden="true" />
     </label>
 </template>
