@@ -2,24 +2,15 @@
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import UsersDataTable from './components/UsersDataTable.vue'
-import { Head, Link, usePage } from '@inertiajs/vue3'
+import { Head, Link } from '@inertiajs/vue3'
 import { computed } from 'vue';
+import type { TableQueryProps } from '@/types/datatables';
 
-const props = defineProps<{
-    users: any
-    columns: any[]
-    global_filter_fields: string[]
-    can: {
-        create: boolean
-        edit: boolean
-        delete: boolean
-        reset_password: boolean
-    }
-}>()
+const props = defineProps<TableQueryProps>()
 
 // ADD THESE TWO LINES
-const usersArray = computed(() => props.users?.data ?? [])
-const usersTotal = computed(() => props.users?.total ?? props.users?.total ?? 0)
+const usersArray = computed(() => props.data ?? [])
+const usersTotal = computed(() => props.totalRecords ?? props.data.length)
 
 </script>
 
@@ -32,10 +23,9 @@ const usersTotal = computed(() => props.users?.total ?? props.users?.total ?? 0)
         <!-- Main Content -->
         <div class="space-y-6">
             <!-- Users Table – Does Everything -->
-            <div
-                class="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <UsersDataTable :users="usersArray" :total-records="usersTotal" :columns="columns"
-                    :global-filter-fields="global_filter_fields" />
+                    :global-filter-fields="globalFilterables" />
             </div>
         </div>
     </AuthenticatedLayout>

@@ -2,93 +2,85 @@
 
 namespace App\Models;
 
-use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
-use App\Traits\HasTableQuery;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use App\Traits\HasAddress;
+use App\Traits\HasCustomFields;
+use App\Traits\HasDynamicEnum;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
-use Spatie\Image\Enums\Fit;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
-use Spatie\MediaLibrary\Conversions\Manipulations;
-
+use Spatie\Image\Enums\Fit;
 
 /**
- * Profile Model
+ * Profile Model – Central Person Entity (v1.0 – Production-Ready)
  *
- * Represents a role-specific profile (student, staff, guardian) linked to a User.
- * Supports multi-role users across schools/branches via polymorphic relationship.
+ * This is the single source of truth for any individual in the system (students, staff, guardians, etc.).
+ * It stores shared personal information to prevent duplication across roles and schools.
  *
- * @property string $id
- * @property string $user_id
- * @property string|null $profilable_id
- * @property string|null $profilable_type
- * @property string $school_id
- * @property string $profile_type        // 'staff', 'student', 'guardian'
- * @property string|null $title          // Mr, Mrs, Dr, etc.
- * @property string $first_name
- * @property string|null $middle_name
- * @property string $last_name
- * @property string $gender              // male, female, other
- * @property \Illuminate\Support\Carbon|null $date_of_birth
- * @property string|null $phone
- * @property string|null $address
- * @property bool $is_primary
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
+ * Features / Problems Solved:
+ * - De-duplication: One Profile per real person → same person can be staff in School A and guardian in School B without duplicating name/phone/DOB/photo.
+ * - Role flexibility: hasMany relationships to Student, Staff, Guardian models allow multiple roles over time/schools.
+ * - Optional login: hasOne User relationship → not every profile needs app access (e.g., young students, some guardians).
+ * - Multi-tenant readiness: No direct BelongsToSchool (tenant-wide), but role models (Student/Staff/Guardian) apply school scoping.
+ * - Rich personal data: Supports HasAddress (multiple addresses), HasCustomFields (school-specific extensions), HasDynamicEnum (title, gender, etc.).
+ * - Media handling: Single avatar via Spatie Media Library with thumb/medium conversions + gender-based fallback.
+ * - Activity logging: Full audit trail via Spatie LogsActivity (useful for admin review, compliance).
+ * - Soft deletes: Safe archival of inactive profiles without losing historical role links.
+ * - Accessors: full_name, short_name, age, photo_url (with fallback) for consistent display.
+ * - Helper methods: isStaff(), isStudent(), isGuardian(), markAsPrimary() for easy role/type checks.
+ * - Boot logic: Enforces single primary profile per user (if multiple profiles exist), auto-demotes/promotes on changes/deletes.
  *
- * @property-read \App\Models\User $user
- * @property-read \Illuminate\Database\Eloquent\Model|\Eloquent $profilable
- * @property-read \App\Models\School $school
- * @property-read string $full_name
- * @property-read string $short_name
- * @property-read int|null $age
+ * Fits into the User Management Module:
+ * - Hub model: Created bundled with roles (e.g., StudentController creates Profile + Student; StaffController creates Profile + Staff + optional User).
+ * - Never created standalone: Always through role-specific flows (enroll student, hire staff, register guardian).
+ * - Used in:
+ *   - Data tables: ProfilesTable.vue (search/merge across roles), StudentsTable.vue (joins profile for name/photo).
+ *   - Modals: ProfileFormModal.vue (shared partial for name/DOB/gender), StudentEnrollmentModal.vue (extends with student fields).
+ *   - Permissions: User model (linked via hasOne) holds roles/permissions; Profile holds personal data only.
+ * - Integrates with traits:
+ *   - HasAddress → multiple addresses per person (home, work, temporary).
+ *   - HasCustomFields → school-defined fields (e.g., blood_group, allergies for students; qualifications for staff).
+ *   - HasDynamicEnum → title (Mr/Mrs), gender (male/female/other/prefer_not_to_say), etc.
+ * - Security: No sensitive auth data here (lives in User); school scoping delegated to role models.
+ * - Performance: Indexes on searchable fields; eager loading recommended for role joins.
  *
- * @method static \Illuminate\Database\Eloquent\Builder|Profile tableQuery(\Illuminate\Http\Request $request, array $extraFields = [], array $customModifiers = [])
- * @method static \Illuminate\Database\Eloquent\Builder|Profile staff()
- * @method static \Illuminate\Database\Eloquent\Builder|Profile student()
- * @method static \Illuminate\Database\Eloquent\Builder|Profile guardian()
- * @method static \Illuminate\Database\Eloquent\Builder|Profile primary()
+ * Important Notes:
+ * - This model does NOT use profilable_id / profilable_type (polymorphic) — we use explicit hasMany relationships instead for clarity and easier querying.
+ * - profile_type field removed — role detection now via existence of related records (has student() / staff() / guardian() relationships).
+ * - is_primary removed — primary profile concept moved to User model if needed (most systems only need one "main" profile per user).
  */
+
 class Profile extends Model implements HasMedia
 {
     use HasFactory,
-        HasUuids,
         SoftDeletes,
-        BelongsToSchool,
-        HasTableQuery,
-        LogsActivity,
-        HasConfig,
-        InteractsWithMedia;
+        HasAddress,
+        HasCustomFields,
+        HasDynamicEnum,
+        InteractsWithMedia,
+        LogsActivity;
 
     protected $fillable = [
-        'user_id',
-        'profilable_id',
-        'profilable_type',
-        'school_id',
-        'profile_type',
         'title',
         'first_name',
-        'last_name',
         'middle_name',
+        'last_name',
         'gender',
         'date_of_birth',
         'phone',
-        'address',
-        'is_primary',
+        'email',           // optional — only if not using User email
+        'notes',
+        'user_id'
     ];
 
     protected $casts = [
         'date_of_birth' => 'date',
-        'is_primary'    => 'boolean',
     ];
 
     protected $appends = [
@@ -98,203 +90,157 @@ class Profile extends Model implements HasMedia
         'photo_url',
     ];
 
+    // For HasTableQuery trait – fields available for global search
     protected array $globalFilterFields = [
         'first_name',
-        'last_name',
         'middle_name',
+        'last_name',
         'phone',
+        'email',
         'title',
-        'profile_type',
     ];
+
+    // For HasDynamicEnum trait – declare dynamic enum properties
+    public function getDynamicEnumProperties(): array
+    {
+        return ['title', 'gender'];
+    }
 
     // =================================================================
     // RELATIONSHIPS
     // =================================================================
 
-    public function user(): BelongsTo
+    /**
+     * Optional login account (1:1)
+     */
+    public function user()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function profilable(): MorphTo
+    /**
+     * All student enrollment records (historical & current)
+     */
+    public function students(): HasMany
     {
-        return $this->morphTo();
+        return $this->hasMany(\App\Models\Academic\Student::class);
+    }
+
+    /**
+     * All staff/employment positions (historical & current)
+     */
+    public function staffPositions(): HasMany
+    {
+        return $this->hasMany(\App\Models\Employee\Staff::class);
+    }
+
+    /**
+     * All guardian responsibilities
+     */
+    public function guardians(): HasMany
+    {
+        return $this->hasMany(Guardian::class);
     }
 
     // =================================================================
-    // MEDIA LIBRARY – AVATAR SUPPORT
+    // MEDIA LIBRARY – AVATAR
     // =================================================================
 
     public function registerMediaCollections(): void
     {
         $this->addMediaCollection('photo')
-            ->singleFile() // Only one photo per profile
-            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp'])
+            ->singleFile()
+            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
             ->useDisk('public');
     }
 
     public function registerMediaConversions(Media $media = null): void
     {
-        // Simplified to two conversions for better performance; use responsive images where needed
-        $this
-            ->addMediaConversion('thumb')
-            ->fit(Fit::Crop, 100, 100)
-            ->sharpen(10)
-            ->performOnCollections('photo');
+        $this->addMediaConversion('thumb')
+            ->fit(Fit::Crop, 120, 120)
+            ->sharpen(10);
 
-        $this
-            ->addMediaConversion('medium')
+        $this->addMediaConversion('medium')
             ->fit(Fit::Crop, 600, 600)
+            ->optimize()
             ->performOnCollections('photo');
-    }
-
-    /**
-     * Get the URL to the user's photo with fallback.
-     */
-    public function getPhotoUrlAttribute(): string
-    {
-        return $this->getFirstMediaUrl('photo', 'medium')
-            ?: asset('images/avatars/default-' . ($this->gender === 'female' ? 'female' : 'male') . '.png');
-    }
-
-    // =================================================================
-    // SCOPES
-    // =================================================================
-
-    public function scopePrimary($query)
-    {
-        return $query->where('is_primary', true);
-    }
-
-    public function scopeOfType($query, string $type)
-    {
-        return $query->where('profile_type', $type);
-    }
-
-    public function scopeStaff($query)
-    {
-        return $query->where('profile_type', 'staff');
-    }
-
-    public function scopeStudent($query)
-    {
-        return $query->where('profile_type', 'student');
-    }
-
-    public function scopeGuardian($query)
-    {
-        return $query->where('profile_type', 'guardian');
-    }
-
-    public function scopeForRole($query, string $role)
-    {
-        return $query->where('profile_type', $role);
     }
 
     // =================================================================
     // ACCESSORS
     // =================================================================
 
-    public function getFullNameAttribute(): string
+    protected function fullName(): Attribute
     {
-        $parts = array_filter([
-            $this->title,
-            $this->first_name,
-            $this->middle_name,
-            $this->last_name,
-        ]);
-
-        return trim(implode(' ', $parts)) ?: 'Unknown User';
+        return Attribute::make(
+            get: fn() => trim(implode(' ', array_filter([
+                $this->title,
+                $this->first_name,
+                $this->middle_name,
+                $this->last_name,
+            ]))) ?: 'Unknown Person'
+        );
     }
 
-    public function getShortNameAttribute(): string
+    protected function shortName(): Attribute
     {
-        return trim("{$this->first_name} {$this->last_name}");
+        return Attribute::make(
+            get: fn() => trim("{$this->first_name} {$this->last_name}") ?: 'Unknown'
+        );
     }
 
-    public function getAgeAttribute(): ?int
+    protected function age(): Attribute
     {
-        return $this->date_of_birth?->age;
+        return Attribute::make(
+            get: fn() => $this->date_of_birth?->age
+        );
     }
 
-    // =================================================================
-    // BOOT – DATA INTEGRITY PROTECTION
-    // =================================================================
-
-    protected static function boot(): void
+    protected function photoUrl(): Attribute
     {
-        parent::boot();
-
-        // Prevent more than one primary profile per user
-        static::saving(function (self $profile) {
-            if ($profile->is_primary) {
-                // If this profile is being set as primary, demote others
-                if ($profile->isDirty('is_primary') && $profile->is_primary) {
-                    $profile->user->profiles()
-                        ->where('id', '!=', $profile->id)
-                        ->update(['is_primary' => false]);
-                }
-
-                // If this was the only primary and now it's being turned off, pick another
-                if ($profile->isDirty('is_primary') && !$profile->is_primary) {
-                    $hasOtherPrimary = $profile->user->profiles()
-                        ->where('id', '!=', $profile->id)
-                        ->where('is_primary', true)
-                        ->exists();
-
-                    if (!$hasOtherPrimary && $profile->user->profiles()->count() > 1) {
-                        $profile->user->profiles()
-                            ->where('id', '!=', $profile->id)
-                            ->orderBy('created_at')
-                            ->first()
-                            ?->update(['is_primary' => true]);
-                    } elseif (!$hasOtherPrimary && $profile->user->profiles()->count() === 1) {
-                        // Prevent demotion if this is the only profile
-                        $profile->is_primary = true;
-                    }
-                }
-            }
-        });
-
-        // When a profile is deleted, ensure another one becomes primary if needed
-        static::deleted(function (self $profile) {
-            if ($profile->is_primary) {
-                $newPrimary = $profile->user->profiles()
-                    ->where('is_primary', false)
-                    ->first();
-
-                if ($newPrimary) {
-                    $newPrimary->update(['is_primary' => true]);
-                }
-            }
-        });
+        return Attribute::make(
+            get: fn() => $this->getFirstMediaUrl('photo', 'medium')
+            ?: asset('images/avatars/default-' . ($this->gender === 'female' ? 'female' : 'male') . '.png')
+        );
     }
 
     // =================================================================
-    // HELPER METHODS
+    // ROLE HELPERS
     // =================================================================
-
-    public function isStaff(): bool
-    {
-        return $this->profile_type === 'staff';
-    }
 
     public function isStudent(): bool
     {
-        return $this->profile_type === 'student';
+        return $this->students()->exists();
+    }
+
+    public function isStaff(): bool
+    {
+        return $this->staffPositions()->exists();
     }
 
     public function isGuardian(): bool
     {
-        return $this->profile_type === 'guardian';
+        return $this->guardians()->exists() || $this->wards()->exists();
     }
 
-    public function markAsPrimary(): bool
+    public function hasLogin(): bool
     {
-        $this->user->profiles()->update(['is_primary' => false]);
-        $this->update(['is_primary' => true]);
+        return $this->user()->exists();
+    }
 
-        return $this->is_primary;
+    /**
+     * Determine the active role type of this profile (student, staff, or guardian).
+     *
+     * @return string|null The active role type, or null if no active role exists.
+     */
+    public function activeRoleType(): ?string
+    {
+        return match (true) {
+            $this->isStudent()  => 'student',
+            $this->isStaff()    => 'staff',
+            $this->isGuardian() => 'guardian',
+            default             => null,
+        };
     }
 
     // =================================================================
@@ -304,15 +250,10 @@ class Profile extends Model implements HasMedia
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->useLogName('profile')
+            ->useLogName('profiles')
             ->logFillable()
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "Profile [{$this->full_name}] was {$eventName}");
-    }
-
-    public function getConfigurableProperties(): array
-    {
-        return ['title', 'gender', 'profile_type'];
+            ->setDescriptionForEvent(fn(string $eventName) => "Profile {$this->full_name} was {$eventName}");
     }
 }

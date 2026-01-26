@@ -150,39 +150,36 @@ const toggleUserStatus = async (userId: string | number, active: boolean) => {
 }
 
 // Bulk actions – fully typed and injectable
-const bulkActions = computed<BulkAction[]>(() => [
+const bulkActions = ref<BulkAction<any>[]>([
     {
         label: 'Activate',
         icon: 'pi pi-check-circle',
         severity: 'success',
         action: 'activate',
-        confirm: { message: 'Activate selected users?', severity: 'success' }
+        handler: (user) => {}
     },
     {
         label: 'Deactivate',
         icon: 'pi pi-ban',
         severity: 'warn',
         action: 'deactivate',
-        confirm: { message: 'Deactivate selected users?', severity: 'warn' }
+        confirm: { message: 'Deactivate selected users?', severity: 'warn' },
+        handler: () => {}
     },
     {
         label: 'Reset Password',
         icon: 'pi pi-key',
         severity: 'info',
         action: 'reset-password',
-        confirm: { message: 'Send password reset emails to selected users?', severity: 'info' }
+        confirm: { message: 'Send password reset emails to selected users?', severity: 'info' },
+        handler: () => {}
     },
     {
         label: 'Delete',
         icon: 'pi pi-trash',
         severity: 'danger',
         action: 'delete',
-        confirm: {
-            message: 'Permanently delete selected users? This cannot be undone.',
-            header: 'Delete Users',
-            acceptLabel: 'Delete Forever',
-            severity: 'danger'
-        }
+        handler: () => {}
     }
 ])
 

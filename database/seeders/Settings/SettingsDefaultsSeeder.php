@@ -19,7 +19,7 @@ class SettingsDefaultsSeeder extends Seeder
             // ===================================================================
             // Website & Branding
             // ===================================================================
-            '[website.company]' => [
+            'website.company' => [
                 'legal_name' => 'Your School Name', // Official registered name of the institution
                 'tagline' => 'Excellence in Education', // Short slogan displayed on header/footer
                 'tax_id' => null, // Tax/VAT registration number (for invoices)
@@ -112,6 +112,60 @@ class SettingsDefaultsSeeder extends Seeder
                 'fee_type' => 'FEE',          // Fee type code prefix
                 'transport_route' => 'TRT',   // Transport route code prefix
                 'library_book' => 'LIB',      // Library book accession prefix
+            ],
+            'website.id_formats' => [
+                'student_id' => [
+                    'pattern' => '{SCHOOL}-{PREFIX}-{YEAR}-{SEQUENCE}',
+                    'sequence_length' => 6,
+                ],
+                'staff_id' => [
+                    'pattern' => '{PREFIX}-{SEQUENCE}',
+                    'sequence_length' => 5,
+                ],
+                'guardian_id' => [
+                    'pattern' => '{PREFIX}.{SEQUENCE}',
+                    'sequence_length' => 5,
+                ],
+                'invoice' => [
+                    'pattern' => 'INV/{YEAR}/{SEQUENCE}',
+                    'sequence_length' => 6,
+                ],
+                'payment' => [
+                    'pattern' => 'PAY/{YEAR}/{SEQUENCE}',
+                    'sequence_length' => 6,
+                ],
+                'receipt' => [
+                    'pattern' => 'REC/{YEAR}/{SEQUENCE}',
+                    'sequence_length' => 6,
+                ],
+                'class' => [
+                    'pattern' => 'CLS-{SEQUENCE}',
+                    'sequence_length' => 3,
+                ],
+                'section' => [
+                    'pattern' => 'SEC-{SEQUENCE}',
+                    'sequence_length' => 3,
+                ],
+                'subject' => [
+                    'pattern' => 'SUB-{SEQUENCE}',
+                    'sequence_length' => 4,
+                ],
+                'exam' => [
+                    'pattern' => 'EXM/{YEAR}/{SEQUENCE}',
+                    'sequence_length' => 4,
+                ],
+                'fee_type' => [
+                    'pattern' => 'FEE-{SEQUENCE}',
+                    'sequence_length' => 4,
+                ],
+                'transport_route' => [
+                    'pattern' => 'TRT-{SEQUENCE}',
+                    'sequence_length' => 4,
+                ],
+                'library_book' => [
+                    'pattern' => 'LIB/{YEAR}/{SEQUENCE}',
+                    'sequence_length' => 5,
+                ]
             ],
             // TODO:'website.language' => [],
 

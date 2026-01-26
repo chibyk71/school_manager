@@ -4,8 +4,8 @@ namespace App\Models;
 
 use App\Models\Academic\Student;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasAvatar;                    // ← NEW: Unified avatar system
 use App\Traits\HasCustomFields;
+use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,13 +15,49 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Guardian Model – Final Clean Version
+ * Guardian Model – Responsible Person / Ward Guardian Record (v1.0 – Production-Ready)
  *
- * Now fully aligned with Student & Staff:
- *   • Personal data comes from Profile
- *   • Avatar handled by HasAvatar trait
- *   • Safe cascade delete
+ * Represents a guardian role for a person (linked via central Profile).
+ * Allows independent creation of guardians (before linking to any student)
+ * and supports tenant-wide or school-specific guardians (school_id nullable).
+ *
+ * Features / Problems Solved:
+ * - Independent guardian records: Can create guardians standalone (e.g., pre-register parents)
+ *   and link them to students later — fits real admission workflows.
+ * - Central personal data: Name, DOB, gender, phone, photo, addresses, email all live on
+ *   Profile → no duplication across guardian-student links.
+ * - Flexible relationships: belongsToMany Student via pivot (student_guardian) with
+ *   relationship_type (father/mother/sponsor), is_primary (priority contact), notes.
+ * - School scoping: BelongsToSchool trait (nullable school_id) → can be tenant-wide
+ *   or tied to a specific school; queries respect current school context when school_id set.
+ * - Extensibility: HasCustomFields for school-defined attributes (occupation, employer,
+ *   income bracket, preferred contact method, legal documents, emergency priority, etc.).
+ * - Dynamic enums: HasDynamicEnum ready for future fields (e.g., guardian_type: parent/sponsor/relative).
+ * - Soft deletes: Archive inactive guardians without losing historical links.
+ * - Performance: Indexes on foreign keys; prepared for HasTableQuery trait (advanced
+ *   filtering, sorting, global search in guardian listings).
+ * - Clean, explicit relationships: No polymorphism — direct belongsTo Profile.
+ *
+ * Fits into the User Management Module:
+ * - Created via GuardianController (standalone registration) or inline during
+ *   student enrollment (StudentEnrollmentModal.vue).
+ * - Linked to students via pivot operations (AssignGuardianModal.vue).
+ * - Never manipulates Profile directly — profile edits happen in guardian context
+ *   or rare admin merge tool.
+ * - Integrates with:
+ *   - Frontend: GuardiansTable.vue (HasTableQuery-powered), GuardianFormModal.vue,
+ *     AssignGuardianModal.vue (multi-select or inline create)
+ *   - Backend: GuardianController for CRUD; pivot logic in StudentController or service
+ *   - Other modules: Notifications (primary guardian priority), Emergency protocols
+ *
+ * Important Conventions:
+ * - Profile is the source of truth for personal data and avatar — Guardian model
+ *   only owns guardian-specific metadata and relationships.
+ * - No direct profile creation/editing from Guardian model/controller.
+ * - school_id is nullable → supports cross-school guardians (common in family groups).
+ * - Heavy reliance on custom fields → makes the model very adaptable without schema changes.
  */
+
 class Guardian extends Model
 {
     use HasFactory,
@@ -29,124 +65,126 @@ class Guardian extends Model
         SoftDeletes,
         BelongsToSchool,
         HasCustomFields,
-        HasTableQuery,
-        HasAvatar; // ← Adds photo_url, avatarUrl(), cleanup on delete
+        HasDynamicEnum,
+        HasTableQuery;
 
     protected $fillable = [
-        'user_id',
+        'profile_id',
         'school_id',
+        'notes',
     ];
 
-    protected $appends = [
-        // Personal data now comes from Profile + HasAvatar
-        // No need to append manually
+    // For global search / HasTableQuery trait
+    protected array $globalFilterFields = [
+        'profile.first_name',
+        'profile.last_name',
+        'profile.phone',
+        'notes',
     ];
+
+    // Optional dynamic enum properties (if you add enum-like fields later)
+    public function getDynamicEnumProperties(): array
+    {
+        return []; // e.g. ['guardian_type'] if added
+    }
 
     // =================================================================
     // RELATIONSHIPS
     // =================================================================
 
     /**
-     * The User who owns this Guardian record.
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    /**
-     * The polymorphic Profile that owns this Guardian record.
+     * The central person / identity this guardian role belongs to
      */
     public function profile(): BelongsTo
     {
-        return $this->belongsTo(Profile::class, 'id', 'profilable_id')
-            ->where('profilable_type', self::class);
+        return $this->belongsTo(Profile::class);
     }
 
     /**
-     * The students (children) linked to this guardian.
+     * Optional school scoping (nullable — can be tenant-wide)
      */
-    public function children(): BelongsToMany
+    public function school(): BelongsTo
     {
-        return $this->belongsToMany(
-            Student::class,
-            'student_guardian_pivot',
-            'guardian_id',
-            'student_id'
-        )->withTimestamps();
+        return $this->belongsTo(School::class);
+    }
+
+    /**
+     * All students/wards this guardian is responsible for
+     */
+    public function wards(): BelongsToMany
+    {
+        return $this->belongsToMany(Student::class, 'student_guardian')
+                    ->withPivot('relationship_type', 'is_primary', 'notes')
+                    ->withTimestamps();
+    }
+
+    /**
+     * Primary ward (convenience — e.g. for display or default contact)
+     */
+    public function primaryWard()
+    {
+        return $this->wards()->wherePivot('is_primary', true)->first();
     }
 
     // =================================================================
-    // MAGIC ACCESSORS – Personal data from Profile
+    // ACCESSORS (table/display helpers)
     // =================================================================
 
-    public function getFullNameAttribute(): string
+    public function getFullNameAttribute()
     {
         return $this->profile?->full_name ?? 'Unknown Guardian';
     }
 
-    public function getShortNameAttribute(): string
+    public function getPhotoUrlAttribute()
     {
-        return $this->profile?->short_name ?? 'Guardian';
+        return $this->profile?->photo_url ?? asset('images/avatars/default-male.png');
     }
 
-    public function getEmailAttribute(): ?string
-    {
-        return $this->profile?->user?->email;
-    }
-
-    public function getPhoneAttribute(): ?string
+    public function getPhoneAttribute()
     {
         return $this->profile?->phone;
     }
 
-    public function getGenderAttribute(): ?string
+    public function getEmailAttribute()
     {
-        return $this->profile?->gender;
+        return $this->profile?->email ?? $this->profile?->user?->email;
     }
+
+    public function getHasWardsAttribute(): bool
+    {
+        return $this->wards()->exists();
+    }
+
+    // =================================================================
+    // SCOPES
+    // =================================================================
+
+    public function scopeWithWards($query)
+    {
+        return $query->whereHas('wards');
+    }
+
+    public function scopeWithoutWards($query)
+    {
+        return $query->doesntHave('wards');
+    }
+
+    public function scopeSchoolSpecific($query)
+    {
+        return $query->whereNotNull('school_id');
+    }
+
+    // =================================================================
+    // HELPERS
+    // =================================================================
 
     /**
-     * Avatar – powered by HasAvatar trait (Spatie MediaLibrary)
+     * Get primary phone (self → primary ward → any ward)
      */
-    public function getPhotoUrlAttribute(): string
+    public function getPrimaryContactPhone(): ?string
     {
-        return $this->avatarUrl('medium', $this->profile?->gender);
-    }
-
-    // =================================================================
-    // CASCADE SOFT DELETE
-    // =================================================================
-
-    protected static function boot(): void
-    {
-        parent::boot();
-
-        static::deleting(function (self $guardian) {
-            if ($guardian->isForceDeleting())
-                return;
-
-            // Delete the associated Profile (which will clear avatar via HasAvatar)
-            if ($profile = $guardian->profile) {
-                $profile->delete();
-            }
-
-            // Optional: Soft-delete User if no other profiles exist
-            if ($user = $guardian->user) {
-                $remainingProfiles = $user->profiles()
-                    ->where('id', '!=', $profile?->id)
-                    ->count();
-
-                if ($remainingProfiles === 0) {
-                    $user->delete(); // Soft delete user account
-                }
-            }
-        });
-
-        // Restore cascade
-        static::restoring(function (self $guardian) {
-            if ($profile = $guardian->profile()->withTrashed()->first()) {
-                $profile->restore();
-            }
-        });
+        return $this->phone
+            ?? $this->primaryWard()?->profile?->phone
+            ?? $this->wards()->first()?->profile?->phone;
     }
 }
