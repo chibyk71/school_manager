@@ -99,7 +99,7 @@ Route::middleware('auth')->group(function () {
         });
 
     // Academics
-    Route::resource('schools', SchoolController::class);
+    Route::resource('schools', SchoolController::class)->only(['index', 'store', 'show', 'update']);
     Route::delete('/schools', [SchoolController::class, 'destroy'])->name('schools.destroy');
     Route::post('schools/force-delete', [SchoolController::class, 'forceDelete'])
         ->name('schools.force-delete');
@@ -109,23 +109,6 @@ Route::middleware('auth')->group(function () {
         ->name('schools.bulk-toggle');
 
     Route::resource('sections', SchoolSectionController::class);
-
-
-    // User Management
-    Route::get('/users', [UserController::class, 'index'])->name('users.index');
-    Route::post('/users/email', [UserController::class, 'updateEmail'])->name('users.email');
-    Route::post('/users/set-password', [UserController::class, 'setPassword'])->name('users.set-password');
-    Route::post('/users/status', [UserController::class, 'toggleStatus'])->name('users.status');
-    Route::post('/users/delete', [UserController::class, 'destroy'])->name('users.delete');
-
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->name('profile.avatar.upload');
-    // Admin can edit any profile
-    Route::get('/profile/{profile}/edit', [ProfileController::class, 'edit'])
-        ->name('profile.edit.override');
-
-
 
     // ────────────────────────────────────────────────────────────────
 // Academic Sessions (CRUD + Quick Actions)
@@ -208,9 +191,7 @@ Route::resource('class-sections', ClassSectionController::class);
 Route::resource('timetables', TimeTableController::class);
 Route::resource('timetable-details', TimeTableDetailController::class);
 Route::resource('assignments', AssignmentController::class);
-Route::resource('terms', TermController::class);
-Route::delete('/', [TermController::class, 'destroy'])->name('terms.destroy');
-Route::post('/{term}/active', [TermController::class, 'setActive'])->name('terms.setActive');
+
 // Resource routes for assignment submissions
 Route::resource('assignment-submissions', AssignmentSubmissionController::class);
 Route::delete('assignment-submissions', [AssignmentSubmissionController::class, 'destroy'])->name('assignment-submissions.destroy');

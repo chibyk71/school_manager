@@ -89,10 +89,19 @@ class PermissionSeeder extends Seeder
             ['name' => 'guardian.restore', 'display_name' => 'Restore Guardian', 'description' => 'Restore deleted guardians'],
             ['name' => 'guardian.force-delete', 'display_name' => 'Force Delete Guardian', 'description' => 'Permanently delete guardians'],
 
-            ['name' => 'profile.view-any', 'display_name' => 'View All Profiles', 'description' => 'View list of all profiles (admin)'],
-            ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any user profile (admin override)'],
-            ['name' => 'profile.merge', 'display_name' => 'Merge Profiles', 'description' => 'Merge duplicate user accounts'],
-
+            ['name' => 'profile.view-any', 'display_name' => 'View All Profiles', 'description' => 'View the list of all profiles (admin-level access)',],
+            ['name' => 'profile.view', 'display_name' => 'View Profile', 'description' => 'View a specific profile (own profile or permitted others)',],
+            ['name' => 'profile.update-own', 'display_name' => 'Update Own Profile', 'description' => 'Edit personal profile information (name, phone, photo, etc.)',],
+            ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any user’s profile (admin override)',],
+            ['name' => 'profile.avatar.upload-own', 'display_name' => 'Upload Own Avatar', 'description' => 'Change own profile photo/avatar',],
+            ['name' => 'profile.avatar.upload-any', 'display_name' => 'Upload Avatar for Any Profile', 'description' => 'Change avatar/photo for any user (admin)',],
+            ['name' => 'profile.delete-any', 'display_name' => 'Delete Any Profile', 'description' => 'Soft-delete any profile (admin action)',],
+            ['name' => 'profile.force-delete', 'display_name' => 'Force Delete Profile', 'description' => 'Permanently delete a profile (super-admin only, bypass soft-delete)',],
+            ['name' => 'profile.restore', 'display_name' => 'Restore Profile', 'description' => 'Restore a soft-deleted profile (admin)',],
+            ['name' => 'profile.create-login', 'display_name' => 'Create Login for Profile', 'description' => 'Create a User/login account for an existing profile',],
+            ['name' => 'profile.reset-password', 'display_name' => 'Reset Password', 'description' => 'Force reset password or initiate reset for any profile',],
+            ['name' => 'profile.toggle-status', 'display_name' => 'Toggle Profile Status', 'description' => 'Activate/deactivate a profile (admin)',],
+            ['name' => 'profile.merge', 'display_name' => 'Merge Profiles', 'description' => 'Merge duplicate profiles and move associated roles',],
             // Class Sections
             ['name' => 'class-sections.view', 'display_name' => 'View Class Sections', 'description' => 'View all class sections for a school'],
             ['name' => 'class-sections.create', 'display_name' => 'Create Class Sections', 'description' => 'Create new class sections for a school'],
@@ -142,23 +151,50 @@ class PermissionSeeder extends Seeder
             ['name' => 'terms.reopen', 'display_name' => 'Reopen Terms', 'description' => 'Reopen previously closed terms (restricted)'],
 
             // Custom Fields
-            [ 'name' => 'custom-fields.viewAny', 'display_name' => 'View Custom Fields List', 'description' => 'View the list of all custom fields (global + school overrides)',
+            [
+                'name' => 'custom-fields.viewAny',
+                'display_name' => 'View Custom Fields List',
+                'description' => 'View the list of all custom fields (global + school overrides)',
             ],
-            [ 'name' => 'custom-fields.view', 'display_name' => 'View Custom Field Details', 'description' => 'View detailed information about a specific custom field',
+            [
+                'name' => 'custom-fields.view',
+                'display_name' => 'View Custom Field Details',
+                'description' => 'View detailed information about a specific custom field',
             ],
-            [ 'name' => 'custom-fields.create', 'display_name' => 'Create Custom Field', 'description' => 'Create new custom fields (global or school-specific overrides)',
+            [
+                'name' => 'custom-fields.create',
+                'display_name' => 'Create Custom Field',
+                'description' => 'Create new custom fields (global or school-specific overrides)',
             ],
-            [ 'name' => 'custom-fields.update', 'display_name' => 'Edit Custom Field', 'description' => 'Update existing custom fields (restricted for global fields)',
+            [
+                'name' => 'custom-fields.update',
+                'display_name' => 'Edit Custom Field',
+                'description' => 'Update existing custom fields (restricted for global fields)',
             ],
-            [ 'name' => 'custom-fields.delete', 'display_name' => 'Delete Custom Field', 'description' => 'Soft-delete custom fields (restricted for global fields)',
+            [
+                'name' => 'custom-fields.delete',
+                'display_name' => 'Delete Custom Field',
+                'description' => 'Soft-delete custom fields (restricted for global fields)',
             ],
-            [ 'name' => 'custom-fields.restore', 'display_name' => 'Restore Custom Field', 'description' => 'Restore soft-deleted custom fields',
+            [
+                'name' => 'custom-fields.restore',
+                'display_name' => 'Restore Custom Field',
+                'description' => 'Restore soft-deleted custom fields',
             ],
-            [ 'name' => 'custom-fields.forceDelete', 'display_name' => 'Permanently Delete Custom Field', 'description' => 'Force-delete custom fields (permanent removal)',
+            [
+                'name' => 'custom-fields.forceDelete',
+                'display_name' => 'Permanently Delete Custom Field',
+                'description' => 'Force-delete custom fields (permanent removal)',
             ],
-            [ 'name' => 'custom-fields.reorder', 'display_name' => 'Reorder Custom Fields', 'description' => 'Change sort order of custom fields via drag & drop',
+            [
+                'name' => 'custom-fields.reorder',
+                'display_name' => 'Reorder Custom Fields',
+                'description' => 'Change sort order of custom fields via drag & drop',
             ],
-            [ 'name' => 'custom-fields.apply-preset', 'display_name' => 'Apply Custom Field Preset', 'description' => 'Apply a global preset/template to the current school',
+            [
+                'name' => 'custom-fields.apply-preset',
+                'display_name' => 'Apply Custom Field Preset',
+                'description' => 'Apply a global preset/template to the current school',
             ],
 
             // Timetables

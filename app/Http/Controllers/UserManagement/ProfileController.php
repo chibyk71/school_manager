@@ -88,7 +88,7 @@ class ProfileController extends Controller
      * - No mass assignment risk (query builder only)
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return \Inertia\Response
+     * @return \Inertia\Response|\Illuminate\Http\JsonResponse
      */
     public function index(Request $request)
     {
@@ -131,6 +131,10 @@ class ProfileController extends Controller
                 : $q,
             ]);
 
+            if ($request->wantsJson()) {
+                return response()->json($tableData);
+            }
+
             // 4. Return Inertia response with paginated & filtered data
             return Inertia::render('Profiles/Index', [
                 'profiles' => $tableData['data'],
@@ -160,7 +164,7 @@ class ProfileController extends Controller
             ]);
 
             // Friendly user message (Inertia flash)
-            return Inertia::render('Profiles/Index', [
+            return Inertia::render('Profiles/Users', [
                 'profiles' => collect([]),
                 'pagination' => ['total' => 0, 'current' => 1, 'last' => 1, 'perPage' => 20],
                 'filters' => $request->only(['search']),
@@ -255,10 +259,10 @@ class ProfileController extends Controller
                         'date_of_employment',
                         'status',
                     ])->with([
-                                'school' => fn($sq) => $sq->select('id', 'name'),
-                                'section' => fn($sq) => $sq->select('id', 'name'),
-                                'department' => fn($sq) => $sq->select('id', 'name'),
-                            ]);
+                        'school' => fn($sq) => $sq->select('id', 'name'),
+                        'section' => fn($sq) => $sq->select('id', 'name'),
+                        'department' => fn($sq) => $sq->select('id', 'name'),
+                    ]);
                 },
 
                 'guardians' => function ($q) {
@@ -268,8 +272,8 @@ class ProfileController extends Controller
                         'school_id',
                         'notes',
                     ])->with([
-                                'wards.school' => fn($sq) => $sq->select('id', 'name'),
-                            ]);
+                        'wards.school' => fn($sq) => $sq->select('id', 'name'),
+                    ]);
                 },
 
                 'wards' => function ($q) {
@@ -281,9 +285,9 @@ class ProfileController extends Controller
                         'students.admission_number',
                         'students.status',
                     ])->with([
-                                'school' => fn($sq) => $sq->select('id', 'name'),
-                                'section' => fn($sq) => $sq->select('id', 'name'),
-                            ]);
+                        'school' => fn($sq) => $sq->select('id', 'name'),
+                        'section' => fn($sq) => $sq->select('id', 'name'),
+                    ]);
                 },
             ]);
 
@@ -920,14 +924,14 @@ class ProfileController extends Controller
                     // Load profiles to authorize each one individually
                     $profiles = Profile::whereIn('id', $chunk)->get();
 
-                    foreach ($profiles as $profile) {
+                    $profiles->each(function ($profile) use (&$deletedCount) {
                         // Per-profile authorization check
                         Gate::authorize('delete', $profile);
 
                         // Soft-delete (triggers model boot cascade)
                         $profile->delete();
                         $deletedCount++;
-                    }
+                    });
                 }
             });
 
@@ -1048,14 +1052,14 @@ class ProfileController extends Controller
                         ->whereIn('id', $chunk)
                         ->get();
 
-                    foreach ($profiles as $profile) {
+                    $profiles->each(function ($profile) use (&$restoredCount) {
                         // Per-profile authorization check
                         Gate::authorize('restore', $profile);
 
                         // Restore (triggers model boot cascade)
                         $profile->restore();
                         $restoredCount++;
-                    }
+                    });
                 }
             });
 
@@ -1178,14 +1182,14 @@ class ProfileController extends Controller
                         ->whereIn('id', $chunk)
                         ->get();
 
-                    foreach ($profiles as $profile) {
+                    $profiles->each(function ($profile) use (&$deletedCount) {
                         // Per-profile authorization (critical for security)
                         Gate::authorize('forceDelete', $profile);
 
                         // Permanent deletion (bypasses soft-delete)
                         $profile->forceDelete();
                         $deletedCount++;
-                    }
+                    });
                 }
             });
 
@@ -1357,7 +1361,7 @@ class ProfileController extends Controller
         }
     }
 
-        /**
+    /**
      * Toggle the active/inactive status of one or more profile-linked User accounts (bulk support).
      *
      * This method toggles the `is_active` flag on the associated User model(s).
@@ -1450,12 +1454,12 @@ class ProfileController extends Controller
                         }
 
                         // Check for linked User
-                        if (! $profile->user) {
+                        if (!$profile->user) {
                             throw new \Exception("Profile ID {$profile->id} has no linked User account.");
                         }
 
                         // Toggle
-                        $newStatus = ! $profile->user->is_active;
+                        $newStatus = !$profile->user->is_active;
                         $profile->user->update(['is_active' => $newStatus]);
 
                         $toggledCount++;
@@ -1486,12 +1490,12 @@ class ProfileController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Bulk profile status toggle failed', [
-                'user_id'     => auth()->id(),
-                'school_id'   => GetSchoolModel()?->id,
-                'ids'         => $ids,
-                'toggled'     => $toggledCount,
-                'message'     => $e->getMessage(),
-                'trace'       => $e->getTraceAsString(),
+                'user_id' => auth()->id(),
+                'school_id' => GetSchoolModel()?->id,
+                'ids' => $ids,
+                'toggled' => $toggledCount,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return redirect()

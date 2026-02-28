@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\HasAddress;
 use App\Traits\HasCustomFields;
 use App\Traits\HasDynamicEnum;
+use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -64,6 +65,7 @@ class Profile extends Model implements HasMedia
         HasCustomFields,
         HasDynamicEnum,
         InteractsWithMedia,
+        HasTableQuery,
         LogsActivity;
 
     protected $fillable = [

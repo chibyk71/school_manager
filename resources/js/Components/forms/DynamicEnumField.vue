@@ -37,7 +37,6 @@
 
 import { computed, onMounted, watch } from 'vue';
 import { useDynamicEnums } from '@/composables/useDynamicEnums';
-import Dropdown from 'primevue/dropdown';
 import RadioButton from 'primevue/radiobutton';
 import ProgressSpinner from 'primevue/progressspinner';
 import { Select } from 'primevue';
@@ -63,6 +62,8 @@ interface Props {
 
     /** Disabled state */
     disabled?: boolean;
+
+    formError?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -153,6 +154,8 @@ watch(() => [props.model, props.property], async () => {
                 </div>
             </div>
         </div>
+
+        <span v-if="!!formError" class="text-red-500 text-xs font-light">{{ formError }}</span>
     </div>
 </template>
 

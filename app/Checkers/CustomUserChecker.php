@@ -430,7 +430,7 @@ class CustomUserChecker extends UserDefaultChecker
      * We replicate it here inline in our custom checker because it is private
      * and cannot be called from child classes.
      */
-    private function hidrateRole(string $class, Model|array $data): Role
+    private function hidrateRole(string $class, Model|array $data): Role|Model
     {
         if ($data instanceof Model) {
             return $data;

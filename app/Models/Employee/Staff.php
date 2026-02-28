@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\Employee;
 
+use App\Models\Profile;
 use App\Traits\BelongsToSchool;
 use App\Traits\BelongsToSections;
 use App\Traits\HasCustomFields;

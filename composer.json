@@ -11,6 +11,7 @@
     "require": {
         "php": "^8.2",
         "abbasudo/laravel-purity": "^3.3",
+        "diego-ninja/laravel-devices": "^2.0",
         "djunehor/laravel-sms": "^2.2",
         "ichtrojan/laravel-otp": "*",
         "inertiajs/inertia-laravel": "^2.0",

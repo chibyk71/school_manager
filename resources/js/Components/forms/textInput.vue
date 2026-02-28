@@ -106,6 +106,11 @@ interface Props {
      * Whether the field is required (shows asterisk via InputLabel).
      */
     required?: boolean;
+
+    /**
+     * Placeholder text for the input.
+     */
+    placeholder?: string
 }
 
 const props = defineProps<Props>();
@@ -132,7 +137,7 @@ const hasError = computed(() => !!props.error);
             <slot name="input" :invalid="hasError" :id="inputId">
                 <!-- Default PrimeVue InputText -->
                 <InputText :id="inputId" :name="props.name" :type="props.type ?? 'text'" :invalid="hasError"
-                    v-model="model" fluid class="w-full" />
+                    v-model="model" fluid class="w-full" :placeholder />
             </slot>
         </IconField>
 
