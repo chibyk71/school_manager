@@ -40,7 +40,7 @@ import { ref, watch, computed, onMounted, nextTick } from 'vue';
 import Select from 'primevue/select';
 import MultiSelect from 'primevue/multiselect';
 import { useAsyncOptions } from '@/composables/useAsyncOptions';
-import type { CustomField } from '@/types/form';
+import type { CustomField } from '@/types/custom-fields';
 
 /**
  * Component Props

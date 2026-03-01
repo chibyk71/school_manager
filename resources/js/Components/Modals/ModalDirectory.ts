@@ -18,6 +18,7 @@
  * - Indirectly consumed via useModal().open() / prepend() throughout the app.
  */
 
+import type { Grade } from '@/types/grade';
 import { Component } from 'vue';
 
 /**
@@ -35,7 +36,7 @@ export interface ModalRegistration {
      */
     config?: {
         /** Header title displayed in the PrimeVue Dialog */
-        title?: string;
+        title?: string | ((payload: any) => string); // Can be a static string or a function that generates a title based on the payload
 
         /**
          * Tailwind max-width utility class.
@@ -168,6 +169,14 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
             persistent: true,           // Prevent accidental close during sensitive action
         },
     },
+    'grade-form': {
+        loader: () => import('@/Components/Modals/Create/Academic/GradeModal.vue'),
+        config: {
+            title: (payload: { grade?: Grade }) => payload.grade ? 'Edit Grade' : 'Create Grade',
+            maxWidth: '2xl',
+            persistent: false, // allow ESC/close button
+        }
+    }
 } as const;
 
 /**

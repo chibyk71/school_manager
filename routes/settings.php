@@ -1,9 +1,13 @@
 <?php
 
+use App\Http\Controllers\GradeController;
+use App\Http\Controllers\Settings\Academic\AcademicSessionController;
 use App\Http\Controllers\Settings\Academic\AcademicSessionSettingsController;
-use App\Http\Controllers\Settings\Academic\AcademicYearController;
 use App\Http\Controllers\Settings\Academic\AttendanceRulesController;
 use App\Http\Controllers\Settings\Academic\GradingScalesController;
+use App\Http\Controllers\Settings\Academic\SessionActivationController;
+use App\Http\Controllers\Settings\Academic\TermClosureController;
+use App\Http\Controllers\Settings\Academic\TermController;
 use App\Http\Controllers\Settings\Advanced\BackupRestoreController;
 use App\Http\Controllers\Settings\Advanced\IpBanController;
 use App\Http\Controllers\Settings\Advanced\MaintenanceSettingsController;
@@ -20,7 +24,6 @@ use App\Http\Controllers\Settings\General\ApiKeysController;
 use App\Http\Controllers\Settings\General\ConnectedAppsController;
 use App\Http\Controllers\Settings\General\NotificationsSettingsController;
 use App\Http\Controllers\Settings\General\SecuritySettingsController;
-use App\Http\Controllers\Settings\System\CustomFieldController;
 use App\Http\Controllers\Settings\System\CustomFieldsController;
 use App\Http\Controllers\Settings\System\GdprSettingsController;
 use App\Http\Controllers\Settings\System\InvoiceSettingsController;
@@ -130,8 +133,50 @@ Route::prefix('settings/financial')->name('settings.financial.')->group(function
 // Settings → Academic
 // ===================================================================
 Route::prefix('settings/academic')->name('settings.academic.')->group(function () {
-    Route::get('/session', [AcademicSessionSettingsController::class, 'index'])->name('session');
-    Route::post('/session', [AcademicSessionSettingsController::class, 'store'])->name('session.store');
+    Route::get('/session/rules', [AcademicSessionSettingsController::class, 'index'])->name('session.rules');
+    Route::post('/session/rules', [AcademicSessionSettingsController::class, 'store'])->name('session.rules');
+
+    Route::prefix('academic-sessions')->name('academic-sessions.')->group(function () {
+        // Main listing & management
+        Route::get('/', [AcademicSessionController::class, 'index'])->name('index');
+
+        // CRUD operations
+        Route::post('/', [AcademicSessionController::class, 'store'])->name('store');
+        Route::get('/{academicSession}', [AcademicSessionController::class, 'show'])->name('show');
+        Route::post('/{academicSession}', [AcademicSessionController::class, 'update'])->name('update');
+        Route::delete('/', [AcademicSessionController::class, 'destroy'])->name('destroy'); // Bulk delete
+
+        // Quick state actions (single active session enforcement)
+        Route::patch('/{academicSession}/current', [AcademicSessionController::class, 'setCurrent'])->name('set-current');
+
+        // Specialized lifecycle actions (activation & closure)
+        Route::patch('/{academicSession}/activate', [SessionActivationController::class, 'activate'])->name('activate');
+        Route::patch('/{academicSession}/close', [SessionActivationController::class, 'close'])->name('close');
+    });
+
+    // ────────────────────────────────────────────────────────────────
+    // Terms (CRUD + Quick Actions)
+    // ────────────────────────────────────────────────────────────────
+    Route::prefix('terms')->name('terms.')->group(function () {
+        // Main listing (can filter by session via query param ?academicSession=id)
+        Route::get('/', [TermController::class, 'index'])->name('index');
+
+        // CRUD operations
+        Route::post('/', [TermController::class, 'store'])->name('store');
+        Route::get('/{term}', [TermController::class, 'show'])->name('show');
+        Route::patch('/{term}', [TermController::class, 'update'])->name('update');
+        Route::delete('/', [TermController::class, 'destroy'])->name('destroy'); // Bulk delete
+
+        // Quick state action (set active in its session)
+        Route::patch('/{term}/active', [TermController::class, 'setActive'])->name('set-active');
+
+        // Restore soft-deleted term
+        Route::post('/{id}/restore', [TermController::class, 'restore'])->name('restore');
+
+        // Sensitive lifecycle actions (close & reopen)
+        Route::patch('/{term}/close', [TermClosureController::class, 'close'])->name('close');
+        Route::patch('/{term}/reopen', [TermClosureController::class, 'reopen'])->name('reopen');
+    });
 
     Route::get('attendance', [AttendanceRulesController::class, 'index'])->name('attendance');
     Route::post('attendance', [AttendanceRulesController::class, 'store'])->name('attendance.store');
@@ -140,10 +185,18 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
     Route::post('subjects/delete', [SubjectController::class, 'destroy'])->name('subjects.destroy');
     Route::post('subjects/restore/{id}', [SubjectController::class, 'restore'])->name('subjects.restore');
 
-    Route::get('grading', [GradingScalesController::class, 'index'])->name('grading');
-    Route::post('grading', [GradingScalesController::class, 'store'])->name('grading.store');
-    Route::put('grading/{id}', [GradingScalesController::class, 'update'])->name('grading.update');
-    Route::post('grading/delete', [GradingScalesController::class, 'destroy'])->name('grading.destroy');
+    // ─── Main grades resource routes ──────────────────────────────────────────────
+    Route::resource('grades', GradeController::class)->names('grades');
+
+    // ─── Custom actions ─────────────────────────────────────────────────────────────
+    // Bulk delete (soft or force) – used from DataTable bulk actions
+    Route::post('grades/destroy', [GradeController::class, 'destroy'])
+        ->name('grades.destroy.bulk');
+
+    // Restore soft-deleted grade – used from trashed view or modal
+    Route::post('grades/{id}/restore', [GradeController::class, 'restore'])
+        ->name('grades.restore')
+        ->whereNumber('id');
 });
 
 // ===================================================================

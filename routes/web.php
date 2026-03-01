@@ -1,8 +1,5 @@
 <?php
 
-use App\Http\Controllers\Academic\AcademicSessionController;
-use App\Http\Controllers\Academic\SessionActivationController;
-use App\Http\Controllers\Academic\TermController;
 use App\Http\Controllers\AdmissionController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\AssignmentSubmissionController;
@@ -30,7 +27,6 @@ use App\Http\Controllers\Finance\FeeTypeController;
 use App\Http\Controllers\Finance\FinancialReportController;
 use App\Http\Controllers\Finance\PaymentController;
 use App\Http\Controllers\Finance\TransactionController;
-use App\Http\Controllers\GradeController;
 use App\Http\Controllers\GuardianController;
 use App\Http\Controllers\HostelAssignmentController;
 use App\Http\Controllers\HostelController;
@@ -43,7 +39,6 @@ use App\Http\Controllers\LessonPlanDetailController;
 use App\Http\Controllers\NoticeController;
 use App\Http\Controllers\NotificationLogController;
 use App\Http\Controllers\PayrollController;
-use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PromotionBatchController;
 use App\Http\Controllers\RouteController;
 use App\Http\Controllers\SalaryAddonController;
@@ -51,7 +46,6 @@ use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\SalaryStructureController;
 use App\Http\Controllers\SchoolController;
 use App\Http\Controllers\SchoolSectionController;
-use App\Http\Controllers\Settings\Academic\TermClosureController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
@@ -61,7 +55,6 @@ use App\Http\Controllers\Exam\TermResultController;
 use App\Http\Controllers\Exam\TermResultDetailController;
 use App\Http\Controllers\TimeTableController;
 use App\Http\Controllers\TimeTableDetailController;
-use App\Http\Controllers\UserController;
 use App\Http\Controllers\VehicleController;
 use App\Http\Controllers\VehicleDocumentController;
 use App\Http\Controllers\VehicleExpenseController;
@@ -113,47 +106,7 @@ Route::middleware('auth')->group(function () {
     // ────────────────────────────────────────────────────────────────
 // Academic Sessions (CRUD + Quick Actions)
 // ────────────────────────────────────────────────────────────────
-    Route::prefix('academic-sessions')->name('academic-sessions.')->group(function () {
-        // Main listing & management
-        Route::get('/', [AcademicSessionController::class, 'index'])->name('index');
 
-        // CRUD operations
-        Route::post('/', [AcademicSessionController::class, 'store'])->name('store');
-        Route::get('/{academicSession}', [AcademicSessionController::class, 'show'])->name('show');
-        Route::post('/{academicSession}', [AcademicSessionController::class, 'update'])->name('update');
-        Route::delete('/', [AcademicSessionController::class, 'destroy'])->name('destroy'); // Bulk delete
-
-        // Quick state actions (single active session enforcement)
-        Route::patch('/{academicSession}/current', [AcademicSessionController::class, 'setCurrent'])->name('set-current');
-
-        // Specialized lifecycle actions (activation & closure)
-        Route::patch('/{academicSession}/activate', [SessionActivationController::class, 'activate'])->name('activate');
-        Route::patch('/{academicSession}/close', [SessionActivationController::class, 'close'])->name('close');
-    });
-
-    // ────────────────────────────────────────────────────────────────
-// Terms (CRUD + Quick Actions)
-// ────────────────────────────────────────────────────────────────
-    Route::prefix('terms')->name('terms.')->group(function () {
-        // Main listing (can filter by session via query param ?academicSession=id)
-        Route::get('/', [TermController::class, 'index'])->name('index');
-
-        // CRUD operations
-        Route::post('/', [TermController::class, 'store'])->name('store');
-        Route::get('/{term}', [TermController::class, 'show'])->name('show');
-        Route::patch('/{term}', [TermController::class, 'update'])->name('update');
-        Route::delete('/', [TermController::class, 'destroy'])->name('destroy'); // Bulk delete
-
-        // Quick state action (set active in its session)
-        Route::patch('/{term}/active', [TermController::class, 'setActive'])->name('set-active');
-
-        // Restore soft-deleted term
-        Route::post('/{id}/restore', [TermController::class, 'restore'])->name('restore');
-
-        // Sensitive lifecycle actions (close & reopen)
-        Route::patch('/{term}/close', [TermClosureController::class, 'close'])->name('close');
-        Route::patch('/{term}/reopen', [TermClosureController::class, 'reopen'])->name('reopen');
-    });
 });
 
 // Exams
@@ -185,7 +138,6 @@ Route::post('promotions/{batch}/bulk-override', [PromotionBatchController::class
     ->name('promotions.bulk-override');
 
 Route::resource('subjects', SubjectController::class);
-Route::resource('grades', GradeController::class);
 Route::resource('class-levels', ClassLevelController::class);
 Route::resource('class-sections', ClassSectionController::class);
 Route::resource('timetables', TimeTableController::class);

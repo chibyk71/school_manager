@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Academic;
+namespace App\Http\Controllers\Settings\Academic;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreTermRequest;
@@ -10,7 +10,6 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\Services\AcademicCalendarService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;

@@ -217,9 +217,9 @@ class SchoolSectionController extends Controller
                     abort(403, 'No active school found.');
                 }
 
-                return SchoolSection::where('school_id', $school->id)
+                return response()->json(SchoolSection::where('school_id', $school->id)
                     ->select(['id', 'name'])
-                    ->paginate($request->input('per_page', 10));
+                    ->paginate($request->input('per_page', 10)));
             }
 
             return response()->json(['error' => 'Invalid request format.'], 400);

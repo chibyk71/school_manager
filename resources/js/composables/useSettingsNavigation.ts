@@ -104,7 +104,9 @@ const navigationGroups: NavGroup[] = [
         title: 'Academic Settings',
         items: [
             { label: 'Academic Year', href: route('settings.academic.year') },
-            { label: 'Grading Scales', href: route('settings.academic.grading') },
+            { label: 'Academic Terms', href: route('settings.academic.terms') },
+
+            { label: 'Grading Scales', href: route('settings.academic.grades') },
             { label: 'Subjects', href: route('settings.academic.subjects') },
             { label: 'Attendance Rules', href: route('settings.academic.attendance') },
         ],

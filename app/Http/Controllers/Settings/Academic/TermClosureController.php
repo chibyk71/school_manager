@@ -7,10 +7,8 @@ use App\Http\Requests\CloseTermRequest;
 use App\Http\Requests\ReopenTermRequest;
 use App\Models\Academic\Term;
 use App\Services\TermClosureService;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
 
 /**
  * TermClosureController – Specialized Controller for Term Closure & Reopen Actions

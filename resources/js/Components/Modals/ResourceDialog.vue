@@ -40,6 +40,20 @@ const modalId = computed<ModalId | null>(() => currentItem.value?.id ?? null);
 const payload = computed(() => currentItem.value?.data ?? {});
 const instanceId = computed(() => currentItem.value?.instanceId ?? '');
 const config = computed(() => currentItem.value?.config ?? {});
+const modalTitle = computed(() => {
+    if (!modalId.value) return '';
+    const entry = ModalComponentDirectory[modalId.value];
+    if (!entry) return '';
+    if (typeof entry.config?.title === 'function') {
+        try {
+            return entry.config.title(payload.value);
+        } catch (error) {
+            console.error(`[ResourceDialog] Error generating title for modal "${modalId.value}":`, error);
+            return '';
+        }
+    }
+    return entry.config?.title ?? '';
+});
 
 // Dynamic async component with built-in loading/error handling
 const ModalComponent = computed(() => {
@@ -100,7 +114,7 @@ watch(
 <template>
     <Dialog v-if="currentItem" :key="renderKey" :visible="true" :modal="true" :closable="!config.persistent"
         :dismissable-mask="!config.persistent" :close-on-escape="!config.persistent" @update:visible="closeModal"
-        :header="config.title" :show-header="!!config.title" block-scroll :pt="{
+        :header="modalTitle" :show-header="!!modalTitle" block-scroll :pt="{
             root: { class: ['rounded-xl shadow-2xl', config.maxWidth ? `max-w-${config.maxWidth}` : 'max-w-4xl', 'w-full mx-4'] },
             header: { class: 'text-lg font-semibold border-b border-gray-200 pb-4' },
             content: { class: 'p-6' },

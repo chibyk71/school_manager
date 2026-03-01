@@ -102,6 +102,58 @@ class PermissionSeeder extends Seeder
             ['name' => 'profile.reset-password', 'display_name' => 'Reset Password', 'description' => 'Force reset password or initiate reset for any profile',],
             ['name' => 'profile.toggle-status', 'display_name' => 'Toggle Profile Status', 'description' => 'Activate/deactivate a profile (admin)',],
             ['name' => 'profile.merge', 'display_name' => 'Merge Profiles', 'description' => 'Merge duplicate profiles and move associated roles',],
+
+            // Grades (Grading Scales)
+            [
+                'name'        => 'grades.view-any',
+                'display_name' => 'View All Grades',
+                'description' => 'Access the full list of grading scales / grades in the system',
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
+                'name'        => 'grades.view',
+                'display_name' => 'View Grade Details',
+                'description' => 'View detailed information about a specific grade (including score ranges and assigned sections)',
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
+                'name'        => 'grades.create',
+                'display_name' => 'Create New Grade',
+                'description' => 'Create a new grading scale entry (define name, code, score range, remark, and assign sections)',
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
+                'name'        => 'grades.update',
+                'display_name' => 'Update Grade',
+                'description' => 'Edit an existing grade’s details (name, code, score range, remark, section assignments)',
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
+                'name'        => 'grades.delete',
+                'display_name' => 'Delete Grade',
+                'description' => 'Soft-delete a grade (only allowed if not currently used in any student results/assessments)',
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
+                'name'        => 'grades.restore',
+                'display_name' => 'Restore Deleted Grade',
+                'description' => 'Restore a previously soft-deleted grade back to active status',
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
+                'name'        => 'grades.force-delete',
+                'display_name' => 'Permanently Delete Grade',
+                'description' => 'Force delete (permanently remove) a grade from the system (restricted to super-admins)',
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+
             // Class Sections
             ['name' => 'class-sections.view', 'display_name' => 'View Class Sections', 'description' => 'View all class sections for a school'],
             ['name' => 'class-sections.create', 'display_name' => 'Create Class Sections', 'description' => 'Create new class sections for a school'],

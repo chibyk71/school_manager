@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Academic;
+namespace App\Http\Controllers\Settings\Academic;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreAcademicSessionRequest;
