@@ -100,13 +100,6 @@ Route::middleware('auth')->group(function () {
         ->name('schools.restore');
     Route::post('schools/bulk-toggle', [SchoolController::class, 'bulkToggleStatus'])
         ->name('schools.bulk-toggle');
-
-    Route::resource('sections', SchoolSectionController::class);
-
-    // ────────────────────────────────────────────────────────────────
-// Academic Sessions (CRUD + Quick Actions)
-// ────────────────────────────────────────────────────────────────
-
 });
 
 // Exams

@@ -1,7 +1,6 @@
 <!-- resources/js/Components/Modals/Create/SchoolSyncModal.vue -->
 <script setup lang="ts">
 import { useModalForm } from '@/composables/useModalForm'
-import { modals } from '@/helpers';
 import { MultiSelect, useToast } from 'primevue';
 import { getCurrentInstance, onMounted } from 'vue'
 

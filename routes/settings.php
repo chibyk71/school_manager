@@ -24,6 +24,7 @@ use App\Http\Controllers\Settings\General\ApiKeysController;
 use App\Http\Controllers\Settings\General\ConnectedAppsController;
 use App\Http\Controllers\Settings\General\NotificationsSettingsController;
 use App\Http\Controllers\Settings\General\SecuritySettingsController;
+use App\Http\Controllers\Settings\SchoolSectionController;
 use App\Http\Controllers\Settings\System\CustomFieldsController;
 use App\Http\Controllers\Settings\System\GdprSettingsController;
 use App\Http\Controllers\Settings\System\InvoiceSettingsController;
@@ -231,6 +232,46 @@ Route::prefix('settings/system')->name('settings.system.')->group(function () {
 
     Route::get('user-management', [UserManagementController::class, 'index'])->name('user-management');
     Route::post('user-management', [UserManagementController::class, 'store'])->name('user-management.store');
+
+    // ── School Sections ───────────────────────────────────────────
+    Route::prefix('sections')->name('sections.')->group(function () {
+
+        // Utility endpoints — must come BEFORE {schoolSection} wildcard
+        // to prevent "templates" and "options" being swallowed as IDs
+        Route::get('templates', [SchoolSectionController::class, 'templates'])
+            ->name('templates');
+
+        Route::get('options', [SchoolSectionController::class, 'options'])
+            ->name('options');
+
+        Route::post('restore', [SchoolSectionController::class, 'restore'])
+            ->name('restore');
+
+        Route::delete('force', [SchoolSectionController::class, 'forceDestroy'])
+            ->name('force-delete');
+
+        Route::post('toggle', [SchoolSectionController::class, 'bulkToggle'])
+            ->name('bulk-toggle');
+
+        Route::post('reorder', [SchoolSectionController::class, 'reorder'])
+            ->name('reorder');
+
+        // Standard resource routes
+        Route::get('/', [SchoolSectionController::class, 'index'])
+            ->name('index');
+
+        Route::post('/', [SchoolSectionController::class, 'store'])
+            ->name('store');
+
+        Route::get('{schoolSection}', [SchoolSectionController::class, 'show'])
+            ->name('show');
+
+        Route::match(['put', 'patch'], '{schoolSection}', [SchoolSectionController::class, 'update'])
+            ->name('update');
+
+        Route::delete('/', [SchoolSectionController::class, 'destroy'])
+            ->name('destroy');
+    });
 });
 
 // ===================================================================

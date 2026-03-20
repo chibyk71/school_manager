@@ -1,231 +1,479 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Settings;
 
+use App\Http\Controllers\Controller;
+use App\Http\Requests\BulkSchoolSectionRequest;
+use App\Http\Requests\StoreFromTemplatesRequest;
 use App\Http\Requests\StoreSchoolSectionRequest;
 use App\Http\Requests\UpdateSchoolSectionRequest;
+use App\Http\Resources\SchoolSectionResource;
 use App\Models\SchoolSection;
+use App\Services\SchoolSectionService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
 
 /**
- * Controller for managing school sections in a multi-tenant system.
+ * SchoolSectionController — Production-Ready
+ *
+ * Thin HTTP adapter for all SchoolSection operations. Every domain concern
+ * (business rules, transactions, events, cache invalidation) lives in
+ * SchoolSectionService. This controller only handles:
+ *   - Routing requests to the correct service method
+ *   - Authorization via Gate::authorize() (Policy auto-resolution)
+ *   - Response format selection (Inertia vs JSON)
+ *   - Flash messaging on redirects
+ *
+ * ── No Permission Props ──────────────────────────────────────────────────
+ * Permission flags are NOT passed from this controller. The authenticated
+ * user's full permissions are shared on every Inertia response via
+ * HandleInertiaRequests middleware. The usePermissions() composable on
+ * the frontend reads them from page.props.auth.permissions.
+ * This keeps controllers clean and avoids duplicating permission logic.
+ *
+ * ── Response Format ──────────────────────────────────────────────────────
+ * index()              → Inertia (page load) or JSON (DataTable axios refetch)
+ * show()               → Inertia always
+ * store()              → RedirectResponse (Inertia redirect to index)
+ * storeFromTemplates() → RedirectResponse
+ * update()             → RedirectResponse
+ * destroy()            → JsonResponse (bulk composable expects JSON)
+ * restore()            → JsonResponse (bulk composable expects JSON)
+ * forceDestroy()       → JsonResponse
+ * bulkToggle()         → JsonResponse
+ * reorder()            → JsonResponse (drag-drop, no page navigation)
+ * templates()          → JsonResponse always
+ * options()            → JsonResponse always
+ *
+ * ── Bulk Operations ──────────────────────────────────────────────────────
+ * The frontend useDeleteResource and useRestoreResource composables always
+ * send an array of IDs even for single-record operations. All bulk methods
+ * therefore handle both single and multiple records uniformly — no
+ * separate "delete one" vs "delete many" methods needed.
+ *
+ * ── scopeTableQuery Usage ────────────────────────────────────────────────
+ * Called as SchoolSection::query()->tableQuery($request, $extraFields)
+ * matching the HasTableQuery trait signature. Extra fields add computed
+ * columns (class_levels_count, students_count) to the column definitions
+ * returned to the DataTable.
+ *
+ * ── Authorization ────────────────────────────────────────────────────────
+ * Gate::authorize() resolves SchoolSectionPolicy automatically via
+ * Laravel's policy auto-discovery (model registered in AuthServiceProvider).
+ * BelongsToSchool global scope handles cross-tenant isolation at query level.
+ * Policy's belongsToCurrentSchool() check provides defense-in-depth for
+ * instance-level operations.
+ *
+ * @see App\Services\SchoolSectionService
+ * @see App\Policies\SchoolSectionPolicy
+ * @see App\Models\SchoolSection
+ * @see App\Http\Requests\StoreSchoolSectionRequest
+ * @see App\Http\Requests\UpdateSchoolSectionRequest
+ * @see App\Http\Requests\BulkSchoolSectionRequest
+ * @see App\Http\Requests\StoreFromTemplatesRequest
  */
 class SchoolSectionController extends Controller
 {
-    /**
-     * Display a listing of school sections.
-     *
-     * Retrieves sections for the active school and renders the section view.
-     *
-     * @param Request $request The incoming HTTP request.
-     * @return \Inertia\Response The Inertia response with sections data.
-     * @throws \Exception If section retrieval fails or school is not found.
-     */
-    public function index(Request $request)
-    {
-        try {
-            permitted('view-sections');
-
-            $school = GetSchoolModel();
-            if (!$school) {
-                abort(403, 'No active school found.');
-            }
-
-            $cacheKey = "sections.school_{$school->id}";
-
-            $schoolSections = Cache::remember($cacheKey, now()->addHour(), function () use ($school, $request) {
-                return SchoolSection::query()->where('school_id', $school->id)
-                    ->with('school:id,name')
-                    ->get()
-                    ->map(function ($section) {
-                        return [
-                            'id' => $section->id,
-                            'name' => $section->name,
-                            'description' => $section->description,
-                            'status' => $section->status,
-                            'school' => $section->school?->name,
-                        ];
-                    });
-            });
-
-            return Inertia::render('Academic/Section', [
-                'sections' => $schoolSections,
-                'statusOptions' => ['active', 'inactive'],
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to fetch school sections: ' . $e->getMessage());
-            return redirect()->route('dashboard')->with('error', 'Failed to load school sections.');
-        }
+    public function __construct(
+        private readonly SchoolSectionService $service
+    ) {
     }
 
-    /**
-     * Store a newly created school section.
-     *
-     * Creates a section for the active school with validated data.
-     *
-     * @param StoreSchoolSectionRequest $request The validated request.
-     * @return \Illuminate\Http\RedirectResponse
-     * @throws \Exception If section creation fails.
-     */
-    public function store(StoreSchoolSectionRequest $request)
-    {
-        try {
-            $school = GetSchoolModel();
-            if (!$school) {
-                abort(403, 'No active school found.');
-            }
-
-            $validated = $request->validated();
-            $validated['school_id'] = $school->id;
-
-            SchoolSection::create($validated);
-
-            Cache::forget("sections.school_{$school->id}");
-
-            return redirect()
-                ->route('sections.index')
-                ->with('success', 'School section created successfully.');
-        } catch (\Exception $e) {
-            Log::error('Failed to create school section: ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Failed to create school section.');
-        }
-    }
+    // ──────────────────────────────────────────────────────────────────────
+    // READ
+    // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Display a specific school section.
+     * List all sections for the current school.
      *
-     * Shows details of a specific section.
+     * Serves two consumers from a single method:
      *
-     * @param SchoolSection $schoolSection The school section to display.
-     * @return \Inertia\Response
-     * @throws \Exception If section retrieval fails.
+     * 1. Inertia page load (browser navigation / SPA route change):
+     *    Returns Inertia::render() with initialData (first query result set),
+     *    column definitions from HasTableQuery, and globalFilterables for
+     *    the AdvancedDataTable search field binding.
+     *
+     * 2. AdvancedDataTable axios refetch (sort / filter / paginate / search):
+     *    Detects wantsJson() — returns raw scopeTableQuery result as JSON.
+     *    The useDataTable composable on the frontend consumes this shape.
+     *
+     * Both paths call SchoolSection::query()->tableQuery() identically.
+     * No code duplication. The query result shape is the same for both.
+     *
+     * The HasTableQuery trait handles:
+     *   - Global search across filterable text columns
+     *   - Laravel Purity filters and sorts from request params
+     *   - Soft-delete awareness via ?trashed=1 (Purity's trashed() scope)
+     *   - Hybrid mode: full_load for client-side or windowed for server-side
+     *   - Column definitions with visibility, filterType, sortable flags
+     *
+     * Extra fields add computed columns (class_levels_count, students_count)
+     * to the column definition array returned by the trait.
+     *
+     * @param  Request  $request
+     * @return InertiaResponse|JsonResponse
      */
-    public function show(SchoolSection $schoolSection)
+    public function index(Request $request): InertiaResponse|JsonResponse
     {
-        try {
-            permitted('view-sections');
+        Gate::authorize('viewAny', SchoolSection::class);
 
-            $school = GetSchoolModel();
-            if (!$school || $schoolSection->school_id !== $school->id) {
-                abort(403, 'Unauthorized access to school section.');
-            }
-
-            return Inertia::render('Academic/Section/Show', [
-                'section' => [
-                    'id' => $schoolSection->id,
-                    'name' => $schoolSection->name,
-                    'description' => $schoolSection->description,
-                    'status' => $schoolSection->status,
-                    'school' => $schoolSection->school?->name,
+        $result = SchoolSection::query()
+            ->withCount(['classLevels', 'students'])
+            ->tableQuery($request, [
+                'class_levels_count' => [
+                    'header' => 'Class Levels',
+                    'sortable' => true,
+                    'filterable' => false,
+                    'filterType' => 'number',
+                ],
+                'students_count' => [
+                    'header' => 'Students',
+                    'sortable' => true,
+                    'filterable' => false,
+                    'filterType' => 'number',
                 ],
             ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to show school section: ' . $e->getMessage());
-            return redirect()->route('sections.index')->with('error', 'Failed to load school section.');
+
+        // AdvancedDataTable axios refetch — return raw JSON
+        if ($request->wantsJson()) {
+            return response()->json($result);
         }
+
+        // Inertia page load — render full page with initial data
+        return Inertia::render('Settings/Sections/Index', [
+            'initialData' => $result['data'],
+            'totalRecords' => $result['totalRecords'],
+            'columns' => $result['columns'],
+            'globalFilterables' => $result['globalFilterables'] ?? [],
+        ]);
     }
 
     /**
-     * Update an existing school section.
+     * Show a single section detail page.
      *
-     * Updates a section with validated data, ensuring it belongs to the active school.
+     * Loads classLevels relationship for the detail view panel.
+     * Student counts are loaded lazily via their own DataTable on frontend.
      *
-     * @param UpdateSchoolSectionRequest $request The validated request.
-     * @param SchoolSection $schoolSection The section to update.
-     * @return \Illuminate\Http\RedirectResponse
-     * @throws \Exception If section update fails.
+     * @param  SchoolSection  $schoolSection  Route model binding
+     * @return InertiaResponse
      */
-    public function update(UpdateSchoolSectionRequest $request, SchoolSection $schoolSection)
+    public function show(SchoolSection $schoolSection): InertiaResponse
     {
-        try {
-            permitted('manage-sections');
+        Gate::authorize('view', $schoolSection);
 
-            $school = GetSchoolModel();
-            if (!$school || $schoolSection->school_id !== $school->id) {
-                abort(403, 'Unauthorized access to school section.');
-            }
+        $schoolSection->loadCount(['classLevels', 'students']);
 
-            $schoolSection->update($request->validated());
-
-            Cache::forget("sections.school_{$school->id}");
-
-            return redirect()
-                ->route('sections.index')
-                ->with('success', 'School section updated successfully.');
-        } catch (\Exception $e) {
-            Log::error('Failed to update school section: ' . $e->getMessage());
-            return redirect()->back()->with('error', 'Failed to update school section.');
-        }
+        return Inertia::render('Settings/Sections/Show', [
+            'section' => new SchoolSectionResource($schoolSection),
+        ]);
     }
 
     /**
-     * Delete one or more school sections.
+     * Return available config templates as JSON.
      *
-     * Supports bulk deletion by IDs for the active school.
+     * Used by SectionFromTemplatesModal to display and select templates.
+     * Marks each template as available or already created for this school
+     * so the frontend can disable already-existing options without
+     * making a separate existence-check request.
      *
-     * @param Request $request The incoming HTTP request.
-     * @return \Illuminate\Http\JsonResponse
-     * @throws \Exception If section deletion fails.
+     * One query fetches all existing names — O(1) DB calls regardless
+     * of template count.
+     *
+     * @return JsonResponse
      */
-    public function destroy(Request $request)
+    public function templates(): JsonResponse
     {
-        try {
-            permitted('manage-sections');
+        Gate::authorize('create', SchoolSection::class);
 
-            $school = GetSchoolModel();
-            if (!$school) {
-                abort(403, 'No active school found.');
-            }
+        $allTemplates = config('school_section_templates', []);
+        $templateNames = array_column(array_values($allTemplates), 'name');
 
-            $ids = $request->input('ids', []);
+        $existingNames = SchoolSection::whereIn('name', $templateNames)
+            ->pluck('name')
+            ->toArray();
 
-            if (!empty($ids)) {
-                SchoolSection::where('school_id', $school->id)
-                    ->whereIn('id', $ids)
-                    ->delete();
+        $templates = collect($allTemplates)
+            ->map(fn(array $tpl, string $key) => array_merge($tpl, [
+                'key' => $key,
+                'available' => !in_array($tpl['name'], $existingNames, strict: true),
+            ]))
+            ->values();
 
-                Cache::forget("sections.school_{$school->id}");
-
-                return response()->json(['success' => true, 'message' => 'School sections deleted successfully.']);
-            }
-
-            return response()->json(['success' => false, 'error' => 'No valid section IDs provided.'], 400);
-        } catch (\Exception $e) {
-            Log::error('Failed to delete school sections: ' . $e->getMessage());
-            return response()->json(['success' => false, 'error' => 'Failed to delete school sections.'], 500);
-        }
+        return response()->json([
+            'templates' => $templates,
+            'available_count' => $templates->where('available', true)->count(),
+        ]);
     }
 
     /**
-     * Retrieve paginated school sections for dropdown options.
+     * Return lightweight section list for dropdowns and select components.
      *
-     * Returns sections for the active school in JSON format.
+     * Used by SectionPicker.vue, AsyncSelect, and any component that needs
+     * id + name without full model data. Only returns active sections,
+     * ordered by sort_order.
      *
-     * @param Request $request The incoming HTTP request.
-     * @return \Illuminate\Http\JsonResponse
-     * @throws \Exception If section retrieval fails.
+     * Supports ?search= and ?q= query params for AsyncSelect live filtering
+     * (matches name, display_name, short_code).
+     *
+     * Response shape matches useAsyncOptions composable expectations:
+     *   { data: [...], total: N }
+     *
+     * @param  Request  $request
+     * @return JsonResponse
      */
-    public function options(Request $request)
+    public function options(Request $request): JsonResponse
     {
-        try {
-            if ($request->isJson()) {
-                $school = GetSchoolModel();
-                if (!$school) {
-                    abort(403, 'No active school found.');
-                }
+        Gate::authorize('viewAny', SchoolSection::class);
 
-                return response()->json(SchoolSection::where('school_id', $school->id)
-                    ->select(['id', 'name'])
-                    ->paginate($request->input('per_page', 10)));
-            }
+        $query = SchoolSection::active()
+            ->ordered()
+            ->select(['id', 'name', 'display_name', 'short_code']);
 
-            return response()->json(['error' => 'Invalid request format.'], 400);
-        } catch (\Exception $e) {
-            Log::error('Failed to fetch section options: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to fetch section options.'], 500);
+        $term = $request->input('search') ?? $request->input('q');
+
+        if (filled($term)) {
+            $query->where(function ($q) use ($term): void {
+                $q->where('name', 'like', "%{$term}%")
+                    ->orWhere('display_name', 'like', "%{$term}%")
+                    ->orWhere('short_code', 'like', "%{$term}%");
+            });
         }
+
+        $options = $query->get()->map(fn(SchoolSection $s) => [
+            'id' => $s->id,
+            'name' => $s->display_name ?? $s->name,
+            'short_code' => $s->short_code,
+            'label' => "{$s->display_name} ({$s->short_code})",
+            'value' => $s->id,
+        ]);
+
+        return response()->json([
+            'data' => $options,
+            'total' => $options->count(),
+        ]);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // WRITE — Single Record
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Create a single section from validated form data.
+     *
+     * StoreSchoolSectionRequest::authorize() checks sections.create permission.
+     * No Gate::authorize() needed — Form Request authorization is sufficient.
+     *
+     * school_id is never in the validated payload (prohibited in Form Request).
+     * BelongsToSchool boot hook assigns it automatically on create.
+     *
+     * @param  StoreSchoolSectionRequest  $request
+     * @return RedirectResponse
+     */
+    public function store(StoreSchoolSectionRequest $request): RedirectResponse
+    {
+        $section = $this->service->createOne($request->validated());
+
+        return redirect()
+            ->route('settings.sections.index')
+            ->with('success', "The \"{$section->display_name}\" section has been created.");
+    }
+
+    /**
+     * Create multiple sections from config-defined templates.
+     *
+     * StoreFromTemplatesRequest handles authorization (sections.create)
+     * and all conflict validation (active + soft-deleted conflicts)
+     * before this method is reached.
+     *
+     * $request->resolvedTemplates() returns the already-filtered,
+     * config-canonical template data for submitted keys only.
+     *
+     * @param  StoreFromTemplatesRequest  $request
+     * @return RedirectResponse
+     */
+    public function storeFromTemplates(StoreFromTemplatesRequest $request): RedirectResponse
+    {
+        $created = $this->service->createFromTemplates(
+            $request->resolvedTemplates()
+        );
+
+        $count = $created->count();
+        $names = $created->pluck('display_name')->join(', ', ' and ');
+
+        return redirect()
+            ->route('settings.sections.index')
+            ->with('success', "{$count} section(s) created from templates: {$names}.");
+    }
+
+    /**
+     * Update a single section.
+     *
+     * Policy verifies the section belongs to the current school AND the
+     * user has sections.update permission.
+     *
+     * Source mutation (template → custom on tracked field changes) is
+     * handled automatically by SchoolSectionObserver — no controller logic needed.
+     *
+     * UpdateSchoolSectionRequest prohibits school_id and source fields
+     * so they can never be changed via this endpoint.
+     *
+     * @param  UpdateSchoolSectionRequest  $request
+     * @param  SchoolSection               $schoolSection
+     * @return RedirectResponse
+     */
+    public function update(
+        UpdateSchoolSectionRequest $request,
+        SchoolSection $schoolSection
+    ): RedirectResponse {
+        Gate::authorize('update', $schoolSection);
+
+        $section = $this->service->update($schoolSection, $request->validated());
+
+        return redirect()
+            ->route('settings.sections.index')
+            ->with('success', "The \"{$section->display_name}\" section has been updated.");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // WRITE — Bulk Operations
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Soft-delete one or more sections.
+     *
+     * The useDeleteResource composable on the frontend always sends an
+     * array of IDs (even for single-record delete), so this method handles
+     * both single and bulk uniformly.
+     *
+     * BulkSchoolSectionRequest validates ids[], enforces max:250, and
+     * checks sections.delete permission in authorize(). Action must be 'delete'.
+     *
+     * Returns JsonResponse — the composable expects this shape:
+     *   { message: string }  on success (2xx)
+     *   { message: string }  on failure (4xx/5xx)
+     *
+     * @param  BulkSchoolSectionRequest  $request
+     * @return JsonResponse
+     */
+    public function destroy(BulkSchoolSectionRequest $request): JsonResponse
+    {
+        $deleted = $this->service->bulkDelete($request->validated('ids'));
+
+        return response()->json([
+            'message' => "{$deleted} section(s) deleted successfully.",
+            'count' => $deleted,
+        ]);
+    }
+
+    /**
+     * Restore one or more soft-deleted sections.
+     *
+     * useRestoreResource composable sends array of IDs.
+     * BulkSchoolSectionRequest checks sections.restore permission.
+     * Action must be 'restore'.
+     *
+     * @param  BulkSchoolSectionRequest  $request
+     * @return JsonResponse
+     */
+    public function restore(BulkSchoolSectionRequest $request): JsonResponse
+    {
+        $restored = $this->service->bulkRestore($request->validated('ids'));
+
+        return response()->json([
+            'message' => "{$restored} section(s) restored successfully.",
+            'count' => $restored,
+        ]);
+    }
+
+    /**
+     * Permanently delete one or more soft-deleted sections.
+     *
+     * Separate method from destroy() because:
+     *   1. Requires a stricter permission (sections.force-delete)
+     *   2. Only operates on already-soft-deleted records
+     *   3. The service throws ValidationException if non-trashed IDs
+     *      are submitted — clear, explicit contract
+     *
+     * Inline validation used (not BulkSchoolSectionRequest) because
+     * forceDestroy requires sections.force-delete permission while
+     * BulkSchoolSectionRequest maps action='delete' to sections.delete.
+     * Using the wrong permission check would be a silent security bug.
+     *
+     * @param  Request  $request
+     * @return JsonResponse
+     */
+    public function forceDestroy(Request $request): JsonResponse
+    {
+        Gate::authorize('forceDelete', SchoolSection::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:250'],
+            'ids.*' => ['required', 'uuid'],
+        ]);
+
+        $deleted = $this->service->bulkForceDelete($validated['ids']);
+
+        return response()->json([
+            'message' => "{$deleted} section(s) permanently deleted.",
+            'count' => $deleted,
+        ]);
+    }
+
+    /**
+     * Activate or deactivate one or more sections.
+     *
+     * BulkSchoolSectionRequest validates action = 'toggle' and requires
+     * is_active (boolean). Checks sections.update permission.
+     *
+     * @param  BulkSchoolSectionRequest  $request
+     * @return JsonResponse
+     */
+    public function bulkToggle(BulkSchoolSectionRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+        $isActive = (bool) $validated['is_active'];
+
+        $affected = $this->service->bulkToggleStatus(
+            $validated['ids'],
+            $isActive
+        );
+
+        $state = $isActive ? 'activated' : 'deactivated';
+
+        return response()->json([
+            'message' => "{$affected} section(s) {$state} successfully.",
+            'count' => $affected,
+        ]);
+    }
+
+    /**
+     * Reorder sections by assigning new sort_order positions.
+     *
+     * Expects ordered array of IDs. Service assigns sort_order = (index+1)*10.
+     * Returns JsonResponse — reorder is triggered by drag-and-drop which
+     * should not cause full page navigation.
+     *
+     * @param  Request  $request
+     * @return JsonResponse
+     */
+    public function reorder(Request $request): JsonResponse
+    {
+        Gate::authorize('update', SchoolSection::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:250'],
+            'ids.*' => ['required', 'uuid'],
+        ]);
+
+        $updated = $this->service->reorder($validated['ids']);
+
+        return response()->json([
+            'message' => "Section order updated successfully.",
+            'updated' => $updated,
+        ]);
     }
 }

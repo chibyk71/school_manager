@@ -176,7 +176,15 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
             maxWidth: '2xl',
             persistent: false, // allow ESC/close button
         }
-    }
+    },
+    'section-form': {
+        loader: () => import('@/Components/Modals/CreateEdit/SectionFormModal.vue'),
+        config: {
+            title: '',          // Title is rendered inside the modal itself (dynamic)
+            maxWidth: 'lg',
+            persistent: true,   // Dirty-state guard handles close — prevent accidental ESC dismiss
+        },
+    },
 } as const;
 
 /**

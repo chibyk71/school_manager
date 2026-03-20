@@ -80,6 +80,7 @@ const navigationGroups: NavGroup[] = [
             { label: 'GDPR & Cookies', href: route('settings.system.gdpr') },
             { label: 'User Management', href: route('settings.system.user-management') },
             {label: 'Custom Fields', href: route('settings.system.custom-fields')},
+            { label: 'School Sections',    href: route('settings.system.sections.index') }
         ],
     },
     {

@@ -227,7 +227,12 @@ onMounted(async () => {
             }" class="w-full" :placeholder="field.placeholder ?? 'Select items...'" :show-clear="true" :pt="{
                 root: { class: 'w-full' },
                 panel: { class: 'max-h-96 overflow-auto' }
-            }" />
+            }">
+
+            <template v-if="$slots.option" #option="slotProps">
+                <slot name="option" v-bind="slotProps" />
+            </template>
+        </MultiSelect>
 
         <!-- Single Select Mode -->
         <Select v-else :id="id" v-model="model" :options="displayOptions" :optionLabel="optionLabel"
@@ -242,7 +247,11 @@ onMounted(async () => {
             }" class="w-full" :placeholder="field.placeholder ?? 'Select an option...'" :show-clear="true" :pt="{
                 root: { class: 'w-full' },
                 panel: { class: 'max-h-96 overflow-auto' }
-            }" />
+            }">
+            <template v-if="$slots.option" #option="slotProps">
+                <slot name="option" v-bind="slotProps" />
+            </template>
+        </Select>
 
         <!-- User Guidance Message -->
         <small class="text-amber-700 dark:text-amber-400 text-xs mt-1 block">
