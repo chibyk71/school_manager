@@ -185,6 +185,23 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
             persistent: true,   // Dirty-state guard handles close — prevent accidental ESC dismiss
         },
     },
+    'class-level-form': {
+        loader: () => import('@/Components/Modals/ClassLevel/FormModal.vue'),
+        config: {
+            title: (payload: { classLevel?: { name: string } | null }) =>
+                payload.classLevel ? `Edit: ${payload.classLevel.name}` : 'Add Class Level',
+            maxWidth: 'lg',
+            persistent: false,
+        },
+    },
+    'class-level-bulk-generate': {
+        loader: () => import('@/Components/Modals/ClassLevel/BulkGenerateModal.vue'),
+        config: {
+            title: 'Generate Class Levels',
+            maxWidth: 'lg',
+            persistent: false,
+        },
+    },
 } as const;
 
 /**

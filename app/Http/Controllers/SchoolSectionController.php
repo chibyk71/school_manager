@@ -165,7 +165,7 @@ class SchoolSectionController extends Controller
     {
         Gate::authorize('view', $schoolSection);
 
-        $schoolSection->loadCount(['classLevels', 'students']);
+        $schoolSection->loadCount(['classLevels', 'students'])->load('school:id,name');
 
         return Inertia::render('Settings/Sections/Show', [
             'section' => new SchoolSectionResource($schoolSection),

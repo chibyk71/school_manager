@@ -275,10 +275,10 @@ class SchoolSectionService
 
             $restored = 0;
 
-            foreach ($sections as $section) {
+            $sections->each(function (SchoolSection $section) use (&$restored) {
                 $section->restore();
                 $restored++;
-            }
+            });
 
             if ($restored > 0) {
                 SectionCache::forget();
@@ -324,7 +324,7 @@ class SchoolSectionService
 
             $deleted = 0;
 
-            foreach ($sections as $section) {
+            $sections->each(function (SchoolSection $section) use (&$deleted) {
                 try {
                     $section->forceDelete();
                     $deleted++;
@@ -342,7 +342,7 @@ class SchoolSectionService
                                . 'Reassign or remove those records first.',
                     ]);
                 }
-            }
+            });
 
             if ($deleted > 0) {
                 SectionCache::forget();

@@ -100,6 +100,21 @@ Route::middleware('auth')->group(function () {
         ->name('schools.restore');
     Route::post('schools/bulk-toggle', [SchoolController::class, 'bulkToggleStatus'])
         ->name('schools.bulk-toggle');
+
+    // Class levels nested under sections
+    Route::prefix('sections/{section}/class-levels')
+        ->name('class-levels.')
+        ->group(function () {
+            Route::get('presets', [ClassLevelController::class, 'presets'])->name('presets');
+            Route::get('/', [ClassLevelController::class, 'index'])->name('index');
+            Route::post('/', [ClassLevelController::class, 'store'])->name('store');
+            Route::post('bulk-generate', [ClassLevelController::class, 'bulkGenerate'])->name('bulk-generate');
+            Route::patch('reorder', [ClassLevelController::class, 'reorder'])->name('reorder');
+            Route::delete('/', [ClassLevelController::class, 'destroy'])->name('destroy');
+            Route::post('restore', [ClassLevelController::class, 'restore'])->name('restore');
+            Route::delete('force', [ClassLevelController::class, 'forceDelete'])->name('force-delete');
+            Route::patch('{classLevel}', [ClassLevelController::class, 'update'])->name('update');
+        });
 });
 
 // Exams
@@ -131,7 +146,7 @@ Route::post('promotions/{batch}/bulk-override', [PromotionBatchController::class
     ->name('promotions.bulk-override');
 
 Route::resource('subjects', SubjectController::class);
-Route::resource('class-levels', ClassLevelController::class);
+
 Route::resource('class-sections', ClassSectionController::class);
 Route::resource('timetables', TimeTableController::class);
 Route::resource('timetable-details', TimeTableDetailController::class);

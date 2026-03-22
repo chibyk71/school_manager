@@ -79,8 +79,8 @@ const navigationGroups: NavGroup[] = [
             { label: 'Printer Settings', href: route('settings.system.printer') },
             { label: 'GDPR & Cookies', href: route('settings.system.gdpr') },
             { label: 'User Management', href: route('settings.system.user-management') },
-            {label: 'Custom Fields', href: route('settings.system.custom-fields')},
-            { label: 'School Sections',    href: route('settings.system.sections.index') }
+            { label: 'Custom Fields', href: route('settings.system.custom-fields') },
+            { label: 'School Sections', href: route('settings.system.sections.index') }
         ],
     },
     {
@@ -106,7 +106,7 @@ const navigationGroups: NavGroup[] = [
         items: [
             { label: 'Academic Year', href: route('settings.academic.year') },
             { label: 'Academic Terms', href: route('settings.academic.terms') },
-
+            { label: 'Class Levels', href: route('settings.academic.class-levels') },
             { label: 'Grading Scales', href: route('settings.academic.grades') },
             { label: 'Subjects', href: route('settings.academic.subjects') },
             { label: 'Attendance Rules', href: route('settings.academic.attendance') },

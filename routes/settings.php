@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ClassLevelController;
 use App\Http\Controllers\GradeController;
 use App\Http\Controllers\Settings\Academic\AcademicSessionController;
 use App\Http\Controllers\Settings\Academic\AcademicSessionSettingsController;
@@ -198,6 +199,9 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
     Route::post('grades/{id}/restore', [GradeController::class, 'restore'])
         ->name('grades.restore')
         ->whereNumber('id');
+
+     Route::get('class-levels', [ClassLevelController::class, 'globalIndex'])
+        ->name('class-levels.index');
 });
 
 // ===================================================================

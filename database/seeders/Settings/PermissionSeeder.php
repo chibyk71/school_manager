@@ -52,13 +52,13 @@ class PermissionSeeder extends Seeder
             ['name' => 'school.restore', 'display_name' => 'Restore School', 'description' => 'Restore a soft-deleted school'],
 
             // School Sections
-            [ 'name' => 'school-sections.view-any', 'display_name' => 'View All School Sections', 'description' => 'Can see the list of all school sections/divisions in the current school'],
-            [ 'name' => 'school-sections.view', 'display_name' => 'View School Section Details', 'description' => 'Can view detailed information about a specific school section/division'],
-            [ 'name' => 'school-sections.create', 'display_name' => 'Create School Section', 'description' => 'Can add a new school section/division (e.g. Primary, Junior Secondary)'],
-            [ 'name' => 'school-sections.update', 'display_name' => 'Edit School Section', 'description' => 'Can modify existing school sections/divisions'],
-            ['name' => 'school-sections.delete','display_name' => 'Delete School Section','description' => 'Can soft-delete (move to trash) a school section/division'],
-            [ 'name' => 'school-sections.restore', 'display_name' => 'Restore School Section', 'description' => 'Can restore a soft-deleted school section/division from trash'],
-            [ 'name' => 'school-sections.force-delete', 'display_name' => 'Permanently Delete School Section', 'description' => 'Can permanently delete a school section (usually restricted to super-admins)'],
+            ['name' => 'school-sections.view-any', 'display_name' => 'View All School Sections', 'description' => 'Can see the list of all school sections/divisions in the current school'],
+            ['name' => 'school-sections.view', 'display_name' => 'View School Section Details', 'description' => 'Can view detailed information about a specific school section/division'],
+            ['name' => 'school-sections.create', 'display_name' => 'Create School Section', 'description' => 'Can add a new school section/division (e.g. Primary, Junior Secondary)'],
+            ['name' => 'school-sections.update', 'display_name' => 'Edit School Section', 'description' => 'Can modify existing school sections/divisions'],
+            ['name' => 'school-sections.delete', 'display_name' => 'Delete School Section', 'description' => 'Can soft-delete (move to trash) a school section/division'],
+            ['name' => 'school-sections.restore', 'display_name' => 'Restore School Section', 'description' => 'Can restore a soft-deleted school section/division from trash'],
+            ['name' => 'school-sections.force-delete', 'display_name' => 'Permanently Delete School Section', 'description' => 'Can permanently delete a school section (usually restricted to super-admins)'],
 
             // User Account Management (Beyond Staff/Student/Guardian Data)
             ['name' => 'user.assign-roles', 'display_name' => 'Assign Roles to User', 'description' => 'Grant or revoke roles and permissions for any user within scope.'],
@@ -170,6 +170,15 @@ class PermissionSeeder extends Seeder
             ['name' => 'class-sections.delete', 'display_name' => 'Delete Class Sections', 'description' => 'Delete class sections for a school'],
             ['name' => 'class-sections.restore', 'display_name' => 'Restore Class Sections', 'description' => 'Restore deleted class sections for a school'],
             ['name' => 'class-sections.force-delete', 'display_name' => 'Force Delete Class Sections', 'description' => 'Permanently delete class sections for a school'],
+
+            // ── Class Levels ──────────────────────────────────────────────────────────
+            ['name' => 'class-levels.view', 'display_name' => 'View Class Levels', 'description' => 'View all class levels within a school section'],
+            ['name' => 'class-levels.create', 'display_name' => 'Create Class Levels', 'description' => 'Create new class levels within a school section'],
+            ['name' => 'class-levels.update', 'display_name' => 'Update Class Levels', 'description' => 'Edit and update existing class levels'],
+            ['name' => 'class-levels.delete', 'display_name' => 'Delete Class Levels', 'description' => 'Soft-delete class levels from a school section'],
+            ['name' => 'class-levels.restore', 'display_name' => 'Restore Class Levels', 'description' => 'Restore soft-deleted class levels from trash'],
+            ['name' => 'class-levels.force-delete', 'display_name' => 'Permanently Delete Class Levels', 'description' => 'Permanently delete soft-deleted class levels — irreversible'],
+
 
             // Subjects
             ['name' => 'subjects.view', 'display_name' => 'View Subjects', 'description' => 'View all subjects for a school'],
