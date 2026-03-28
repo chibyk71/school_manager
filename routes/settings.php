@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Academic\ClassSectionController;
 use App\Http\Controllers\ClassLevelController;
 use App\Http\Controllers\GradeController;
 use App\Http\Controllers\Settings\Academic\AcademicSessionController;
@@ -200,8 +201,63 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
         ->name('grades.restore')
         ->whereNumber('id');
 
-     Route::get('class-levels', [ClassLevelController::class, 'globalIndex'])
+    Route::get('class-levels', [ClassLevelController::class, 'globalIndex'])
         ->name('class-levels.index');
+
+    // ─── Inside: Route::prefix('settings/academic')->name('settings.academic.')->group(function () {
+
+    Route::prefix('class-sections')->name('class-sections.')->group(function () {
+
+        // ── Utility routes — MUST come before {classSection} wildcard ─────────
+        Route::get('presets', [ClassSectionController::class, 'presets'])
+            ->name('presets');
+
+        Route::get('options', [ClassSectionController::class, 'options'])
+            ->name('options');
+
+        Route::post('restore', [ClassSectionController::class, 'restore'])
+            ->name('restore');
+
+        Route::delete('force', [ClassSectionController::class, 'forceDestroy'])
+            ->name('force-delete');
+
+        Route::post('toggle', [ClassSectionController::class, 'bulkToggle'])
+            ->name('bulk-toggle');
+
+        Route::post('reorder', [ClassSectionController::class, 'reorder'])
+            ->name('reorder');
+
+        Route::post('bulk-generate', [ClassSectionController::class, 'bulkGenerate'])
+            ->name('bulk-generate');
+
+        // ── Standard collection routes ─────────────────────────────────────────
+        Route::get('/', [ClassSectionController::class, 'index'])
+            ->name('index');
+
+        Route::post('/', [ClassSectionController::class, 'store'])
+            ->name('store');
+
+        Route::delete('/', [ClassSectionController::class, 'destroy'])
+            ->name('destroy');
+
+        // ── Single section routes ─────────────────────────────────────────────
+        Route::match(['put', 'patch'], '{classSection}', [ClassSectionController::class, 'update'])
+            ->name('update');
+
+        // ── Form teacher assignment ───────────────────────────────────────────
+        Route::patch('{classSection}/teacher', [ClassSectionController::class, 'assignFormTeacher'])
+            ->name('assign-teacher');
+
+        // ── Subject-teacher assignments ───────────────────────────────────────
+        Route::post('{classSection}/subjects', [ClassSectionController::class, 'assignSubject'])
+            ->name('subjects.assign');
+
+        Route::patch('{classSection}/subjects/{assignment}', [ClassSectionController::class, 'updateSubjectRole'])
+            ->name('subjects.update-role');
+
+        Route::delete('{classSection}/subjects/{assignment}', [ClassSectionController::class, 'removeSubject'])
+            ->name('subjects.remove');
+    });
 });
 
 // ===================================================================

@@ -8,7 +8,6 @@ use App\Http\Controllers\AttendanceSessionController;
 use App\Http\Controllers\BookListController;
 use App\Http\Controllers\BookOrderController;
 use App\Http\Controllers\ClassLevelController;
-use App\Http\Controllers\ClassSectionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DynamicEnumController;
 use App\Http\Controllers\EventController;
@@ -147,7 +146,6 @@ Route::post('promotions/{batch}/bulk-override', [PromotionBatchController::class
 
 Route::resource('subjects', SubjectController::class);
 
-Route::resource('class-sections', ClassSectionController::class);
 Route::resource('timetables', TimeTableController::class);
 Route::resource('timetable-details', TimeTableDetailController::class);
 Route::resource('assignments', AssignmentController::class);

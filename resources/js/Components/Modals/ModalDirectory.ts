@@ -202,6 +202,31 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
             persistent: false,
         },
     },
+    // ── Create / Edit single class section ───────────────────────────────────────
+'class-section-form': {
+    loader: () => import('@/Components//ClassSections/ClassSectionFormModal.vue'),
+    config: {
+        // Title is dynamic — "Create Class Section" or "Edit — JSS 1A"
+        title: (payload: { section?: { display_name: string } | null }) =>
+            payload.section
+                ? `Edit — ${payload.section.display_name}`
+                : 'Create Class Section',
+        maxWidth: 'xl',
+        // Prevent accidental ESC close — dirty-state guard inside modal handles this
+        persistent: true,
+    },
+},
+
+// ── Bulk generate arms across one or multiple class levels ────────────────────
+'class-section-generate': {
+    loader: () => import('@/Components/ClassSections/BulkGenerateSectionsModal.vue'),
+    config: {
+        title: 'Generate Class Sections',
+        maxWidth: '2xl',
+        // 3-step wizard — prevent accidental close mid-way
+        persistent: true,
+    },
+},
 } as const;
 
 /**

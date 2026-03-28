@@ -164,12 +164,18 @@ class PermissionSeeder extends Seeder
             ],
 
             // Class Sections
-            ['name' => 'class-sections.view', 'display_name' => 'View Class Sections', 'description' => 'View all class sections for a school'],
-            ['name' => 'class-sections.create', 'display_name' => 'Create Class Sections', 'description' => 'Create new class sections for a school'],
-            ['name' => 'class-sections.update', 'display_name' => 'Update Class Sections', 'description' => 'Update existing class sections for a school'],
-            ['name' => 'class-sections.delete', 'display_name' => 'Delete Class Sections', 'description' => 'Delete class sections for a school'],
-            ['name' => 'class-sections.restore', 'display_name' => 'Restore Class Sections', 'description' => 'Restore deleted class sections for a school'],
-            ['name' => 'class-sections.force-delete', 'display_name' => 'Force Delete Class Sections', 'description' => 'Permanently delete class sections for a school'],
+            ['name' => 'class-sections.view-any', 'display_name' => 'View Any Class Section', 'description' => 'View the list and data table of class sections'],
+            ['name' => 'class-sections.view', 'display_name' => 'View Class Section', 'description' => 'View detailed information for a specific class section'],
+            ['name' => 'class-sections.create', 'display_name' => 'Create Class Section', 'description' => 'Manually create a new class section'],
+            ['name' => 'class-sections.update', 'display_name' => 'Update Class Section', 'description' => 'Edit the details of an existing class section'],
+            ['name' => 'class-sections.delete', 'display_name' => 'Delete Class Section', 'description' => 'Soft-delete a class section record'],
+            ['name' => 'class-sections.restore', 'display_name' => 'Restore Class Section', 'description' => 'Restore a previously trashed class section'],
+            ['name' => 'class-sections.force-delete', 'display_name' => 'Force Delete Class Section', 'description' => 'Permanently delete a class section from the database'],
+            ['name' => 'class-sections.bulk-generate', 'display_name' => 'Bulk Generate Class Sections', 'description' => 'Generate multiple class arms or sections at once'],
+            ['name' => 'class-sections.assign-teacher', 'display_name' => 'Assign Teacher', 'description' => 'Set or change the form teacher for a class section'],
+            ['name' => 'class-sections.manage-subjects', 'description' => 'Manage Subject Assignments', 'description' => 'Assign or manage subjects for a class section'],
+            ['name' => 'class-sections.reorder', 'display_name' => 'Reorder Class Sections', 'description' => 'Change the display sort order of class sections'],
+            ['name' => 'class-sections.toggle-status', 'display_name' => 'Toggle Class Status', 'description' => 'Activate or deactivate a class section'],
 
             // ── Class Levels ──────────────────────────────────────────────────────────
             ['name' => 'class-levels.view', 'display_name' => 'View Class Levels', 'description' => 'View all class levels within a school section'],
