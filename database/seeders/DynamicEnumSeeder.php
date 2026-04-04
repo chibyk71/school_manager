@@ -28,6 +28,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Academic\Subject;
 use App\Models\DynamicEnum;
 use Illuminate\Database\Seeder;
 
@@ -38,80 +39,165 @@ class DynamicEnumSeeder extends Seeder
         $enums = [
             // 1. Title – used on Profile
             [
-                'label'       => 'Title',
-                'name'        => 'title',
-                'applies_to'  => \App\Models\Profile::class,
+                'label' => 'Title',
+                'name' => 'title',
+                'applies_to' => \App\Models\Profile::class,
                 'description' => 'Prefix that appears before a person\'s name (Mr, Mrs, Dr, …).',
-                'color'       => 'bg-indigo-100 text-indigo-800',
-                'options'     => [
-                    ['value' => 'Mr',     'label' => 'Mr'],
-                    ['value' => 'Mrs',    'label' => 'Mrs'],
-                    ['value' => 'Miss',   'label' => 'Miss'],
-                    ['value' => 'Ms',     'label' => 'Ms'],
-                    ['value' => 'Dr',     'label' => 'Dr'],
-                    ['value' => 'Prof',   'label' => 'Prof'],
-                    ['value' => 'Rev',    'label' => 'Rev'],
-                    ['value' => 'Engr',   'label' => 'Engr'],
+                'color' => 'bg-indigo-100 text-indigo-800',
+                'options' => [
+                    ['value' => 'Mr', 'label' => 'Mr'],
+                    ['value' => 'Mrs', 'label' => 'Mrs'],
+                    ['value' => 'Miss', 'label' => 'Miss'],
+                    ['value' => 'Ms', 'label' => 'Ms'],
+                    ['value' => 'Dr', 'label' => 'Dr'],
+                    ['value' => 'Prof', 'label' => 'Prof'],
+                    ['value' => 'Rev', 'label' => 'Rev'],
+                    ['value' => 'Engr', 'label' => 'Engr'],
                 ],
-                'school_id'   => null,
+                'school_id' => null,
             ],
 
             // 2. Gender – used on Profile
             [
-                'label'       => 'Gender',
-                'name'        => 'gender',
-                'applies_to'  => \App\Models\Profile::class,
+                'label' => 'Gender',
+                'name' => 'gender',
+                'applies_to' => \App\Models\Profile::class,
                 'description' => 'Gender identity options for staff, students and guardians.',
-                'color'       => 'bg-pink-100 text-pink-800',
-                'options'     => [
-                    ['value' => 'male',           'label' => 'Male'],
-                    ['value' => 'female',         'label' => 'Female'],
-                    ['value' => 'other',          'label' => 'Other'],
-                    ['value' => 'prefer_not',     'label' => 'Prefer not to say'],
+                'color' => 'bg-pink-100 text-pink-800',
+                'options' => [
+                    ['value' => 'male', 'label' => 'Male'],
+                    ['value' => 'female', 'label' => 'Female'],
+                    ['value' => 'other', 'label' => 'Other'],
+                    ['value' => 'prefer_not', 'label' => 'Prefer not to say'],
                 ],
-                'school_id'   => null,
+                'school_id' => null,
             ],
 
             // 3. Profile Type – used on Profile
             [
-                'label'       => 'Profile Type',
-                'name'        => 'profile_type',
-                'applies_to'  => \App\Models\Profile::class,
+                'label' => 'Profile Type',
+                'name' => 'profile_type',
+                'applies_to' => \App\Models\Profile::class,
                 'description' => 'The role a profile represents inside the school.',
-                'color'       => 'bg-teal-100 text-teal-800',
-                'options'     => [
-                    ['value' => 'staff',     'label' => 'Staff / Teacher'],
-                    ['value' => 'student',   'label' => 'Student'],
-                    ['value' => 'guardian',  'label' => 'Parent / Guardian'],
+                'color' => 'bg-teal-100 text-teal-800',
+                'options' => [
+                    ['value' => 'staff', 'label' => 'Staff / Teacher'],
+                    ['value' => 'student', 'label' => 'Student'],
+                    ['value' => 'guardian', 'label' => 'Parent / Guardian'],
                 ],
-                'school_id'   => null,
+                'school_id' => null,
             ],
 
             // 4. Address Type – used on Address
             [
-                'label'       => 'Address Type',
-                'name'        => 'type',
-                'applies_to'  => \App\Models\Address::class,
+                'label' => 'Address Type',
+                'name' => 'type',
+                'applies_to' => \App\Models\Address::class,
                 'description' => 'Classification of the address (residential, school campus, office, postal, temporary, billing).',
-                'color'       => 'bg-yellow-100 text-yellow-800',
-                'options'     => [
-                    ['value' => 'residential',    'label' => 'Residential'],
-                    ['value' => 'school_campus',  'label' => 'School Campus'],
-                    ['value' => 'office',         'label' => 'Office'],
-                    ['value' => 'postal',         'label' => 'Postal'],
-                    ['value' => 'temporary',      'label' => 'Temporary'],
-                    ['value' => 'billing',        'label' => 'Billing'],
+                'color' => 'bg-yellow-100 text-yellow-800',
+                'options' => [
+                    ['value' => 'residential', 'label' => 'Residential'],
+                    ['value' => 'school_campus', 'label' => 'School Campus'],
+                    ['value' => 'office', 'label' => 'Office'],
+                    ['value' => 'postal', 'label' => 'Postal'],
+                    ['value' => 'temporary', 'label' => 'Temporary'],
+                    ['value' => 'billing', 'label' => 'Billing'],
                 ],
-                'school_id'   => null,
+                'school_id' => null,
+            ],
+            [
+                'name' => 'subject_type',
+                'applies_to' => Subject::class,
+                'school_id' => null,           // global default
+                'label' => 'Subject Type',
+                'description' => 'Classifies whether a subject is mandatory or optional for students.',
+                'options' => [
+                    [
+                        'value' => 'core',
+                        'label' => 'Core',
+                        'color' => 'bg-blue-100 text-blue-800',
+                    ],
+                    [
+                        'value' => 'elective',
+                        'label' => 'Elective',
+                        'color' => 'bg-purple-100 text-purple-800',
+                    ],
+                    [
+                        'value' => 'compulsory_elective',
+                        'label' => 'Compulsory Elective',
+                        'color' => 'bg-amber-100 text-amber-800',
+                    ],
+                    [
+                        'value' => 'extra_curricular',
+                        'label' => 'Extra-Curricular',
+                        'color' => 'bg-green-100 text-green-800',
+                    ],
+                ],
+            ],
+
+            // ── 2. Subject Category ────────────────────────────────────────────────
+            [
+                'name' => 'subject_category',
+                'applies_to' => Subject::class,
+                'school_id' => null,
+                'label' => 'Subject Category',
+                'description' => 'Groups subjects by academic discipline. Aligned with Nigerian curriculum structure.',
+                'options' => [
+                    [
+                        'value' => 'sciences',
+                        'label' => 'Sciences',
+                        'color' => 'bg-cyan-100 text-cyan-800',
+                    ],
+                    [
+                        'value' => 'arts_humanities',
+                        'label' => 'Arts & Humanities',
+                        'color' => 'bg-rose-100 text-rose-800',
+                    ],
+                    [
+                        'value' => 'commerce',
+                        'label' => 'Commerce',
+                        'color' => 'bg-yellow-100 text-yellow-800',
+                    ],
+                    [
+                        'value' => 'technical',
+                        'label' => 'Technical & Vocational',
+                        'color' => 'bg-orange-100 text-orange-800',
+                    ],
+                    [
+                        'value' => 'languages',
+                        'label' => 'Languages',
+                        'color' => 'bg-indigo-100 text-indigo-800',
+                    ],
+                    [
+                        'value' => 'social_sciences',
+                        'label' => 'Social Sciences',
+                        'color' => 'bg-teal-100 text-teal-800',
+                    ],
+                    [
+                        'value' => 'mathematics',
+                        'label' => 'Mathematics',
+                        'color' => 'bg-blue-100 text-blue-800',
+                    ],
+                    [
+                        'value' => 'religious_studies',
+                        'label' => 'Religious Studies',
+                        'color' => 'bg-violet-100 text-violet-800',
+                    ],
+                    [
+                        'value' => 'general',
+                        'label' => 'General',
+                        'color' => 'bg-gray-100 text-gray-700',
+                    ],
+                ],
             ],
         ];
 
         foreach ($enums as $enum) {
             DynamicEnum::updateOrCreate(
                 [
-                    'name'       => $enum['name'],
+                    'name' => $enum['name'],
                     'applies_to' => $enum['applies_to'],
-                    'school_id'  => $enum['school_id'],
+                    'school_id' => $enum['school_id'],
                 ],
                 $enum
             );
