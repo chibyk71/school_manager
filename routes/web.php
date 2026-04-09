@@ -1,5 +1,9 @@
 <?php
 
+use App\Http\Controllers\Academic\ExamController;
+use App\Http\Controllers\Academic\ExamResultsController;
+use App\Http\Controllers\Academic\ReportCardController;
+use App\Http\Controllers\Academic\ScoreEntryController;
 use App\Http\Controllers\AdmissionController;
 use App\Http\Controllers\AssignmentController;
 use App\Http\Controllers\AssignmentSubmissionController;
@@ -12,10 +16,6 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DynamicEnumController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\EventTypeController;
-use App\Http\Controllers\Exam\AssessmentController;
-use App\Http\Controllers\Exam\AssessmentResultController;
-use App\Http\Controllers\Exam\AssessmentScheduleController;
-use App\Http\Controllers\Exam\AssessmentTypeController;
 use App\Http\Controllers\FeedbackController;
 use App\Http\Controllers\Finance\ExpenseController;
 use App\Http\Controllers\Finance\FeeConcessionController;
@@ -46,7 +46,6 @@ use App\Http\Controllers\SalaryStructureController;
 use App\Http\Controllers\SchoolController;
 use App\Http\Controllers\SchoolSectionController;
 use App\Http\Controllers\StaffController;
-use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SyllabusController;
 use App\Http\Controllers\SyllabusDetailController;
@@ -116,18 +115,88 @@ Route::middleware('auth')->group(function () {
         });
 });
 
-// Exams
-Route::resource('exam.assessment', AssessmentController::class);
-Route::resource('exam.assessment-results', AssessmentResultController::class);
-Route::resource('exam.assessment-schedules', AssessmentScheduleController::class);
-Route::resource('exam.assessment-types', AssessmentTypeController::class);
-Route::resource('exam.term-results', TermResultController::class);
-Route::resource('exam.term-results.details', TermResultDetailController::class);
+// ─── Exams ────────────────────────────────────────────────────────────────────
+Route::prefix('exams')
+    ->name('exams.')
+    ->group(function () {
+        // Core CRUD
+        Route::get('/', [ExamController::class, 'index'])->name('index');
+        Route::post('/', [ExamController::class, 'store'])->name('store');
+        Route::get('/{exam}', [ExamController::class, 'show'])->name('show');
+        Route::patch('/{exam}', [ExamController::class, 'update'])->name('update');
+        Route::delete('/', [ExamController::class, 'destroy'])->name('destroy');
+
+        // Restore soft-deleted exam
+        Route::post('/{exam}/restore', [ExamController::class, 'restore'])->name('restore')
+            ->withTrashed();
+
+        // Status lifecycle transition
+        Route::patch('/{exam}/status', [ExamController::class, 'updateStatus'])->name('update-status');
+
+        // Trigger result computation (dispatches a queued job)
+        Route::post('/{exam}/compute', [ExamController::class, 'computeResults'])->name('compute-results');
+
+        // ─── Score Entry ──────────────────────────────────────────────────────
+        Route::prefix('/{exam}/scores')
+            ->name('score-entry.')
+            ->group(function () {
+            // Show score entry sheet for a section + subject
+            Route::get(
+                '/{sectionId}/{subjectId}',
+                [ScoreEntryController::class, 'show']
+            )->name('show');
+
+            // Bulk save scores (auto-save + full-save)
+            Route::post(
+                '/{sectionId}/{subjectId}',
+                [ScoreEntryController::class, 'store']
+            )->name('store');
+
+            // Mark a student absent for a subject
+            Route::post(
+                '/{sectionId}/{subjectId}/absent',
+                [ScoreEntryController::class, 'markAbsent']
+            )->name('absent');
+        });
+
+        // ─── Results ──────────────────────────────────────────────────────────
+        Route::prefix('/{exam}/results')
+            ->name('exam-results.')
+            ->group(function () {
+            // Full class results table (optionally filtered by section)
+            Route::get('/', [ExamResultsController::class, 'index'])->name('index');
+
+            // Single student's full result detail (JSON, for report card data)
+            Route::get('/{studentId}', [ExamResultsController::class, 'show'])->name('show');
+
+            // Update teacher/principal remark
+            Route::patch(
+                '/{result}/remark',
+                [ExamResultsController::class, 'updateRemark']
+            )->name('update-remark');
+        });
+
+        // ─── Report Cards ─────────────────────────────────────────────────────
+        Route::prefix('/{exam}/report-cards')
+            ->name('report-cards.')
+            ->group(function () {
+            // Individual student report card
+            Route::get(
+                '/{studentId}',
+                [ReportCardController::class, 'show']
+            )->name('show');
+
+            // Bulk print for a whole section
+            Route::get(
+                '/',
+                [ReportCardController::class, 'bulkPrint']
+            )->name('bulk-print');
+        });
+    });
 
 // guardian manage
 Route::resource('guardians', GuardianController::class);
 Route::resource('staff', StaffController::class);
-Route::resource('student', StudentController::class);
 
 Route::resource('promotions', PromotionBatchController::class)
     ->only(['index', 'review']);
@@ -143,8 +212,6 @@ Route::post('promotions/{batch}/execute', [PromotionBatchController::class, 'exe
 
 Route::post('promotions/{batch}/bulk-override', [PromotionBatchController::class, 'bulkOverride'])
     ->name('promotions.bulk-override');
-
-Route::resource('subjects', SubjectController::class);
 
 Route::resource('timetables', TimeTableController::class);
 Route::resource('timetable-details', TimeTableDetailController::class);

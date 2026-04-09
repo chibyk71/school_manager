@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Academic\AssessmentTemplateController;
 use App\Http\Controllers\Academic\ClassSectionController;
 use App\Http\Controllers\ClassLevelController;
 use App\Http\Controllers\GradeController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\Settings\Academic\AcademicSessionSettingsController;
 use App\Http\Controllers\Settings\Academic\AttendanceRulesController;
 use App\Http\Controllers\Settings\Academic\GradingScalesController;
 use App\Http\Controllers\Settings\Academic\SessionActivationController;
+use App\Http\Controllers\Settings\Academic\SubjectController;
 use App\Http\Controllers\Settings\Academic\TermClosureController;
 use App\Http\Controllers\Settings\Academic\TermController;
 use App\Http\Controllers\Settings\Advanced\BackupRestoreController;
@@ -39,7 +41,6 @@ use App\Http\Controllers\Settings\Website\SocialAuthSettingsController;
 use App\Http\Controllers\Settings\Website\ThemesSettingsController;
 use App\Http\Controllers\Settings\Website\WebTranslationsController;
 use App\Http\Controllers\Settings\School\RolesController;
-use App\Http\Controllers\SubjectController;
 use Illuminate\Support\Facades\Route;
 
 // ===================================================================
@@ -258,6 +259,18 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
         Route::delete('{classSection}/subjects/{assignment}', [ClassSectionController::class, 'removeSubject'])
             ->name('subjects.remove');
     });
+
+    // ─── Assessment Templates (Settings area) ────────────────────────────────────
+    Route::prefix('settings/academic/assessment-templates')
+        ->name('assessment-templates.')
+        ->group(function () {
+            Route::get('/', [AssessmentTemplateController::class, 'index'])->name('index');
+            Route::post('/', [AssessmentTemplateController::class, 'store'])->name('store');
+            Route::get('/{assessmentTemplate}', [AssessmentTemplateController::class, 'show'])->name('show');
+            Route::patch('/{assessmentTemplate}', [AssessmentTemplateController::class, 'update'])->name('update');
+            Route::delete('/', [AssessmentTemplateController::class, 'destroy'])->name('destroy');
+        });
+
 });
 
 // ===================================================================
