@@ -1,9 +1,11 @@
-import { computed, ref, type Ref, type ComputedRef } from 'vue';
+import { computed, ref, watch, type Ref, type ComputedRef } from 'vue';
 import axios from 'axios';
 import { useToast } from 'primevue';
 import type {
     ResolutionStrategy,
     TimetableConflict,
+    TimetableSlot,
+    UUID,
 } from '@/types/timetable';
 
 export interface ResolveConflictPayload {
@@ -15,54 +17,78 @@ export interface ResolveConflictPayload {
     resolution_notes?: string;
 }
 
-/**
- * Manages conflict state for a timetable: fetch, list unresolved, resolve via API.
- */
+export interface ResolveResult {
+    ok: boolean;
+    slot?: TimetableSlot | null;
+    message?: string;
+}
+
 export function useTimetableConflicts(
-    timetableId: Ref<string | null | undefined> | ComputedRef<string | null | undefined>,
-    initialConflicts?: Ref<TimetableConflict[]> | ComputedRef<TimetableConflict[]> | TimetableConflict[],
+    timetableId: Ref<UUID | null | undefined> | ComputedRef<UUID | null | undefined>,
+    initialConflicts?:
+        | Ref<TimetableConflict[]>
+        | ComputedRef<TimetableConflict[]>
+        | TimetableConflict[],
 ) {
     const toast = useToast();
-    const conflicts = ref<TimetableConflict[]>(
-        Array.isArray(initialConflicts)
-            ? [...initialConflicts]
-            : [...(initialConflicts?.value ?? [])],
-    );
+
+    const initialList = (): TimetableConflict[] => {
+        if (Array.isArray(initialConflicts)) return [...initialConflicts];
+        return [...(initialConflicts?.value ?? [])];
+    };
+
+    const conflicts = ref<TimetableConflict[]>(initialList());
     const loading = ref(false);
     const resolvingId = ref<number | null>(null);
+    const lastError = ref<string | null>(null);
 
-    const unresolved = computed(() =>
-        conflicts.value.filter((c) => !c.resolved_at),
-    );
+    if (initialConflicts && !Array.isArray(initialConflicts)) {
+        watch(
+            () => initialConflicts.value,
+            (v) => {
+                if (v) conflicts.value = [...v];
+            },
+            { deep: true },
+        );
+    }
 
+    const unresolved = computed(() => conflicts.value.filter((c) => !c.resolved_at));
     const unresolvedCount = computed(() => unresolved.value.length);
-
-    const byType = computed(() => {
-        const map: Record<string, TimetableConflict[]> = {};
-        for (const c of unresolved.value) {
-            const key = c.conflict_type;
-            if (!map[key]) map[key] = [];
-            map[key].push(c);
-        }
-        return map;
-    });
 
     const setConflicts = (next: TimetableConflict[]) => {
         conflicts.value = [...next];
+        lastError.value = null;
     };
 
-    const fetchConflicts = async () => {
+    const fetchConflicts = async (): Promise<{ ok: boolean; error?: string }> => {
         const id = timetableId.value;
-        if (!id) return;
+        if (!id) return { ok: false, error: 'No timetable selected' };
+
         loading.value = true;
+        lastError.value = null;
         try {
             const { data } = await axios.get(`/timetables/${id}/conflicts`, {
                 headers: { Accept: 'application/json' },
             });
             const list = data?.data ?? data?.conflicts ?? data ?? [];
             conflicts.value = Array.isArray(list) ? list : [];
-        } catch {
-            // Endpoint may not exist yet — keep current state
+            return { ok: true };
+        } catch (err: unknown) {
+            const status = (err as { response?: { status?: number } })?.response?.status;
+            const message =
+                (err as { response?: { data?: { message?: string } } })?.response?.data
+                    ?.message ??
+                (status === 404
+                    ? 'Conflicts endpoint not available'
+                    : 'Failed to load conflicts');
+            lastError.value = message;
+            toast.add({
+                severity: 'error',
+                summary: 'Could not load conflicts',
+                detail: message,
+                life: 5000,
+            });
+            return { ok: false, error: message };
         } finally {
             loading.value = false;
         }
@@ -71,11 +97,10 @@ export function useTimetableConflicts(
     const resolveConflict = async (
         conflictId: number,
         payload: ResolveConflictPayload,
-    ): Promise<{ ok: boolean; slot?: unknown; message?: string }> => {
+    ): Promise<ResolveResult> => {
         const id = timetableId.value;
-        if (!id) {
-            return { ok: false, message: 'No timetable selected' };
-        }
+        if (!id) return { ok: false, message: 'No timetable selected' };
+
         resolvingId.value = conflictId;
         try {
             const { data } = await axios.post(
@@ -95,6 +120,9 @@ export function useTimetableConflicts(
                 conflicts.value = next;
             }
 
+            const rawSlot = data?.slot ?? data?.data?.slot ?? data?.data ?? null;
+            const slot = (rawSlot && rawSlot.id ? rawSlot : null) as TimetableSlot | null;
+
             toast.add({
                 severity: 'success',
                 summary: 'Conflict resolved',
@@ -102,7 +130,7 @@ export function useTimetableConflicts(
                 life: 3000,
             });
 
-            return { ok: true, slot: data?.slot ?? data?.data };
+            return { ok: true, slot };
         } catch (err: unknown) {
             const message =
                 (err as { response?: { data?: { message?: string } } })?.response?.data
@@ -150,9 +178,9 @@ export function useTimetableConflicts(
         conflicts,
         unresolved,
         unresolvedCount,
-        byType,
         loading,
         resolvingId,
+        lastError,
         setConflicts,
         fetchConflicts,
         resolveConflict,
