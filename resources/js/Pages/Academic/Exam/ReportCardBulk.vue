@@ -73,7 +73,7 @@ const activeSectionId = ref<string | null>(props.active_section_id ?? null);
 const filterSection = (sectionId: string | null) => {
     activeSectionId.value = sectionId;
     router.get(
-        route('report-cards.bulk-print', { exam: router.page.props.exam?.id }),
+        route('report-cards.bulk-print', { exam: props.exam?.id }),
         sectionId ? { section_id: sectionId } : {},
         { preserveState: true, replace: true }
     );

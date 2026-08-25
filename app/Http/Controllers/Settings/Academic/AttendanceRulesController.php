@@ -8,33 +8,27 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
 
 /**
- * AttendanceRulesController v1.0 – Production-Ready Attendance Policy Configuration
+ * AttendanceRulesController v2.0 – Updated for Promotion Module
  *
  * Purpose:
- * Central configuration for school-wide attendance rules and policies:
- * - Minimum attendance percentage required for promotion/exams
- * - Late arrival grace period
- * - Absent vs late vs half-day definitions
- * - Notification thresholds (low attendance alerts)
- * - Weekend/holiday attendance rules
+ * Central configuration for school-wide attendance rules and policies.
+ * Now extended to support the Promotion Module with two new fields:
  *
- * Why this page is essential:
- * - Attendance policy varies greatly between schools (e.g., 75% vs 90% minimum)
- * - Directly affects student eligibility for exams/promotion
- * - Triggers notifications (parents alerted at thresholds)
- * - Industry standard: most school systems have dedicated "Attendance Settings"
+ *   • use_attendance_for_promotion (boolean)
+ *     Whether attendance percentage should be considered when computing promotion recommendations.
  *
- * Features / Problems Solved:
- * - Uses getMergedSettings() + SaveOrUpdateSchoolSettings() → global defaults + school overrides
- * - No abort() → system admin can set platform defaults
- * - Full validation with sensible ranges
- * - Clean grouped form with toggles and conditional fields
- * - Responsive PrimeVue layout
- * - Production-ready: security, error handling, structured logs
+ *   • promotion_min_attendance_percent (integer)
+ *     Minimum attendance % required to avoid automatic "repeat" recommendation
+ *     (only applied when use_attendance_for_promotion = true).
+ *
+ * Why these fields were added:
+ * - Many Nigerian schools factor attendance heavily into promotion decisions.
+ * - Allows per-school customization while keeping defaults sensible.
+ * - Directly consumed by PromotionService when calculating recommendations.
  *
  * Settings Key: 'academic.attendance_rules'
  *
- * Structure:
+ * Updated Structure:
  *   'academic.attendance_rules' => [
  *       'minimum_percentage' => 75,
  *       'count_late_as_half_day' => true,
@@ -43,12 +37,23 @@ use Illuminate\Support\Facades\Log;
  *       'notify_parent_at_percentage' => 85,
  *       'mark_weekends_as_holiday' => true,
  *       'require_reason_for_absence' => true,
+ *
+ *       // NEW: Promotion integration
+ *       'use_attendance_for_promotion' => true,
+ *       'promotion_min_attendance_percent' => 75,
  *   ]
  *
- * Fits into the Settings Module:
- * - Route: GET/POST settings.academic.attendance
- * - Navigation: Academic → Attendance Rules
- * - Frontend: resources/js/Pages/Settings/Academic/AttendanceRules.vue
+ * Fits into the Promotion Module:
+ * - PromotionService reads these values when building student recommendations.
+ * - Default values are conservative and can be overridden per school.
+ * - No breaking changes to existing attendance functionality.
+ *
+ * Features / Problems Solved:
+ * - Uses getMergedSettings() + SaveOrUpdateSchoolSettings() → global defaults + school overrides
+ * - No abort() → system admin can set platform defaults
+ * - Full validation with sensible ranges for new promotion fields
+ * - Clean grouped form with toggles and conditional fields (frontend will handle conditional UI)
+ * - Production-ready: security, error handling, structured logs
  */
 
 class AttendanceRulesController extends Controller
@@ -85,6 +90,10 @@ class AttendanceRulesController extends Controller
             'notify_parent_at_percentage' => 'required|integer|min:50|max:100',
             'mark_weekends_as_holiday' => 'required|boolean',
             'require_reason_for_absence' => 'required|boolean',
+
+            // ─── NEW: Promotion Module fields ─────────────────────────────
+            'use_attendance_for_promotion' => 'required|boolean',
+            'promotion_min_attendance_percent' => 'required|integer|min:50|max:100',
         ]);
 
         try {

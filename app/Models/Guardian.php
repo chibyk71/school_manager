@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
-use App\Models\Academic\Student;
+use App\Models\Student\Student;
+use App\Models\Profile;
+use App\Models\School;
 use App\Traits\BelongsToSchool;
+use App\Traits\HasAddress;
 use App\Traits\HasCustomFields;
 use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
@@ -13,49 +16,38 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Notifications\Notifiable;
 
 /**
- * Guardian Model – Responsible Person / Ward Guardian Record (v1.0 – Production-Ready)
+ * Guardian Model – Responsible Person / Ward Guardian Record (v2.0 – Production-Ready)
  *
- * Represents a guardian role for a person (linked via central Profile).
- * Allows independent creation of guardians (before linking to any student)
- * and supports tenant-wide or school-specific guardians (school_id nullable).
+ * Represents a guardian role for a person (linked via the central Profile model).
+ * A single Profile can act as a guardian for multiple students, possibly across different schools.
+ *
+ * Key Architecture Rules:
+ * - Personal data (name, DOB, gender, photo, phone, email, addresses) lives **only** in Profile.
+ * - Guardian model stores guardian-specific metadata and relationships.
+ * - Uses guardian_student pivot table with rich operational flags (is_primary_contact, can_pickup, etc.).
+ * - school_id is nullable → supports tenant-wide guardians (common when one parent has children in multiple schools).
  *
  * Features / Problems Solved:
- * - Independent guardian records: Can create guardians standalone (e.g., pre-register parents)
- *   and link them to students later — fits real admission workflows.
- * - Central personal data: Name, DOB, gender, phone, photo, addresses, email all live on
- *   Profile → no duplication across guardian-student links.
- * - Flexible relationships: belongsToMany Student via pivot (student_guardian) with
- *   relationship_type (father/mother/sponsor), is_primary (priority contact), notes.
- * - School scoping: BelongsToSchool trait (nullable school_id) → can be tenant-wide
- *   or tied to a specific school; queries respect current school context when school_id set.
- * - Extensibility: HasCustomFields for school-defined attributes (occupation, employer,
- *   income bracket, preferred contact method, legal documents, emergency priority, etc.).
- * - Dynamic enums: HasDynamicEnum ready for future fields (e.g., guardian_type: parent/sponsor/relative).
- * - Soft deletes: Archive inactive guardians without losing historical links.
- * - Performance: Indexes on foreign keys; prepared for HasTableQuery trait (advanced
- *   filtering, sorting, global search in guardian listings).
- * - Clean, explicit relationships: No polymorphism — direct belongsTo Profile.
+ * - Independent guardian creation (can register guardians before linking to any student).
+ * - Rich guardian-student relationship metadata critical for Nigerian schools (primary contact, pickup rights, emergency priority, portal access).
+ * - Full multi-tenant safety via BelongsToSchool trait (with nullable school_id).
+ * - Extensibility via HasCustomFields (occupation, employer, income, legal docs, etc.).
+ * - Dynamic enums ready for future fields.
+ * - Clean delegation of personal attributes to Profile.
  *
- * Fits into the User Management Module:
- * - Created via GuardianController (standalone registration) or inline during
- *   student enrollment (StudentEnrollmentModal.vue).
- * - Linked to students via pivot operations (AssignGuardianModal.vue).
- * - Never manipulates Profile directly — profile edits happen in guardian context
- *   or rare admin merge tool.
- * - Integrates with:
- *   - Frontend: GuardiansTable.vue (HasTableQuery-powered), GuardianFormModal.vue,
- *     AssignGuardianModal.vue (multi-select or inline create)
- *   - Backend: GuardianController for CRUD; pivot logic in StudentController or service
- *   - Other modules: Notifications (primary guardian priority), Emergency protocols
+ * Fits into the Student Management Module:
+ * - Created standalone or during student enrollment (StudentEnrollmentService / GuardianController).
+ * - Linked to students via StudentGuardianController and pivot operations.
+ * - Used in frontend: GuardianFormModal.vue, AssignGuardianModal.vue, GuardiansTable.vue, Student Show → Guardians tab.
+ * - Powers notifications, pickup authorization, emergency protocols, and parent portal access control.
  *
  * Important Conventions:
- * - Profile is the source of truth for personal data and avatar — Guardian model
- *   only owns guardian-specific metadata and relationships.
- * - No direct profile creation/editing from Guardian model/controller.
- * - school_id is nullable → supports cross-school guardians (common in family groups).
- * - Heavy reliance on custom fields → makes the model very adaptable without schema changes.
+ * - Never manipulate Profile data directly from Guardian.
+ * - All guardian-student linking logic should go through services (StudentGuardianService).
+ * - school_id can be null for cross-school guardians.
  */
 
 class Guardian extends Model
@@ -66,6 +58,8 @@ class Guardian extends Model
         BelongsToSchool,
         HasCustomFields,
         HasDynamicEnum,
+        Notifiable,
+        HasAddress,           // Guardians often need addresses (home, work, etc.)
         HasTableQuery;
 
     protected $fillable = [
@@ -74,18 +68,20 @@ class Guardian extends Model
         'notes',
     ];
 
-    // For global search / HasTableQuery trait
+    // For HasTableQuery trait – global search
     protected array $globalFilterFields = [
         'profile.first_name',
+        'profile.middle_name',
         'profile.last_name',
         'profile.phone',
+        'profile.email',
         'notes',
     ];
 
-    // Optional dynamic enum properties (if you add enum-like fields later)
+    // Dynamic enums (add fields here when you make them dynamic)
     public function getDynamicEnumProperties(): array
     {
-        return []; // e.g. ['guardian_type'] if added
+        return []; // e.g. ['guardian_type'] if needed later
     }
 
     // =================================================================
@@ -101,7 +97,7 @@ class Guardian extends Model
     }
 
     /**
-     * Optional school scoping (nullable — can be tenant-wide)
+     * The school this guardian record belongs to (nullable for tenant-wide guardians)
      */
     public function school(): BelongsTo
     {
@@ -109,43 +105,54 @@ class Guardian extends Model
     }
 
     /**
-     * All students/wards this guardian is responsible for
+     * All students (wards) this guardian is responsible for
+     * Uses the rich guardian_student pivot table
      */
     public function wards(): BelongsToMany
     {
-        return $this->belongsToMany(Student::class, 'student_guardian')
-                    ->withPivot('relationship_type', 'is_primary', 'notes')
-                    ->withTimestamps();
+        return $this->belongsToMany(Student::class, 'guardian_student')
+            ->withPivot([
+                'relationship',
+                'is_primary_contact',
+                'can_pickup',
+                'can_access_portal',
+                'is_emergency_contact',
+                'emergency_contact_priority',
+                'notes'
+            ])
+            ->withTimestamps();
     }
 
     /**
-     * Primary ward (convenience — e.g. for display or default contact)
+     * Primary ward (convenience accessor)
      */
-    public function primaryWard()
+    public function primaryWard(): ?Student
     {
-        return $this->wards()->wherePivot('is_primary', true)->first();
+        return $this->wards()
+            ->wherePivot('is_primary_contact', true)
+            ->first();
     }
 
     // =================================================================
-    // ACCESSORS (table/display helpers)
+    // ACCESSORS (for tables, cards, and display)
     // =================================================================
 
-    public function getFullNameAttribute()
+    public function getFullNameAttribute(): string
     {
         return $this->profile?->full_name ?? 'Unknown Guardian';
     }
 
-    public function getPhotoUrlAttribute()
+    public function getPhotoUrlAttribute(): string
     {
         return $this->profile?->photo_url ?? asset('images/avatars/default-male.png');
     }
 
-    public function getPhoneAttribute()
+    public function getPhoneAttribute(): ?string
     {
         return $this->profile?->phone;
     }
 
-    public function getEmailAttribute()
+    public function getEmailAttribute(): ?string
     {
         return $this->profile?->email ?? $this->profile?->user?->email;
     }
@@ -179,7 +186,7 @@ class Guardian extends Model
     // =================================================================
 
     /**
-     * Get primary phone (self → primary ward → any ward)
+     * Get best contact phone with fallback logic
      */
     public function getPrimaryContactPhone(): ?string
     {

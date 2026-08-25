@@ -95,7 +95,7 @@ const columns: ColumnDefinition<Exam>[] = [
         render: (row) => {
             const cfg = EXAM_STATUS_CONFIG[row.status as keyof typeof EXAM_STATUS_CONFIG];
             return {
-                component: Tag,
+                component: Tag as any,
                 props: {
                     value: cfg?.label ?? row.status,
                     severity: cfg?.severity ?? 'secondary',
@@ -124,6 +124,7 @@ const columns: ColumnDefinition<Exam>[] = [
         header: 'Progress',
         sortable: true,
         filterable: false,
+        // TODO: turn this into a componrnt that shows a progress bar + percentage, and maybe also a "Completed" badge at 100%
         render: (row) => {
             const pct = row.score_entry_progress ?? 0;
             return {
@@ -131,7 +132,7 @@ const columns: ColumnDefinition<Exam>[] = [
                 class: 'flex items-center gap-2 min-w-[100px]',
                 children: [
                     {
-                        component: ProgressBar,
+                        component: ProgressBar as any,
                         props: {
                             value: pct,
                             showValue: false,
@@ -224,7 +225,7 @@ const bulkActions: BulkAction<Exam>[] = [
         label: 'Delete',
         icon: 'pi pi-trash',
         severity: 'danger',
-        show: (rows) => rows.every(r => r.status === 'draft') && hasPermission('exams.delete'),
+        visible: (rows) => rows.every(r => r.status === 'draft') && hasPermission('exams.delete'),
         handler: (rows) => {
             deleteResource('exams', rows.map(r => r.id), {
                 onSuccess: () => tableRef.value?.refresh(),
@@ -484,10 +485,7 @@ const modalTitle = computed(() => isEditing.value ? 'Edit Exam' : 'Create Exam')
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                             Exam End Date
                         </label>
-                        <DatePicker
-                            v-model="form.exam_end_date"
-                            date-format="dd/mm/yy"
-                            show-button-bar
+                        <DatePicker v-model="form.exam_end_date" date-format="dd/mm/yy" show-button-bar
                             class="w-full"
                             show-icon
                         />

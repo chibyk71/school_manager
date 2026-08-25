@@ -1,226 +1,270 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Settings\Academic;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreSubjectRequest;
 use App\Http\Requests\UpdateSubjectRequest;
 use App\Models\Academic\Subject;
 use App\Models\SchoolSection;
+use App\Services\Academic\SubjectService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 /**
- * SubjectsController v1.0 – Production-Ready Subjects Management
+ * SubjectController v2.0 – Production-Ready Subjects Management
  *
- * Purpose:
- * Full CRUD for academic subjects with section assignment, elective flag, credit hours.
+ * Responsibilities (HTTP only — all domain logic lives in SubjectService):
+ * ─────────────────────────────────────────────────────────────────────────
+ * • index   – Serve the Inertia page or a JSON DataTable response
+ * • store   – Create a subject + sync sections via service
+ * • show    – Return a single subject as JSON (for edit-modal pre-fill)
+ * • update  – Update a subject + re-sync sections via service
+ * • destroy – Bulk soft-delete or force-delete via service
+ * • restore – Restore one soft-deleted subject via service
  *
- * Features / Problems Solved:
- * - Dynamic table query (search, filter by section, sort)
- * - Soft delete + restore
- * - Bulk delete
- * - Section many-to-many support
- * - Activity logging
- * - Permission checks via permitted()
- * - JSON support for DataTable
- * - Production-ready: validation via FormRequests, error handling, logging
+ * Authorization:
+ * ─────────────────────────────────────────────────────────────────────────
+ * Every action is gated through SubjectPolicy, registered in AuthServiceProvider.
+ * Gate::authorize() is used directly so Laravel automatically returns a 403
+ * JSON response for wantsJson() requests and a Symfony HttpException otherwise.
  *
- * Routes:
- * - index: settings.academic.subjects
- * - store/update/destroy/restore
+ * Response strategy:
+ * ─────────────────────────────────────────────────────────────────────────
+ * • wantsJson() → pure JSON (DataTable AJAX, modal submit, mobile API)
+ * • otherwise   → Inertia redirect with flash (web form fallback)
  *
- * Fits into the Settings Module:
- * - Navigation: Academic → Subjects
- * - Frontend: resources/js/Pages/Settings/Academic/Subjects.vue
+ * v2 Changes vs v1:
+ * ─────────────────────────────────────────────────────────────────────────
+ * • Moved to correct namespace: Settings\Academic (was root Controllers)
+ * • Replaced permitted() with Gate::authorize() + SubjectPolicy
+ * • Delegated all business logic to SubjectService (no direct Eloquent in store/update/destroy)
+ * • Wrapped responses in SubjectResource for consistent JSON shape
+ * • Added typeOptions / categoryOptions props (DynamicEnum-backed)
+ * • destroy() now goes through service (respects usage-guard, events, logging)
+ * • restore() now goes through service (conflict checks, fresh reload)
+ * • Replaced broad catch(\Exception) with \Throwable for completeness
+ * • Removed direct school_id injection (handled by BelongsToSchool + FormRequest)
  */
 class SubjectController extends Controller
 {
+    public function __construct(protected SubjectService $service) {}
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Index
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Display a listing of subjects with dynamic querying.
+     * List subjects with server-side DataTable support.
      *
-     * @param Request $request
-     * @param SchoolSection|null $schoolSection
-     * @return \Inertia\Response|\Illuminate\Http\JsonResponse
+     * Accepts an optional {schoolSection} route parameter to pre-filter
+     * subjects belonging to a specific section (nested resource pattern).
+     * Passes typeOptions / categoryOptions from DynamicEnum so the frontend
+     * modal dropdowns always show the school's custom values.
      */
     public function index(Request $request, ?SchoolSection $schoolSection = null)
     {
-        permitted('subjects.view', $request->wantsJson()); // Check permission
+        Gate::authorize('viewAny', Subject::class);
 
         try {
-            // Define extra fields for table query (e.g., related school section names)
             $extraFields = [
                 [
-                    'field' => 'school_section_names',
-                    'relation' => 'schoolSections',
+                    'field'        => 'school_section_names',
+                    'relation'     => 'schoolSections',
                     'relatedField' => 'name',
-                    'filterable' => true,
-                    'sortable' => false,
-                    'filterType' => 'text',
+                    'filterable'   => true,
+                    'sortable'     => false,
+                    'filterType'   => 'text',
                 ],
             ];
 
-            // Build query
             $query = Subject::with(['schoolSections:id,name'])
                 ->when($schoolSection, fn($q) => $q->inSection($schoolSection->id))
                 ->when($request->boolean('with_trashed'), fn($q) => $q->withTrashed());
 
-            // Apply dynamic table query (search, filter, sort, paginate)
-            $subjects = $query->tableQuery($request, $extraFields);
+            $result = $query->tableQuery($request, $extraFields);
 
             if ($request->wantsJson()) {
-                return response()->json($subjects);
+                return SubjectResource::collection($result['data'])
+                    ->additional(['meta' => collect($result)->except('data')]);
             }
 
-            return Inertia::render('Academic/Subjects', [
-                'schoolSection' => $schoolSection ? $schoolSection->only('id', 'name') : null,
-                'subjects' => $subjects,
-                'schoolSections' => SchoolSection::query()->select('id', 'name')->get(), // For dropdowns in UI
+            return Inertia::render('Settings/Academic/Subjects', [
+                'schoolSection'   => $schoolSection?->only('id', 'name'),
+                'subjects'        => $result,
+                'typeOptions'     => Subject::typeOptions(),
+                'categoryOptions' => Subject::categoryOptions(),
+                'schoolSections'  => SchoolSection::select('id', 'name')
+                    ->orderBy('name')
+                    ->get(),
                 'crumbs' => [
                     ['label' => 'Settings'],
                     ['label' => 'Academic'],
                     ['label' => 'Subjects'],
                 ],
             ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to fetch subjects: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('SubjectController@index failed', [
+                'error'             => $e->getMessage(),
+                'school_section_id' => $schoolSection?->id,
+            ]);
+
             return $request->wantsJson()
-                ? response()->json(['error' => 'Failed to fetch subjects'], 500)
-                : redirect()->back()->with(['error' => 'Failed to fetch subjects']);
+                ? response()->json(['error' => 'Failed to load subjects.'], 500)
+                : back()->with('error', 'Failed to load subjects.');
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Store
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Store a newly created subject in storage.
+     * Create a new subject.
      *
-     * @param StoreSubjectRequest $request
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     * FormRequest handles validation + school_id injection via prepareForValidation().
+     * SubjectService::create() handles the DB write, section sync, and events.
      */
     public function store(StoreSubjectRequest $request)
     {
-        permitted('subjects.create', $request->wantsJson()); // Check permission
+        Gate::authorize('create', Subject::class);
 
-        try {
-            $validated = $request->validated();
-            $school = GetSchoolModel();
-            $validated['school_id'] = $school->id; // Ensure school_id is set
-            $subject = Subject::create($validated);
-            if (!empty($validated['school_section'])) {
-                $subject->attachSections($validated['school_section']);
-            }
+        $result = $this->service->create($request->validated());
 
+        if (! $result['success']) {
             return $request->wantsJson()
-                ? response()->json(['message' => 'Subject created successfully'], 201)
-                : redirect()->route('subjects.index')->with(['success' => 'Subject created successfully']);
-        } catch (\Exception $e) {
-            Log::error('Failed to create subject: ' . $e->getMessage());
-            return $request->wantsJson()
-                ? response()->json(['error' => 'Failed to create subject'], 500)
-                : redirect()->back()->with(['error' => 'Failed to create subject'])->withInput();
+                ? response()->json(['error' => $result['message']], 422)
+                : back()->withInput()->with('error', $result['message']);
         }
+
+        $subject = $result['data']->load('schoolSections:id,name');
+
+        return $request->wantsJson()
+            ? response()->json([
+                'message' => $result['message'],
+                'subject' => new SubjectResource($subject),
+            ], 201)
+            : back()->with('success', $result['message']);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Show
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Display the specified subject.
-     *
-     * @param Request $request
-     * @param Subject $subject
-     * @return \Illuminate\Http\JsonResponse
+     * Return a single subject for edit-modal pre-fill (JSON only).
      */
-    public function show(Request $request, Subject $subject)
+    public function show(Subject $subject)
     {
-        permitted('subjects.view', true); // Check permission (JSON response)
+        Gate::authorize('view', $subject);
 
         try {
-            $subject->load(['schoolSections:id,name']);
-            return response()->json($subject);
-        } catch (\Exception $e) {
-            Log::error('Failed to fetch subject: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to fetch subject'], 500);
+            $subject->load('schoolSections:id,name');
+
+            return response()->json(new SubjectResource($subject));
+        } catch (\Throwable $e) {
+            Log::error('SubjectController@show failed', [
+                'subject_id' => $subject->id,
+                'error'      => $e->getMessage(),
+            ]);
+
+            return response()->json(['error' => 'Failed to load subject.'], 500);
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Update
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Update the specified subject in storage.
+     * Update an existing subject.
      *
-     * @param UpdateSubjectRequest $request
-     * @param Subject $subject
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     * Section sync is handled by SubjectService::update() — passing an empty
+     * school_section_ids array explicitly detaches all sections.
      */
     public function update(UpdateSubjectRequest $request, Subject $subject)
     {
-        permitted('subjects.update', $request->wantsJson()); // Check permission
+        Gate::authorize('update', $subject);
 
-        try {
-            $validated = $request->validated();
-            $subject->update($validated);
-            if (!empty($validated['school_section'])) {
-                $subject->syncSections($validated['school_section']);
-            } else {
-                $subject->schoolSections()->detach(); // Remove all sections if none provided
-            }
+        $result = $this->service->update($subject, $request->validated());
 
+        if (! $result['success']) {
             return $request->wantsJson()
-                ? response()->json(['message' => 'Subject updated successfully'])
-                : redirect()->route('subjects.index')->with(['success' => 'Subject updated successfully']);
-        } catch (\Exception $e) {
-            Log::error('Failed to update subject: ' . $e->getMessage());
-            return $request->wantsJson()
-                ? response()->json(['error' => 'Failed to update subject'], 500)
-                : redirect()->back()->with(['error' => 'Failed to update subject'])->withInput();
+                ? response()->json(['error' => $result['message']], 422)
+                : back()->withInput()->with('error', $result['message']);
         }
+
+        $updated = $result['data']->load('schoolSections:id,name');
+
+        return $request->wantsJson()
+            ? response()->json([
+                'message' => $result['message'],
+                'subject' => new SubjectResource($updated),
+            ])
+            : back()->with('success', $result['message']);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Destroy (bulk soft-delete or force-delete)
+    // ─────────────────────────────────────────────────────────────────────
+
     /**
-     * Remove the specified subject(s) from storage.
+     * Soft-delete or permanently delete one or more subjects.
      *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * Expects JSON body: { ids: string[], force?: boolean }
+     * Force-delete requires the 'forceDelete' policy ability.
      */
     public function destroy(Request $request)
     {
-        permitted('subjects.delete', true); // Check permission (JSON response)
-
         try {
             $request->validate([
-                'ids' => 'required|array',
+                'ids'   => 'required|array|min:1',
                 'ids.*' => 'exists:subjects,id',
+                'force' => 'sometimes|boolean',
             ]);
-
-            $forceDelete = $request->boolean('force');
-            $ids = $request->input('ids');
-            $deleted = $forceDelete
-                ? Subject::whereIn('id', $ids)->forceDelete()
-                : Subject::whereIn('id', $ids)->delete();
-
-            return response()->json([
-                'message' => $deleted ? 'Subject(s) deleted successfully' : 'No subjects were deleted',
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to delete subjects: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to delete subject(s)'], 500);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['error' => 'Invalid input.', 'errors' => $e->errors()], 422);
         }
+
+        $force = $request->boolean('force', false);
+
+        Gate::authorize($force ? 'forceDelete' : 'delete', Subject::class);
+
+        $result = $force
+            ? $this->service->bulkForceDelete($request->input('ids'))
+            : $this->service->bulkDelete($request->input('ids'));
+
+        return $result['success']
+            ? response()->json(['message' => $result['message']])
+            : response()->json(['error' => $result['message']], 422);
     }
 
-    /**
-     * Restore a soft-deleted subject.
-     *
-     * @param Request $request
-     * @param string $id
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function restore(Request $request, $id)
-    {
-        permitted('subjects.restore', true); // Check permission (JSON response)
+    // ─────────────────────────────────────────────────────────────────────
+    // Restore
+    // ─────────────────────────────────────────────────────────────────────
 
+    /**
+     * Restore a single soft-deleted subject (JSON only).
+     */
+    public function restore(string $id)
+    {
         try {
             $subject = Subject::withTrashed()->findOrFail($id);
-            $subject->restore();
-
-            return response()->json(['message' => 'Subject restored successfully']);
-        } catch (\Exception $e) {
-            Log::error('Failed to restore subject: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to restore subject'], 500);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
+            return response()->json(['error' => 'Subject not found.'], 404);
         }
+
+        Gate::authorize('restore', $subject);
+
+        $result = $this->service->restore($subject);
+
+        return $result['success']
+            ? response()->json([
+                'message' => $result['message'],
+                'subject' => new SubjectResource($result['data']),
+            ])
+            : response()->json(['error' => $result['message']], 422);
     }
 }
