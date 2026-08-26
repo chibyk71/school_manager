@@ -67,10 +67,14 @@ const toggle = (id: number) => {
 
 const onUseSuggestion = (c: TimetableConflict) => {
     const idx = selectedSuggestion.value[c.id] ?? 0;
+    const suggestion = (c.suggested_alternatives ?? [])[idx];
+    if (!suggestion) return;
     emit('resolve', {
         conflictId: c.id,
         strategy: 'use_suggestion',
         suggestionIndex: idx,
+        dayOfWeek: suggestion.day_of_week,
+        classPeriodId: suggestion.class_period_id,
     });
 };
 
@@ -121,31 +125,27 @@ const count = computed(() => props.conflicts?.length ?? 0);
                 {{ lastError }}
             </Message>
 
-            <div v-if="loading && !conflicts.length" class="py-8 text-center text-sm text-muted-color">
-                <i class="ti ti-loader animate-spin" /> Loading…
+            <div v-if="loading && !count" class="py-8 text-center text-sm text-muted-color">
+                Loading conflicts…
             </div>
 
-            <div
-                v-else-if="!conflicts.length"
-                class="py-8 text-center text-sm text-muted-color"
-            >
-                <i class="ti ti-check text-green-500 text-lg block mb-1" />
-                No unresolved conflicts
+            <div v-else-if="!count" class="py-8 text-center text-sm text-muted-color">
+                No unresolved conflicts.
             </div>
 
-            <ul v-else class="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+            <ul v-else class="space-y-2 max-h-[60vh] overflow-y-auto">
                 <li
                     v-for="c in conflicts"
                     :key="c.id"
-                    class="rounded-md border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900"
+                    class="rounded-md border border-surface-200 dark:border-surface-700 p-2.5"
                 >
                     <button
                         type="button"
-                        class="w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-surface-50 dark:hover:bg-surface-800/50"
+                        class="w-full text-left flex items-start gap-2"
                         @click="toggle(c.id)"
                     >
                         <i
-                            class="ti text-red-500 mt-0.5"
+                            class="ti mt-0.5"
                             :class="
                                 expandedId === c.id
                                     ? 'ti-chevron-down'
@@ -153,94 +153,64 @@ const count = computed(() => props.conflicts?.length ?? 0);
                             "
                         />
                         <div class="min-w-0 flex-1">
-                            <div class="text-xs font-semibold text-color line-clamp-2">
+                            <div class="text-xs font-semibold text-color">
                                 {{ typeLabel(c.conflict_type) }}
                             </div>
                             <div class="text-[11px] text-muted-color mt-0.5 line-clamp-2">
                                 {{ c.description }}
                             </div>
-                            <div class="flex flex-wrap gap-1 mt-1">
-                                <Tag
-                                    v-if="c.subject_name"
-                                    :value="c.subject_name"
-                                    severity="secondary"
-                                    class="text-[10px]"
-                                />
-                                <Tag
-                                    v-if="c.teacher_name"
-                                    :value="c.teacher_name"
-                                    severity="info"
-                                    class="text-[10px]"
-                                />
-                                <Tag
-                                    v-if="c.class_section_name"
-                                    :value="c.class_section_name"
-                                    severity="contrast"
-                                    class="text-[10px]"
-                                />
+                            <div class="text-[10px] text-muted-color mt-1">
+                                <span v-if="c.class_section_name">{{ c.class_section_name }} · </span>
+                                <span v-if="c.subject_name">{{ c.subject_name }} · </span>
+                                <span v-if="c.teacher_name">{{ c.teacher_name }} · </span>
+                                {{ dayLabel(c.day_of_week) }}
                             </div>
                         </div>
                     </button>
 
-                    <div
-                        v-if="expandedId === c.id"
-                        class="px-3 pb-3 pt-1 border-t border-surface-100 dark:border-surface-800 space-y-3"
-                    >
-                        <div class="text-[11px] text-muted-color">
-                            <span v-if="c.day_of_week != null">
-                                {{ dayLabel(c.day_of_week) }}
-                            </span>
-                            <span v-if="c.class_period_id != null">
-                                · Period #{{ c.class_period_id }}
-                            </span>
-                        </div>
-
-                        <!-- Use suggestion -->
-                        <div
-                            v-if="(c.suggested_alternatives?.length ?? 0) > 0"
-                            class="space-y-2"
-                        >
-                            <label class="text-xs font-medium text-muted-color">
-                                Suggested placement
-                            </label>
+                    <div v-if="expandedId === c.id" class="mt-3 space-y-3 pl-5">
+                        <div v-if="(c.suggested_alternatives ?? []).length">
+                            <label class="text-[11px] font-medium text-muted-color"
+                                >Suggested placement</label
+                            >
                             <Select
                                 v-model="selectedSuggestion[c.id]"
                                 :options="suggestionOptions(c)"
                                 option-label="label"
                                 option-value="value"
-                                placeholder="Choose suggestion"
-                                class="w-full text-sm"
+                                class="w-full mt-1"
                                 :disabled="isResolving(c.id)"
                             />
                             <Button
                                 label="Use suggestion"
                                 icon="ti ti-check"
                                 size="small"
-                                class="w-full"
+                                class="mt-2 w-full"
                                 :loading="isResolving(c.id)"
                                 @click="onUseSuggestion(c)"
                             />
                         </div>
 
-                        <!-- Skip without placing -->
-                        <div class="space-y-2">
-                            <label class="text-xs font-medium text-muted-color">
-                                Skip without placing
-                            </label>
+                        <div>
+                            <label class="text-[11px] font-medium text-muted-color"
+                                >Skip without placing</label
+                            >
+                            <p class="text-[10px] text-muted-color mt-0.5 mb-1">
+                                Resolves this conflict but leaves the assignment unscheduled.
+                            </p>
                             <Textarea
                                 v-model="skipNotes[c.id]"
                                 rows="2"
                                 class="w-full text-sm"
-                                placeholder="Reason required to skip…"
+                                placeholder="Reason required…"
                                 :disabled="isResolving(c.id)"
                             />
                             <Button
-                                label="Skip"
+                                label="Skip without placing"
                                 icon="ti ti-player-skip-forward"
                                 severity="secondary"
                                 size="small"
-                                outlined
-                                class="w-full"
+                                class="mt-2 w-full"
                                 :disabled="!(skipNotes[c.id] || '').trim()"
                                 :loading="isResolving(c.id)"
                                 @click="onSkip(c)"
