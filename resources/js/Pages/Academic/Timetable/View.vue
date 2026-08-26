@@ -6,24 +6,30 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import TimetableGrid from '@/Components/Timetable/TimetableGrid.vue';
 import {
     TIMETABLE_STATUS_CONFIG,
+    normalizeTimetable,
     type BuilderClassSection,
-    type PeriodScheduleDay,
     type Timetable,
+    type TimetableDaySchedule,
     type TimetableSlot,
+    type UUID,
 } from '@/types/timetable';
 
 const props = defineProps<{
     timetable: Timetable;
     slots: TimetableSlot[];
     classSections?: BuilderClassSection[];
-    periodSchedules?: PeriodScheduleDay[];
+    periodSchedules?: TimetableDaySchedule[];
     filter?: {
         class_section_id?: string | null;
         teacher_id?: string | number | null;
     };
 }>();
 
-const selectedSectionId = ref<string | null>(
+const tt = computed(() =>
+    normalizeTimetable(props.timetable as Timetable & Record<string, unknown>),
+);
+
+const selectedSectionId = ref<UUID | null>(
     props.filter?.class_section_id ?? props.classSections?.[0]?.id ?? null,
 );
 
@@ -60,7 +66,7 @@ const filteredSlots = computed(() => {
 });
 
 const statusCfg = computed(
-    () => TIMETABLE_STATUS_CONFIG[props.timetable.status] ?? TIMETABLE_STATUS_CONFIG.active,
+    () => TIMETABLE_STATUS_CONFIG[tt.value.status] ?? TIMETABLE_STATUS_CONFIG.active,
 );
 
 const goBack = () => router.visit('/timetables');
@@ -68,7 +74,7 @@ const goBack = () => router.visit('/timetables');
 
 <template>
     <AuthenticatedLayout
-        :title="timetable.title"
+        :title="tt.title"
         :crumb="[
             { label: 'Dashboard', url: '/dashboard' },
             { label: 'Academic' },
@@ -87,12 +93,12 @@ const goBack = () => router.visit('/timetables');
         <div class="flex flex-wrap items-center gap-3 mb-4">
             <Tag :value="statusCfg.label" :severity="statusCfg.severity" />
             <span class="text-sm text-muted-color">
-                {{ timetable.section_name }} · {{ timetable.term_name }}
+                {{ tt.school_section_name }} · {{ tt.term_name }}
             </span>
             <span class="text-xs text-muted-color">
-                {{ timetable.effective_from }}
-                <template v-if="timetable.effective_to">
-                    → {{ timetable.effective_to }}
+                {{ tt.effective_from }}
+                <template v-if="tt.effective_to">
+                    → {{ tt.effective_to }}
                 </template>
             </span>
         </div>
@@ -128,8 +134,8 @@ const goBack = () => router.visit('/timetables');
 
                 <TimetableGrid
                     :slots="filteredSlots"
-                    :period-schedules="periodSchedules ?? []"
-                    :working-days="timetable.working_days"
+                    :period-schedules="periodSchedules ?? tt.day_schedules ?? []"
+                    :working-days="tt.working_days"
                     :class-section-id="selectedSectionId"
                     :read-only="true"
                 />
