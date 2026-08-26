@@ -2,31 +2,34 @@
 import { computed, ref, toRef, watch } from 'vue';
 import TimetableSlotCell from './TimetableSlotCell.vue';
 import { useTimetableGrid } from '@/composables/useTimetableGrid';
-import { DAY_NAMES, type PeriodScheduleDay, type TimetableSlot } from '@/types/timetable';
+import {
+    DAY_NAMES,
+    type SlotMovePayload,
+    type TimetableDaySchedule,
+    type TimetableSlot,
+    type UUID,
+} from '@/types/timetable';
 
 const props = withDefaults(
     defineProps<{
         slots: TimetableSlot[];
-        periodSchedules: PeriodScheduleDay[];
+        periodSchedules: TimetableDaySchedule[];
         workingDays?: number[];
-        classSectionId?: string | null;
+        classSectionId?: UUID | null;
         readOnly?: boolean;
         showDayHeaders?: boolean;
-        compact?: boolean;
     }>(),
     {
         workingDays: () => [],
         classSectionId: null,
         readOnly: false,
         showDayHeaders: true,
-        compact: false,
     },
 );
 
 const emit = defineEmits<{
     'slot-click': [slot: TimetableSlot | null, day: number, periodId: number];
-    'slot-move': [payload: { slotId: string | number; fromDay: number; fromPeriodId: number; toDay: number; toPeriodId: number }];
-    'slot-drop-empty': [payload: { day: number; periodId: number; slotId: string | number }];
+    'slot-move': [payload: SlotMovePayload];
 }>();
 
 const slotsRef = toRef(props, 'slots');
@@ -36,10 +39,13 @@ const daysRef = computed(() => props.workingDays);
 
 const {
     workingDays,
-    allPeriods,
+    periodRows,
+    rowLabel,
     grid,
+    duplicateKeys,
     moveSlotOptimistic,
     setSlots,
+    reconcileSlots,
     syncFromProps,
 } = useTimetableGrid(slotsRef, schedulesRef, {
     classSectionId: sectionRef,
@@ -56,13 +62,11 @@ watch(
 );
 
 const dragOverKey = ref<string | null>(null);
-const draggingSlotId = ref<string | number | null>(null);
 
 const dayLabel = (day: number) => DAY_NAMES[day] ?? `Day ${day}`;
 
 const onCellDragStart = (e: DragEvent, slot: TimetableSlot) => {
     if (props.readOnly) return;
-    draggingSlotId.value = slot.id;
     e.dataTransfer?.setData(
         'application/json',
         JSON.stringify({
@@ -76,52 +80,70 @@ const onCellDragStart = (e: DragEvent, slot: TimetableSlot) => {
 
 const onCellDragEnd = () => {
     dragOverKey.value = null;
-    draggingSlotId.value = null;
 };
 
 const onCellDragOver = (day: number, periodId: number) => {
-    if (props.readOnly) return;
+    if (props.readOnly || !periodId) return;
     dragOverKey.value = `${day}:${periodId}`;
 };
 
-const onCellDrop = (e: DragEvent, day: number, periodId: number, isBreak: boolean) => {
-    if (props.readOnly || isBreak) return;
+const onCellDrop = (
+    e: DragEvent,
+    day: number,
+    periodId: number,
+    isBreak: boolean,
+    hasSchedule: boolean,
+) => {
+    if (props.readOnly || isBreak || !hasSchedule || !periodId) return;
     e.preventDefault();
     dragOverKey.value = null;
 
-    let payload: { slotId: string | number; fromDay: number; fromPeriodId: number } | null = null;
+    let data: { slotId: string; fromDay: number; fromPeriodId: number } | null = null;
     try {
         const raw = e.dataTransfer?.getData('application/json');
-        if (raw) payload = JSON.parse(raw);
+        if (raw) data = JSON.parse(raw);
     } catch {
         /* ignore */
     }
-    if (!payload?.slotId) return;
+    if (!data?.slotId) return;
 
-    if (payload.fromDay === day && Number(payload.fromPeriodId) === Number(periodId)) {
+    if (data.fromDay === day && Number(data.fromPeriodId) === Number(periodId)) {
         return;
     }
 
-    moveSlotOptimistic(payload.slotId, day, periodId);
+    const { rollback } = moveSlotOptimistic(data.slotId as UUID, day, periodId);
+
     emit('slot-move', {
-        slotId: payload.slotId,
-        fromDay: payload.fromDay,
-        fromPeriodId: payload.fromPeriodId,
+        slotId: data.slotId as UUID,
+        fromDay: data.fromDay,
+        fromPeriodId: data.fromPeriodId,
         toDay: day,
         toPeriodId: periodId,
+        rollback,
     });
-    draggingSlotId.value = null;
 };
 
 const onCellClick = (slot: TimetableSlot | null, day: number, periodId: number) => {
+    if (!periodId) return;
     emit('slot-click', slot, day, periodId);
 };
 
-defineExpose({ moveSlotOptimistic, setSlots });
+defineExpose({
+    moveSlotOptimistic,
+    setSlots,
+    reconcileSlots,
+});
 </script>
 
 <template>
     <div class="timetable-grid w-full overflow-x-auto rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900">
+        <div
+            v-if="duplicateKeys.length"
+            class="px-3 py-2 text-xs bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-b border-red-200 dark:border-red-800"
+        >
+            <i class="ti ti-alert-triangle" />
+            {{ duplicateKeys.length }} cell(s) have duplicate slots - data integrity issue.
+        </div>
         <table class="w-full border-collapse text-sm min-w-[640px]">
             <thead v-if="showDayHeaders">
                 <tr class="bg-surface-50 dark:bg-surface-800">
@@ -142,23 +164,23 @@ defineExpose({ moveSlotOptimistic, setSlots });
             <tbody>
                 <tr
                     v-for="(row, rowIdx) in grid"
-                    :key="allPeriods[rowIdx]?.id ?? rowIdx"
+                    :key="periodRows[rowIdx]"
                     class="border-b border-surface-100 dark:border-surface-800 last:border-b-0"
                 >
                     <td
                         class="sticky left-0 z-10 bg-surface-0 dark:bg-surface-900 px-3 py-2 align-top border-r border-surface-200 dark:border-surface-700"
                     >
                         <div class="text-xs font-semibold text-color">
-                            {{ allPeriods[rowIdx]?.name ?? `P${rowIdx + 1}` }}
+                            {{ rowLabel(periodRows[rowIdx]).name }}
                         </div>
                         <div
-                            v-if="allPeriods[rowIdx] && !allPeriods[rowIdx].is_break"
+                            v-if="!rowLabel(periodRows[rowIdx]).isBreak && rowLabel(periodRows[rowIdx]).duration"
                             class="text-[10px] text-muted-color mt-0.5"
                         >
-                            {{ allPeriods[rowIdx].duration_minutes }}m
+                            {{ rowLabel(periodRows[rowIdx]).duration }}m
                         </div>
                         <div
-                            v-else-if="allPeriods[rowIdx]?.is_break"
+                            v-else-if="rowLabel(periodRows[rowIdx]).isBreak"
                             class="text-[10px] text-muted-color mt-0.5"
                         >
                             Break
@@ -167,26 +189,30 @@ defineExpose({ moveSlotOptimistic, setSlots });
 
                     <td
                         v-for="cell in row"
-                        :key="`${cell.day}-${cell.periodId}`"
+                        :key="`${cell.day}-${cell.periodId}-${periodRows[rowIdx]}`"
                         class="p-1 align-top"
-                        :class="{ 'bg-surface-50/50 dark:bg-surface-800/30': cell.isBreak }"
+                        :class="{
+                            'bg-surface-50/50 dark:bg-surface-800/30': cell.isBreak,
+                            'bg-surface-100/30 dark:bg-surface-900/20': !cell.hasSchedule || !cell.period,
+                        }"
                     >
                         <TimetableSlotCell
                             :slot="cell.slot"
-                            :is-break="cell.isBreak"
-                            :period-name="cell.period?.name"
+                            :period="cell.period"
                             :read-only="readOnly"
                             :has-conflict="cell.hasConflict"
+                            :is-duplicate="cell.isDuplicate"
+                            :unavailable="!cell.hasSchedule || !cell.period"
                             :is-drag-over="dragOverKey === `${cell.day}:${cell.periodId}`"
                             @click="onCellClick($event, cell.day, cell.periodId)"
                             @dragstart="onCellDragStart"
                             @dragend="onCellDragEnd"
                             @dragover="onCellDragOver(cell.day, cell.periodId)"
-                            @drop="onCellDrop($event, cell.day, cell.periodId, cell.isBreak)"
+                            @drop="onCellDrop($event, cell.day, cell.periodId, cell.isBreak, cell.hasSchedule)"
                         />
                     </td>
                 </tr>
-                <tr v-if="!allPeriods.length">
+                <tr v-if="!periodRows.length">
                     <td
                         :colspan="workingDays.length + 1"
                         class="px-4 py-12 text-center text-muted-color"
