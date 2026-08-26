@@ -214,6 +214,10 @@ Route::post('promotions/{batch}/bulk-override', [PromotionBatchController::class
     ->name('promotions.bulk-override');
 
 Route::resource('timetables', TimeTableController::class);
+Route::post('timetables/{timetable}/generate', [TimeTableController::class, 'generate'])
+    ->name('timetables.generate');
+Route::post('timetables/{timetable}/activate', [TimeTableController::class, 'activate'])
+    ->name('timetables.activate');
 Route::resource('timetable-details', TimeTableDetailController::class);
 Route::resource('assignments', AssignmentController::class);
 
