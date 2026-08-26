@@ -239,7 +239,62 @@ class TimeTableController extends Controller
     public function generate(Request $request, TimeTable $timetable)
     {
         Gate::authorize('update', $timetable);
-        GenerateTimeTableEntries::dispatch($timetable, $request->boolean('dry_run'));
-        return response()->json(['message' => 'Timetable generation queued']);
+
+        try {
+            GenerateTimeTableEntries::dispatch($timetable, $request->boolean('dry_run'));
+
+            if ($request->wantsJson()) {
+                return response()->json(['message' => 'Timetable generation queued']);
+            }
+
+            return redirect()
+                ->back()
+                ->with('success', 'Timetable generation queued');
+        } catch (\Exception $e) {
+            Log::error('Failed to queue timetable generation: ' . $e->getMessage());
+
+            if ($request->wantsJson()) {
+                return response()->json(['error' => 'Failed to queue timetable generation'], 500);
+            }
+
+            return redirect()->back()->with('error', 'Failed to queue timetable generation');
+        }
+    }
+
+    /**
+     * Activate a draft timetable (archives any currently active one for the same section+term).
+     */
+    public function activate(Request $request, TimeTable $timetable)
+    {
+        Gate::authorize('update', $timetable);
+
+        try {
+            $timetable->activate();
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Timetable activated successfully',
+                    'data' => $timetable->fresh(),
+                ]);
+            }
+
+            return redirect()
+                ->back()
+                ->with('success', 'Timetable activated successfully');
+        } catch (\RuntimeException $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return redirect()->back()->with('error', $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('Failed to activate timetable: ' . $e->getMessage());
+
+            if ($request->wantsJson()) {
+                return response()->json(['error' => 'Failed to activate timetable'], 500);
+            }
+
+            return redirect()->back()->with('error', 'Failed to activate timetable');
+        }
     }
 }
