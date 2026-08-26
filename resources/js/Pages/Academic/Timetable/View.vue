@@ -8,14 +8,14 @@ import {
     TIMETABLE_STATUS_CONFIG,
     normalizeTimetable,
     type BuilderClassSection,
-    type Timetable,
+    type RawTimetableResource,
     type TimetableDaySchedule,
     type TimetableSlot,
     type UUID,
 } from '@/types/timetable';
 
 const props = defineProps<{
-    timetable: Timetable;
+    timetable: RawTimetableResource;
     slots: TimetableSlot[];
     classSections?: BuilderClassSection[];
     periodSchedules?: TimetableDaySchedule[];
@@ -25,12 +25,10 @@ const props = defineProps<{
     };
 }>();
 
-const tt = computed(() =>
-    normalizeTimetable(props.timetable as Timetable & Record<string, unknown>),
-);
+const tt = computed(() => normalizeTimetable(props.timetable));
 
 const selectedSectionId = ref<UUID | null>(
-    props.filter?.class_section_id ?? props.classSections?.[0]?.id ?? null,
+    (props.filter?.class_section_id as UUID | null) ?? null,
 );
 
 const teacherFilter = ref<string | number | null>(props.filter?.teacher_id ?? null);
@@ -97,9 +95,7 @@ const goBack = () => router.visit('/timetables');
             </span>
             <span class="text-xs text-muted-color">
                 {{ tt.effective_from }}
-                <template v-if="tt.effective_to">
-                    → {{ tt.effective_to }}
-                </template>
+                <template v-if="tt.effective_to"> → {{ tt.effective_to }} </template>
             </span>
         </div>
 
@@ -136,7 +132,6 @@ const goBack = () => router.visit('/timetables');
                     :slots="filteredSlots"
                     :period-schedules="periodSchedules ?? tt.day_schedules ?? []"
                     :working-days="tt.working_days"
-                    :class-section-id="selectedSectionId"
                     :read-only="true"
                 />
             </template>
