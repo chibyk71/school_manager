@@ -1,72 +1,60 @@
 <script setup lang="ts">
-import { computed, ref, toRef, watch } from 'vue';
+import { computed, ref, toRef } from 'vue';
 import TimetableSlotCell from './TimetableSlotCell.vue';
 import { useTimetableGrid } from '@/composables/useTimetableGrid';
 import {
     DAY_NAMES,
+    type NumericId,
     type SlotMovePayload,
     type TimetableDaySchedule,
     type TimetableSlot,
-    type UUID,
 } from '@/types/timetable';
 
 const props = withDefaults(
     defineProps<{
         slots: TimetableSlot[];
         periodSchedules: TimetableDaySchedule[];
+        /** undefined = infer; [] = none; [n,…] = explicit */
         workingDays?: number[];
-        classSectionId?: UUID | null;
         readOnly?: boolean;
+        /** Disable drag/drop (e.g. while a move is saving) */
+        disabled?: boolean;
         showDayHeaders?: boolean;
     }>(),
     {
-        workingDays: () => [],
-        classSectionId: null,
+        workingDays: undefined,
         readOnly: false,
+        disabled: false,
         showDayHeaders: true,
     },
 );
 
 const emit = defineEmits<{
-    'slot-click': [slot: TimetableSlot | null, day: number, periodId: number];
+    'slot-click': [slot: TimetableSlot | null, day: number, periodId: NumericId | null];
     'slot-move': [payload: SlotMovePayload];
 }>();
 
 const slotsRef = toRef(props, 'slots');
 const schedulesRef = toRef(props, 'periodSchedules');
-const sectionRef = computed(() => props.classSectionId);
 const daysRef = computed(() => props.workingDays);
 
-const {
-    workingDays,
-    periodRows,
-    rowLabel,
-    grid,
-    duplicateKeys,
-    moveSlotOptimistic,
-    setSlots,
-    reconcileSlots,
-    syncFromProps,
-} = useTimetableGrid(slotsRef, schedulesRef, {
-    classSectionId: sectionRef,
-    workingDays: daysRef,
-});
-
-watch(
-    () => props.slots,
-    () => {
-        setSlots(props.slots);
-        syncFromProps();
-    },
-    { deep: true },
+const { workingDays, periodRows, rowLabel, grid, duplicateKeys } = useTimetableGrid(
+    slotsRef,
+    schedulesRef,
+    { workingDays: daysRef },
 );
 
 const dragOverKey = ref<string | null>(null);
 
 const dayLabel = (day: number) => DAY_NAMES[day] ?? `Day ${day}`;
 
+const interactionLocked = computed(() => props.readOnly || props.disabled);
+
 const onCellDragStart = (e: DragEvent, slot: TimetableSlot) => {
-    if (props.readOnly) return;
+    if (interactionLocked.value) {
+        e.preventDefault();
+        return;
+    }
     e.dataTransfer?.setData(
         'application/json',
         JSON.stringify({
@@ -82,19 +70,19 @@ const onCellDragEnd = () => {
     dragOverKey.value = null;
 };
 
-const onCellDragOver = (day: number, periodId: number) => {
-    if (props.readOnly || !periodId) return;
+const onCellDragOver = (day: number, periodId: NumericId | null) => {
+    if (interactionLocked.value || periodId == null) return;
     dragOverKey.value = `${day}:${periodId}`;
 };
 
 const onCellDrop = (
     e: DragEvent,
     day: number,
-    periodId: number,
+    periodId: NumericId | null,
     isBreak: boolean,
     hasSchedule: boolean,
 ) => {
-    if (props.readOnly || isBreak || !hasSchedule || !periodId) return;
+    if (interactionLocked.value || isBreak || !hasSchedule || periodId == null) return;
     e.preventDefault();
     dragOverKey.value = null;
 
@@ -111,38 +99,32 @@ const onCellDrop = (
         return;
     }
 
-    const { rollback } = moveSlotOptimistic(data.slotId as UUID, day, periodId);
-
+    // Parent owns optimistic update + rollback
     emit('slot-move', {
-        slotId: data.slotId as UUID,
+        slotId: data.slotId,
         fromDay: data.fromDay,
         fromPeriodId: data.fromPeriodId,
         toDay: day,
         toPeriodId: periodId,
-        rollback,
     });
 };
 
-const onCellClick = (slot: TimetableSlot | null, day: number, periodId: number) => {
-    if (!periodId) return;
+const onCellClick = (slot: TimetableSlot | null, day: number, periodId: NumericId | null) => {
     emit('slot-click', slot, day, periodId);
 };
-
-defineExpose({
-    moveSlotOptimistic,
-    setSlots,
-    reconcileSlots,
-});
 </script>
 
 <template>
-    <div class="timetable-grid w-full overflow-x-auto rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900">
+    <div
+        class="timetable-grid w-full overflow-x-auto rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-900"
+        :class="{ 'opacity-70 pointer-events-none': disabled }"
+    >
         <div
             v-if="duplicateKeys.length"
-            class="px-3 py-2 text-xs bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-b border-red-200 dark:border-red-800"
+            class="px-3 py-2 text-xs bg-orange-50 dark:bg-orange-950/40 text-orange-800 dark:text-orange-200 border-b border-orange-200 dark:border-orange-800"
         >
             <i class="ti ti-alert-triangle" />
-            {{ duplicateKeys.length }} cell(s) have duplicate slots - data integrity issue.
+            {{ duplicateKeys.length }} cell(s) have duplicate slots — data integrity issue.
         </div>
         <table class="w-full border-collapse text-sm min-w-[640px]">
             <thead v-if="showDayHeaders">
@@ -174,13 +156,7 @@ defineExpose({
                             {{ rowLabel(periodRows[rowIdx]).name }}
                         </div>
                         <div
-                            v-if="!rowLabel(periodRows[rowIdx]).isBreak && rowLabel(periodRows[rowIdx]).duration"
-                            class="text-[10px] text-muted-color mt-0.5"
-                        >
-                            {{ rowLabel(periodRows[rowIdx]).duration }}m
-                        </div>
-                        <div
-                            v-else-if="rowLabel(periodRows[rowIdx]).isBreak"
+                            v-if="rowLabel(periodRows[rowIdx]).isBreak"
                             class="text-[10px] text-muted-color mt-0.5"
                         >
                             Break
@@ -189,7 +165,7 @@ defineExpose({
 
                     <td
                         v-for="cell in row"
-                        :key="`${cell.day}-${cell.periodId}-${periodRows[rowIdx]}`"
+                        :key="`${cell.day}-${cell.periodId ?? 'x'}-${periodRows[rowIdx]}`"
                         class="p-1 align-top"
                         :class="{
                             'bg-surface-50/50 dark:bg-surface-800/30': cell.isBreak,
@@ -198,17 +174,29 @@ defineExpose({
                     >
                         <TimetableSlotCell
                             :slot="cell.slot"
+                            :extra-slots="cell.extraSlots"
                             :period="cell.period"
-                            :read-only="readOnly"
+                            :read-only="interactionLocked"
                             :has-conflict="cell.hasConflict"
                             :is-duplicate="cell.isDuplicate"
                             :unavailable="!cell.hasSchedule || !cell.period"
-                            :is-drag-over="dragOverKey === `${cell.day}:${cell.periodId}`"
+                            :is-drag-over="
+                                cell.periodId != null &&
+                                dragOverKey === `${cell.day}:${cell.periodId}`
+                            "
                             @click="onCellClick($event, cell.day, cell.periodId)"
                             @dragstart="onCellDragStart"
                             @dragend="onCellDragEnd"
                             @dragover="onCellDragOver(cell.day, cell.periodId)"
-                            @drop="onCellDrop($event, cell.day, cell.periodId, cell.isBreak, cell.hasSchedule)"
+                            @drop="
+                                onCellDrop(
+                                    $event,
+                                    cell.day,
+                                    cell.periodId,
+                                    cell.isBreak,
+                                    cell.hasSchedule,
+                                )
+                            "
                         />
                     </td>
                 </tr>
