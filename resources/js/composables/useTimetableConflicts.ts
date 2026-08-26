@@ -20,6 +20,7 @@ export interface ResolveConflictPayload {
 export interface ResolveResult {
     ok: boolean;
     slot?: TimetableSlot | null;
+    conflict?: TimetableConflict | null;
     message?: string;
 }
 
@@ -109,18 +110,26 @@ export function useTimetableConflicts(
                 { headers: { Accept: 'application/json' } },
             );
 
+            // Prefer canonical conflict from backend; fall back to local mark only if absent
+            const rawConflict =
+                data?.conflict ?? data?.data?.conflict ?? null;
             const idx = conflicts.value.findIndex((c) => c.id === conflictId);
             if (idx !== -1) {
                 const next = [...conflicts.value];
-                next[idx] = {
-                    ...next[idx],
-                    resolved_at: new Date().toISOString(),
-                    resolution_notes: payload.resolution_notes ?? null,
-                };
+                if (rawConflict && typeof rawConflict === 'object') {
+                    next[idx] = { ...next[idx], ...rawConflict };
+                } else {
+                    next[idx] = {
+                        ...next[idx],
+                        resolved_at: next[idx].resolved_at ?? new Date().toISOString(),
+                        resolution_notes:
+                            payload.resolution_notes ?? next[idx].resolution_notes ?? null,
+                    };
+                }
                 conflicts.value = next;
             }
 
-            const rawSlot = data?.slot ?? data?.data?.slot ?? data?.data ?? null;
+            const rawSlot = data?.slot ?? data?.data?.slot ?? null;
             const slot = (rawSlot && rawSlot.id ? rawSlot : null) as TimetableSlot | null;
 
             toast.add({
@@ -130,7 +139,11 @@ export function useTimetableConflicts(
                 life: 3000,
             });
 
-            return { ok: true, slot };
+            return {
+                ok: true,
+                slot,
+                conflict: (rawConflict as TimetableConflict | null) ?? null,
+            };
         } catch (err: unknown) {
             const message =
                 (err as { response?: { data?: { message?: string } } })?.response?.data
@@ -147,10 +160,15 @@ export function useTimetableConflicts(
         }
     };
 
-    const resolveWithSuggestion = (conflictId: number, suggestionIndex = 0) =>
+    const resolveWithSuggestion = (
+        conflictId: number,
+        suggestion: { day_of_week: number; class_period_id: number; index?: number },
+    ) =>
         resolveConflict(conflictId, {
             resolution_strategy: 'use_suggestion',
-            suggestion_index: suggestionIndex,
+            suggestion_index: suggestion.index,
+            day_of_week: suggestion.day_of_week,
+            class_period_id: suggestion.class_period_id,
         });
 
     const resolveManual = (
