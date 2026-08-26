@@ -202,8 +202,49 @@ const onConflictResolve = async (payload: {
     }
 };
 
+/** Poll Inertia props until slots change or attempts exhausted. */
+const pollAfterGenerate = (baselineCount: number) => {
+    let attempts = 0;
+    const maxAttempts = 10;
+    const intervalMs = 3000;
+
+    const tick = () => {
+        attempts += 1;
+        router.reload({
+            only: ['slots', 'timetable', 'conflicts'],
+            preserveScroll: true,
+            onFinish: () => {
+                const grew = slots.value.length !== baselineCount;
+                if (grew) {
+                    toast.add({
+                        severity: 'success',
+                        summary: 'Timetable updated',
+                        detail: 'Generated slots are now visible.',
+                        life: 3000,
+                    });
+                    fetchConflicts();
+                    return;
+                }
+                if (attempts >= maxAttempts) {
+                    toast.add({
+                        severity: 'info',
+                        summary: 'Still generating',
+                        detail: 'Refresh the page if new slots do not appear.',
+                        life: 6000,
+                    });
+                    return;
+                }
+                window.setTimeout(tick, intervalMs);
+            },
+        });
+    };
+
+    window.setTimeout(tick, intervalMs);
+};
+
 const runGenerate = () => {
     generating.value = true;
+    const baselineCount = slots.value.length;
     router.post(
         `/timetables/${tt.value.id}/generate`,
         {},
@@ -216,9 +257,10 @@ const runGenerate = () => {
                 toast.add({
                     severity: 'info',
                     summary: 'Generation queued',
-                    detail: 'Slots will appear when generation completes.',
+                    detail: 'Waiting for slots to appear — this page will refresh automatically.',
                     life: 4000,
                 });
+                pollAfterGenerate(baselineCount);
             },
         },
     );
