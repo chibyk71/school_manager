@@ -5,15 +5,18 @@ import type { ClassPeriodRef, TimetableSlot } from '@/types/timetable';
 const props = withDefaults(
     defineProps<{
         slot?: TimetableSlot | null;
+        extraSlots?: TimetableSlot[];
         period?: ClassPeriodRef | null;
         readOnly?: boolean;
         isDragOver?: boolean;
         hasConflict?: boolean;
         isDuplicate?: boolean;
+        /** Day has no period at this visual row */
         unavailable?: boolean;
     }>(),
     {
         slot: null,
+        extraSlots: () => [],
         period: null,
         readOnly: false,
         isDragOver: false,
@@ -32,10 +35,13 @@ const emit = defineEmits<{
 }>();
 
 const isBreak = computed(() => !!props.period?.is_break);
-const isConflict = computed(
-    () => props.hasConflict || props.isDuplicate || !!props.slot?.has_conflict,
-);
 const subjectColor = computed(() => props.slot?.subject_color || '#6366f1');
+const allSlots = computed(() => {
+    const list: TimetableSlot[] = [];
+    if (props.slot) list.push(props.slot);
+    for (const s of props.extraSlots ?? []) list.push(s);
+    return list;
+});
 
 const cellClasses = computed(() => {
     if (props.unavailable) {
@@ -44,7 +50,10 @@ const cellClasses = computed(() => {
     if (isBreak.value) {
         return 'bg-surface-100 dark:bg-surface-800 text-muted-color border-dashed border-surface-300 dark:border-surface-600';
     }
-    if (isConflict.value) {
+    if (props.isDuplicate) {
+        return 'bg-orange-50 dark:bg-orange-950/40 border-orange-400 dark:border-orange-600 ring-1 ring-orange-300 dark:ring-orange-700';
+    }
+    if (props.hasConflict || props.slot?.has_conflict) {
         return 'bg-red-50 dark:bg-red-950/40 border-red-400 dark:border-red-600 ring-1 ring-red-300 dark:ring-red-700';
     }
     if (props.slot) {
@@ -80,7 +89,8 @@ const onDragOver = (e: DragEvent) => {
         :class="[
             cellClasses,
             {
-                'cursor-grab active:cursor-grabbing': slot && !readOnly && !isBreak && !unavailable,
+                'cursor-grab active:cursor-grabbing':
+                    slot && !readOnly && !isBreak && !unavailable,
                 'cursor-default': readOnly || isBreak || unavailable,
                 'ring-2 ring-primary-400 ring-offset-1': isDragOver && !isBreak && !unavailable,
                 'opacity-60': isBreak,
@@ -94,7 +104,9 @@ const onDragOver = (e: DragEvent) => {
         @dragover="onDragOver"
     >
         <template v-if="unavailable">
-            <div class="flex h-full min-h-[3.5rem] items-center justify-center text-[10px] text-muted-color/50">
+            <div
+                class="flex h-full min-h-[3.5rem] items-center justify-center text-[10px] text-muted-color/50"
+            >
                 Not scheduled
             </div>
         </template>
@@ -110,41 +122,53 @@ const onDragOver = (e: DragEvent) => {
                 class="absolute left-0 top-0 bottom-0 w-1 rounded-l-md"
                 :style="{ backgroundColor: subjectColor }"
             />
-            <div class="pl-1.5">
-                <div class="text-xs font-semibold leading-tight text-color line-clamp-2">
-                    {{ slot.subject_name || 'Subject' }}
-                </div>
+            <div class="pl-1.5 space-y-1">
                 <div
-                    v-if="slot.teacher_name"
-                    class="mt-0.5 text-[11px] text-muted-color truncate"
-                    :title="slot.teacher_full_name || slot.teacher_name"
+                    v-for="(s, i) in allSlots"
+                    :key="s.id"
+                    :class="i > 0 ? 'pt-1 border-t border-orange-200 dark:border-orange-800' : ''"
                 >
-                    {{ slot.teacher_name }}
-                </div>
-                <div
-                    v-if="slot.is_manually_placed"
-                    class="mt-1 inline-flex items-center gap-0.5 text-[10px] text-primary-600 dark:text-primary-400"
-                    title="Manually placed"
-                >
-                    <i class="ti ti-hand-finger text-[10px]" />
-                    Manual
+                    <div class="text-xs font-semibold leading-tight text-color line-clamp-2">
+                        {{ s.subject_name || 'Subject' }}
+                    </div>
+                    <div
+                        v-if="s.teacher_name"
+                        class="mt-0.5 text-[11px] text-muted-color truncate"
+                        :title="s.teacher_full_name || s.teacher_name"
+                    >
+                        {{ s.teacher_name }}
+                    </div>
+                    <div
+                        v-if="s.is_manually_placed"
+                        class="mt-0.5 inline-flex items-center gap-0.5 text-[10px] text-primary-600 dark:text-primary-400"
+                        title="Manually placed"
+                    >
+                        <i class="ti ti-hand-finger text-[10px]" />
+                        Manual
+                    </div>
                 </div>
                 <div
                     v-if="isDuplicate"
-                    class="mt-0.5 text-[10px] text-red-600 dark:text-red-400 font-medium"
+                    class="text-[10px] text-orange-700 dark:text-orange-300 font-medium"
                     title="Multiple slots in this cell"
                 >
-                    Duplicate
+                    {{ allSlots.length }} assignments (duplicate)
                 </div>
             </div>
-            <div v-if="isConflict" class="absolute right-1 top-1" title="Conflict">
+            <div
+                v-if="hasConflict || slot?.has_conflict"
+                class="absolute right-1 top-1"
+                title="Scheduling conflict"
+            >
                 <i class="ti ti-alert-triangle text-red-500 text-sm" />
             </div>
         </template>
 
         <template v-else>
-            <div class="flex h-full min-h-[3.5rem] items-center justify-center text-[11px] text-muted-color/60">
-                -
+            <div
+                class="flex h-full min-h-[3.5rem] items-center justify-center text-[11px] text-muted-color/60"
+            >
+                —
             </div>
         </template>
     </div>
