@@ -11,8 +11,8 @@ import {
     TIMETABLE_STATUS_CONFIG,
     normalizeTimetable,
     type BuilderClassSection,
+    type RawTimetableResource,
     type SlotMovePayload,
-    type Timetable,
     type TimetableConflict,
     type TimetableDaySchedule,
     type TimetableSlot,
@@ -20,7 +20,7 @@ import {
 } from '@/types/timetable';
 
 const props = defineProps<{
-    timetable: Timetable;
+    timetable: RawTimetableResource;
     slots: TimetableSlot[];
     classSections?: BuilderClassSection[];
     periodSchedules?: TimetableDaySchedule[];
@@ -28,16 +28,30 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
-const gridRef = ref<InstanceType<typeof TimetableGrid> | null>(null);
 
+/** Single source of truth for slots — grid is a pure view. */
 const slots = ref<TimetableSlot[]>([...(props.slots ?? [])]);
-const selectedSectionId = ref<UUID | null>(props.classSections?.[0]?.id ?? null);
+
+const querySection = (() => {
+    try {
+        const q = new URLSearchParams(window.location.search).get('class_section_id');
+        return q || null;
+    } catch {
+        return null;
+    }
+})();
+
+const selectedSectionId = ref<UUID | null>(
+    (querySection as UUID | null) ??
+        (props.classSections?.length === 1 ? props.classSections[0].id : null),
+);
+
 const generating = ref(false);
 const activating = ref(false);
 const moving = ref(false);
 const showConflicts = ref(true);
 
-const tt = computed(() => normalizeTimetable(props.timetable as Timetable & Record<string, unknown>));
+const tt = computed(() => normalizeTimetable(props.timetable));
 const timetableId = computed(() => tt.value?.id);
 
 const {
@@ -59,9 +73,11 @@ onMounted(() => {
     }
 });
 
+// Only sync from Inertia props when not mid-mutation
 watch(
     () => props.slots,
     (v) => {
+        if (moving.value) return;
         slots.value = [...(v ?? [])];
     },
 );
@@ -73,6 +89,7 @@ const sectionOptions = computed(() =>
     })),
 );
 
+/** Parent filters; grid receives already-filtered slots. */
 const filteredSlots = computed(() => {
     if (!selectedSectionId.value) return slots.value;
     return slots.value.filter((s) => s.class_section_id === selectedSectionId.value);
@@ -82,12 +99,42 @@ const statusCfg = computed(
     () => TIMETABLE_STATUS_CONFIG[tt.value.status] ?? TIMETABLE_STATUS_CONFIG.draft,
 );
 
+const onSectionChange = (id: UUID | null) => {
+    selectedSectionId.value = id;
+    try {
+        const url = new URL(window.location.href);
+        if (id) url.searchParams.set('class_section_id', id);
+        else url.searchParams.delete('class_section_id');
+        window.history.replaceState({}, '', url.toString());
+    } catch {
+        /* ignore */
+    }
+};
+
 /**
  * Persist slot move. Backend expects class_period_id + day_of_week.
- * On failure, invoke payload.rollback so the grid never sticks on a rejected move.
+ * Optimistic update lives here (single source of truth); concurrent moves blocked by `moving`.
  */
 const onSlotMove = async (payload: SlotMovePayload) => {
+    if (moving.value) return;
     moving.value = true;
+
+    const previous = slots.value.map((s) => ({ ...s }));
+    const idx = slots.value.findIndex((s) => s.id === payload.slotId);
+    if (idx === -1) {
+        moving.value = false;
+        return;
+    }
+
+    const next = [...slots.value];
+    next[idx] = {
+        ...next[idx],
+        day_of_week: payload.toDay,
+        period_id: payload.toPeriodId,
+        is_manually_placed: true,
+    };
+    slots.value = next;
+
     try {
         const { data } = await axios.put(
             `/timetables/${tt.value.id}/slots/${payload.slotId}`,
@@ -99,18 +146,17 @@ const onSlotMove = async (payload: SlotMovePayload) => {
         );
         const updated = (data?.data ?? data?.slot ?? data) as TimetableSlot | undefined;
         if (updated?.id) {
-            const idx = slots.value.findIndex((s) => s.id === updated.id);
-            if (idx !== -1) {
-                const next = [...slots.value];
-                next[idx] = { ...next[idx], ...updated };
-                slots.value = next;
+            const i = slots.value.findIndex((s) => s.id === updated.id);
+            if (i !== -1) {
+                const reconciled = [...slots.value];
+                reconciled[i] = { ...reconciled[i], ...updated };
+                slots.value = reconciled;
             }
-            gridRef.value?.reconcileSlots?.([updated]);
         }
         toast.add({ severity: 'success', summary: 'Slot moved', life: 2000 });
         fetchConflicts();
     } catch (err: unknown) {
-        payload.rollback();
+        slots.value = previous;
         const message =
             (err as { response?: { data?: { message?: string } } })?.response?.data
                 ?.message ?? 'Could not move slot';
@@ -151,8 +197,7 @@ const onConflictResolve = async (payload: {
             next[idx] = { ...next[idx], ...result.slot };
             slots.value = next;
         }
-        gridRef.value?.reconcileSlots?.([result.slot]);
-    } else {
+    } else if (payload.strategy !== 'skip') {
         router.reload({ only: ['slots', 'timetable'] });
     }
 };
@@ -180,14 +225,23 @@ const runGenerate = () => {
 };
 
 const runActivate = () => {
-    if (unresolvedCount.value > 0 || !tt.value.can_activate) {
+    if (unresolvedCount.value > 0) {
         toast.add({
             severity: 'warn',
             summary: 'Cannot activate',
-            detail: 'Resolve all conflicts before activating this timetable.',
+            detail: `Resolve ${unresolvedCount.value} conflict(s) before activating.`,
             life: 4000,
         });
         showConflicts.value = true;
+        return;
+    }
+    if (!tt.value.can_activate) {
+        toast.add({
+            severity: 'warn',
+            summary: 'Cannot activate',
+            detail: 'This timetable does not meet activation requirements (slots, schedule, or policy).',
+            life: 5000,
+        });
         return;
     }
     activating.value = true;
@@ -265,25 +319,34 @@ const goBack = () => router.visit('/timetables');
                     <div class="flex flex-wrap items-center gap-3 mb-4">
                         <label class="text-xs font-medium text-muted-color">Class section</label>
                         <Select
-                            v-model="selectedSectionId"
+                            :model-value="selectedSectionId"
                             :options="sectionOptions"
                             option-label="label"
                             option-value="value"
-                            placeholder="Select arm"
+                            placeholder="Select class section"
                             class="w-56"
+                            show-clear
+                            @update:model-value="onSectionChange"
                         />
                         <span v-if="moving" class="text-xs text-muted-color">
                             <i class="ti ti-loader animate-spin" /> Saving…
                         </span>
                     </div>
 
+                    <div
+                        v-if="!selectedSectionId && sectionOptions.length > 1"
+                        class="mb-4 rounded-md border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 px-3 py-2 text-sm text-muted-color"
+                    >
+                        Select a class section to edit its timetable.
+                    </div>
+
                     <TimetableGrid
-                        ref="gridRef"
+                        v-else
                         :slots="filteredSlots"
                         :period-schedules="periodSchedules ?? []"
                         :working-days="tt.working_days"
-                        :class-section-id="selectedSectionId"
                         :read-only="false"
+                        :disabled="moving"
                         @slot-move="onSlotMove"
                     />
                 </template>
