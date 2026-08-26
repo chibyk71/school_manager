@@ -155,12 +155,6 @@ const onCellClick = (slot: TimetableSlot | null, day: number, periodId: NumericI
                         <div class="text-xs font-semibold text-color">
                             {{ rowLabel(periodRows[rowIdx]).name }}
                         </div>
-                        <div
-                            v-if="rowLabel(periodRows[rowIdx]).isBreak"
-                            class="text-[10px] text-muted-color mt-0.5"
-                        >
-                            Break
-                        </div>
                     </td>
 
                     <td
