@@ -202,11 +202,41 @@ const onConflictResolve = async (payload: {
     }
 };
 
-/** Poll Inertia props until slots change or attempts exhausted. */
-const pollAfterGenerate = (baselineCount: number) => {
+/** Stable fingerprint so regeneration with the same slot count still detects change. */
+const slotFingerprint = (list: TimetableSlot[]): string =>
+    [...list]
+        .map(
+            (s) =>
+                `${s.id}:${s.day_of_week}:${s.period_id}:${s.subject_id ?? ''}:${s.teacher_id ?? ''}`,
+        )
+        .sort()
+        .join('|');
+
+/**
+ * Poll Inertia props until generation is reflected, or attempts are exhausted.
+ * Completion = slot fingerprint change and/or timetable generated_at / updated_at change
+ * (count alone misses same-size regenerations).
+ * Keeps `generating` true the whole time so a second Generate cannot be started.
+ */
+const pollAfterGenerate = (baseline: {
+    fingerprint: string;
+    generatedAt: string | null;
+    updatedAt: string;
+}) => {
     let attempts = 0;
     const maxAttempts = 10;
     const intervalMs = 3000;
+
+    const finishPolling = () => {
+        generating.value = false;
+    };
+
+    const isComplete = (): boolean => {
+        const fpChanged = slotFingerprint(slots.value) !== baseline.fingerprint;
+        const generatedChanged = (tt.value.generated_at ?? null) !== baseline.generatedAt;
+        const updatedChanged = (tt.value.updated_at ?? '') !== baseline.updatedAt;
+        return fpChanged || generatedChanged || updatedChanged;
+    };
 
     const tick = () => {
         attempts += 1;
@@ -214,8 +244,7 @@ const pollAfterGenerate = (baselineCount: number) => {
             only: ['slots', 'timetable', 'conflicts'],
             preserveScroll: true,
             onFinish: () => {
-                const grew = slots.value.length !== baselineCount;
-                if (grew) {
+                if (isComplete()) {
                     toast.add({
                         severity: 'success',
                         summary: 'Timetable updated',
@@ -223,6 +252,7 @@ const pollAfterGenerate = (baselineCount: number) => {
                         life: 3000,
                     });
                     fetchConflicts();
+                    finishPolling();
                     return;
                 }
                 if (attempts >= maxAttempts) {
@@ -232,6 +262,7 @@ const pollAfterGenerate = (baselineCount: number) => {
                         detail: 'Refresh the page if new slots do not appear.',
                         life: 6000,
                     });
+                    finishPolling();
                     return;
                 }
                 window.setTimeout(tick, intervalMs);
@@ -243,14 +274,19 @@ const pollAfterGenerate = (baselineCount: number) => {
 };
 
 const runGenerate = () => {
+    if (generating.value) return;
     generating.value = true;
-    const baselineCount = slots.value.length;
+    const baseline = {
+        fingerprint: slotFingerprint(slots.value),
+        generatedAt: tt.value.generated_at ?? null,
+        updatedAt: tt.value.updated_at ?? '',
+    };
     router.post(
         `/timetables/${tt.value.id}/generate`,
         {},
         {
             preserveScroll: true,
-            onFinish: () => {
+            onError: () => {
                 generating.value = false;
             },
             onSuccess: () => {
@@ -260,8 +296,9 @@ const runGenerate = () => {
                     detail: 'Waiting for slots to appear — this page will refresh automatically.',
                     life: 4000,
                 });
-                pollAfterGenerate(baselineCount);
+                pollAfterGenerate(baseline);
             },
+            // Do not clear `generating` onFinish — polling owns that until complete/timeout.
         },
     );
 };
@@ -323,6 +360,7 @@ const goBack = () => router.visit('/timetables');
                 icon: 'ti ti-wand',
                 severity: 'info',
                 loading: generating,
+                disabled: generating,
                 onClick: runGenerate,
             },
             {
