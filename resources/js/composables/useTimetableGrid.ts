@@ -68,20 +68,13 @@ export function useTimetableGrid(
     });
 
     /**
-     * Row label by order only — avoids lying when day schedules differ.
-     * Actual period name/time lives on each cell's period object.
+     * Neutral row header by order only.
+     * Day-specific break vs teaching is shown on each cell, not the row label
+     * (schedules can differ by day at the same visual order).
      */
-    const rowLabel = (order: number): { name: string; isBreak: boolean } => {
-        let anyBreak = false;
-        for (const day of workingDays.value) {
-            const p = periodsForDay(day).find((x) => x.order === order);
-            if (p?.is_break) anyBreak = true;
-        }
-        return {
-            name: anyBreak ? `Break (P${order})` : `P${order}`,
-            isBreak: anyBreak,
-        };
-    };
+    const rowLabel = (order: number): { name: string } => ({
+        name: `P${order}`,
+    });
 
     const makeKey = (day: number, periodId: NumericId): GridKey => `${day}:${periodId}`;
 
