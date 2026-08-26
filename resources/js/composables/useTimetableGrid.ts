@@ -1,32 +1,36 @@
-import { computed, ref, type Ref, type ComputedRef } from 'vue';
+import { computed, ref, type ComputedRef, type Ref } from 'vue';
 import type {
     ClassPeriodRef,
     GridCell,
     GridKey,
-    PeriodScheduleDay,
+    NumericId,
+    TimetableDaySchedule,
     TimetableSlot,
+    UUID,
 } from '@/types/timetable';
 
 /**
- * Transforms flat slot lists into a day × period 2D grid structure.
- * Supports optimistic slot moves for drag-and-drop in the builder.
+ * Day-specific timetable grid.
+ *
+ * Rules:
+ * - A cell is (day_of_week, class_period_id) for THAT day's PeriodSchedule.
+ * - Visual rows align by period `order` only - not canonical domain IDs.
+ * - Days without a schedule -> hasSchedule: false (never invent a schedule).
+ * - Multiple slots in one cell -> extraSlots + isDuplicate (never silent overwrite).
  */
 export function useTimetableGrid(
     slots: Ref<TimetableSlot[]> | ComputedRef<TimetableSlot[]>,
-    periodSchedules: Ref<PeriodScheduleDay[]> | ComputedRef<PeriodScheduleDay[]>,
+    periodSchedules: Ref<TimetableDaySchedule[]> | ComputedRef<TimetableDaySchedule[]>,
     options?: {
-        /** Filter grid to a single class section (student/teacher view) */
-        classSectionId?: Ref<string | null | undefined> | ComputedRef<string | null | undefined>;
-        /** Working days override (defaults to days present in periodSchedules) */
+        classSectionId?: Ref<UUID | null | undefined> | ComputedRef<UUID | null | undefined>;
         workingDays?: Ref<number[]> | ComputedRef<number[]>;
     },
 ) {
-    const localSlots = ref<TimetableSlot[]>([]);
+    const localSlots = ref<TimetableSlot[]>([...(slots.value ?? [])]);
+
     const syncFromProps = () => {
         localSlots.value = [...(slots.value ?? [])];
     };
-    // Initial sync
-    syncFromProps();
 
     const workingDays = computed(() => {
         if (options?.workingDays?.value?.length) {
@@ -39,87 +43,117 @@ export function useTimetableGrid(
         return [1, 2, 3, 4, 5];
     });
 
-    /** Periods for a given day (falls back to first schedule if day missing) */
+    /** Periods for a day - empty array if no schedule (do not invent). */
     const periodsForDay = (day: number): ClassPeriodRef[] => {
         const match = (periodSchedules.value ?? []).find((d) => d.day_of_week === day);
-        if (match?.periods?.length) {
-            return [...match.periods].sort((a, b) => a.order - b.order);
-        }
-        const fallback = (periodSchedules.value ?? [])[0];
-        return fallback?.periods ? [...fallback.periods].sort((a, b) => a.order - b.order) : [];
+        if (!match?.periods?.length) return [];
+        return [...match.periods].sort((a, b) => a.order - b.order);
     };
 
-    /** Union of all periods across days, keyed by order for header display */
-    const allPeriods = computed(() => {
-        const byOrder = new Map<number, ClassPeriodRef>();
+    /**
+     * Visual row positions (by order). Not a list of canonical ClassPeriod entities.
+     */
+    const periodRows = computed(() => {
+        const orders = new Set<number>();
         for (const day of workingDays.value) {
             for (const p of periodsForDay(day)) {
-                if (!byOrder.has(p.order)) {
-                    byOrder.set(p.order, p);
-                }
+                orders.add(p.order);
             }
         }
-        return Array.from(byOrder.values()).sort((a, b) => a.order - b.order);
+        return [...orders].sort((a, b) => a - b);
     });
+
+    const rowLabel = (order: number): { name: string; duration?: number; isBreak: boolean } => {
+        for (const day of workingDays.value) {
+            const p = periodsForDay(day).find((x) => x.order === order);
+            if (p) {
+                return { name: p.name, duration: p.duration_minutes, isBreak: !!p.is_break };
+            }
+        }
+        return { name: `P${order}`, isBreak: false };
+    };
 
     const filteredSlots = computed(() => {
         const sectionId = options?.classSectionId?.value;
         if (!sectionId) return localSlots.value;
-        return localSlots.value.filter((s) => String(s.class_section_id) === String(sectionId));
+        return localSlots.value.filter((s) => s.class_section_id === sectionId);
     });
 
-    const slotMap = computed(() => {
-        const map = new Map<GridKey, TimetableSlot>();
+    const makeKey = (day: number, periodId: NumericId): GridKey => `${day}:${periodId}`;
+
+    /** key -> all slots at cell (preserves duplicates). */
+    const slotsByCell = computed(() => {
+        const map = new Map<GridKey, TimetableSlot[]>();
         for (const slot of filteredSlots.value) {
-            if (slot.is_break) continue;
             const key = makeKey(slot.day_of_week, slot.period_id);
-            map.set(key, slot);
+            const list = map.get(key) ?? [];
+            list.push(slot);
+            map.set(key, list);
         }
         return map;
     });
 
-    const makeKey = (day: number, periodId: number | string): GridKey =>
-        `${day}:${periodId}`;
+    const duplicateKeys = computed(() => {
+        const keys: GridKey[] = [];
+        for (const [key, list] of slotsByCell.value) {
+            if (list.length > 1) keys.push(key);
+        }
+        return keys;
+    });
 
     /**
-     * 2D grid: rows = periods (by order), columns = working days.
-     * Each cell holds the slot (if any) for that day/period.
+     * grid[rowIndex][dayIndex]
+     * Each cell carries day-specific periodId; rows align by order only.
      */
     const grid = computed<GridCell[][]>(() => {
-        return allPeriods.value.map((period) => {
+        return periodRows.value.map((order) => {
             return workingDays.value.map((day) => {
                 const dayPeriods = periodsForDay(day);
-                const dayPeriod =
-                    dayPeriods.find((p) => p.id === period.id) ??
-                    dayPeriods.find((p) => p.order === period.order) ??
-                    period;
-                const key = makeKey(day, dayPeriod.id);
-                const slot = slotMap.value.get(key) ?? null;
+                const hasSchedule = dayPeriods.length > 0;
+                const period = dayPeriods.find((p) => p.order === order) ?? null;
+
+                if (!period) {
+                    return {
+                        day,
+                        periodId: 0 as NumericId,
+                        period: null,
+                        hasSchedule,
+                        slot: null,
+                        extraSlots: [],
+                        isBreak: false,
+                        hasConflict: false,
+                        isDuplicate: false,
+                    } satisfies GridCell;
+                }
+
+                const atCell = slotsByCell.value.get(makeKey(day, period.id)) ?? [];
+                const [primary, ...rest] = atCell;
+
                 return {
                     day,
-                    periodId: dayPeriod.id,
-                    period: dayPeriod,
-                    slot,
-                    isBreak: !!dayPeriod.is_break,
-                    hasConflict: !!(slot?.has_conflict),
+                    periodId: period.id,
+                    period,
+                    hasSchedule: true,
+                    slot: primary ?? null,
+                    extraSlots: rest,
+                    isBreak: !!period.is_break,
+                    hasConflict: !!(primary?.has_conflict) || rest.length > 0,
+                    isDuplicate: rest.length > 0,
                 } satisfies GridCell;
             });
         });
     });
 
-    /** Get slot at day/period */
-    const getSlot = (day: number, periodId: number | string): TimetableSlot | null => {
-        return slotMap.value.get(makeKey(day, periodId)) ?? null;
-    };
+    const getSlotsAt = (day: number, periodId: NumericId): TimetableSlot[] =>
+        slotsByCell.value.get(makeKey(day, periodId)) ?? [];
 
     /**
-     * Optimistic move: update local state immediately, return rollback fn.
-     * Caller should persist via API and call rollback on failure.
+     * Optimistic move. Caller MUST invoke rollback on API failure.
      */
     const moveSlotOptimistic = (
-        slotId: string | number,
+        slotId: UUID,
         toDay: number,
-        toPeriodId: number,
+        toPeriodId: NumericId,
     ): { previous: TimetableSlot | null; rollback: () => void } => {
         const idx = localSlots.value.findIndex((s) => s.id === slotId);
         if (idx === -1) {
@@ -138,7 +172,7 @@ export function useTimetableGrid(
             previous,
             rollback: () => {
                 const i = localSlots.value.findIndex((s) => s.id === slotId);
-                if (i !== -1 && previous) {
+                if (i !== -1) {
                     const restored = [...localSlots.value];
                     restored[i] = previous;
                     localSlots.value = restored;
@@ -157,29 +191,43 @@ export function useTimetableGrid(
             localSlots.value = [...localSlots.value, slot];
         } else {
             const next = [...localSlots.value];
-            next[idx] = slot;
+            next[idx] = { ...next[idx], ...slot };
             localSlots.value = next;
         }
     };
 
-    const removeSlot = (slotId: string | number) => {
+    const removeSlot = (slotId: UUID) => {
         localSlots.value = localSlots.value.filter((s) => s.id !== slotId);
+    };
+
+    const reconcileSlots = (updates: TimetableSlot[]) => {
+        if (!updates.length) return;
+        let next = [...localSlots.value];
+        for (const slot of updates) {
+            const idx = next.findIndex((s) => s.id === slot.id);
+            if (idx === -1) next.push(slot);
+            else next[idx] = { ...next[idx], ...slot };
+        }
+        localSlots.value = next;
     };
 
     return {
         localSlots,
         workingDays,
-        allPeriods,
+        periodRows,
+        rowLabel,
         periodsForDay,
         grid,
-        slotMap,
+        slotsByCell,
+        duplicateKeys,
         filteredSlots,
         makeKey,
-        getSlot,
+        getSlotsAt,
         moveSlotOptimistic,
         setSlots,
         upsertSlot,
         removeSlot,
+        reconcileSlots,
         syncFromProps,
     };
 }
