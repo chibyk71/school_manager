@@ -343,7 +343,7 @@ const goBack = () => router.visit('/timetables');
                     <TimetableGrid
                         v-else
                         :slots="filteredSlots"
-                        :period-schedules="periodSchedules ?? []"
+                        :period-schedules="periodSchedules ?? tt.day_schedules ?? []"
                         :working-days="tt.working_days"
                         :read-only="false"
                         :disabled="moving"
