@@ -24,22 +24,6 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Final execution job for an approved PromotionBatch.
- *
- * For each unprocessed PromotionStudent:
- *  - Applies promote / repeat / graduate against StudentSessionPlacement (+ student status)
- *  - Writes an immutable PromotionHistory row
- *  - Marks the promotion_student row processed
- *
- * Batch counters:
- *  - processed_students = successful applications only
- *  - failed_students    = per-student failures
- *  - metadata.completed_with_errors = true when any student failed
- *
- * Transitions Executing → Completed when the job finishes (even with partial failures).
- * Callers should treat completed_with_errors as requiring follow-up, not a clean close.
- */
 class ProcessStudentPromotion implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -164,28 +148,14 @@ class ProcessStudentPromotion implements ShouldQueue
 
                 match ($finalOutcome) {
                     'promote' => $this->applyPromote(
-                        $student,
-                        $studentRecord,
-                        $placementService,
-                        $fromSession,
-                        $nextSession,
-                        $toSessionId,
-                        $toSectionId
+                        $student, $studentRecord, $placementService, $fromSession, $nextSession, $toSessionId, $toSectionId
                     ),
                     'repeat' => $this->applyRepeat(
-                        $student,
-                        $studentRecord,
-                        $placementService,
-                        $fromSession,
-                        $nextSession,
-                        $toSessionId,
-                        $toSectionId
+                        $student, $studentRecord, $placementService, $fromSession, $nextSession, $toSessionId, $toSectionId
                     ),
-                    'graduate' => $this->applyGraduate(
-                        $student,
-                        $studentRecord,
-                        $statusService,
-                        $actor
+                    'graduate' => $this->applyGraduate($student, $studentRecord, $statusService, $actor),
+                    'incomplete' => throw new \RuntimeException(
+                        'Student recommendation is incomplete (missing results or unmapped next section). Override to promote/repeat/graduate before execution.'
                     ),
                     default => throw new \RuntimeException("Unknown promotion outcome: {$finalOutcome}"),
                 };
@@ -255,7 +225,7 @@ class ProcessStudentPromotion implements ShouldQueue
 
         $this->stampFromPlacement($student, $fromSession, 'promoted');
 
-        $placementService->placeInSession($student, [
+        $placementService->placeOrUpdateInSession($student, [
             'academic_session_id' => $nextSession->id,
             'class_level_id' => $section->class_level_id,
             'class_section_id' => $section->id,
@@ -293,7 +263,7 @@ class ProcessStudentPromotion implements ShouldQueue
 
         $this->stampFromPlacement($student, $fromSession, 'repeated');
 
-        $placementService->placeInSession($student, [
+        $placementService->placeOrUpdateInSession($student, [
             'academic_session_id' => $nextSession->id,
             'class_level_id' => $section->class_level_id,
             'class_section_id' => $section->id,
@@ -318,22 +288,16 @@ class ProcessStudentPromotion implements ShouldQueue
         $statusService->markGraduated($student, Carbon::now(), $actor);
     }
 
-    protected function stampFromPlacement(
-        Student $student,
-        ?AcademicSession $fromSession,
-        string $outcome
-    ): void {
+    protected function stampFromPlacement(Student $student, ?AcademicSession $fromSession, string $outcome): void
+    {
         if (! $fromSession) {
             return;
         }
 
-        // Note: placements.promotion_batch_id is legacy bigint; batches use UUIDs — stamp outcome only.
         StudentSessionPlacement::query()
             ->where('student_id', $student->id)
             ->where('academic_session_id', $fromSession->id)
-            ->update([
-                'promotion_outcome' => $outcome,
-            ]);
+            ->update(['promotion_outcome' => $outcome]);
     }
 
     protected function resolveNextSession(AcademicSession $fromSession): ?AcademicSession
@@ -348,10 +312,7 @@ class ProcessStudentPromotion implements ShouldQueue
     protected function resolveActor(): ?User
     {
         $id = $this->batch->executed_by;
-        if (! $id) {
-            return null;
-        }
 
-        return User::query()->find($id);
+        return $id ? User::query()->find($id) : null;
     }
 }
