@@ -179,7 +179,7 @@ class PromotionBatchController extends Controller
             ]);
         }
 
-        return back()->with('success', 'Promotion batch cancelled.';
+        return back()->with('success', 'Promotion batch cancelled.');
     }
 
     protected function abilities(PromotionBatch $batch): array
