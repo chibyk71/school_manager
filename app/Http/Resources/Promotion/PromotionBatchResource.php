@@ -33,7 +33,7 @@ class PromotionBatchResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'description' => $this->description,
-            'status' => $this->status,
+            'status' => (string) $this->status,
             'status_label' => $this->status_label,
             'progress_percentage' => $this->progress_percentage,
 
