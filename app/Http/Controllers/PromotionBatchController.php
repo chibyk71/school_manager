@@ -106,7 +106,7 @@ class PromotionBatchController extends Controller
 
     public function override(OverridePromotionStudentRequest $request, PromotionBatch $batch, PromotionStudent $student)
     {
-        Gate::authorize('review', $batch);
+        Gate::authorize('override', $batch);
 
         if ($student->promotion_batch_id !== $batch->id) {
             abort(404);
@@ -190,6 +190,7 @@ class PromotionBatchController extends Controller
     {
         return [
             'review' => Gate::allows('review', $batch),
+            'override' => Gate::allows('override', $batch),
             'approve' => Gate::allows('approve', $batch),
             'execute' => Gate::allows('execute', $batch),
             'cancel' => Gate::allows('cancel', $batch),
