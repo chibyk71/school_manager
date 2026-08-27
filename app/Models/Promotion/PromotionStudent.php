@@ -96,4 +96,29 @@ class PromotionStudent extends Model
     {
         return $query->where('is_processed', true);
     }
+
+    public function getRecommendationLabelAttribute(): string
+    {
+        return match ($this->recommendation) {
+            'promote'  => 'Promote',
+            'repeat'   => 'Repeat',
+            'graduate' => 'Graduate',
+            default    => ucfirst((string) $this->recommendation),
+        };
+    }
+
+    public function getOutcomeLabelAttribute(): string
+    {
+        return match ($this->final_outcome) {
+            'promote'  => 'Promote',
+            'repeat'   => 'Repeat',
+            'graduate' => 'Graduate',
+            default    => ucfirst((string) $this->final_outcome),
+        };
+    }
+
+    public function hasProcessingError(): bool
+    {
+        return filled($this->processing_error);
+    }
 }

@@ -27,11 +27,17 @@ class PromotionPolicy
 
     public function review(User $user, PromotionBatch $batch): bool
     {
-        if (! $user->can('promotions.review')) {
-            return false;
+        // Full review (override decisions) while pending/reviewing
+        if ($user->can('promotions.review') && ($batch->status instanceof Pending || $batch->status instanceof Reviewing)) {
+            return true;
         }
 
-        return $batch->status instanceof Pending || $batch->status instanceof Reviewing;
+        // Read-only access to the student list after draft for anyone with view
+        if ($user->can('promotions.view') && ! $batch->status instanceof \App\States\Promotion\Draft) {
+            return true;
+        }
+
+        return false;
     }
 
     public function approve(User $user, PromotionBatch $batch): bool
