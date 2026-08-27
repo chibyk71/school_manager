@@ -66,4 +66,12 @@ class PromotionPolicy
 
         return $batch->status->canBeCancelled();
     }
+
+    /**
+     * Override individual student decisions (stricter than viewing the review page).
+     */
+    public function override(User $user, PromotionBatch $batch): bool
+    {
+        return $user->can('promotions.review') && $batch->status->canOverrideStudents();
+    }
 }

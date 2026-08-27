@@ -16,7 +16,8 @@ class OverridePromotionStudentRequest extends FormRequest
             return false;
         }
 
-        return $this->user()->can('promotions.review') && $batch->status->canOverrideStudents();
+        // Single source of truth: PromotionPolicy::override
+        return $this->user()->can('override', $batch);
     }
 
     public function rules(): array
