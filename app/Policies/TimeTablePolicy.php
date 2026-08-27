@@ -2,7 +2,7 @@
 
 namespace App\Policies;
 
-use App\Models\Academic\TimeTable;
+use App\Models\Academic\Timetable;
 use App\Models\User;
 use Laratrust\LaratrustFacade;
 

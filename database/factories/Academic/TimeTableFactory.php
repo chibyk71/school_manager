@@ -5,7 +5,7 @@ namespace Database\Factories\Academic;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Academic\TimeTable>
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Academic\Timetable>
  */
 class TimeTableFactory extends Factory
 {

@@ -44,7 +44,7 @@ use App\Http\Controllers\SalaryAddonController;
 use App\Http\Controllers\SalaryController;
 use App\Http\Controllers\SalaryStructureController;
 use App\Http\Controllers\SchoolController;
-use App\Http\Controllers\SchoolSectionController;
+use App\Http\Controllers\Settings\SchoolSectionController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\SubjectController;
 use App\Http\Controllers\SyllabusController;
