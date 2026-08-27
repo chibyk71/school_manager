@@ -29,15 +29,19 @@ class PromotionBatchController extends Controller
         Gate::authorize('viewAny', PromotionBatch::class);
 
         $batches = PromotionBatch::query()
-            ->currentSchool()
             ->with(['academicSession', 'initiatedBy', 'approvedBy'])
             ->latest()
             ->tableQuery($request, [
                 ['field' => 'session_name', 'relation' => 'academicSession', 'relatedField' => 'name'],
             ]);
 
+        $academicSessions = AcademicSession::query()
+            ->orderByDesc('start_date')
+            ->get(['id', 'name', 'is_current']);
+
         return Inertia::render('Promotion/Index', [
             'batches' => PromotionBatchResource::collection($batches->get())->resolve(),
+            'academicSessions' => $academicSessions,
             'can' => [
                 'create' => Gate::allows('create', PromotionBatch::class),
             ],
