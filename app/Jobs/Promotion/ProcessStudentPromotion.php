@@ -3,11 +3,11 @@
 namespace App\Jobs\Promotion;
 
 use App\Events\Promotion\PromotionBatchCompleted;
-use App\Events\Promotion\StudentDecisionOverridden;
 use App\Models\Promotion\PromotionBatch;
 use App\Models\Promotion\PromotionHistory;
 use App\Models\Promotion\PromotionStudent;
-use App\Services\PromotionService;
+use App\States\Promotion\Completed;
+use App\States\Promotion\Executing;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -17,68 +17,35 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * ProcessStudentPromotion Job
+ * Final execution job for an approved PromotionBatch.
  *
- * ============================================================================
- * WHAT IS IMPLEMENTED
- * ============================================================================
- *
- * The final execution job for an approved PromotionBatch.
- * This job processes each PromotionStudent record, applies the final decision
- * (system recommendation or human override), and creates immutable PromotionHistory records.
- *
- * This is the most critical job in the Promotion Module — it writes the permanent academic record.
- *
- * Key Features:
- * - Chunked processing for large batches (memory safe)
- * - Full transaction per student to ensure data integrity
- * - Respects final_decision (human override takes precedence)
- * - Creates PromotionHistory with full denormalized data
- * - Updates progress counters on the batch (processed_students, failed_students)
- * - Handles errors gracefully per student (continues processing others)
- * - Fires PromotionBatchCompleted event when finished
- * - Queued with dedicated queue for long-running operations
- *
- * Fits into the Promotion Module:
- * - Dispatched by PromotionService::executeApprovedBatch()
- * - Called only after batch status = 'approved'
- * - Final step before the batch becomes immutable
+ * Processes each PromotionStudent, applies the final decision
+ * (recommendation or override), and writes immutable PromotionHistory rows.
+ * Transitions the batch Executing → Completed when finished.
  */
-
 class ProcessStudentPromotion implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * The number of times the job may be attempted.
-     */
     public int $tries = 2;
 
-    /**
-     * The number of seconds the job can run before timing out.
-     */
-    public int $timeout = 600; // 10 minutes
+    public int $timeout = 600;
 
-    public PromotionBatch $batch;
-
-    /**
-     * Create a new job instance.
-     */
-    public function __construct(PromotionBatch $batch)
+    public function __construct(public PromotionBatch $batch)
     {
-        $this->batch = $batch;
+        $this->onQueue('promotions');
     }
 
-    /**
-     * Execute the job.
-     */
     public function handle(): void
     {
-        if ($this->batch->status !== 'executing') {
-            Log::warning('ProcessStudentPromotion: Batch is not in executing state', [
+        $this->batch->refresh();
+
+        if (! $this->batch->status->equals(Executing::class)) {
+            Log::warning('ProcessStudentPromotion: batch is not in executing state', [
                 'batch_id' => $this->batch->id,
-                'status'   => $this->batch->status,
+                'status' => (string) $this->batch->status,
             ]);
+
             return;
         }
 
@@ -88,67 +55,61 @@ class ProcessStudentPromotion implements ShouldQueue
         $failed = 0;
 
         try {
-            // Process students in chunks to keep memory usage low
-            PromotionStudent::where('promotion_batch_id', $this->batch->id)
+            PromotionStudent::query()
+                ->where('promotion_batch_id', $this->batch->id)
                 ->where('is_processed', false)
-                ->chunk(100, function ($students) use (&$processed, &$failed) {
+                ->chunkById(100, function ($students) use (&$processed, &$failed) {
                     foreach ($students as $studentRecord) {
                         $this->processSingleStudent($studentRecord, $processed, $failed);
                     }
                 });
 
-            // Mark batch as completed
-            $this->batch->update([
-                'status' => 'completed',
-                'processed_students' => $this->batch->total_students,
-                'failed_students' => $failed,
-            ]);
+            $this->batch->refresh();
+            $this->batch->processed_students = $this->batch->total_students;
+            $this->batch->failed_students = $failed;
+            $this->batch->save();
+            $this->batch->status->transitionTo(Completed::class);
 
-            // Fire completion event
-            event(new PromotionBatchCompleted($this->batch));
+            event(new PromotionBatchCompleted($this->batch->fresh()));
 
             Log::info('Promotion batch execution completed', [
                 'batch_id' => $this->batch->id,
                 'processed' => $processed,
                 'failed' => $failed,
             ]);
-
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Critical failure in ProcessStudentPromotion job', [
                 'batch_id' => $this->batch->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            $this->batch->update([
-                'metadata' => array_merge($this->batch->metadata ?? [], [
-                    'execution_failed' => true,
-                    'error' => $e->getMessage(),
-                ]),
-            ]);
+            $this->batch->refresh();
+            $metadata = $this->batch->metadata ?? [];
+            $metadata['execution_failed'] = true;
+            $metadata['error'] = $e->getMessage();
+            $this->batch->metadata = $metadata;
+            $this->batch->save();
 
             throw $e;
         }
     }
 
-    /**
-     * Process a single student with full transaction safety.
-     */
     protected function processSingleStudent(PromotionStudent $studentRecord, int &$processed, int &$failed): void
     {
         try {
-            DB::transaction(function () use ($studentRecord, &$processed, &$failed) {
-                $finalOutcome = $studentRecord->final_outcome; // respects override
+            DB::transaction(function () use ($studentRecord, &$processed) {
+                $studentRecord->loadMissing('promotionBatch');
+                $finalOutcome = $studentRecord->final_outcome;
 
-                // Create permanent history record
                 PromotionHistory::create([
                     'school_id' => $studentRecord->promotionBatch->school_id,
                     'student_id' => $studentRecord->student_id,
                     'promotion_batch_id' => $studentRecord->promotion_batch_id,
                     'promotion_student_id' => $studentRecord->id,
                     'from_academic_session_id' => $studentRecord->promotionBatch->academic_session_id,
-                    'to_academic_session_id' => in_array($finalOutcome, ['promote', 'graduate'])
-                        ? $this->getNextSessionId($studentRecord)
+                    'to_academic_session_id' => in_array($finalOutcome, ['promote', 'graduate'], true)
+                        ? $this->resolveNextSessionId($studentRecord)
                         : null,
                     'from_class_section_id' => $studentRecord->current_class_section_id,
                     'to_class_section_id' => $studentRecord->next_class_section_id,
@@ -161,7 +122,6 @@ class ProcessStudentPromotion implements ShouldQueue
                     'executed_at' => now(),
                 ]);
 
-                // Mark student record as processed
                 $studentRecord->update([
                     'is_processed' => true,
                     'processed_at' => now(),
@@ -169,8 +129,7 @@ class ProcessStudentPromotion implements ShouldQueue
 
                 $processed++;
             });
-
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $failed++;
 
             Log::error('Failed to process student in promotion batch', [
@@ -179,7 +138,6 @@ class ProcessStudentPromotion implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
 
-            // Record error on student record but continue with others
             $studentRecord->update([
                 'processing_error' => $e->getMessage(),
             ]);
@@ -187,12 +145,11 @@ class ProcessStudentPromotion implements ShouldQueue
     }
 
     /**
-     * Get next academic session ID (for promote/graduate cases).
-     * Simple implementation — improve if you have a better session sequence.
+     * Next academic session for promote/graduate history rows.
+     * Returns null until session sequencing is wired; history still records from_session.
      */
-    protected function getNextSessionId(PromotionStudent $studentRecord): ?int
+    protected function resolveNextSessionId(PromotionStudent $studentRecord): ?string
     {
-        // For now return null (you can enhance this later with proper session progression)
         return null;
     }
 }
