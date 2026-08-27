@@ -2,279 +2,413 @@
 
 namespace App\Services;
 
+use App\Events\Promotion\PromotionBatchApproved;
+use App\Events\Promotion\PromotionBatchCancelled;
+use App\Events\Promotion\PromotionBatchCreated;
+use App\Events\Promotion\StudentDecisionOverridden;
+use App\Jobs\Promotion\PopulatePromotionBatch;
+use App\Jobs\Promotion\ProcessStudentPromotion;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\ClassLevel;
 use App\Models\Academic\ClassSection;
+use App\Models\Exam\ExamResult;
+use App\Models\Misc\AttendanceLedger;
 use App\Models\Promotion\PromotionBatch;
 use App\Models\Promotion\PromotionStudent;
 use App\Models\Student\Student;
-use App\Models\ExamResult;           // Assuming this exists as mentioned in briefing
+use App\Models\Student\StudentSessionPlacement;
+use App\Models\User;
+use App\States\Promotion\Approved;
+use App\States\Promotion\Cancelled;
+use App\States\Promotion\Draft;
+use App\States\Promotion\Executing;
+use App\States\Promotion\Pending;
+use App\States\Promotion\Reviewing;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-
-/**
- * PromotionService v1.0 – Central Business Logic for Student Promotion Module
- *
- * ============================================================================
- * WHAT IS IMPLEMENTED
- * ============================================================================
- *
- * Single source of truth for all promotion-related calculations and batch operations.
- *
- * Core Responsibilities:
- * - Creating a new PromotionBatch when a session is completed (via listener)
- * - Computing immutable system recommendation for each student based on real data
- * - Reading configurable rules from settings (academic.promotion_rules + academic.attendance_rules)
- * - Preparing PromotionStudent records (snapshot of scores, attendance, etc.)
- * - Executing approved batches (dispatches the queueable job)
- *
- * Recommendation Logic (exactly as defined in the briefing):
- * 1. If failed_subjects_count >= fail_subject_threshold → repeat
- * 2. If average_score < pass_average → repeat
- * 3. If use_attendance_for_promotion AND attendance_percentage < promotion_min_attendance_percent → repeat
- * 4. If this is the final class level (no next level) AND passes above checks → graduate
- * 5. If pass_average <= average_score < probation_average → promote (with probation flag in metadata if needed)
- * 6. Otherwise → promote
- *
- * Fits into the Promotion Module:
- * - Called by TriggerPromotionOnSessionClose listener (on AcademicSessionCompleted / TermClosed)
- * - Used by PopulatePromotionBatch job (bulk population)
- * - Used by ProcessStudentPromotion job (execution)
- * - Settings-driven: getMergedSettings() for promotion_rules and attendance_rules
- * - Fully transactional and logged for auditability
- *
- * Production-Ready Features:
- * - Heavy use of DB transactions for data integrity
- * - Real integration with ExamResult (replace placeholder when you share the model)
- * - Attendance integration (conditional based on settings)
- * - Next class section resolution (same arm, next level)
- * - Comprehensive error handling and structured logging
- * - No random/placeholder values — ready for real ExamResult + AttendanceLedger data
- */
+use Illuminate\Validation\ValidationException;
 
 class PromotionService
 {
-    /**
-     * Create and populate a promotion batch for a completed academic session.
-     *
-     * Triggered automatically via listener when last term/session closes.
-     */
-    public function createPromotionBatchForSession(AcademicSession $session): PromotionBatch
-    {
-        $school = $session->school ?? GetSchoolModel();
+    public function createBatchForSession(
+        AcademicSession $session,
+        ?User $initiator = null,
+        ?string $name = null,
+        ?string $description = null
+    ): PromotionBatch {
+        $schoolId = $session->school_id;
 
-        if (!$school) {
-            throw new \Exception('No active school context found for promotion batch creation.');
+        $existing = PromotionBatch::query()
+            ->where('school_id', $schoolId)
+            ->where('academic_session_id', $session->id)
+            ->first();
+
+        if ($existing) {
+            throw ValidationException::withMessages([
+                'academic_session_id' => 'A promotion batch already exists for this academic session.',
+            ]);
         }
 
-        return DB::transaction(function () use ($session, $school) {
-            // 1. Create the batch in 'pending' state
-            $batch = PromotionBatch::create([
-                'school_id' => $school->id,
+        $batch = DB::transaction(function () use ($session, $schoolId, $initiator, $name, $description) {
+            return PromotionBatch::create([
+                'school_id' => $schoolId,
                 'academic_session_id' => $session->id,
-                'name' => "{$session->name} Promotion Batch",
-                'description' => "Auto-generated promotion for completed session: {$session->name}",
-                'status' => 'pending',
-                'initiated_by' => auth()->id(), // or null for system-triggered
+                'name' => $name ?: ('Promotion – ' . $session->name),
+                'description' => $description,
+                'status' => Draft::class,
+                'initiated_by' => $initiator?->id,
                 'total_students' => 0,
+                'processed_students' => 0,
+                'failed_students' => 0,
             ]);
-
-            Log::info('Promotion batch created for session', [
-                'batch_id' => $batch->id,
-                'session_id' => $session->id,
-                'school_id' => $school->id,
-            ]);
-
-            // 2. Fetch all active students in this session
-            $students = \App\Models\Student\Student::query()
-                ->whereHas('classSections', function ($q) use ($session) {
-                    $q->where('academic_session_id', $session->id);
-                })
-                ->with([
-                    'currentClassSection.classLevel',
-                    // Add more eager loads as needed (e.g., exam results via relation)
-                ])
-                ->get();
-
-            $total = $students->count();
-            $batch->update(['total_students' => $total]);
-
-            if ($total === 0) {
-                $batch->update(['status' => 'completed']);
-                Log::info('No students found for promotion', ['session_id' => $session->id]);
-                return $batch->fresh();
-            }
-
-            // 3. Compute recommendation for each student and prepare records
-            $promotionStudentsData = $students->map(function (Student $student) use ($session, $batch) {
-                $record = $this->computeStudentRecommendation($student, $session);
-                $record['promotion_batch_id'] = $batch->id;
-                $record['student_id'] = $student->id;
-                return $record;
-            })->toArray();
-
-            // Bulk insert for performance (much faster than looping create())
-            PromotionStudent::insert($promotionStudentsData);
-
-            Log::info('Promotion batch populated successfully', [
-                'batch_id' => $batch->id,
-                'total_students' => $total,
-            ]);
-
-            // Status will be updated to 'pending' (already is) or 'reviewing' later if needed
-            return $batch->fresh();
         });
+
+        PopulatePromotionBatch::dispatch($batch);
+        event(new PromotionBatchCreated($batch));
+
+        Log::info('Promotion batch created', [
+            'batch_id' => $batch->id,
+            'session_id' => $session->id,
+            'school_id' => $schoolId,
+        ]);
+
+        return $batch->fresh();
     }
 
-    /**
-     * Compute the system recommendation for a single student using real ExamResult data.
-     *
-     * This is the core immutable logic.
-     */
-    public function computeStudentRecommendation(Student $student, AcademicSession $session): array
+    public function populateBatch(PromotionBatch $batch): void
     {
-        $currentSection = $student->currentClassSection;
-        $currentLevel = $currentSection?->classLevel;
-
-        if (!$currentSection || !$currentLevel) {
-            return $this->defaultRepeatRecord($currentSection?->id);
+        if (! $batch->status->equals(Draft::class)) {
+            Log::info('Populate skipped; batch not draft', [
+                'batch_id' => $batch->id,
+                'status' => (string) $batch->status,
+            ]);
+            return;
         }
 
-        // Load configurable rules from settings
-        $promotionRules = getMergedSettings('academic.promotion_rules', $student->school ?? GetSchoolModel());
-        $attendanceRules = getMergedSettings('academic.attendance_rules', $student->school ?? GetSchoolModel());
+        $session = $batch->academicSession;
 
-        $failSubjectThreshold = $promotionRules['fail_subject_threshold'] ?? 3;
-        $passAverage = $promotionRules['pass_average'] ?? 40;
-        $probationAverage = $promotionRules['probation_average'] ?? 45;
-
-        $useAttendance = $attendanceRules['use_attendance_for_promotion'] ?? false;
-        $minAttendancePercent = $attendanceRules['promotion_min_attendance_percent'] ?? 75;
-
-        // Real data from ExamResult model
-        $results = \App\Models\Exam\ExamResult::query()
-            ->where('student_id', $student->id)
-            ->where('class_section_id', $currentSection->id)
-            // Add more filters if your ExamResult links directly to session via exam
+        $placements = StudentSessionPlacement::query()
+            ->where('academic_session_id', $session->id)
+            ->whereHas('student', function ($q) use ($batch) {
+                $q->where('school_id', $batch->school_id)
+                    ->whereIn('status', ['active', 'enrolled', 'admitted']);
+            })
+            ->with(['student', 'classSection.classLevel'])
             ->get();
 
-        $averageScore = $results->avg('total_score') ?? 0.0;
-        $totalSubjectsCount = $results->count();
-        $failedSubjectsCount = $results->filter(fn($r) => !$r->is_pass ?? false)->count(); // Adjust if is_pass column exists
+        $rows = [];
 
-        // TODO: Replace with real attendance source when AttendanceLedger is available
-        $attendancePercentage = 85.0; // Placeholder – integrate later
+        foreach ($placements as $placement) {
+            $student = $placement->student;
+            if (! $student) {
+                continue;
+            }
 
-        $recommendation = 'promote';
+            $computed = $this->computeStudentRecommendation($student, $session, $placement);
 
-        // Core promotion rules
-        if ($failedSubjectsCount >= $failSubjectThreshold) {
-            $recommendation = 'repeat';
-        } elseif ($averageScore < $passAverage) {
-            $recommendation = 'repeat';
-        } elseif ($useAttendance && $attendancePercentage < $minAttendancePercent) {
-            $recommendation = 'repeat';
-        } elseif (!$this->hasNextClassLevel($currentLevel)) {
-            $recommendation = 'graduate';
-        } elseif ($averageScore < $probationAverage) {
-            $recommendation = 'promote'; // probation can be flagged in metadata if needed
+            $rows[] = [
+                'id' => (string) \Illuminate\Support\Str::uuid(),
+                'promotion_batch_id' => $batch->id,
+                'student_id' => $student->id,
+                'current_class_section_id' => $computed['current_class_section_id'],
+                'next_class_section_id' => $computed['next_class_section_id'],
+                'recommendation' => $computed['recommendation'],
+                'average_score' => $computed['average_score'],
+                'failed_subjects_count' => $computed['failed_subjects_count'],
+                'total_subjects_count' => $computed['total_subjects_count'],
+                'attendance_percentage' => $computed['attendance_percentage'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
         }
 
-        // Resolve next class section (same arm)
+        DB::transaction(function () use ($batch, $rows) {
+            if ($rows !== []) {
+                foreach (array_chunk($rows, 200) as $chunk) {
+                    PromotionStudent::insert($chunk);
+                }
+            }
+
+            $batch->total_students = count($rows);
+            $batch->save();
+            $batch->status->transitionTo(Pending::class);
+        });
+
+        Log::info('Promotion batch populated', [
+            'batch_id' => $batch->id,
+            'total_students' => count($rows),
+        ]);
+    }
+
+    public function computeStudentRecommendation(
+        Student $student,
+        AcademicSession $session,
+        ?StudentSessionPlacement $placement = null
+    ): array {
+        $placement ??= $student->sessionPlacements()
+            ->where('academic_session_id', $session->id)
+            ->with('classSection.classLevel')
+            ->first();
+
+        $currentSection = $placement?->classSection;
+        $currentLevel = $currentSection?->classLevel;
+
+        $school = $student->school ?? GetSchoolModel();
+        $promotionRules = getMergedSettings('academic.promotion_rules', $school) ?? [];
+        $attendanceRules = getMergedSettings('academic.attendance_rules', $school) ?? [];
+
+        $failThreshold = (int) ($promotionRules['fail_subject_threshold'] ?? 3);
+        $passAverage = (float) ($promotionRules['pass_average'] ?? 40);
+        $useAttendance = (bool) ($attendanceRules['use_attendance_for_promotion'] ?? false);
+        $minAttendance = (float) ($attendanceRules['promotion_min_attendance_percent'] ?? 75);
+
+        $results = ExamResult::query()
+            ->where('student_id', $student->id)
+            ->where('is_exempted', false)
+            ->whereNotNull('total_score')
+            ->whereHas('exam', function ($q) use ($session) {
+                $q->where('academic_session_id', $session->id)
+                    ->whereIn('status', ['completed', 'results_approved', 'published', 'ongoing']);
+            })
+            ->with(['exam.assessmentTemplate'])
+            ->get();
+
+        $bySubject = $results->groupBy('subject_id')->map(function ($group) {
+            return $group->sortByDesc(fn (ExamResult $r) => $r->created_at)->first();
+        });
+
+        $totalSubjects = $bySubject->count();
+        $averageScore = $totalSubjects > 0
+            ? round((float) $bySubject->avg(fn (ExamResult $r) => (float) $r->total_score), 2)
+            : null;
+
+        $failed = 0;
+        foreach ($bySubject as $result) {
+            $passMark = $result->exam?->assessmentTemplate?->pass_mark ?? $passAverage;
+            if ((float) $result->total_score < (float) $passMark) {
+                $failed++;
+            }
+        }
+
+        $attendancePct = null;
+        if ($useAttendance) {
+            $attendancePct = $this->computeAttendancePercentage($student, $session);
+        }
+
         $nextSectionId = null;
-        if (in_array($recommendation, ['promote', 'graduate'], true)) {
-            $nextSectionId = $this->resolveNextClassSection($currentSection);
+        $hasNextLevel = false;
+        if ($currentLevel && $currentSection) {
+            $hasNextLevel = $this->hasNextClassLevel($currentLevel);
+            if ($hasNextLevel) {
+                $nextSectionId = $this->resolveNextClassSection($currentSection)?->id;
+            }
+        }
+
+        $recommendation = 'promote';
+        if ($totalSubjects === 0) {
+            $recommendation = 'repeat';
+        } elseif ($failed >= $failThreshold) {
+            $recommendation = 'repeat';
+        } elseif ($averageScore !== null && $averageScore < $passAverage) {
+            $recommendation = 'repeat';
+        } elseif ($useAttendance && $attendancePct !== null && $attendancePct < $minAttendance) {
+            $recommendation = 'repeat';
+        } elseif (! $hasNextLevel) {
+            $recommendation = 'graduate';
         }
 
         return [
-            'current_class_section_id' => $currentSection->id,
-            'next_class_section_id' => $nextSectionId,
             'recommendation' => $recommendation,
-            'final_decision' => null,
-            'average_score' => round($averageScore, 2),
-            'failed_subjects_count' => $failedSubjectsCount,
-            'total_subjects_count' => $totalSubjectsCount,
-            'attendance_percentage' => round($attendancePercentage, 2),
-            'is_processed' => false,
-            'processed_at' => null,
-            'processing_error' => null,
+            'average_score' => $averageScore,
+            'failed_subjects_count' => $failed,
+            'total_subjects_count' => $totalSubjects,
+            'attendance_percentage' => $attendancePct,
+            'current_class_section_id' => $currentSection?->id,
+            'next_class_section_id' => $recommendation === 'repeat' ? $currentSection?->id : $nextSectionId,
         ];
     }
 
-    /**
-     * Check if the current class level has a next level (for graduation detection).
-     */
-    protected function hasNextClassLevel(ClassLevel $currentLevel): bool
-    {
-        return $this->getNextClassLevel($currentLevel) !== null;
+    public function overrideStudentDecision(
+        PromotionStudent $promotionStudent,
+        string $finalDecision,
+        ?string $reason,
+        User $actor
+    ): PromotionStudent {
+        $batch = $promotionStudent->promotionBatch;
+
+        if (! $batch->status->canOverrideStudents()) {
+            throw ValidationException::withMessages([
+                'status' => 'Student decisions can only be overridden while the batch is pending or under review.',
+            ]);
+        }
+
+        if (! in_array($finalDecision, ['promote', 'repeat', 'graduate'], true)) {
+            throw ValidationException::withMessages([
+                'final_decision' => 'Invalid promotion outcome.',
+            ]);
+        }
+
+        $old = $promotionStudent->recommendation;
+
+        $promotionStudent->update([
+            'final_decision' => $finalDecision,
+            'override_reason' => $reason,
+            'overridden_by' => $actor->id,
+            'overridden_at' => now(),
+        ]);
+
+        if ($batch->status->equals(Pending::class)) {
+            $batch->status->transitionTo(Reviewing::class);
+        }
+
+        event(new StudentDecisionOverridden(
+            $promotionStudent->fresh(),
+            $actor,
+            $old,
+            $finalDecision,
+            $reason
+        ));
+
+        return $promotionStudent->fresh();
     }
 
-    /**
-     * Resolve the next class section (same arm/name, next level).
-     */
-    protected function resolveNextClassSection($currentSection): ?int
+    public function approveBatch(PromotionBatch $batch, User $actor, ?string $comments = null): PromotionBatch
     {
-        if (!$currentSection || !$currentSection->classLevel) {
+        if (! $batch->status->canBeApproved()) {
+            throw ValidationException::withMessages([
+                'status' => 'Only pending or reviewing batches can be approved.',
+            ]);
+        }
+
+        $batch->approved_by = $actor->id;
+        $batch->approved_at = now();
+        $batch->approval_comments = $comments;
+        $batch->save();
+        $batch->status->transitionTo(Approved::class);
+        event(new PromotionBatchApproved($batch->fresh()));
+
+        return $batch->fresh();
+    }
+
+    public function sendBackForReview(PromotionBatch $batch): PromotionBatch
+    {
+        if (! $batch->status->equals(Reviewing::class)) {
+            throw ValidationException::withMessages([
+                'status' => 'Only reviewing batches can be sent back to pending.',
+            ]);
+        }
+
+        $batch->status->transitionTo(Pending::class);
+
+        return $batch->fresh();
+    }
+
+    public function executeBatch(PromotionBatch $batch, User $actor): PromotionBatch
+    {
+        if (! $batch->status->canBeExecuted()) {
+            throw ValidationException::withMessages([
+                'status' => 'Only approved batches can be executed.',
+            ]);
+        }
+
+        $batch->executed_by = $actor->id;
+        $batch->executed_at = now();
+        $batch->save();
+        $batch->status->transitionTo(Executing::class);
+        ProcessStudentPromotion::dispatch($batch->fresh());
+
+        return $batch->fresh();
+    }
+
+    public function cancelBatch(PromotionBatch $batch, User $actor, ?string $reason = null): PromotionBatch
+    {
+        if (! $batch->status->canBeCancelled()) {
+            throw ValidationException::withMessages([
+                'status' => 'This batch cannot be cancelled in its current state.',
+            ]);
+        }
+
+        $metadata = $batch->metadata ?? [];
+        $metadata['cancellation'] = [
+            'reason' => $reason,
+            'cancelled_by' => $actor->id,
+            'cancelled_at' => now()->toIso8601String(),
+        ];
+        $batch->metadata = $metadata;
+        $batch->save();
+        $batch->status->transitionTo(Cancelled::class);
+        event(new PromotionBatchCancelled($batch->fresh()));
+
+        return $batch->fresh();
+    }
+
+    protected function computeAttendancePercentage(Student $student, AcademicSession $session): ?float
+    {
+        $ledgers = AttendanceLedger::query()
+            ->where('attendable_type', Student::class)
+            ->where('attendable_id', $student->id)
+            ->whereHas('attendanceSession', function ($q) use ($session) {
+                if (\Illuminate\Support\Facades\Schema::hasColumn('attendance_sessions', 'academic_session_id')) {
+                    $q->where('academic_session_id', $session->id);
+                }
+            })
+            ->get();
+
+        if ($ledgers->isEmpty()) {
             return null;
         }
 
-        $nextLevel = $this->getNextClassLevel($currentSection->classLevel);
-
-        if (!$nextLevel) {
-            return null; // Graduating
+        $countable = $ledgers->filter(fn ($l) => ! in_array($l->status, ['holiday', 'leave'], true));
+        if ($countable->isEmpty()) {
+            return null;
         }
 
-        return ClassSection::where('class_level_id', $nextLevel->id)
-            ->where('name', $currentSection->name) // Keep same arm (A, B, etc.)
-            ->value('id');
+        $present = $countable->filter(fn ($l) => in_array($l->status, ['present', 'late'], true))->count();
+
+        return round(($present / $countable->count()) * 100, 2);
     }
 
-    /**
-     * Get next ClassLevel (JSS1 → JSS2, SSS3 → null).
-     * You can improve this with a 'sequence' column later.
-     */
-    protected function getNextClassLevel($currentLevel): ?ClassLevel
+    protected function hasNextClassLevel(ClassLevel $currentLevel): bool
     {
-
-        return ClassLevel::nextAfter($currentLevel)->first();
+        return ClassLevel::query()
+            ->where('school_section_id', $currentLevel->school_section_id)
+            ->where('is_active', true)
+            ->where('sequence', '>', $currentLevel->sequence)
+            ->exists();
     }
 
-    /**
-     * Default record when student has no current section (safety fallback).
-     */
-    protected function defaultRepeatRecord(?int $currentSectionId): array
+    protected function resolveNextClassSection(ClassSection $currentSection): ?ClassSection
     {
-        return [
-            'current_class_section_id' => $currentSectionId,
-            'next_class_section_id' => null,
-            'recommendation' => 'repeat',
-            'final_decision' => null,
-            'average_score' => null,
-            'failed_subjects_count' => 0,
-            'total_subjects_count' => 0,
-            'attendance_percentage' => null,
-            'is_processed' => false,
-        ];
-    }
-
-    /**
-     * Execute an approved batch (called from controller).
-     * Dispatches the queued job for actual processing.
-     */
-    public function executeApprovedBatch(PromotionBatch $batch): void
-    {
-        if (!$batch->isApproved()) {
-            throw new \Exception('Only approved batches can be executed.');
+        $currentLevel = $currentSection->classLevel;
+        if (! $currentLevel) {
+            return null;
         }
 
-        $batch->update([
-            'status' => 'executing',
-            'executed_by' => auth()->id(),
-            'executed_at' => now(),
-        ]);
+        $nextLevel = ClassLevel::query()
+            ->where('school_section_id', $currentLevel->school_section_id)
+            ->where('is_active', true)
+            ->where('sequence', '>', $currentLevel->sequence)
+            ->orderBy('sequence')
+            ->first();
 
-        // Dispatch to queue (see ProcessStudentPromotion job next)
-        \App\Jobs\Promotion\ProcessStudentPromotion::dispatch($batch)
-            ->onQueue('promotions'); // Optional: dedicated queue
+        if (! $nextLevel) {
+            return null;
+        }
+
+        $sameArm = ClassSection::query()
+            ->where('class_level_id', $nextLevel->id)
+            ->where('is_active', true)
+            ->when($currentSection->name, fn ($q) => $q->where('name', $currentSection->name))
+            ->first();
+
+        if ($sameArm) {
+            return $sameArm;
+        }
+
+        return ClassSection::query()
+            ->where('class_level_id', $nextLevel->id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->first();
     }
 }
