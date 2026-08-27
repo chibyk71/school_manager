@@ -7,7 +7,7 @@ use App\Http\Requests\UpdateTimeTableRequest;
 use App\Jobs\GenerateTimeTableEntries;
 use App\Models\Academic\SchoolSection;
 use App\Models\Academic\Term;
-use App\Models\Academic\TimeTable;
+use App\Models\Academic\Timetable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
