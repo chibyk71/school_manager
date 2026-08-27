@@ -3,11 +3,19 @@
 namespace App\Jobs\Promotion;
 
 use App\Events\Promotion\PromotionBatchCompleted;
+use App\Models\Academic\AcademicSession;
+use App\Models\Academic\ClassSection;
 use App\Models\Promotion\PromotionBatch;
 use App\Models\Promotion\PromotionHistory;
 use App\Models\Promotion\PromotionStudent;
+use App\Models\Student\Student;
+use App\Models\Student\StudentSessionPlacement;
+use App\Models\User;
+use App\Services\Student\StudentPlacementService;
+use App\Services\Student\StudentStatusService;
 use App\States\Promotion\Completed;
 use App\States\Promotion\Executing;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -19,9 +27,18 @@ use Illuminate\Support\Facades\Log;
 /**
  * Final execution job for an approved PromotionBatch.
  *
- * Processes each PromotionStudent, applies the final decision
- * (recommendation or override), and writes immutable PromotionHistory rows.
- * Transitions the batch Executing → Completed when finished.
+ * For each unprocessed PromotionStudent:
+ *  - Applies promote / repeat / graduate against StudentSessionPlacement (+ student status)
+ *  - Writes an immutable PromotionHistory row
+ *  - Marks the promotion_student row processed
+ *
+ * Batch counters:
+ *  - processed_students = successful applications only
+ *  - failed_students    = per-student failures
+ *  - metadata.completed_with_errors = true when any student failed
+ *
+ * Transitions Executing → Completed when the job finishes (even with partial failures).
+ * Callers should treat completed_with_errors as requiring follow-up, not a clean close.
  */
 class ProcessStudentPromotion implements ShouldQueue
 {
@@ -36,8 +53,10 @@ class ProcessStudentPromotion implements ShouldQueue
         $this->onQueue('promotions');
     }
 
-    public function handle(): void
-    {
+    public function handle(
+        StudentPlacementService $placementService,
+        StudentStatusService $statusService
+    ): void {
         $this->batch->refresh();
 
         if (! $this->batch->status->equals(Executing::class)) {
@@ -53,20 +72,41 @@ class ProcessStudentPromotion implements ShouldQueue
 
         $processed = 0;
         $failed = 0;
+        $fromSession = AcademicSession::query()->find($this->batch->academic_session_id);
+        $nextSession = $fromSession ? $this->resolveNextSession($fromSession) : null;
 
         try {
             PromotionStudent::query()
                 ->where('promotion_batch_id', $this->batch->id)
                 ->where('is_processed', false)
-                ->chunkById(100, function ($students) use (&$processed, &$failed) {
+                ->chunkById(100, function ($students) use (
+                    &$processed,
+                    &$failed,
+                    $placementService,
+                    $statusService,
+                    $fromSession,
+                    $nextSession
+                ) {
                     foreach ($students as $studentRecord) {
-                        $this->processSingleStudent($studentRecord, $processed, $failed);
+                        $this->processSingleStudent(
+                            $studentRecord,
+                            $placementService,
+                            $statusService,
+                            $fromSession,
+                            $nextSession,
+                            $processed,
+                            $failed
+                        );
                     }
                 });
 
             $this->batch->refresh();
-            $this->batch->processed_students = $this->batch->total_students;
+            $this->batch->processed_students = $processed;
             $this->batch->failed_students = $failed;
+            $metadata = $this->batch->metadata ?? [];
+            $metadata['completed_with_errors'] = $failed > 0;
+            $metadata['execution_finished_at'] = now()->toIso8601String();
+            $this->batch->metadata = $metadata;
             $this->batch->save();
             $this->batch->status->transitionTo(Completed::class);
 
@@ -76,6 +116,7 @@ class ProcessStudentPromotion implements ShouldQueue
                 'batch_id' => $this->batch->id,
                 'processed' => $processed,
                 'failed' => $failed,
+                'completed_with_errors' => $failed > 0,
             ]);
         } catch (\Throwable $e) {
             Log::error('Critical failure in ProcessStudentPromotion job', [
@@ -95,12 +136,59 @@ class ProcessStudentPromotion implements ShouldQueue
         }
     }
 
-    protected function processSingleStudent(PromotionStudent $studentRecord, int &$processed, int &$failed): void
-    {
+    protected function processSingleStudent(
+        PromotionStudent $studentRecord,
+        StudentPlacementService $placementService,
+        StudentStatusService $statusService,
+        ?AcademicSession $fromSession,
+        ?AcademicSession $nextSession,
+        int &$processed,
+        int &$failed
+    ): void {
         try {
-            DB::transaction(function () use ($studentRecord, &$processed) {
-                $studentRecord->loadMissing('promotionBatch');
+            DB::transaction(function () use (
+                $studentRecord,
+                $placementService,
+                $statusService,
+                $fromSession,
+                $nextSession,
+                &$processed
+            ) {
+                $studentRecord->loadMissing(['promotionBatch', 'nextClassSection', 'currentClassSection']);
                 $finalOutcome = $studentRecord->final_outcome;
+                $student = Student::query()->findOrFail($studentRecord->student_id);
+                $actor = $this->resolveActor();
+
+                $toSessionId = null;
+                $toSectionId = $studentRecord->next_class_section_id;
+
+                match ($finalOutcome) {
+                    'promote' => $this->applyPromote(
+                        $student,
+                        $studentRecord,
+                        $placementService,
+                        $fromSession,
+                        $nextSession,
+                        $toSessionId,
+                        $toSectionId
+                    ),
+                    'repeat' => $this->applyRepeat(
+                        $student,
+                        $studentRecord,
+                        $placementService,
+                        $fromSession,
+                        $nextSession,
+                        $toSessionId,
+                        $toSectionId
+                    ),
+                    'graduate' => $this->applyGraduate(
+                        $student,
+                        $studentRecord,
+                        $statusService,
+                        $actor
+                    ),
+                    default => throw new \RuntimeException("Unknown promotion outcome: {$finalOutcome}"),
+                };
 
                 PromotionHistory::create([
                     'school_id' => $studentRecord->promotionBatch->school_id,
@@ -108,11 +196,9 @@ class ProcessStudentPromotion implements ShouldQueue
                     'promotion_batch_id' => $studentRecord->promotion_batch_id,
                     'promotion_student_id' => $studentRecord->id,
                     'from_academic_session_id' => $studentRecord->promotionBatch->academic_session_id,
-                    'to_academic_session_id' => in_array($finalOutcome, ['promote', 'graduate'], true)
-                        ? $this->resolveNextSessionId($studentRecord)
-                        : null,
+                    'to_academic_session_id' => $toSessionId,
                     'from_class_section_id' => $studentRecord->current_class_section_id,
-                    'to_class_section_id' => $studentRecord->next_class_section_id,
+                    'to_class_section_id' => $finalOutcome === 'graduate' ? null : $toSectionId,
                     'outcome' => $finalOutcome,
                     'was_overridden' => $studentRecord->isOverridden(),
                     'override_reason' => $studentRecord->override_reason,
@@ -125,6 +211,7 @@ class ProcessStudentPromotion implements ShouldQueue
                 $studentRecord->update([
                     'is_processed' => true,
                     'processed_at' => now(),
+                    'processing_error' => null,
                 ]);
 
                 $processed++;
@@ -144,12 +231,127 @@ class ProcessStudentPromotion implements ShouldQueue
         }
     }
 
-    /**
-     * Next academic session for promote/graduate history rows.
-     * Returns null until session sequencing is wired; history still records from_session.
-     */
-    protected function resolveNextSessionId(PromotionStudent $studentRecord): ?string
+    protected function applyPromote(
+        Student $student,
+        PromotionStudent $studentRecord,
+        StudentPlacementService $placementService,
+        ?AcademicSession $fromSession,
+        ?AcademicSession $nextSession,
+        ?string &$toSessionId,
+        ?string &$toSectionId
+    ): void {
+        if (! $nextSession) {
+            throw new \RuntimeException(
+                'Cannot promote: no subsequent academic session exists for this school. Create the next session first.'
+            );
+        }
+
+        $section = $studentRecord->nextClassSection
+            ?? ($toSectionId ? ClassSection::query()->find($toSectionId) : null);
+
+        if (! $section) {
+            throw new \RuntimeException('Cannot promote: next class section is not set on the promotion student row.');
+        }
+
+        $this->stampFromPlacement($student, $fromSession, 'promoted');
+
+        $placementService->placeInSession($student, [
+            'academic_session_id' => $nextSession->id,
+            'class_level_id' => $section->class_level_id,
+            'class_section_id' => $section->id,
+            'promotion_outcome' => 'promoted',
+            'notes' => 'Promoted via batch '.$this->batch->id,
+        ]);
+
+        $toSessionId = $nextSession->id;
+        $toSectionId = $section->id;
+    }
+
+    protected function applyRepeat(
+        Student $student,
+        PromotionStudent $studentRecord,
+        StudentPlacementService $placementService,
+        ?AcademicSession $fromSession,
+        ?AcademicSession $nextSession,
+        ?string &$toSessionId,
+        ?string &$toSectionId
+    ): void {
+        if (! $nextSession) {
+            throw new \RuntimeException(
+                'Cannot record repeat: no subsequent academic session exists for this school. Create the next session first.'
+            );
+        }
+
+        $section = $studentRecord->currentClassSection
+            ?? ($studentRecord->current_class_section_id
+                ? ClassSection::query()->find($studentRecord->current_class_section_id)
+                : null);
+
+        if (! $section) {
+            throw new \RuntimeException('Cannot record repeat: current class section is missing.');
+        }
+
+        $this->stampFromPlacement($student, $fromSession, 'repeated');
+
+        $placementService->placeInSession($student, [
+            'academic_session_id' => $nextSession->id,
+            'class_level_id' => $section->class_level_id,
+            'class_section_id' => $section->id,
+            'promotion_outcome' => 'repeated',
+            'notes' => 'Repeated via batch '.$this->batch->id,
+        ]);
+
+        $toSessionId = $nextSession->id;
+        $toSectionId = $section->id;
+    }
+
+    protected function applyGraduate(
+        Student $student,
+        PromotionStudent $studentRecord,
+        StudentStatusService $statusService,
+        ?User $actor
+    ): void {
+        if (! $actor) {
+            throw new \RuntimeException('Cannot graduate: executed_by user is missing on the batch.');
+        }
+
+        $statusService->markGraduated($student, Carbon::now(), $actor);
+    }
+
+    protected function stampFromPlacement(
+        Student $student,
+        ?AcademicSession $fromSession,
+        string $outcome
+    ): void {
+        if (! $fromSession) {
+            return;
+        }
+
+        // Note: placements.promotion_batch_id is legacy bigint; batches use UUIDs — stamp outcome only.
+        StudentSessionPlacement::query()
+            ->where('student_id', $student->id)
+            ->where('academic_session_id', $fromSession->id)
+            ->update([
+                'promotion_outcome' => $outcome,
+            ]);
+    }
+
+    protected function resolveNextSession(AcademicSession $fromSession): ?AcademicSession
     {
-        return null;
+        return AcademicSession::query()
+            ->where('school_id', $fromSession->school_id)
+            ->where('start_date', '>', $fromSession->start_date)
+            ->orderBy('start_date')
+            ->first();
+    }
+
+    protected function resolveActor(): ?User
+    {
+        $id = $this->batch->executed_by;
+        if (! $id) {
+            return null;
+        }
+
+        return User::query()->find($id);
     }
 }
