@@ -25,31 +25,41 @@ jobs:
                    app/Services/Academic \
                    app/Policies
 
-          [ -f app/Http/Controllers/SchoolSectionController.php ] && git mv app/Http/Controllers/SchoolSectionController.php app/Http/Controllers/Settings/
-          [ -f app/Http/Controllers/Exam/AssessmentTemplateController.php ] && git mv app/Http/Controllers/Exam/AssessmentTemplateController.php app/Http/Controllers/Academic/
-          [ -f app/Http/Controllers/Exam/ExamController.php ] && git mv app/Http/Controllers/Exam/ExamController.php app/Http/Controllers/Academic/
-          [ -f app/Http/Controllers/Exam/ExamResultsController.php ] && git mv app/Http/Controllers/Exam/ExamResultsController.php app/Http/Controllers/Academic/
-          [ -f app/Http/Controllers/Exam/ReportCardController.php ] && git mv app/Http/Controllers/Exam/ReportCardController.php app/Http/Controllers/Academic/
-          [ -f app/Http/Controllers/Exam/ScoreEntryController.php ] && git mv app/Http/Controllers/Exam/ScoreEntryController.php app/Http/Controllers/Academic/
-          [ -f app/Http/Controllers/Settings/Academic/GradeController.php ] && git mv app/Http/Controllers/Settings/Academic/GradeController.php app/Http/Controllers/
-          [ -f app/Http/Controllers/Settings/Communication/EmailController.php ] && git mv app/Http/Controllers/Settings/Communication/EmailController.php app/Http/Controllers/Settings/Communication/EmailSettingsController.php
-          [ -f app/Http/Controllers/Settings/System/GDPRController.php ] && git mv app/Http/Controllers/Settings/System/GDPRController.php app/Http/Controllers/Settings/System/GdprSettingsController.php
-          [ -f app/Http/Controllers/Academic/ClassLevelController.php ] && git mv app/Http/Controllers/Academic/ClassLevelController.php app/Http/Controllers/
+          move_or_cleanup() {
+            local src="$1" dest="$2"
+            if [ -f "$src" ] && [ ! -e "$dest" ]; then
+              git mv "$src" "$dest"
+            elif [ -f "$src" ] && [ -e "$dest" ]; then
+              # Destination already has the correct file from a partial push; drop the old path
+              git rm -f "$src"
+            fi
+          }
 
-          [ -f app/Http/Resources/Academic/ClassLevelResource.php ] && git mv app/Http/Resources/Academic/ClassLevelResource.php app/Http/Resources/
-          [ -f app/Http/Resources/Academic/ClassSectionMinimalResource.php ] && git mv app/Http/Resources/Academic/ClassSectionMinimalResource.php app/Http/Resources/
-          [ -f app/Http/Resources/Academic/ClassSectionResource.php ] && git mv app/Http/Resources/Academic/ClassSectionResource.php app/Http/Resources/
-          [ -f app/Http/Resources/Academic/SubjectResource.php ] && git mv app/Http/Resources/Academic/SubjectResource.php app/Http/Resources/
-          [ -f app/Http/Resources/Exam/ComputedResultResource.php ] && git mv app/Http/Resources/Exam/ComputedResultResource.php app/Http/Resources/Academic/
+          move_or_cleanup app/Http/Controllers/SchoolSectionController.php app/Http/Controllers/Settings/SchoolSectionController.php
+          move_or_cleanup app/Http/Controllers/Exam/AssessmentTemplateController.php app/Http/Controllers/Academic/AssessmentTemplateController.php
+          move_or_cleanup app/Http/Controllers/Exam/ExamController.php app/Http/Controllers/Academic/ExamController.php
+          move_or_cleanup app/Http/Controllers/Exam/ExamResultsController.php app/Http/Controllers/Academic/ExamResultsController.php
+          move_or_cleanup app/Http/Controllers/Exam/ReportCardController.php app/Http/Controllers/Academic/ReportCardController.php
+          move_or_cleanup app/Http/Controllers/Exam/ScoreEntryController.php app/Http/Controllers/Academic/ScoreEntryController.php
+          move_or_cleanup app/Http/Controllers/Settings/Academic/GradeController.php app/Http/Controllers/GradeController.php
+          move_or_cleanup app/Http/Controllers/Settings/Communication/EmailController.php app/Http/Controllers/Settings/Communication/EmailSettingsController.php
+          move_or_cleanup app/Http/Controllers/Settings/System/GDPRController.php app/Http/Controllers/Settings/System/GdprSettingsController.php
+          move_or_cleanup app/Http/Controllers/Academic/ClassLevelController.php app/Http/Controllers/ClassLevelController.php
 
-          [ -f app/Policies/Academic/ClassLevelPolicy.php ] && git mv app/Policies/Academic/ClassLevelPolicy.php app/Policies/
-          [ -f app/Policies/Academic/ClassPeriodPolicy.php ] && git mv app/Policies/Academic/ClassPeriodPolicy.php app/Policies/
-          [ -f app/Policies/Academic/ClassSectionPolicy.php ] && git mv app/Policies/Academic/ClassSectionPolicy.php app/Policies/
-          [ -f app/Policies/UserManagement/ProfilePolicy.php ] && git mv app/Policies/UserManagement/ProfilePolicy.php app/Policies/
+          move_or_cleanup app/Http/Resources/Academic/ClassLevelResource.php app/Http/Resources/ClassLevelResource.php
+          move_or_cleanup app/Http/Resources/Academic/ClassSectionMinimalResource.php app/Http/Resources/ClassSectionMinimalResource.php
+          move_or_cleanup app/Http/Resources/Academic/ClassSectionResource.php app/Http/Resources/ClassSectionResource.php
+          move_or_cleanup app/Http/Resources/Academic/SubjectResource.php app/Http/Resources/SubjectResource.php
+          move_or_cleanup app/Http/Resources/Exam/ComputedResultResource.php app/Http/Resources/Academic/ComputedResultResource.php
 
-          [ -f app/Services/GradeService.php ] && git mv app/Services/GradeService.php app/Services/Academic/
-          [ -f app/Models/Academic/TimeTable.php ] && git mv app/Models/Academic/TimeTable.php app/Models/Academic/Timetable.php
-          [ -f app/Traits/BulkActions/HandlesBulkActions.php ] && git mv app/Traits/BulkActions/HandlesBulkActions.php app/Http/Requests/BulkActions/Traits/
+          move_or_cleanup app/Policies/Academic/ClassLevelPolicy.php app/Policies/ClassLevelPolicy.php
+          move_or_cleanup app/Policies/Academic/ClassPeriodPolicy.php app/Policies/ClassPeriodPolicy.php
+          move_or_cleanup app/Policies/Academic/ClassSectionPolicy.php app/Policies/ClassSectionPolicy.php
+          move_or_cleanup app/Policies/UserManagement/ProfilePolicy.php app/Policies/ProfilePolicy.php
+
+          move_or_cleanup app/Services/GradeService.php app/Services/Academic/GradeService.php
+          move_or_cleanup app/Models/Academic/TimeTable.php app/Models/Academic/Timetable.php
+          move_or_cleanup app/Traits/BulkActions/HandlesBulkActions.php app/Http/Requests/BulkActions/Traits/HandlesBulkActions.php
 
           if grep -q 'use App\\Http\\Controllers\\SchoolSectionController;' routes/web.php 2>/dev/null; then
             sed -i 's/use App\\Http\\Controllers\\SchoolSectionController;/use App\\Http\\Controllers\\Settings\\SchoolSectionController;/' routes/web.php
