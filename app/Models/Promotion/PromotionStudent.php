@@ -100,20 +100,22 @@ class PromotionStudent extends Model
     public function getRecommendationLabelAttribute(): string
     {
         return match ($this->recommendation) {
-            'promote'  => 'Promote',
-            'repeat'   => 'Repeat',
-            'graduate' => 'Graduate',
-            default    => ucfirst((string) $this->recommendation),
+            'promote'    => 'Promote',
+            'repeat'     => 'Repeat',
+            'graduate'   => 'Graduate',
+            'incomplete' => 'Incomplete',
+            default      => ucfirst((string) $this->recommendation),
         };
     }
 
     public function getOutcomeLabelAttribute(): string
     {
         return match ($this->final_outcome) {
-            'promote'  => 'Promote',
-            'repeat'   => 'Repeat',
-            'graduate' => 'Graduate',
-            default    => ucfirst((string) $this->final_outcome),
+            'promote'    => 'Promote',
+            'repeat'     => 'Repeat',
+            'graduate'   => 'Graduate',
+            'incomplete' => 'Incomplete',
+            default      => ucfirst((string) $this->final_outcome),
         };
     }
 
