@@ -1,0 +1,89 @@
+name: Apply PSR-4 renames
+on:
+  workflow_dispatch:
+jobs:
+  rename:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/psr4-autoload-compliance
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply renames
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p app/Http/Controllers/Academic \
+                   app/Http/Controllers/Settings/Communication \
+                   app/Http/Controllers/Settings/System \
+                   app/Http/Resources/Academic \
+                   app/Http/Requests/BulkActions/Traits \
+                   app/Services/Academic \
+                   app/Policies
+
+          # Controllers
+          [ -f app/Http/Controllers/SchoolSectionController.php ] && git mv app/Http/Controllers/SchoolSectionController.php app/Http/Controllers/Settings/
+          [ -f app/Http/Controllers/Exam/AssessmentTemplateController.php ] && git mv app/Http/Controllers/Exam/AssessmentTemplateController.php app/Http/Controllers/Academic/
+          [ -f app/Http/Controllers/Exam/ExamController.php ] && git mv app/Http/Controllers/Exam/ExamController.php app/Http/Controllers/Academic/
+          [ -f app/Http/Controllers/Exam/ExamResultsController.php ] && git mv app/Http/Controllers/Exam/ExamResultsController.php app/Http/Controllers/Academic/
+          [ -f app/Http/Controllers/Exam/ReportCardController.php ] && git mv app/Http/Controllers/Exam/ReportCardController.php app/Http/Controllers/Academic/
+          [ -f app/Http/Controllers/Exam/ScoreEntryController.php ] && git mv app/Http/Controllers/Exam/ScoreEntryController.php app/Http/Controllers/Academic/
+          [ -f app/Http/Controllers/Settings/Academic/GradeController.php ] && git mv app/Http/Controllers/Settings/Academic/GradeController.php app/Http/Controllers/
+          [ -f app/Http/Controllers/Settings/Communication/EmailController.php ] && git mv app/Http/Controllers/Settings/Communication/EmailController.php app/Http/Controllers/Settings/Communication/EmailSettingsController.php
+          [ -f app/Http/Controllers/Settings/System/GDPRController.php ] && git mv app/Http/Controllers/Settings/System/GDPRController.php app/Http/Controllers/Settings/System/GdprSettingsController.php
+          [ -f app/Http/Controllers/Academic/ClassLevelController.php ] && git mv app/Http/Controllers/Academic/ClassLevelController.php app/Http/Controllers/
+
+          # Resources
+          [ -f app/Http/Resources/Academic/ClassLevelResource.php ] && git mv app/Http/Resources/Academic/ClassLevelResource.php app/Http/Resources/
+          [ -f app/Http/Resources/Academic/ClassSectionMinimalResource.php ] && git mv app/Http/Resources/Academic/ClassSectionMinimalResource.php app/Http/Resources/
+          [ -f app/Http/Resources/Academic/ClassSectionResource.php ] && git mv app/Http/Resources/Academic/ClassSectionResource.php app/Http/Resources/
+          [ -f app/Http/Resources/Academic/SubjectResource.php ] && git mv app/Http/Resources/Academic/SubjectResource.php app/Http/Resources/
+          [ -f app/Http/Resources/Exam/ComputedResultResource.php ] && git mv app/Http/Resources/Exam/ComputedResultResource.php app/Http/Resources/Academic/
+
+          # Policies
+          [ -f app/Policies/Academic/ClassLevelPolicy.php ] && git mv app/Policies/Academic/ClassLevelPolicy.php app/Policies/
+          [ -f app/Policies/Academic/ClassPeriodPolicy.php ] && git mv app/Policies/Academic/ClassPeriodPolicy.php app/Policies/
+          [ -f app/Policies/Academic/ClassSectionPolicy.php ] && git mv app/Policies/Academic/ClassSectionPolicy.php app/Policies/
+          [ -f app/Policies/UserManagement/ProfilePolicy.php ] && git mv app/Policies/UserManagement/ProfilePolicy.php app/Policies/
+
+          # Other
+          [ -f app/Services/GradeService.php ] && git mv app/Services/GradeService.php app/Services/Academic/
+          [ -f app/Models/Academic/TimeTable.php ] && git mv app/Models/Academic/TimeTable.php app/Models/Academic/Timetable.php
+          [ -f app/Traits/BulkActions/HandlesBulkActions.php ] && git mv app/Traits/BulkActions/HandlesBulkActions.php app/Http/Requests/BulkActions/Traits/
+
+          # Content fixes
+          if grep -q 'use App\\Http\\Controllers\\SchoolSectionController;' routes/web.php 2>/dev/null; then
+            sed -i 's/use App\\Http\\Controllers\\SchoolSectionController;/use App\\Http\\Controllers\\Settings\\SchoolSectionController;/' routes/web.php
+          fi
+          for f in app/Http/Controllers/TimeTableController.php \
+                   app/Http/Controllers/TimeTableDetailController.php \
+                   app/Policies/TimeTablePolicy.php \
+                   app/Jobs/GenerateTimeTableEntries.php \
+                   app/Notifications/TimeTableGeneratedNotification.php \
+                   database/factories/Academic/TimeTableFactory.php; do
+            if [ -f "$f" ]; then
+              sed -i 's/App\\Models\\Academic\\TimeTable/App\\Models\\Academic\\Timetable/g' "$f"
+            fi
+          done
+
+          # Clean empty dirs
+          rmdir app/Http/Controllers/Exam 2>/dev/null || true
+          rmdir app/Http/Resources/Exam 2>/dev/null || true
+          rmdir app/Traits/BulkActions 2>/dev/null || true
+
+          git add -A
+          git status
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "fix(psr4): complete remaining path/namespace alignment
+
+Move controllers, resources, policies, GradeService, Timetable model,
+and HandlesBulkActions so file paths match declared namespaces.
+Fix SchoolSectionController and TimeTable model imports."
+            git push origin HEAD:fix/psr4-autoload-compliance
+          fi
