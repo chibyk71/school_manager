@@ -1,7 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\StatisticsController;
-use App\Http\Controllers\SchoolSectionController;
+use App\Http\Controllers\Settings\SchoolSectionController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('/options')->group(function() {
