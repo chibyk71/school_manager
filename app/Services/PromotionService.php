@@ -95,6 +95,7 @@ class PromotionService
                 'batch_id' => $batch->id,
                 'status' => (string) $batch->status,
             ]);
+
             return;
         }
 
@@ -186,19 +187,34 @@ class PromotionService
             ->with(['exam.assessmentTemplate'])
             ->get();
 
-        $bySubject = $results->groupBy('subject_id')->map(function ($group) {
-            return $group->sortByDesc(fn (ExamResult $r) => $r->created_at)->first();
+        // Per subject: average total_score across finalized exams (not latest-only).
+        $subjectScores = $results->groupBy('subject_id')->map(function ($group) use ($passAverage) {
+            $avg = (float) $group->avg(fn (ExamResult $r) => (float) $r->total_score);
+            $passMark = $group
+                ->map(fn (ExamResult $r) => $r->exam?->assessmentTemplate?->pass_mark)
+                ->filter()
+                ->last() ?? $passAverage;
+
+            return [
+                'score' => round($avg, 2),
+                'pass_mark' => (float) $passMark,
+            ];
         });
 
-        $totalSubjects = $bySubject->count();
+        $requiredSubjectIds = $this->requiredSubjectIdsForLevel($currentLevel);
+        $foundSubjectIds = $subjectScores->keys()->all();
+        $missingRequired = $requiredSubjectIds === []
+            ? []
+            : array_values(array_diff($requiredSubjectIds, $foundSubjectIds));
+
+        $totalSubjects = $subjectScores->count();
         $averageScore = $totalSubjects > 0
-            ? round((float) $bySubject->avg(fn (ExamResult $r) => (float) $r->total_score), 2)
+            ? round((float) $subjectScores->avg(fn ($row) => $row['score']), 2)
             : null;
 
         $failed = 0;
-        foreach ($bySubject as $result) {
-            $passMark = $result->exam?->assessmentTemplate?->pass_mark ?? $passAverage;
-            if ((float) $result->total_score < (float) $passMark) {
+        foreach ($subjectScores as $row) {
+            if ($row['score'] < $row['pass_mark']) {
                 $failed++;
             }
         }
@@ -210,16 +226,22 @@ class PromotionService
 
         $nextSectionId = null;
         $hasNextLevel = false;
+        $nextSectionUnmapped = false;
         if ($currentLevel && $currentSection) {
             $hasNextLevel = $this->hasNextClassLevel($currentLevel);
             if ($hasNextLevel) {
-                $nextSectionId = $this->resolveNextClassSection($currentSection)?->id;
+                $mapped = $this->resolveNextClassSection($currentSection);
+                if ($mapped) {
+                    $nextSectionId = $mapped->id;
+                } else {
+                    $nextSectionUnmapped = true;
+                }
             }
         }
 
         $recommendation = 'promote';
-        if ($totalSubjects === 0) {
-            $recommendation = 'repeat';
+        if ($missingRequired !== [] || $totalSubjects === 0) {
+            $recommendation = 'incomplete';
         } elseif ($failed >= $failThreshold) {
             $recommendation = 'repeat';
         } elseif ($averageScore !== null && $averageScore < $passAverage) {
@@ -228,16 +250,22 @@ class PromotionService
             $recommendation = 'repeat';
         } elseif (! $hasNextLevel) {
             $recommendation = 'graduate';
+        } elseif ($nextSectionUnmapped) {
+            $recommendation = 'incomplete';
         }
 
         return [
             'recommendation' => $recommendation,
             'average_score' => $averageScore,
             'failed_subjects_count' => $failed,
-            'total_subjects_count' => $totalSubjects,
+            'total_subjects_count' => max($totalSubjects, count($requiredSubjectIds)),
             'attendance_percentage' => $attendancePct,
             'current_class_section_id' => $currentSection?->id,
-            'next_class_section_id' => $recommendation === 'repeat' ? $currentSection?->id : $nextSectionId,
+            'next_class_section_id' => match ($recommendation) {
+                'repeat' => $currentSection?->id,
+                'promote' => $nextSectionId,
+                default => $nextSectionId,
+            },
         ];
     }
 
@@ -290,6 +318,22 @@ class PromotionService
         if (! $batch->status->canBeApproved()) {
             throw ValidationException::withMessages([
                 'status' => 'Only pending or reviewing batches can be approved.',
+            ]);
+        }
+
+        $incomplete = PromotionStudent::query()
+            ->where('promotion_batch_id', $batch->id)
+            ->get()
+            ->filter(function (PromotionStudent $row) {
+                $outcome = $row->final_decision ?? $row->recommendation;
+
+                return ! in_array($outcome, ['promote', 'repeat', 'graduate'], true);
+            })
+            ->count();
+
+        if ($incomplete > 0) {
+            throw ValidationException::withMessages([
+                'status' => "Cannot approve: {$incomplete} student(s) still have incomplete recommendations. Override each to promote, repeat, or graduate first.",
             ]);
         }
 
@@ -357,7 +401,6 @@ class PromotionService
 
     protected function computeAttendancePercentage(Student $student, AcademicSession $session): ?float
     {
-        // AttendanceSession has date_effective (no academic_session_id). Bound by session dates.
         $ledgers = AttendanceLedger::query()
             ->where('attendable_type', Student::class)
             ->where('attendable_id', $student->id)
@@ -412,20 +455,31 @@ class PromotionService
             return null;
         }
 
-        $sameArm = ClassSection::query()
-            ->where('class_level_id', $nextLevel->id)
-            ->where('is_active', true)
-            ->when($currentSection->name, fn ($q) => $q->where('name', $currentSection->name))
-            ->first();
-
-        if ($sameArm) {
-            return $sameArm;
+        // Only same arm name — never invent a section via alphabetical fallback.
+        if (! filled($currentSection->name)) {
+            return null;
         }
 
         return ClassSection::query()
             ->where('class_level_id', $nextLevel->id)
             ->where('is_active', true)
-            ->orderBy('name')
+            ->where('name', $currentSection->name)
             ->first();
+    }
+
+    /**
+     * Subject IDs required for a class level (class_level_subject pivot).
+     */
+    protected function requiredSubjectIdsForLevel(?ClassLevel $level): array
+    {
+        if (! $level) {
+            return [];
+        }
+
+        return DB::table('class_level_subject')
+            ->where('class_level_id', $level->id)
+            ->pluck('subject_id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
     }
 }
