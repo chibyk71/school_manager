@@ -11,7 +11,7 @@ export type PromotionBatchStatus =
     | 'completed'
     | 'cancelled';
 
-export type PromotionDecision = 'promote' | 'repeat' | 'graduate';
+export type PromotionDecision = 'promote' | 'repeat' | 'graduate' | 'incomplete';
 
 export interface PromotionBatch {
     id: string;
@@ -23,6 +23,7 @@ export interface PromotionBatch {
     total_students: number;
     processed_students: number;
     failed_students: number;
+    completed_with_errors?: boolean;
     academic_session: { id: string; name: string } | null;
     initiated_by?: { id: string; name: string } | null;
     approved_by?: { id: string; name: string } | null;
@@ -85,9 +86,10 @@ export const PROMOTION_STATUS_CONFIG: Record<
 
 export const PROMOTION_DECISION_CONFIG: Record<
     PromotionDecision,
-    { label: string; severity: 'success' | 'warn' | 'info' }
+    { label: string; severity: 'success' | 'warn' | 'info' | 'secondary' | 'danger' }
 > = {
     promote: { label: 'Promote', severity: 'success' },
     repeat: { label: 'Repeat', severity: 'warn' },
     graduate: { label: 'Graduate', severity: 'info' },
+    incomplete: { label: 'Incomplete', severity: 'secondary' },
 };
