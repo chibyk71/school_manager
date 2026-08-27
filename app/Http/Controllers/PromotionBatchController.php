@@ -1,187 +1,194 @@
 <?php
-// app/Http/Controllers/Promotion/PromotionBatchController.php
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Promotion\ApprovePromotionBatchRequest;
+use App\Http\Requests\Promotion\CancelPromotionBatchRequest;
+use App\Http\Requests\Promotion\ExecutePromotionBatchRequest;
+use App\Http\Requests\Promotion\OverridePromotionStudentRequest;
+use App\Http\Requests\Promotion\StorePromotionBatchRequest;
+use App\Http\Resources\Promotion\PromotionBatchResource;
+use App\Http\Resources\Promotion\PromotionStudentResource;
+use App\Models\Academic\AcademicSession;
 use App\Models\Promotion\PromotionBatch;
 use App\Models\Promotion\PromotionStudent;
 use App\Services\PromotionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
-use Illuminate\Support\Facades\Bus;
-use App\Jobs\ProcessStudentPromotion;
+use Inertia\Response;
 
 class PromotionBatchController extends Controller
 {
-    protected PromotionService $promotionService;
-
-    public function __construct(PromotionService $promotionService)
+    public function __construct(protected PromotionService $promotionService)
     {
-        $this->promotionService = $promotionService;
     }
 
-    /**
-     * Show list of promotion batches
-     */
-    public function index(Request $request)
+    public function index(Request $request): Response
     {
         Gate::authorize('viewAny', PromotionBatch::class);
 
-        $batches = PromotionBatch::currentSchool()
-            ->with(['academicSession', 'principal'])
+        $batches = PromotionBatch::query()
+            ->currentSchool()
+            ->with(['academicSession', 'initiatedBy', 'approvedBy'])
             ->latest()
             ->tableQuery($request, [
                 ['field' => 'session_name', 'relation' => 'academicSession', 'relatedField' => 'name'],
-                ['field' => 'principal_name', 'relation' => 'principal', 'relatedField' => 'name'],
-            ])
-            ->get();
+            ]);
 
         return Inertia::render('Promotion/Index', [
-            'batches' => $batches,
+            'batches' => PromotionBatchResource::collection($batches->get())->resolve(),
             'can' => [
-                'create' => false, // auto-created
-                'execute' => Gate::allows('execute', PromotionBatch::class),
-            ]
+                'create' => Gate::allows('create', PromotionBatch::class),
+            ],
         ]);
     }
 
-    /**
-     * Review a promotion batch
-     */
-    public function review(PromotionBatch $batch)
+    public function store(StorePromotionBatchRequest $request)
+    {
+        Gate::authorize('create', PromotionBatch::class);
+
+        $session = AcademicSession::query()->findOrFail($request->validated('academic_session_id'));
+
+        $batch = $this->promotionService->createBatchForSession(
+            $session,
+            $request->user(),
+            $request->validated('name'),
+            $request->validated('description')
+        );
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'Promotion batch created. Population is running in the background.',
+                'batch' => new PromotionBatchResource($batch),
+            ], 201);
+        }
+
+        return redirect()
+            ->route('promotions.show', $batch)
+            ->with('success', 'Promotion batch created. Student recommendations are being computed.');
+    }
+
+    public function show(PromotionBatch $batch): Response
     {
         Gate::authorize('view', $batch);
 
-        $batch->load(['academicSession', 'principal']);
+        $batch->load(['academicSession', 'initiatedBy', 'approvedBy', 'executedBy']);
 
-        // Load students with relations
-        $students = PromotionStudent::where('promotion_batch_id', $batch->id)
-            ->with([
-                'student.user',
-                'currentSection.classLevel',
-                'nextSection.classLevel',
-                'overriddenBy'
-            ])
-            ->tableQuery($request ?? request(), [
-                ['field' => 'student_name', 'relation' => 'student.user', 'relatedField' => 'name'],
-                ['field' => 'current_class', 'relation' => 'currentSection.classLevel', 'relatedField' => 'display_name'],
-                ['field' => 'next_class', 'relation' => 'nextSection.classLevel', 'relatedField' => 'display_name'],
-            ])
+        return Inertia::render('Promotion/Show', [
+            'batch' => (new PromotionBatchResource($batch))->resolve(),
+            'can' => $this->abilities($batch),
+        ]);
+    }
+
+    public function review(PromotionBatch $batch): Response
+    {
+        Gate::authorize('review', $batch);
+
+        $batch->load(['academicSession']);
+
+        $students = PromotionStudent::query()
+            ->where('promotion_batch_id', $batch->id)
+            ->with(['student.profile', 'currentClassSection', 'nextClassSection', 'overriddenBy'])
+            ->orderBy('created_at')
             ->get();
 
         return Inertia::render('Promotion/Review', [
-            'batch' => $batch->append(['progress_percentage', 'can_execute']),
-            'students' => $students,
-            'stats' => [
-                'total' => $batch->total_students,
-                'promote' => $batch->students()->where('recommendation', 'promote')->count(),
-                'probation' => $batch->students()->where('recommendation', 'probation')->count(),
-                'repeat' => $batch->students()->where('recommendation', 'repeat')->count(),
-                'graduated' => $batch->students()->where('recommendation', 'graduated')->count(),
-            ],
-            'can' => [
-                'approve' => $batch->status === 'pending' && Gate::allows('approve', $batch),
-                'execute' => $batch->can_execute && Gate::allows('execute', $batch),
-            ]
+            'batch' => (new PromotionBatchResource($batch))->resolve(),
+            'students' => PromotionStudentResource::collection($students)->resolve(),
+            'can' => $this->abilities($batch),
         ]);
     }
 
-    /**
-     * Principal approves the batch
-     */
-    public function approve(Request $request, PromotionBatch $batch)
+    public function override(OverridePromotionStudentRequest $request, PromotionBatch $batch, PromotionStudent $student)
+    {
+        Gate::authorize('review', $batch);
+
+        if ($student->promotion_batch_id !== $batch->id) {
+            abort(404);
+        }
+
+        $updated = $this->promotionService->overrideStudentDecision(
+            $student,
+            $request->validated('final_decision'),
+            $request->validated('override_reason'),
+            $request->user()
+        );
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'Student decision updated.',
+                'student' => new PromotionStudentResource($updated->load(['student.profile', 'overriddenBy'])),
+                'batch' => new PromotionBatchResource($batch->fresh()),
+            ]);
+        }
+
+        return back()->with('success', 'Student decision updated.');
+    }
+
+    public function approve(ApprovePromotionBatchRequest $request, PromotionBatch $batch)
     {
         Gate::authorize('approve', $batch);
 
-        $request->validate([
-            'comments' => 'nullable|string|max:1000',
-        ]);
+        $this->promotionService->approveBatch(
+            $batch,
+            $request->user(),
+            $request->validated('approval_comments') ?? null
+        );
 
-        $batch->update([
-            'status' => 'approved',
-            'principal_id' => auth()->id(),
-            'principal_reviewed_at' => now(),
-            'principal_comments' => $request->comments,
-        ]);
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'Promotion batch approved.',
+                'batch' => new PromotionBatchResource($batch->fresh()),
+            ]);
+        }
 
-        return redirect()->route('promotions.review', $batch)
-            ->with('success', 'Promotion batch approved successfully!');
+        return back()->with('success', 'Promotion batch approved.');
     }
 
-    /**
-     * Principal rejects the batch
-     */
-    public function reject(Request $request, PromotionBatch $batch)
-    {
-        Gate::authorize('approve', $batch);
-
-        $request->validate([
-            'comments' => 'required|string|max:1000',
-        ]);
-
-        $batch->update([
-            'status' => 'rejected',
-            'principal_id' => auth()->id(),
-            'principal_reviewed_at' => now(),
-            'principal_comments' => $request->comments,
-        ]);
-
-        return redirect()->route('promotions.index')
-            ->with('error', 'Promotion batch rejected.');
-    }
-
-    /**
-     * Execute approved batch
-     */
-    public function execute(PromotionBatch $batch)
+    public function execute(ExecutePromotionBatchRequest $request, PromotionBatch $batch)
     {
         Gate::authorize('execute', $batch);
 
-        if (!$batch->can_execute) {
-            return back()->with('error', 'This batch cannot be executed.');
+        $this->promotionService->executeBatch($batch, $request->user());
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'Promotion execution started.',
+                'batch' => new PromotionBatchResource($batch->fresh()),
+            ]);
         }
 
-        // Dispatch the job (one job that processes all students)
-        Bus::batch([
-            new ProcessStudentPromotion($batch)
-        ])
-        ->name("Promotion: {$batch->name}")
-        ->then(function () use ($batch) {
-            $batch->update(['status' => 'completed', 'executed_at' => now()]);
-        })
-        ->catch(function () use ($batch) {
-            $batch->update(['status' => 'failed']);
-        })
-        ->dispatch();
-
-        $batch->update(['status' => 'executing']);
-
-        return back()->with('success', 'Promotion execution started! You will be notified when complete.');
+        return back()->with('success', 'Promotion execution started.');
     }
 
-    /**
-     * Bulk override decisions (Vue sends array of IDs + decision)
-     */
-    public function bulkOverride(Request $request, PromotionBatch $batch)
+    public function cancel(CancelPromotionBatchRequest $request, PromotionBatch $batch)
     {
-        Gate::authorize('approve', $batch);
+        Gate::authorize('cancel', $batch);
 
-        $request->validate([
-            'student_ids' => 'required|array',
-            'student_ids.*' => 'exists:promotion_students,id',
-            'decision' => 'required|in:promote,repeat,probation,graduated',
-            'reason' => 'nullable|string|max:500',
-        ]);
+        $this->promotionService->cancelBatch(
+            $batch,
+            $request->user(),
+            $request->validated('reason') ?? null
+        );
 
-        PromotionStudent::where('promotion_batch_id', $batch->id)
-            ->whereIn('id', $request->student_ids)
-            ->update([
-                'final_decision' => $request->decision,
-                'override_reason' => $request->reason,
-                'overridden_by' => auth()->id(),
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'Promotion batch cancelled.',
+                'batch' => new PromotionBatchResource($batch->fresh()),
             ]);
+        }
 
-        return back()->with('success', 'Bulk override applied successfully.');
+        return back()->with('success', 'Promotion batch cancelled.';
+    }
+
+    protected function abilities(PromotionBatch $batch): array
+    {
+        return [
+            'review' => Gate::allows('review', $batch),
+            'approve' => Gate::allows('approve', $batch),
+            'execute' => Gate::allows('execute', $batch),
+            'cancel' => Gate::allows('cancel', $batch),
+        ];
     }
 }
