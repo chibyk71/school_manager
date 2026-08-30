@@ -5,75 +5,88 @@ namespace App\Models\Student;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\ClassLevel;
 use App\Models\Model;
+use App\Models\School;
+use App\Models\SchoolSection;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasCustomFields;
 use App\Traits\HasTableQuery;
+use Database\Factories\Student\AdmissionFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Class Admission
+ * Admission — the school's decision/offer to give a candidate a place.
  *
- * Represents a student admission record in the school management system.
- *
- * @package App\Models\Student
- * @property string $id
- * @property string $school_id
- * @property string $student_id
- * @property string $class_level_id
- * @property string $school_section_id
- * @property string $academic_session_id
- * @property string $roll_no
- * @property string $status
- * @property array|null $configs
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
- * @property \Illuminate\Support\Carbon|null $deleted_at
+ * Phase 1 domain rules:
+ *   - Can exist without an Application (direct admission)
+ *   - Can exist without a Student (offer before registration)
+ *   - Optional Application relationship
+ *   - Offered Class Level is known at offer time
+ *   - At most one Enrollment per Admission (DB unique on enrollments.admission_id)
  */
 class Admission extends Model
 {
-    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasCustomFields, HasUuids;
+    use BelongsToSchool,
+        HasFactory,
+        HasTableQuery,
+        LogsActivity,
+        SoftDeletes,
+        HasCustomFields,
+        HasUuids;
 
-    /**
-     * The table associated with the model.
-     *
-     * @var string
-     */
+    public const STATUS_OFFERED = 'offered';
+    public const STATUS_ACCEPTED = 'accepted';
+    public const STATUS_DECLINED = 'declined';
+    public const STATUS_EXPIRED = 'expired';
+    public const STATUS_CANCELLED = 'cancelled';
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUSES = [
+        self::STATUS_OFFERED,
+        self::STATUS_ACCEPTED,
+        self::STATUS_DECLINED,
+        self::STATUS_EXPIRED,
+        self::STATUS_CANCELLED,
+        self::STATUS_PENDING,
+    ];
+
     protected $table = 'admissions';
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<string>
-     */
     protected $fillable = [
         'school_id',
         'student_id',
+        'application_id',
         'class_level_id',
         'school_section_id',
         'academic_session_id',
         'roll_no',
         'status',
+        'offered_at',
+        'acceptance_deadline',
+        'accepted_at',
+        'declined_at',
+        'expired_at',
+        'cancelled_at',
+        'notes',
         'configs',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'configs' => 'array',
         'status' => 'string',
+        'offered_at' => 'datetime',
+        'acceptance_deadline' => 'datetime',
+        'accepted_at' => 'datetime',
+        'declined_at' => 'datetime',
+        'expired_at' => 'datetime',
+        'cancelled_at' => 'datetime',
     ];
 
-    /**
-     * Columns that should never be searchable, sortable, or filterable.
-     *
-     * @var array<string>
-     */
     protected $hiddenTableColumns = [
         'created_at',
         'updated_at',
@@ -81,69 +94,69 @@ class Admission extends Model
         'configs',
     ];
 
-    /**
-     * Columns used for global search on the model.
-     *
-     * @var array<string>
-     */
     protected $globalFilterFields = [
         'roll_no',
         'status',
+        'notes',
     ];
 
-    /**
-     * Define the relationship with the student.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function student()
+    public function school(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Academic\Student::class);
+        return $this->belongsTo(School::class);
     }
 
-    /**
-     * Define the relationship with the class level.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function classLevel()
+    public function student(): BelongsTo
+    {
+        return $this->belongsTo(Student::class);
+    }
+
+    public function application(): BelongsTo
+    {
+        return $this->belongsTo(StudentApplication::class, 'application_id');
+    }
+
+    public function classLevel(): BelongsTo
     {
         return $this->belongsTo(ClassLevel::class);
     }
 
-    /**
-     * Define the relationship with the school section.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function schoolSection()
+    public function schoolSection(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\SchoolSection::class);
+        return $this->belongsTo(SchoolSection::class);
     }
 
-    /**
-     * Define the relationship with the academic session.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function academicSession()
+    public function academicSession(): BelongsTo
     {
         return $this->belongsTo(AcademicSession::class);
     }
 
-    /**
-     * Get the activity log options for the model.
-     *
-     * @return \Spatie\Activitylog\LogOptions
-     */
+    public function enrollment(): HasOne
+    {
+        return $this->hasOne(Enrollment::class);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->useLogName('admission')
-            ->logFillable()
-            ->logExcept(['updated_at'])
+            ->logOnly([
+                'status',
+                'student_id',
+                'application_id',
+                'class_level_id',
+                'academic_session_id',
+                'offered_at',
+                'acceptance_deadline',
+                'accepted_at',
+                'declined_at',
+                'expired_at',
+                'cancelled_at',
+            ])
             ->logOnlyDirty()
-            ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "Admission has been {$eventName}");
+            ->dontSubmitEmptyLogs();
+    }
+
+    protected static function newFactory()
+    {
+        return AdmissionFactory::new();
     }
 }
