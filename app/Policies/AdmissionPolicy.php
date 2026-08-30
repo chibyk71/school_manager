@@ -4,96 +4,98 @@ namespace App\Policies;
 
 use App\Models\Student\Admission;
 use App\Models\User;
-use Illuminate\Auth\Access\HandlesAuthorization;
 
+/**
+ * Authorization for Admission (Phase 3).
+ * Uses permission names; every decision is school-scoped.
+ */
 class AdmissionPolicy
 {
-    use HandlesAuthorization;
+    protected function sameSchool(Admission $admission): bool
+    {
+        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
 
-    /**
-     * Determine whether the user can view any admissions.
-     *
-     * @param User $user
-     * @return bool
-     */
+        return $school && $admission->school_id === $school->id;
+    }
+
     public function viewAny(User $user): bool
     {
         return $user->hasPermission('admissions.view');
     }
 
-    /**
-     * Determine whether the user can view the admission.
-     *
-     * @param User $user
-     * @param Admission $admission
-     * @return bool
-     */
     public function view(User $user, Admission $admission): bool
     {
-        return $user->hasPermission('admissions.view') &&
-               $admission->school_id === GetSchoolModel()->id;
+        return $user->hasPermission('admissions.view') && $this->sameSchool($admission);
     }
 
-    /**
-     * Determine whether the user can create admissions.
-     *
-     * @param User $user
-     * @return bool
-     */
     public function create(User $user): bool
     {
         return $user->hasPermission('admissions.create');
     }
 
-    /**
-     * Determine whether the user can update the admission.
-     *
-     * @param User $user
-     * @param Admission $admission
-     * @return bool
-     */
+    public function issue(User $user): bool
+    {
+        return $user->hasPermission('admissions.issue')
+            || $user->hasPermission('admissions.create');
+    }
+
+    public function direct(User $user): bool
+    {
+        return $user->hasPermission('admissions.direct');
+    }
+
+    public function bypass(User $user): bool
+    {
+        return $user->hasPermission('admissions.bypass');
+    }
+
+    public function accept(User $user, Admission $admission): bool
+    {
+        return ($user->hasPermission('admissions.accept') || $user->hasPermission('admissions.update'))
+            && $this->sameSchool($admission);
+    }
+
+    public function decline(User $user, Admission $admission): bool
+    {
+        return ($user->hasPermission('admissions.decline') || $user->hasPermission('admissions.update'))
+            && $this->sameSchool($admission);
+    }
+
+    public function cancel(User $user, Admission $admission): bool
+    {
+        return ($user->hasPermission('admissions.cancel') || $user->hasPermission('admissions.update'))
+            && $this->sameSchool($admission);
+    }
+
+    public function expire(User $user, Admission $admission): bool
+    {
+        return ($user->hasPermission('admissions.expire') || $user->hasPermission('admissions.update'))
+            && $this->sameSchool($admission);
+    }
+
+    public function manageDeadlines(User $user, Admission $admission): bool
+    {
+        return ($user->hasPermission('admissions.manage-deadlines') || $user->hasPermission('admissions.update'))
+            && $this->sameSchool($admission);
+    }
+
     public function update(User $user, Admission $admission): bool
     {
-        return $user->hasPermission('admissions.update') &&
-               $admission->school_id === GetSchoolModel()->id;
+        return $user->hasPermission('admissions.update') && $this->sameSchool($admission);
     }
 
-    /**
-     * Determine whether the user can delete the admission.
-     *
-     * @param User $user
-     * @param Admission $admission
-     * @return bool
-     */
     public function delete(User $user, Admission $admission): bool
     {
-        return $user->hasPermission('admissions.delete') &&
-               $admission->school_id === GetSchoolModel()->id;
+        return $user->hasPermission('admissions.delete') && $this->sameSchool($admission);
     }
 
-    /**
-     * Determine whether the user can restore the admission.
-     *
-     * @param User $user
-     * @param Admission $admission
-     * @return bool
-     */
     public function restore(User $user, Admission $admission): bool
     {
-        return $user->hasPermission('admissions.restore') &&
-               $admission->school_id === GetSchoolModel()->id;
+        return $user->hasPermission('admissions.restore') && $this->sameSchool($admission);
     }
 
-    /**
-     * Determine whether the user can permanently delete the admission.
-     *
-     * @param User $user
-     * @param Admission $admission
-     * @return bool
-     */
     public function forceDelete(User $user, Admission $admission): bool
     {
-        return $user->hasPermission('admissions.force-delete') &&
-               $admission->school_id === GetSchoolModel()->id;
+        return $user->hasPermission('admissions.force-delete') && $this->sameSchool($admission);
     }
 }

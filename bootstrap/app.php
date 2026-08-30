@@ -38,6 +38,13 @@ return Application::configure(basePath: dirname(__DIR__))
             ->onOneServer()
             ->appendOutputTo(storage_path('logs/punishment.log'));
 
+        // Phase 3: expire past-deadline admission offers + deadline reminders
+        $schedule->command('admissions:process-lifecycle --reminders')
+            ->hourly()
+            ->withoutOverlapping()
+            ->onOneServer()
+            ->appendOutputTo(storage_path('logs/admissions-lifecycle.log'));
+
         // $schedule->job(new App\Jobs\GenerateMonthlyStudentStatement)
         //  ->monthlyOn(1, '09:00') // 1st of every month at 9 AM
         //  ->name('Generate Monthly Statements')
