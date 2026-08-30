@@ -16,18 +16,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * Enrollment — actual registration of a Student in a School for an Academic Session.
  *
- * Phase 1 domain foundation only. Workflows, checklists, finance gates, and
- * placement assignment belong to later phases.
+ * Phase 1 domain foundation only.
  *
  * Status vocabulary:
- *   draft          — record exists; registration work has not meaningfully started
- *   in_progress    — registration is being completed
- *   active         — enrollment finalized; student is officially registered
- *   withdrawn      — student subsequently withdrew
- *   transferred_out— student subsequently transferred out
- *   completed      — educational lifecycle for this enrollment completed
- *
- * Incomplete statuses (draft, in_progress) are distinguishable from active.
+ *   draft | in_progress | active | withdrawn | transferred_out | completed
  */
 class Enrollment extends Model
 {
@@ -110,6 +102,55 @@ class Enrollment extends Model
     public function admission(): BelongsTo
     {
         return $this->belongsTo(Admission::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (Enrollment $enrollment) {
+            $enrollment->assertSchoolConsistency();
+        });
+    }
+
+    /**
+     * Prevent cross-school relationships at the domain layer.
+     */
+    public function assertSchoolConsistency(): void
+    {
+        if ($this->student_id) {
+            $studentSchoolId = Student::query()
+                ->whereKey($this->student_id)
+                ->value('school_id');
+
+            if ($studentSchoolId && $studentSchoolId !== $this->school_id) {
+                throw new \InvalidArgumentException(
+                    'Enrollment school_id must match the related Student school_id.'
+                );
+            }
+        }
+
+        if ($this->academic_session_id) {
+            $sessionSchoolId = AcademicSession::query()
+                ->whereKey($this->academic_session_id)
+                ->value('school_id');
+
+            if ($sessionSchoolId && $sessionSchoolId !== $this->school_id) {
+                throw new \InvalidArgumentException(
+                    'Enrollment school_id must match the related AcademicSession school_id.'
+                );
+            }
+        }
+
+        if ($this->admission_id) {
+            $admissionSchoolId = Admission::query()
+                ->whereKey($this->admission_id)
+                ->value('school_id');
+
+            if ($admissionSchoolId && $admissionSchoolId !== $this->school_id) {
+                throw new \InvalidArgumentException(
+                    'Enrollment school_id must match the related Admission school_id.'
+                );
+            }
+        }
     }
 
     public function scopeActive($query)
