@@ -253,6 +253,7 @@ Route::delete('attendance-sessions', [AttendanceSessionController::class, 'destr
 Route::post('attendance-sessions/restore', [AttendanceSessionController::class, 'restore'])->name('attendance-sessions.restore');
 // Resource routes for admissions
 Route::resource('admissions', AdmissionController::class);
+require __DIR__.'/admission.php';
 Route::delete('admissions/bulk', [AdmissionController::class, 'destroy'])->name('admissions.bulk.destroy');
 Route::post('admissions/restore', [AdmissionController::class, 'restore'])->name('admissions.restore');
 
