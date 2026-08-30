@@ -29,6 +29,9 @@ use Illuminate\Validation\ValidationException;
  * Independent of Profile, User, Student, Admission, and Enrollment.
  * Approval of an Application does NOT create an Admission or Student.
  * Integrates with existing Custom Fields engine via HasCustomFields.
+ *
+ * school_section_id column is retained for legacy compatibility but is not part of
+ * the Phase 2 Application submission/placement workflow.
  */
 class StudentApplication extends Model
 {
@@ -80,7 +83,6 @@ class StudentApplication extends Model
     protected $fillable = [
         'school_id',
         'academic_session_id',
-        'school_section_id',
         'class_level_id',
         'first_name',
         'last_name',
@@ -344,6 +346,19 @@ class StudentApplication extends Model
             if ($levelSchoolId && $this->school_id && $levelSchoolId !== $this->school_id) {
                 throw ValidationException::withMessages([
                     'class_level_id' => 'Class level does not belong to the same school as this application.',
+                ]);
+            }
+        }
+
+        // Legacy column retained for compatibility; still enforce school boundary if set.
+        if ($this->school_section_id) {
+            $sectionSchoolId = SchoolSection::query()
+                ->whereKey($this->school_section_id)
+                ->value('school_id');
+
+            if ($sectionSchoolId && $this->school_id && $sectionSchoolId !== $this->school_id) {
+                throw ValidationException::withMessages([
+                    'school_section_id' => 'School section does not belong to the same school as this application.',
                 ]);
             }
         }
