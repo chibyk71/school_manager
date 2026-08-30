@@ -76,6 +76,17 @@ class AdmissionService
             $classLevelId = $options['class_level_id'] ?? $lockedApp->class_level_id;
             $sessionId = $options['academic_session_id'] ?? $lockedApp->academic_session_id;
 
+            if (! $classLevelId) {
+                throw ValidationException::withMessages([
+                    'class_level_id' => 'An offered class level is required when issuing an admission.',
+                ]);
+            }
+            if (! $sessionId) {
+                throw ValidationException::withMessages([
+                    'academic_session_id' => 'An academic session is required when issuing an admission.',
+                ]);
+            }
+
             $this->assertRelatedBelongToSchool($school, $classLevelId, $sessionId, null);
 
             $admission = new Admission();
@@ -274,11 +285,8 @@ class AdmissionService
 
             if (! $locked->canBeAccepted()) {
                 if ($locked->isPastDeadline()) {
-                    if ($locked->canExpire()) {
-                        $locked->transitionTo(Admission::STATUS_EXPIRED);
-                        $locked->expired_at = now();
-                        $locked->save();
-                    }
+                    // Apply the same expiry side effects as scheduler/manual expiry.
+                    $this->applyExpiryTransition($locked);
                     throw ValidationException::withMessages([
                         'status' => 'This offer has passed its acceptance deadline and cannot be accepted.',
                     ]);
@@ -383,19 +391,36 @@ class AdmissionService
                 return $locked;
             }
 
-            $locked->transitionTo(Admission::STATUS_EXPIRED);
-            $locked->expired_at = now();
-            $locked->save();
-
-            $this->notifyExpired($locked);
-
-            activity()
-                ->performedOn($locked)
-                ->withProperties(['source' => 'scheduler'])
-                ->log('admission.expired');
+            $this->applyExpiryTransition($locked);
 
             return $locked->fresh();
         });
+    }
+
+    /**
+     * Centralized expiry transition + side effects (notification + activity log).
+     * Caller must hold a lock on the admission row and ensure canExpire() (or already past deadline).
+     */
+    protected function applyExpiryTransition(Admission $locked): void
+    {
+        if ($locked->status === Admission::STATUS_EXPIRED) {
+            return;
+        }
+
+        if (! $locked->canTransitionTo(Admission::STATUS_EXPIRED)) {
+            return;
+        }
+
+        $locked->transitionTo(Admission::STATUS_EXPIRED);
+        $locked->expired_at = now();
+        $locked->save();
+
+        $this->notifyExpired($locked);
+
+        activity()
+            ->performedOn($locked)
+            ->withProperties(['source' => 'expiry'])
+            ->log('admission.expired');
     }
 
     public function processExpiries(?School $school = null): int
@@ -447,11 +472,14 @@ class AdmissionService
                     }
 
                     try {
-                        $this->notifyDeadlineReminder($locked);
-                        $locked->reminder_sent_at = now();
-                        $locked->save();
-                        $count++;
+                        $dispatched = $this->notifyDeadlineReminder($locked);
+                        if ($dispatched) {
+                            $locked->reminder_sent_at = now();
+                            $locked->save();
+                            $count++;
+                        }
                     } catch (\Throwable $e) {
+                        // Leave reminder_sent_at null so a later run can retry.
                         Log::warning('Admission deadline reminder failed', [
                             'admission_id' => $locked->id,
                             'error' => $e->getMessage(),
@@ -562,25 +590,37 @@ class AdmissionService
         $this->safeNotify($admission, AdmissionExpiredNotification::class);
     }
 
-    protected function notifyDeadlineReminder(Admission $admission): void
+    /**
+     * @return bool true when dispatch completed (or there were no recipients); false on failure
+     */
+    protected function notifyDeadlineReminder(Admission $admission): bool
     {
-        $this->safeNotify($admission, AdmissionOfferedNotification::class, ['reminder' => true]);
+        return $this->safeNotify($admission, AdmissionOfferedNotification::class, ['reminder' => true]);
     }
 
-    protected function safeNotify(Admission $admission, string $notificationClass, array $extra = []): void
+    /**
+     * Dispatch a notification without failing the domain transaction.
+     *
+     * @return bool true if dispatch succeeded or there were no recipients; false if dispatch threw
+     */
+    protected function safeNotify(Admission $admission, string $notificationClass, array $extra = []): bool
     {
         try {
             $recipients = $this->resolveNotificationRecipients($admission);
             if ($recipients->isEmpty()) {
-                return;
+                return true;
             }
             Notification::send($recipients, new $notificationClass($admission, $extra));
+
+            return true;
         } catch (\Throwable $e) {
             Log::warning('Admission notification failed', [
                 'admission_id' => $admission->id,
                 'notification' => $notificationClass,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
     }
 
