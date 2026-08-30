@@ -10,6 +10,7 @@ use App\Traits\HasAddress;
 use App\Traits\HasCustomFields;
 use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
+use Database\Factories\StudentFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -82,7 +83,6 @@ class Student extends Model
         'status_until'   => 'date',
     ];
 
-    // For HasTableQuery trait – global search across Student + Profile fields
     protected array $globalFilterFields = [
         'admission_number',
         'profile.first_name',
@@ -94,20 +94,10 @@ class Student extends Model
         'admission_type',
     ];
 
-    /**
-     * Dynamic enum properties – both fields support school-customizable options
-     *
-     * 'status'          → admitted, enrolled, active, graduated, withdrawn, transferred, suspended, deceased, etc.
-     * 'admission_type'  → fresh, transfer, readmission (schools may add more)
-     */
     public function getDynamicEnumProperties(): array
     {
         return ['status', 'admission_type'];
     }
-
-    // =================================================================
-    // RELATIONSHIPS
-    // =================================================================
 
     public function profile(): BelongsTo
     {
@@ -124,26 +114,27 @@ class Student extends Model
         return $this->belongsTo(StudentApplication::class, 'application_id');
     }
 
-    /**
-     * All session placements (academic history)
-     */
+    public function enrollments(): HasMany
+    {
+        return $this->hasMany(Enrollment::class);
+    }
+
+    public function admissions(): HasMany
+    {
+        return $this->hasMany(Admission::class);
+    }
+
     public function sessionPlacements(): HasMany
     {
         return $this->hasMany(StudentSessionPlacement::class);
     }
 
-    /**
-     * Current active placement (most used relationship)
-     */
     public function currentPlacement(): HasOne
     {
         return $this->hasOne(StudentSessionPlacement::class)
                     ->where('is_current', true);
     }
 
-    /**
-     * Guardians linked to this student with rich pivot data
-     */
     public function guardians(): BelongsToMany
     {
         return $this->belongsToMany(Guardian::class, 'guardian_student')
@@ -165,10 +156,6 @@ class Student extends Model
                     ->wherePivot('is_primary_contact', true)
                     ->first();
     }
-
-    // =================================================================
-    // ACCESSORS
-    // =================================================================
 
     public function getFullNameAttribute(): string
     {
@@ -192,10 +179,6 @@ class Student extends Model
             ?? 'Not Placed';
     }
 
-    // =================================================================
-    // SCOPES
-    // =================================================================
-
     public function scopeActive($query)
     {
         return $query->where('status', 'active');
@@ -214,10 +197,6 @@ class Student extends Model
         );
     }
 
-    // =================================================================
-    // HELPERS
-    // =================================================================
-
     public function isActive(): bool
     {
         return in_array($this->status, ['active', 'enrolled']);
@@ -232,5 +211,10 @@ class Student extends Model
     {
         return $this->primaryGuardian()?->profile?->phone
             ?? $this->guardians()->first()?->profile?->phone;
+    }
+
+    protected static function newFactory()
+    {
+        return StudentFactory::new();
     }
 }
