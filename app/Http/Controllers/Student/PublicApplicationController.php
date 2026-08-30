@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Student;
 
 use App\Http\Requests\Student\SubmitApplicationRequest;
-use App\Http\Resources\Student\StudentApplicationResource;
+use App\Http\Resources\Student\PublicStudentApplicationResource;
 use App\Models\Academic\AcademicSession;
 use App\Models\Student\StudentApplication;
 use App\Services\Student\StudentApplicationService;
@@ -14,6 +14,9 @@ use Inertia\Inertia;
 /**
  * Public unauthenticated application flow (Phase 2).
  * Does not create Profile/User/Student/Admission/Enrollment.
+ *
+ * Requires an active school context (tenant resolution). Never enumerates
+ * cross-school Academic Sessions or other tenant data.
  */
 class PublicApplicationController
 {
@@ -25,8 +28,13 @@ class PublicApplicationController
     {
         $school = GetSchoolModel();
 
+        // Public apply requires a resolved school context — no cross-tenant data.
+        if (! $school) {
+            abort(404, 'School context is required to apply.');
+        }
+
         $sessions = AcademicSession::query()
-            ->when($school, fn ($q) => $q->where('school_id', $school->id))
+            ->where('school_id', $school->id)
             ->orderByDesc('created_at')
             ->limit(10)
             ->get(['id', 'name', 'school_id']);
@@ -34,7 +42,7 @@ class PublicApplicationController
         $customFields = $this->applicationService->effectiveApplicationFields($school);
 
         return Inertia::render('Public/Apply/Index', [
-            'schoolName' => $school?->name,
+            'schoolName' => $school->name,
             'sessions' => $sessions,
             'feeConfig' => $this->applicationService->applicationFeeConfig($school),
             'applicationsRequired' => $this->applicationService->applicationsRequired($school),
@@ -93,12 +101,13 @@ class PublicApplicationController
 
         $application = StudentApplication::query()
             ->where('application_token', $request->string('token'))
+            ->with(['academicSession:id,name'])
             ->first();
 
         return Inertia::render('Public/Apply/Status', [
             'found' => $application !== null,
             'application' => $application
-                ? new StudentApplicationResource($application)
+                ? new PublicStudentApplicationResource($application)
                 : null,
         ]);
     }

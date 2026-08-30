@@ -7,11 +7,10 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * SubmitApplicationRequest – Validation for Student Application Submission
+ * SubmitApplicationRequest – Validation for Student Application Submission (Phase 2).
  *
- * Validates public portal and staff submission paths.
- * Status/reviewer are never client-controlled.
- * Custom fields use the shared HasCustomFields engine (key: custom_fields).
+ * Section placement is out of scope for Phase 2; school_section_id is not accepted.
+ * Status/reviewer are never client-controlled on submit.
  */
 class SubmitApplicationRequest extends FormRequest
 {
@@ -24,19 +23,18 @@ class SubmitApplicationRequest extends FormRequest
     {
         return [
             'academic_session_id' => 'required|exists:academic_sessions,id',
-            'school_section_id' => 'nullable|exists:school_sections,id',
             'class_level_id' => 'nullable|exists:class_levels,id',
 
             'first_name' => 'required|string|max:100',
             'last_name' => 'required|string|max:100',
             'middle_name' => 'nullable|string|max:100',
             'date_of_birth' => 'nullable|date|before:today',
-            'gender' => ['nullable|string|max:30', new InDynamicEnum('gender', \App\Models\Profile::class)],
+            'gender' => ['nullable', 'string', 'max:30', new InDynamicEnum('gender', \App\Models\Profile::class)],
             'phone' => 'nullable|string|max:30',
             'email' => 'nullable|email|max:191',
             'nationality' => 'nullable|string|max:100',
             'state_of_origin' => 'nullable|string|max:100',
-            'religion' => ['nullable|string|max:50', new InDynamicEnum('religion', \App\Models\Profile::class)],
+            'religion' => ['nullable', 'string', 'max:50', new InDynamicEnum('religion', \App\Models\Profile::class)],
             'blood_group' => 'nullable|string|max:10',
 
             'previous_school' => 'nullable|string|max:255',
