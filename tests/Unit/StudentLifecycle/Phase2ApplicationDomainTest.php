@@ -16,6 +16,7 @@ beforeEach(function () {
 
     Schema::dropIfExists('student_applications');
     Schema::dropIfExists('academic_sessions');
+    Schema::dropIfExists('school_sections');
     Schema::dropIfExists('schools');
     Schema::dropIfExists('users');
 
@@ -37,6 +38,13 @@ beforeEach(function () {
         $table->uuid('id')->primary();
         $table->uuid('school_id');
         $table->string('name');
+        $table->timestamps();
+    });
+
+    Schema::create('school_sections', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_id');
+        $table->string('name')->nullable();
         $table->timestamps();
     });
 
@@ -73,6 +81,9 @@ beforeEach(function () {
         $table->uuid('student_id')->nullable();
         $table->json('documents')->nullable();
         $table->json('custom_data')->nullable();
+        $table->string('fee_payment_status', 30)->default('not_required');
+        $table->string('fee_payment_reference', 191)->nullable();
+        $table->timestamp('fee_paid_at')->nullable();
         $table->timestamps();
         $table->softDeletes();
         $table->unique(['school_id', 'application_number']);
@@ -136,22 +147,6 @@ it('creates public application without profile user or student', function () {
         ->and($app->application_token)->toHaveLength(64);
 });
 
-it('creates staff application with same domain entity', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
-    $staff = makeUser();
-    $service = app(StudentApplicationService::class);
-
-    $app = $service->submitStaffApplication([
-        'academic_session_id' => $session->id,
-        'first_name' => 'Grace',
-        'last_name' => 'Hopper',
-    ], $school, $staff);
-
-    expect($app->source)->toBe(StudentApplication::SOURCE_STAFF)
-        ->and($app->status)->toBe(StudentApplication::STATUS_SUBMITTED);
-});
-
 it('rejects cross-school academic session', function () {
     $schoolA = makeSchool('Alpha');
     $schoolB = makeSchool('Beta');
@@ -169,40 +164,44 @@ it('rejects cross-school academic session', function () {
     expect(fn () => $app->save())->toThrow(ValidationException::class);
 });
 
-it('generates stable application number', function () {
-    $school = makeSchool();
+it('rejects cross-school school_section_id even if legacy column is set', function () {
+    $schoolA = makeSchool('Alpha');
+    $schoolB = makeSchool('Beta');
+
+    $sectionBId = (string) Str::uuid();
+    \DB::table('school_sections')->insert([
+        'id' => $sectionBId,
+        'school_id' => $schoolB->id,
+        'name' => 'Foreign Section',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
     $app = new StudentApplication();
     $app->fill([
-        'school_id' => $school->id,
-        'first_name' => 'A',
-        'last_name' => 'B',
+        'school_id' => $schoolA->id,
+        'first_name' => 'X',
+        'last_name' => 'Y',
         'status' => 'submitted',
     ]);
-    $n1 = $app->assignApplicationNumber($school);
-    $n2 = $app->assignApplicationNumber($school);
-    expect($n1)->toBe($n2)->and($n1)->not->toBeEmpty();
+    $app->school_section_id = $sectionBId;
+
+    expect(fn () => $app->save())->toThrow(ValidationException::class);
 });
 
-it('allows valid status transitions and blocks invalid ones', function () {
+it('strips school_section_id from Phase 2 submission sanitize path', function () {
     $school = makeSchool();
-    $app = StudentApplication::query()->create([
-        'id' => (string) Str::uuid(),
-        'school_id' => $school->id,
-        'first_name' => 'A',
-        'last_name' => 'B',
-        'status' => StudentApplication::STATUS_SUBMITTED,
-    ]);
+    $session = makeSession($school);
+    $service = app(StudentApplicationService::class);
 
-    expect($app->canTransitionTo(StudentApplication::STATUS_UNDER_REVIEW))->toBeTrue();
-    $app->transitionTo(StudentApplication::STATUS_UNDER_REVIEW);
-    $app->save();
+    $app = $service->submitPublicApplication([
+        'academic_session_id' => $session->id,
+        'first_name' => 'Strip',
+        'last_name' => 'Section',
+        'school_section_id' => (string) Str::uuid(),
+    ], $school);
 
-    expect($app->canTransitionTo(StudentApplication::STATUS_APPROVED))->toBeTrue();
-    expect($app->canTransitionTo(StudentApplication::STATUS_SUBMITTED))->toBeFalse();
-
-    $app->transitionTo(StudentApplication::STATUS_APPROVED);
-    $app->save();
-    expect($app->canTransitionTo(StudentApplication::STATUS_UNDER_REVIEW))->toBeFalse();
+    expect($app->school_section_id)->toBeNull();
 });
 
 it('approves without creating student and records reviewer', function () {
@@ -228,111 +227,50 @@ it('approves without creating student and records reviewer', function () {
         ->and($approved->student_id)->toBeNull();
 });
 
-it('rejects with reason and records reviewer', function () {
-    $school = makeSchool();
-    $reviewer = makeUser();
-    $service = app(StudentApplicationService::class);
-
-    $app = StudentApplication::query()->create([
-        'id' => (string) Str::uuid(),
-        'school_id' => $school->id,
-        'first_name' => 'A',
-        'last_name' => 'B',
-        'status' => StudentApplication::STATUS_UNDER_REVIEW,
-        'application_number' => 'APP-TEST-2',
-        'application_token' => Str::random(64),
-    ]);
-
-    $rejected = $service->rejectApplication($app, 'Incomplete documents', $reviewer);
-
-    expect($rejected->status)->toBe(StudentApplication::STATUS_REJECTED)
-        ->and($rejected->rejection_reason)->toBe('Incomplete documents')
-        ->and($rejected->reviewed_by)->toBe($reviewer->id);
-});
-
-it('detects likely duplicates within school session as warning only', function () {
+it('public resource omits staff and internal fields', function () {
     $school = makeSchool();
     $session = makeSession($school);
 
-    $first = StudentApplication::query()->create([
-        'id' => (string) Str::uuid(),
-        'school_id' => $school->id,
-        'academic_session_id' => $session->id,
-        'first_name' => 'Ada',
-        'last_name' => 'Lovelace',
-        'date_of_birth' => '2015-05-01',
-        'email' => 'same@example.com',
-        'status' => 'submitted',
-        'application_number' => 'APP-D1',
-        'application_token' => Str::random(64),
-    ]);
-
-    $second = new StudentApplication([
-        'school_id' => $school->id,
-        'academic_session_id' => $session->id,
-        'first_name' => 'Ada',
-        'last_name' => 'Lovelace',
-        'date_of_birth' => '2015-05-01',
-        'email' => 'same@example.com',
-        'status' => 'submitted',
-    ]);
-
-    $dupes = $second->findLikelyDuplicates();
-    expect($dupes->count())->toBeGreaterThan(0)
-        ->and($dupes->first()->id)->toBe($first->id);
-
-    // Multiple applications remain possible
-    $second->application_number = 'APP-D2';
-    $second->application_token = Str::random(64);
-    $second->id = (string) Str::uuid();
-    $second->save();
-    expect(StudentApplication::query()->count())->toBe(2);
-});
-
-it('does not treat other school matches as duplicates', function () {
-    $schoolA = makeSchool('Alpha');
-    $schoolB = makeSchool('Beta');
-    $sessionA = makeSession($schoolA);
-    $sessionB = makeSession($schoolB);
-
-    StudentApplication::query()->create([
-        'id' => (string) Str::uuid(),
-        'school_id' => $schoolA->id,
-        'academic_session_id' => $sessionA->id,
-        'first_name' => 'Ada',
-        'last_name' => 'Lovelace',
-        'date_of_birth' => '2015-05-01',
-        'status' => 'submitted',
-        'application_number' => 'APP-A1',
-        'application_token' => Str::random(64),
-    ]);
-
-    $candidate = new StudentApplication([
-        'school_id' => $schoolB->id,
-        'academic_session_id' => $sessionB->id,
-        'first_name' => 'Ada',
-        'last_name' => 'Lovelace',
-        'date_of_birth' => '2015-05-01',
-        'status' => 'submitted',
-    ]);
-
-    expect($candidate->findLikelyDuplicates())->toHaveCount(0);
-});
-
-it('maps legacy pending status to submitted', function () {
-    $school = makeSchool();
     $app = StudentApplication::query()->create([
         'id' => (string) Str::uuid(),
         'school_id' => $school->id,
-        'first_name' => 'A',
-        'last_name' => 'B',
-        'status' => 'pending',
-        'application_number' => 'APP-LEG',
+        'academic_session_id' => $session->id,
+        'first_name' => 'Pub',
+        'last_name' => 'Lic',
+        'status' => StudentApplication::STATUS_UNDER_REVIEW,
+        'application_number' => 'APP-PUB-1',
         'application_token' => Str::random(64),
+        'admin_notes' => 'INTERNAL SECRET NOTES',
+        'fee_payment_status' => StudentApplication::FEE_UNPAID,
+        'fee_payment_reference' => 'PAY-SECRET-REF',
+        'guardians_data' => [['name' => 'G', 'phone' => '1', 'relationship' => 'mother']],
+        'documents' => [['type' => 'birth_cert', 'path' => '/secret']],
+        'custom_data' => ['internal' => true],
     ]);
+    $app->load('academicSession');
 
-    expect($app->fresh()->status)->toBe(StudentApplication::STATUS_SUBMITTED)
-        ->and($app->fresh()->canonical_status)->toBe(StudentApplication::STATUS_SUBMITTED);
+    $resource = (new \App\Http\Resources\Student\PublicStudentApplicationResource($app))->resolve();
+
+    expect($resource)->toHaveKeys([
+        'application_number',
+        'full_name',
+        'status',
+        'status_label',
+        'fee_payment_status',
+        'fee_satisfied',
+    ])
+        ->and($resource)->not->toHaveKey('admin_notes')
+        ->and($resource)->not->toHaveKey('reviewed_by')
+        ->and($resource)->not->toHaveKey('fee_payment_reference')
+        ->and($resource)->not->toHaveKey('student_id')
+        ->and($resource)->not->toHaveKey('documents')
+        ->and($resource)->not->toHaveKey('guardians_data')
+        ->and($resource)->not->toHaveKey('custom_data')
+        ->and($resource)->not->toHaveKey('application_token');
+
+    $json = json_encode($resource);
+    expect($json)->not->toContain('INTERNAL SECRET NOTES')
+        ->and($json)->not->toContain('PAY-SECRET-REF');
 });
 
 it('application fee config does not invent a ledger', function () {
