@@ -356,4 +356,145 @@ class Phase3AdmissionDomainTest extends TestCase
         $this->expectException(ValidationException::class);
         $this->service()->decline($admission, $this->staff);
     }
+
+    public function test_application_based_admission_requires_class_level(): void
+    {
+        $application = StudentApplication::factory()->create([
+            'school_id' => $this->school->id,
+            'class_level_id' => null,
+            'academic_session_id' => $this->session->id,
+            'status' => StudentApplication::STATUS_APPROVED,
+            'fee_payment_status' => StudentApplication::FEE_NOT_REQUIRED,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->service()->createFromApplication($application, $this->school, $this->staff, [
+            'acceptance_deadline' => now()->addDays(5),
+        ]);
+    }
+
+    public function test_application_based_admission_requires_academic_session(): void
+    {
+        $application = StudentApplication::factory()->create([
+            'school_id' => $this->school->id,
+            'class_level_id' => $this->classLevel->id,
+            'academic_session_id' => null,
+            'status' => StudentApplication::STATUS_APPROVED,
+            'fee_payment_status' => StudentApplication::FEE_NOT_REQUIRED,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->service()->createFromApplication($application, $this->school, $this->staff, [
+            'acceptance_deadline' => now()->addDays(5),
+        ]);
+    }
+
+    public function test_accept_after_deadline_runs_expiry_side_effects(): void
+    {
+        $admission = Admission::factory()->create([
+            'school_id' => $this->school->id,
+            'class_level_id' => $this->classLevel->id,
+            'academic_session_id' => $this->session->id,
+            'status' => Admission::STATUS_OFFERED,
+            'acceptance_deadline' => now()->subHour(),
+        ]);
+
+        try {
+            $this->service()->accept($admission, $this->staff);
+            $this->fail('Expected ValidationException for expired offer');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('status', $e->errors());
+        }
+
+        $admission->refresh();
+        $this->assertEquals(Admission::STATUS_EXPIRED, $admission->status);
+        $this->assertNotNull($admission->expired_at);
+    }
+
+    public function test_reminder_not_marked_sent_when_notification_fails(): void
+    {
+        $admission = Admission::factory()->create([
+            'school_id' => $this->school->id,
+            'class_level_id' => $this->classLevel->id,
+            'academic_session_id' => $this->session->id,
+            'status' => Admission::STATUS_OFFERED,
+            'acceptance_deadline' => now()->addHours(12),
+            'reminder_sent_at' => null,
+            'application_id' => null,
+            'configs' => [
+                'candidate' => [
+                    'email' => 'candidate@example.com',
+                ],
+            ],
+        ]);
+
+        // Force Notification::send to fail so safeNotify returns false.
+        \Illuminate\Support\Facades\Notification::shouldReceive('send')
+            ->once()
+            ->andThrow(new \RuntimeException('mail transport down'));
+
+        $count = $this->service()->processDeadlineReminders(48, $this->school);
+
+        $this->assertSame(0, $count);
+        $admission->refresh();
+        $this->assertNull($admission->reminder_sent_at);
+    }
+
+    public function test_direct_admission_blocked_when_applications_required(): void
+    {
+        $appService = \Mockery::mock(\App\Services\Student\StudentApplicationService::class);
+        $appService->shouldReceive('applicationsRequired')->with($this->school)->andReturn(true);
+
+        $service = new AdmissionService($appService);
+
+        $this->expectException(ValidationException::class);
+        $service->createDirect($this->school, $this->staff, [
+            'class_level_id' => $this->classLevel->id,
+            'academic_session_id' => $this->session->id,
+            'acceptance_deadline' => now()->addDays(3),
+        ]);
+    }
+
+    public function test_walk_in_bypass_approves_and_offers(): void
+    {
+        $application = StudentApplication::factory()->create([
+            'school_id' => $this->school->id,
+            'class_level_id' => $this->classLevel->id,
+            'academic_session_id' => $this->session->id,
+            'status' => StudentApplication::STATUS_SUBMITTED,
+            'fee_payment_status' => StudentApplication::FEE_NOT_REQUIRED,
+        ]);
+
+        $admission = $this->service()->createWalkInImmediate(
+            $application,
+            $this->school,
+            $this->staff,
+            ['acceptance_deadline' => now()->addDays(4)]
+        );
+
+        $application->refresh();
+        $this->assertEquals(StudentApplication::STATUS_APPROVED, $application->status);
+        $this->assertEquals(Admission::STATUS_OFFERED, $admission->status);
+        $this->assertEquals($application->id, $admission->application_id);
+        $this->assertTrue((bool) ($admission->configs['walk_in_bypass'] ?? false));
+    }
+
+    public function test_cross_school_class_level_rejected_on_create(): void
+    {
+        $otherLevel = ClassLevel::factory()->create(['school_id' => $this->otherSchool->id]);
+
+        $application = StudentApplication::factory()->create([
+            'school_id' => $this->school->id,
+            'class_level_id' => $this->classLevel->id,
+            'academic_session_id' => $this->session->id,
+            'status' => StudentApplication::STATUS_APPROVED,
+            'fee_payment_status' => StudentApplication::FEE_NOT_REQUIRED,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->service()->createFromApplication($application, $this->school, $this->staff, [
+            'class_level_id' => $otherLevel->id,
+            'acceptance_deadline' => now()->addDays(3),
+        ]);
+    }
 }
