@@ -135,6 +135,55 @@ class Admission extends Model
         return $this->hasOne(Enrollment::class);
     }
 
+    protected static function booted(): void
+    {
+        static::saving(function (Admission $admission) {
+            $admission->assertSchoolConsistency();
+        });
+    }
+
+    /**
+     * Prevent cross-school relationships at the domain layer.
+     */
+    public function assertSchoolConsistency(): void
+    {
+        if ($this->application_id) {
+            $applicationSchoolId = StudentApplication::query()
+                ->whereKey($this->application_id)
+                ->value('school_id');
+
+            if ($applicationSchoolId && $applicationSchoolId !== $this->school_id) {
+                throw new \InvalidArgumentException(
+                    'Admission school_id must match the related Application school_id.'
+                );
+            }
+        }
+
+        if ($this->student_id) {
+            $studentSchoolId = Student::query()
+                ->whereKey($this->student_id)
+                ->value('school_id');
+
+            if ($studentSchoolId && $studentSchoolId !== $this->school_id) {
+                throw new \InvalidArgumentException(
+                    'Admission school_id must match the related Student school_id.'
+                );
+            }
+        }
+
+        if ($this->academic_session_id) {
+            $sessionSchoolId = AcademicSession::query()
+                ->whereKey($this->academic_session_id)
+                ->value('school_id');
+
+            if ($sessionSchoolId && $sessionSchoolId !== $this->school_id) {
+                throw new \InvalidArgumentException(
+                    'Admission school_id must match the related AcademicSession school_id.'
+                );
+            }
+        }
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
