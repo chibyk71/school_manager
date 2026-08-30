@@ -31,11 +31,23 @@ class PublicApplicationController
             ->limit(10)
             ->get(['id', 'name', 'school_id']);
 
+        $customFields = $this->applicationService->effectiveApplicationFields($school);
+
         return Inertia::render('Public/Apply/Index', [
             'schoolName' => $school?->name,
             'sessions' => $sessions,
             'feeConfig' => $this->applicationService->applicationFeeConfig($school),
             'applicationsRequired' => $this->applicationService->applicationsRequired($school),
+            'customFields' => $customFields->map(fn ($f) => [
+                'name' => $f->name,
+                'label' => $f->label,
+                'field_type' => $f->field_type,
+                'required' => $f->required,
+                'placeholder' => $f->placeholder,
+                'hint' => $f->hint,
+                'options' => $f->options,
+                'rules' => $f->rules,
+            ])->values(),
         ]);
     }
 

@@ -50,6 +50,7 @@ class ApplicationController
             'classLevel:id,name,display_name',
             'reviewer:id,name',
             'admissions',
+            'customFieldResponses.customField',
         ]);
 
         $duplicates = $application->findLikelyDuplicates();
