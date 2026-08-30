@@ -408,3 +408,4 @@ require __DIR__ . '/options.php';
 require __DIR__ . '/settings.php';
 require __DIR__ . '/employee_management.php';
 require __DIR__ . '/promotion.php';
+require __DIR__ . '/applications.php';

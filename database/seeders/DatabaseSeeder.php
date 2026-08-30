@@ -43,6 +43,7 @@ class DatabaseSeeder extends Seeder
         // 2. GLOBAL SETTINGS (tenant-agnostic defaults)
         // -----------------------------------------------------------------
         $this->callWithLog(\Database\Seeders\Settings\SettingsDefaultsSeeder::class);
+        $this->callWithLog(\Database\Seeders\Settings\ApplicationSettingsDefaultsSeeder::class);
 
         // -----------------------------------------------------------------
         // 3. OPTIONAL: Demo data / factories (uncomment for local dev)
@@ -52,6 +53,7 @@ class DatabaseSeeder extends Seeder
         $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
         $this->callWithLog(RolesTableSeeder::class);
         $this->callWithLog(PermissionSeeder::class);
+        $this->callWithLog(\Database\Seeders\ApplicationPermissionSeeder::class);
 
 
         $this->callWithLog(\Database\Seeders\DynamicEnumSeeder::class);
