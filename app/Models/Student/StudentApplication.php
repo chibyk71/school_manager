@@ -2,27 +2,32 @@
 
 namespace App\Models\Student;
 
+use App\Helpers\IdGenerator;
+use App\Models\Academic\AcademicSession;
+use App\Models\Academic\ClassLevel;
 use App\Models\School;
 use App\Models\SchoolSection;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
+use Database\Factories\Student\StudentApplicationFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Database\Factories\Student\StudentApplicationFactory;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
- * StudentApplication Model – Application Entry Point (v2.0 – Production-Ready)
+ * StudentApplication – pre-admission candidate request (Phase 2).
  *
- * This model represents a student application, whether submitted through the public portal
- * or created directly by an admin. It acts as a temporary holding area for unverified data
- * before it is reviewed and converted into a Profile + Student record upon admission.
+ * Independent of Profile, User, Student, Admission, and Enrollment.
+ * Approval of an Application does NOT create an Admission or Student.
  */
-
 class StudentApplication extends Model
 {
     use HasFactory,
@@ -31,6 +36,37 @@ class StudentApplication extends Model
         BelongsToSchool,
         HasDynamicEnum,
         HasTableQuery;
+
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_SUBMITTED = 'submitted';
+    public const STATUS_UNDER_REVIEW = 'under_review';
+    public const STATUS_APPROVED = 'approved';
+    public const STATUS_REJECTED = 'rejected';
+    public const STATUS_WITHDRAWN = 'withdrawn';
+
+    /** @deprecated Legacy alias */
+    public const STATUS_PENDING = 'pending';
+
+    public const SOURCE_PUBLIC = 'public_portal';
+    public const SOURCE_STAFF = 'admin_direct';
+
+    public const TRANSITIONS = [
+        self::STATUS_DRAFT => [self::STATUS_SUBMITTED, self::STATUS_WITHDRAWN],
+        self::STATUS_SUBMITTED => [
+            self::STATUS_UNDER_REVIEW,
+            self::STATUS_APPROVED,
+            self::STATUS_REJECTED,
+            self::STATUS_WITHDRAWN,
+        ],
+        self::STATUS_UNDER_REVIEW => [
+            self::STATUS_APPROVED,
+            self::STATUS_REJECTED,
+            self::STATUS_WITHDRAWN,
+        ],
+        self::STATUS_APPROVED => [],
+        self::STATUS_REJECTED => [],
+        self::STATUS_WITHDRAWN => [],
+    ];
 
     protected $fillable = [
         'school_id',
@@ -90,6 +126,14 @@ class StudentApplication extends Model
         'source',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (self $application) {
+            $application->assertSchoolConsistency();
+            $application->normalizeLegacyStatus();
+        });
+    }
+
     public function getDynamicEnumProperties(): array
     {
         return ['status', 'gender', 'religion', 'blood_group'];
@@ -102,7 +146,7 @@ class StudentApplication extends Model
 
     public function academicSession(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Academic\AcademicSession::class);
+        return $this->belongsTo(AcademicSession::class);
     }
 
     public function schoolSection(): BelongsTo
@@ -112,7 +156,7 @@ class StudentApplication extends Model
 
     public function classLevel(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Academic\ClassLevel::class);
+        return $this->belongsTo(ClassLevel::class);
     }
 
     public function reviewer(): BelongsTo
@@ -125,32 +169,34 @@ class StudentApplication extends Model
         return $this->belongsTo(Student::class);
     }
 
-    /**
-     * Admissions that may result from this application (0..n).
-     */
-    public function admissions(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function admissions(): HasMany
     {
         return $this->hasMany(Admission::class, 'application_id');
     }
 
-    public function scopePending($query)
+    public function scopeSubmitted($query)
     {
-        return $query->where('status', 'pending');
+        return $query->whereIn('status', [self::STATUS_SUBMITTED, self::STATUS_PENDING]);
     }
 
-    public function scopeAdmitted($query)
+    public function scopeUnderReview($query)
     {
-        return $query->where('status', 'admitted');
+        return $query->where('status', self::STATUS_UNDER_REVIEW);
+    }
+
+    public function scopeApproved($query)
+    {
+        return $query->where('status', self::STATUS_APPROVED);
     }
 
     public function scopeRejected($query)
     {
-        return $query->where('status', 'rejected');
+        return $query->where('status', self::STATUS_REJECTED);
     }
 
     public function scopeFromPublicPortal($query)
     {
-        return $query->where('source', 'public_portal');
+        return $query->where('source', self::SOURCE_PUBLIC);
     }
 
     public function scopeForSession($query, $sessionId)
@@ -163,22 +209,121 @@ class StudentApplication extends Model
         return trim("{$this->first_name} {$this->middle_name} {$this->last_name}");
     }
 
-    public function getIsExpiredAttribute(): bool
+    public function getCanonicalStatusAttribute(): string
     {
-        return false;
+        $status = $this->status ?? self::STATUS_DRAFT;
+
+        return $status === self::STATUS_PENDING ? self::STATUS_SUBMITTED : $status;
     }
 
-    public function generateApplicationNumber(): string
+    public function canTransitionTo(string $to): bool
     {
-        $year = now()->year;
-        $prefix = 'APP';
-        $sequence = str_pad($this->id ?? rand(1000, 9999), 6, '0', STR_PAD_LEFT);
-        return "{$prefix}-{$year}-{$sequence}";
+        $from = $this->canonical_status;
+        $allowed = self::TRANSITIONS[$from] ?? [];
+
+        return in_array($to, $allowed, true);
     }
 
-    public function generateToken(): string
+    public function transitionTo(string $to): void
     {
-        return \Str::random(64);
+        if (! $this->canTransitionTo($to)) {
+            throw ValidationException::withMessages([
+                'status' => "Cannot transition application from [{$this->canonical_status}] to [{$to}].",
+            ]);
+        }
+
+        $this->status = $to;
+    }
+
+    public function assignApplicationNumber(?School $school = null): string
+    {
+        if (! empty($this->application_number)) {
+            return $this->application_number;
+        }
+
+        $school = $school ?? $this->school ?? (function_exists('GetSchoolModel') ? GetSchoolModel() : null);
+
+        try {
+            $number = IdGenerator::generate('application', $school, now()->year);
+        } catch (\Throwable $e) {
+            Log::warning('IdGenerator failed for application; using fallback sequence', [
+                'error' => $e->getMessage(),
+            ]);
+            $number = 'APP-'.now()->year.'-'.strtoupper(Str::random(8));
+        }
+
+        $this->application_number = $number;
+
+        return $number;
+    }
+
+    public function assignToken(): string
+    {
+        if (! empty($this->application_token)) {
+            return $this->application_token;
+        }
+
+        $this->application_token = Str::random(64);
+
+        return $this->application_token;
+    }
+
+    public function findLikelyDuplicates(): \Illuminate\Database\Eloquent\Collection
+    {
+        $query = static::query()
+            ->where('school_id', $this->school_id)
+            ->when($this->id, fn ($q) => $q->where('id', '!=', $this->id))
+            ->when($this->academic_session_id, fn ($q) => $q->where('academic_session_id', $this->academic_session_id))
+            ->where(function ($q) {
+                $q->where(function ($inner) {
+                    $inner->where('first_name', $this->first_name)
+                        ->where('last_name', $this->last_name)
+                        ->when($this->date_of_birth, fn ($qq) => $qq->whereDate('date_of_birth', $this->date_of_birth));
+                });
+
+                if ($this->email) {
+                    $q->orWhere('email', $this->email);
+                }
+                if ($this->phone) {
+                    $q->orWhere('phone', $this->phone);
+                }
+            });
+
+        return $query->limit(20)->get();
+    }
+
+    protected function assertSchoolConsistency(): void
+    {
+        if ($this->academic_session_id) {
+            $sessionSchoolId = AcademicSession::query()
+                ->whereKey($this->academic_session_id)
+                ->value('school_id');
+
+            if ($sessionSchoolId && $this->school_id && $sessionSchoolId !== $this->school_id) {
+                throw ValidationException::withMessages([
+                    'academic_session_id' => 'Academic session does not belong to the same school as this application.',
+                ]);
+            }
+        }
+
+        if ($this->class_level_id) {
+            $levelSchoolId = ClassLevel::query()
+                ->whereKey($this->class_level_id)
+                ->value('school_id');
+
+            if ($levelSchoolId && $this->school_id && $levelSchoolId !== $this->school_id) {
+                throw ValidationException::withMessages([
+                    'class_level_id' => 'Class level does not belong to the same school as this application.',
+                ]);
+            }
+        }
+    }
+
+    protected function normalizeLegacyStatus(): void
+    {
+        if ($this->status === self::STATUS_PENDING) {
+            $this->status = self::STATUS_SUBMITTED;
+        }
     }
 
     protected static function newFactory()
