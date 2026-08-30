@@ -52,6 +52,7 @@ class DatabaseSeeder extends Seeder
         $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
         $this->callWithLog(RolesTableSeeder::class);
         $this->callWithLog(PermissionSeeder::class);
+        $this->callWithLog(\Database\Seeders\ApplicationPermissionSeeder::class);
 
 
         $this->callWithLog(\Database\Seeders\DynamicEnumSeeder::class);
