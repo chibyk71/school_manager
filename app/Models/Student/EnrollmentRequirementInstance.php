@@ -68,6 +68,38 @@ class EnrollmentRequirementInstance extends Model
         return $this->belongsTo(User::class, 'waived_by');
     }
 
+    protected static function booted(): void
+    {
+        static::saving(function (EnrollmentRequirementInstance $instance) {
+            $instance->assertSchoolConsistency();
+        });
+    }
+
+    /**
+     * Definition must belong to the same School as the Enrollment.
+     * Uses existing school-scoped Definition + Enrollment relationship (no tenant layer).
+     */
+    public function assertSchoolConsistency(): void
+    {
+        if (! $this->enrollment_id || ! $this->definition_id) {
+            return;
+        }
+
+        $enrollmentSchoolId = Enrollment::query()
+            ->whereKey($this->enrollment_id)
+            ->value('school_id');
+
+        $definitionSchoolId = EnrollmentRequirementDefinition::query()
+            ->whereKey($this->definition_id)
+            ->value('school_id');
+
+        if ($enrollmentSchoolId && $definitionSchoolId && $enrollmentSchoolId !== $definitionSchoolId) {
+            throw new \InvalidArgumentException(
+                'Requirement definition school_id must match the enrollment school_id.'
+            );
+        }
+    }
+
     public function isPending(): bool
     {
         return $this->status === self::STATUS_PENDING;
