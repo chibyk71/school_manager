@@ -19,6 +19,11 @@ class AppServiceProvider extends ServiceProvider
             \App\Policies\Promotion\PromotionPolicy::class
         );
 
+        \Illuminate\Support\Facades\Gate::policy(
+            \App\Models\Student\Enrollment::class,
+            \App\Policies\Student\EnrollmentPolicy::class
+        );
+
         Vite::prefetch(concurrency: 3);
     }
 }
