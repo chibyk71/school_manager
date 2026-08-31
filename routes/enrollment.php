@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('enrollments')->name('enrollments.')->group(function () {
     Route::get('/', [EnrollmentController::class, 'index'])->name('index');
+    Route::get('profiles/search', [EnrollmentController::class, 'searchProfiles'])->name('profiles.search');
     Route::post('/', [EnrollmentController::class, 'store'])->name('store');
     Route::get('{enrollment}', [EnrollmentController::class, 'show'])->name('show');
     Route::patch('{enrollment}/biodata', [EnrollmentController::class, 'updateBiodata'])->name('biodata');
