@@ -19,7 +19,7 @@ class EnrollmentFactory extends Factory
     {
         return [
             'school_id' => School::factory(),
-            'student_id' => Student::factory(),
+            'student_id' => null, // Phase 4: nullable until finalize
             'academic_session_id' => AcademicSession::factory(),
             'admission_id' => null,
             'status' => Enrollment::STATUS_DRAFT,
@@ -28,12 +28,11 @@ class EnrollmentFactory extends Factory
         ];
     }
 
-    public function active(): static
+    public function draft(): static
     {
         return $this->state(fn () => [
-            'status' => Enrollment::STATUS_ACTIVE,
-            'started_at' => now()->subDays(3),
-            'activated_at' => now(),
+            'status' => Enrollment::STATUS_DRAFT,
+            'student_id' => null,
         ]);
     }
 
@@ -42,6 +41,24 @@ class EnrollmentFactory extends Factory
         return $this->state(fn () => [
             'status' => Enrollment::STATUS_IN_PROGRESS,
             'started_at' => now(),
+            'student_id' => null,
+        ]);
+    }
+
+    public function withStudent(): static
+    {
+        return $this->state(fn () => [
+            'student_id' => Student::factory(),
+        ]);
+    }
+
+    public function active(): static
+    {
+        return $this->state(fn () => [
+            'status' => Enrollment::STATUS_ACTIVE,
+            'student_id' => Student::factory(),
+            'started_at' => now()->subDays(3),
+            'activated_at' => now(),
         ]);
     }
 }
