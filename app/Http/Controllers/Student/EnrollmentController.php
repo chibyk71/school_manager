@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
+use App\Models\Profile;
 use App\Models\Student\Enrollment;
 use App\Models\Student\EnrollmentRequirementInstance;
 use App\Services\Student\EnrollmentService;
@@ -76,13 +77,29 @@ class EnrollmentController extends Controller
             'notes' => ['nullable', 'string'],
             'biodata' => ['nullable', 'array'],
             'biodata.first_name' => ['nullable', 'string', 'max:100'],
+            'biodata.middle_name' => ['nullable', 'string', 'max:100'],
             'biodata.last_name' => ['nullable', 'string', 'max:100'],
             'biodata.email' => ['nullable', 'email', 'max:255'],
             'biodata.phone' => ['nullable', 'string', 'max:50'],
             'biodata.date_of_birth' => ['nullable', 'date'],
             'biodata.gender' => ['nullable', 'string', 'max:30'],
+            'biodata.title' => ['nullable', 'string', 'max:30'],
+            'biodata.nationality' => ['nullable', 'string', 'max:100'],
+            'biodata.address_line_1' => ['nullable', 'string', 'max:255'],
+            'biodata.address_line_2' => ['nullable', 'string', 'max:255'],
+            'biodata.city' => ['nullable', 'string', 'max:100'],
+            'biodata.state' => ['nullable', 'string', 'max:100'],
+            'biodata.postal_code' => ['nullable', 'string', 'max:30'],
+            'biodata.country' => ['nullable', 'string', 'max:100'],
+            'biodata.profile_id' => ['nullable', 'uuid', 'exists:profiles,id'],
+            'profile_id' => ['nullable', 'uuid', 'exists:profiles,id'],
             'source' => ['nullable', 'string', 'max:40'],
         ]);
+
+        if (! empty($data['profile_id'])) {
+            $data['biodata'] = $data['biodata'] ?? [];
+            $data['biodata']['profile_id'] = $data['profile_id'];
+        }
 
         try {
             $enrollment = $this->enrollmentService->start($school, $request->user(), $data);
@@ -111,21 +128,31 @@ class EnrollmentController extends Controller
         $data = $request->validate([
             'biodata' => ['required', 'array'],
             'biodata.first_name' => ['nullable', 'string', 'max:100'],
+            'biodata.middle_name' => ['nullable', 'string', 'max:100'],
             'biodata.last_name' => ['nullable', 'string', 'max:100'],
             'biodata.email' => ['nullable', 'email', 'max:255'],
             'biodata.phone' => ['nullable', 'string', 'max:50'],
             'biodata.date_of_birth' => ['nullable', 'date'],
             'biodata.gender' => ['nullable', 'string', 'max:30'],
-            'biodata.middle_name' => ['nullable', 'string', 'max:100'],
+            'biodata.title' => ['nullable', 'string', 'max:30'],
             'biodata.nationality' => ['nullable', 'string', 'max:100'],
             'biodata.address_line_1' => ['nullable', 'string', 'max:255'],
+            'biodata.address_line_2' => ['nullable', 'string', 'max:255'],
             'biodata.city' => ['nullable', 'string', 'max:100'],
             'biodata.state' => ['nullable', 'string', 'max:100'],
             'biodata.postal_code' => ['nullable', 'string', 'max:30'],
             'biodata.country' => ['nullable', 'string', 'max:100'],
+            'biodata.profile_id' => ['nullable', 'uuid', 'exists:profiles,id'],
+            'biodata.confirm_identity_update' => ['nullable', 'boolean'],
+            'profile_id' => ['nullable', 'uuid', 'exists:profiles,id'],
         ]);
 
-        $this->enrollmentService->updateBiodata($enrollment, $request->user(), $data['biodata']);
+        $biodata = $data['biodata'];
+        if (! empty($data['profile_id'])) {
+            $biodata['profile_id'] = $data['profile_id'];
+        }
+
+        $this->enrollmentService->updateBiodata($enrollment, $request->user(), $biodata);
 
         return back()->with('success', 'Biodata updated.');
     }
@@ -214,5 +241,36 @@ class EnrollmentController extends Controller
 
             return back()->withErrors(['error' => 'Unable to finalize enrollment.']);
         }
+    }
+
+    /**
+     * Lightweight Profile lookup for staff explicit identity linking.
+     * Exact email match preferred; optional name prefix is display-only (not auto-linked).
+     */
+    public function searchProfiles(Request $request)
+    {
+        $this->authorize('create', Enrollment::class);
+
+        $data = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:120'],
+        ]);
+
+        $q = trim($data['q']);
+
+        $profiles = Profile::query()
+            ->when(str_contains($q, '@'), function ($query) use ($q) {
+                $query->whereRaw('LOWER(email) = ?', [strtolower($q)]);
+            }, function ($query) use ($q) {
+                $query->where(function ($inner) use ($q) {
+                    $inner->where('first_name', 'like', $q.'%')
+                        ->orWhere('last_name', 'like', $q.'%')
+                        ->orWhere('email', 'like', $q.'%');
+                });
+            })
+            ->orderBy('last_name')
+            ->limit(15)
+            ->get(['id', 'first_name', 'middle_name', 'last_name', 'email', 'phone', 'date_of_birth']);
+
+        return response()->json(['data' => $profiles]);
     }
 }
