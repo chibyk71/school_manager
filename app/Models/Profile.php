@@ -7,6 +7,7 @@ use App\Traits\HasCustomFields;
 use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -60,6 +61,7 @@ use Spatie\Image\Enums\Fit;
 class Profile extends Model implements HasMedia
 {
     use HasFactory,
+        HasUuids,
         SoftDeletes,
         HasAddress,
         HasCustomFields,
