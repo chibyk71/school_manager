@@ -1,1 +1,3 @@
-PLACEHOLDER
+<?php
+
+// TEMP - will be replaced
