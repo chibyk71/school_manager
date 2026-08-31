@@ -11,12 +11,14 @@ use Database\Factories\Student\EnrollmentFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Enrollment — actual registration of a Student in a School for an Academic Session.
+ * Enrollment — registration of a candidate/Student in a School for an Academic Session.
  *
- * Phase 1 domain foundation only.
+ * Phase 4: may exist without Student (student_id nullable until finalization).
+ * Student identity is created only during successful transactional finalization.
  *
  * Status vocabulary:
  *   draft | in_progress | active | withdrawn | transferred_out | completed
@@ -104,6 +106,11 @@ class Enrollment extends Model
         return $this->belongsTo(Admission::class);
     }
 
+    public function requirementInstances(): HasMany
+    {
+        return $this->hasMany(EnrollmentRequirementInstance::class);
+    }
+
     protected static function booted(): void
     {
         static::saving(function (Enrollment $enrollment) {
@@ -111,9 +118,6 @@ class Enrollment extends Model
         });
     }
 
-    /**
-     * Prevent cross-school relationships at the domain layer.
-     */
     public function assertSchoolConsistency(): void
     {
         if ($this->student_id) {
@@ -171,6 +175,11 @@ class Enrollment extends Model
     public function isIncomplete(): bool
     {
         return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_IN_PROGRESS], true);
+    }
+
+    public function isFinalizable(): bool
+    {
+        return $this->isIncomplete();
     }
 
     protected static function newFactory()
