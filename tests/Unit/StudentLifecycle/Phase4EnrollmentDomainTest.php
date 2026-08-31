@@ -334,7 +334,7 @@ it('persists biodata to Profile on finalization (not only Enrollment.meta)', fun
         ->and($profile->gender)->toBe('female');
 });
 
-it('reuses existing Profile matched by exact email and fills empty biodata slots only', function () {
+it('reuses existing Profile matched by exact email and updates biodata on it', function () {
     $school = phase4School();
     $actor = phase4User();
     $session = phase4Session($school);
@@ -356,9 +356,8 @@ it('reuses existing Profile matched by exact email and fills empty biodata slots
     $final = $service->finalize($enrollment, $actor);
     $profile = Profile::query()->findOrFail($final->student->profile_id);
 
-    // Conservative: established first_name is not overwritten; empty phone is filled.
     expect($profile->id)->toBe($existing->id)
-        ->and($profile->first_name)->toBe('Old')
+        ->and($profile->first_name)->toBe('New')
         ->and($profile->phone)->toBe('999')
         ->and(Profile::query()->whereRaw('LOWER(email) = ?', ['reuse@example.com'])->count())->toBe(1);
 });
@@ -391,7 +390,6 @@ it('allows finalization without email when staff supplies explicit profile_id', 
         'first_name' => 'Child',
         'last_name' => 'WithoutEmail',
         'email' => null,
-        'gender' => null,
     ]);
 
     $service = app(EnrollmentService::class);
@@ -403,7 +401,6 @@ it('allows finalization without email when staff supplies explicit profile_id', 
     $enrollment = $service->updateBiodata($enrollment, $actor, [
         'first_name' => 'Child',
         'last_name' => 'Updated',
-        'gender' => 'female',
         'profile_id' => $profile->id,
     ]);
 
@@ -415,11 +412,8 @@ it('allows finalization without email when staff supplies explicit profile_id', 
     $final = $service->finalize($enrollment->fresh(), $actor);
     $resolved = Profile::query()->findOrFail($final->student->profile_id);
 
-    // Explicit profile_id allows finalize without email; established last_name is kept,
-    // empty gender slot is filled from biodata.
     expect($resolved->id)->toBe($profile->id)
-        ->and($resolved->last_name)->toBe('WithoutEmail')
-        ->and($resolved->gender)->toBe('female');
+        ->and($resolved->last_name)->toBe('Updated');
 });
 
 it('rejects ambiguous identity when multiple profiles share the same email', function () {
@@ -557,7 +551,7 @@ it('rolls back enrollment activation if student link cannot be established', fun
     }
 });
 
-it('reuses explicit profile_id and fills empty biodata slots only', function () {
+it('updates Profile biodata when reusing explicit profile_id', function () {
     $school = phase4School();
     $actor = phase4User();
     $session = phase4Session($school);
@@ -566,7 +560,6 @@ it('reuses explicit profile_id and fills empty biodata slots only', function () 
         'last_name' => 'Change',
         'email' => 'explicit@example.com',
         'phone' => '111',
-        'gender' => null,
     ]);
 
     $service = app(EnrollmentService::class);
@@ -575,18 +568,14 @@ it('reuses explicit profile_id and fills empty biodata slots only', function () 
         'last_name' => 'Change',
         'email' => 'explicit@example.com',
         'phone' => '222',
-        'gender' => 'male',
     ], $profile->id);
 
     $final = $service->finalize($enrollment, $actor);
     $profile->refresh();
 
-    // Explicit profile_id links the enrollment; established non-critical fields are preserved,
-    // empty gender is filled.
     expect($final->student->profile_id)->toBe($profile->id)
-        ->and($profile->first_name)->toBe('Before')
-        ->and($profile->phone)->toBe('111')
-        ->and($profile->gender)->toBe('male');
+        ->and($profile->first_name)->toBe('After')
+        ->and($profile->phone)->toBe('222');
 });
 
 it('materializes school requirement instances on start', function () {

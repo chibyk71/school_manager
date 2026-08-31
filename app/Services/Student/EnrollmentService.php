@@ -1,6 +1,8 @@
 <?php
 
+// RESTORE MARKER - full file will follow in next push if this succeeds
 namespace App\Services\Student;
+<<<<<<< HEAD
 
 use App\Facades\SchoolManager;
 use App\Models\Academic\AcademicSession;
@@ -1163,3 +1165,5 @@ class EnrollmentService
         }
     }
 }
+=======
+>>>>>>> ea439d73b310b01a5766b424898acdffd92c2c79
