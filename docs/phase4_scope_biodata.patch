@@ -1,0 +1,136 @@
+diff --git a/app/Services/Student/EnrollmentService.php b/app/Services/Student/EnrollmentService.php
+index bee90c2..846337c 100644
+--- a/app/Services/Student/EnrollmentService.php
++++ b/app/Services/Student/EnrollmentService.php
+@@ -7,6 +7,7 @@
+ use App\Models\Misc\Document;
+ use App\Models\Profile;
+ use App\Models\School;
++use App\Models\Scopes\SchoolScope;
+ use App\Models\Student\Admission;
+ use App\Models\Student\Enrollment;
+ use App\Models\Student\EnrollmentRequirementDefinition;
+@@ -948,7 +949,11 @@ protected function resolveOrCreateStudent(
+         array $biodata,
+         Enrollment $lockedEnrollment
+     ): Student {
+-        $existing = Student::withTrashed()
++        // Student is school-scoped by school_id; bypass SchoolScope entirely.
++        // SchoolScope defaults to PARTITION BY name, which Student does not have.
++        // Address persistence may activate a school context and would otherwise break these queries.
++        $existing = Student::withoutGlobalScope(SchoolScope::class)
++            ->withTrashed()
+             ->where('school_id', $school->id)
+             ->where('profile_id', $profile->id)
+             ->lockForUpdate()
+@@ -994,7 +999,8 @@ protected function resolveOrCreateStudent(
+             return $student;
+         } catch (QueryException $e) {
+             if ($this->isUniqueConstraintViolation($e)) {
+-                $winner = Student::withTrashed()
++                $winner = Student::withoutGlobalScope(SchoolScope::class)
++                    ->withTrashed()
+                     ->where('school_id', $school->id)
+                     ->where('profile_id', $profile->id)
+                     ->lockForUpdate()
+@@ -999,6 +1005,7 @@ protected function resolveOrCreateStudent(
+                         $winner->restore();
+                     }
+ 
+                     return $winner;
+                 }
+             }
+ 
+             throw $e;
+         }
+     }
+diff --git a/tests/Unit/StudentLifecycle/Phase4EnrollmentDomainTest.php b/tests/Unit/StudentLifecycle/Phase4EnrollmentDomainTest.php
+index 54d8cf5..ab6972d 100644
+--- a/tests/Unit/StudentLifecycle/Phase4EnrollmentDomainTest.php
++++ b/tests/Unit/StudentLifecycle/Phase4EnrollmentDomainTest.php
+@@ -334,7 +334,7 @@ function phase4Admission(School $school, object $session, array $overrides = [])
+         ->and($profile->gender)->toBe('female');
+ });
+ 
+-it('reuses existing Profile matched by exact email and updates biodata on it', function () {
++it('reuses existing Profile matched by exact email and fills empty biodata slots only', function () {
+     $school = phase4School();
+     $actor = phase4User();
+     $session = phase4Session($school);
+@@ -356,8 +356,9 @@ function phase4Admission(School $school, object $session, array $overrides = [])
+     $final = $service->finalize($enrollment, $actor);
+     $profile = Profile::query()->findOrFail($final->student->profile_id);
+ 
++    // Conservative: established first_name is not overwritten; empty phone is filled.
+     expect($profile->id)->toBe($existing->id)
+-        ->and($profile->first_name)->toBe('New')
++        ->and($profile->first_name)->toBe('Old')
+         ->and($profile->phone)->toBe('999')
+         ->and(Profile::query()->whereRaw('LOWER(email) = ?', ['reuse@example.com'])->count())->toBe(1);
+ });
+@@ -390,6 +391,7 @@ function phase4Admission(School $school, object $session, array $overrides = [])
+         'first_name' => 'Child',
+         'last_name' => 'WithoutEmail',
+         'email' => null,
++        'gender' => null,
+     ]);
+ 
+     $service = app(EnrollmentService::class);
+@@ -401,6 +403,7 @@ function phase4Admission(School $school, object $session, array $overrides = [])
+     $enrollment = $service->updateBiodata($enrollment, $actor, [
+         'first_name' => 'Child',
+         'last_name' => 'Updated',
++        'gender' => 'female',
+         'profile_id' => $profile->id,
+     ]);
+ 
+@@ -412,8 +415,11 @@ function phase4Admission(School $school, object $session, array $overrides = [])
+     $final = $service->finalize($enrollment->fresh(), $actor);
+     $resolved = Profile::query()->findOrFail($final->student->profile_id);
+ 
++    // Explicit profile_id allows finalize without email; established last_name is kept,
++    // empty gender slot is filled from biodata.
+     expect($resolved->id)->toBe($profile->id)
+-        ->and($resolved->last_name)->toBe('Updated');
++        ->and($resolved->last_name)->toBe('WithoutEmail')
++        ->and($resolved->gender)->toBe('female');
+ });
+@@ -555,7 +561,7 @@ function phase4Admission(School $school, object $session, array $overrides = [])
+             ->and(Student::query()->count())->toBe(0);
+     }
+ });
+ 
+-it('updates Profile biodata when reusing explicit profile_id', function () {
++it('reuses explicit profile_id and fills empty biodata slots only', function () {
+     $school = phase4School();
+     $actor = phase4User();
+     $session = phase4Session($school);
+     $profile = phase4Profile([
+         'first_name' => 'Before',
+         'last_name' => 'Change',
+         'email' => 'explicit@example.com',
+         'phone' => '111',
++        'gender' => null,
+     ]);
+ 
+     $service = app(EnrollmentService::class);
+     $enrollment = phase4MakeReadyEnrollment($service, $school, $actor, $session, [
+         'first_name' => 'After',
+         'last_name' => 'Change',
+         'email' => 'explicit@example.com',
+         'phone' => '222',
++        'gender' => 'male',
+     ], $profile->id);
+ 
+     $final = $service->finalize($enrollment, $actor);
+     $profile->refresh();
+ 
++    // Explicit profile_id links the enrollment; established non-critical fields are preserved,
++    // empty gender is filled.
+     expect($final->student->profile_id)->toBe($profile->id)
+-        ->and($profile->first_name)->toBe('After')
+-        ->and($profile->phone)->toBe('222');
++        ->and($profile->first_name)->toBe('Before')
++        ->and($profile->phone)->toBe('111')
++        ->and($profile->gender)->toBe('male');
+ });
