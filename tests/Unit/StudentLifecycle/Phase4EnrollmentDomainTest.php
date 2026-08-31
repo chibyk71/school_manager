@@ -50,6 +50,14 @@ function buildPhase4Schema(): void
     Schema::create('schools', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->string('name');
+        $table->string('code')->nullable();
+        $table->string('slug')->nullable();
+        $table->string('email')->nullable();
+        $table->string('phone_one')->nullable();
+        $table->string('phone_two')->nullable();
+        $table->string('type')->nullable();
+        $table->boolean('is_active')->default(true);
+        $table->json('data')->nullable();
         $table->timestamps();
         $table->softDeletes();
     });
@@ -159,7 +167,6 @@ function buildPhase4Schema(): void
         $table->unique(['enrollment_id', 'definition_id']);
     });
 
-
     Schema::create('addresses', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->uuid('school_id')->nullable();
@@ -259,7 +266,7 @@ function phase4Profile(array $attrs = []): Profile
     return $profile->fresh();
 }
 
-function phase4MakeReadyEnrollment(EnrollmentService $service, School $school, User $actor, array $session, array $biodata = [], ?string $profileId = null): Enrollment
+function phase4MakeReadyEnrollment(EnrollmentService $service, School $school, User $actor, $session, array $biodata = [], ?string $profileId = null): Enrollment
 {
     $data = [
         'academic_session_id' => $session->id,
@@ -898,7 +905,6 @@ it('rejects invalid Admission before Profile/Student side effects (no partial st
     }
 });
 
-
 // ─── Explicit Profile workflow + biodata persistence + identity protection ────
 
 it('supports explicit Profile linking via updateBiodata then finalizes without email', function () {
@@ -917,11 +923,9 @@ it('supports explicit Profile linking via updateBiodata then finalizes without e
         'biodata' => [
             'first_name' => 'No',
             'last_name' => 'Email',
-            // no email
         ],
     ]);
 
-    // Staff links existing Profile explicitly through the service workflow used by the controller.
     $enrollment = $service->updateBiodata($enrollment, $actor, [
         'first_name' => 'No',
         'last_name' => 'Email',
@@ -992,7 +996,7 @@ it('does not silently overwrite established Profile date_of_birth on email match
         'first_name' => 'Established',
         'last_name' => 'Person',
         'email' => 'established@example.com',
-        'date_of_birth' => '2012-12-12', // conflicts
+        'date_of_birth' => '2012-12-12',
     ]);
 
     $service->finalize($enrollment, $actor);
@@ -1063,8 +1067,8 @@ it('fills empty Profile slots without overwriting established non-critical phone
     $service = app(EnrollmentService::class);
     $enrollment = phase4MakeReadyEnrollment($service, $school, $actor, $session, [
         'email' => 'ada.fill@example.com',
-        'phone' => '999', // should not overwrite
-        'gender' => 'female', // may fill empty
+        'phone' => '999',
+        'gender' => 'female',
     ]);
 
     $final = $service->finalize($enrollment, $actor);
