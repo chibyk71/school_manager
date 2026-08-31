@@ -1,3 +1,1 @@
-<?php
-
-// TEMP - will be replaced
+LOAD_FROM_/tmp/svc_final_for_push.php
