@@ -7,6 +7,7 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Misc\Document;
 use App\Models\Profile;
 use App\Models\School;
+use App\Models\Scopes\SchoolScope;
 use App\Models\Student\Admission;
 use App\Models\Student\Enrollment;
 use App\Models\Student\EnrollmentRequirementDefinition;
@@ -44,7 +45,7 @@ class EnrollmentService
     {
         return DB::transaction(function () use ($school, $actor, $data) {
             $sessionId = $data['academic_session_id'] ?? null;
-            if (! $sessionId) {
+            if (!$sessionId) {
                 throw ValidationException::withMessages([
                     'academic_session_id' => 'Academic session is required.',
                 ]);
@@ -61,7 +62,7 @@ class EnrollmentService
                     ->lockForUpdate()
                     ->first();
 
-                if (! $admission || $admission->school_id !== $school->id) {
+                if (!$admission || $admission->school_id !== $school->id) {
                     throw ValidationException::withMessages([
                         'admission_id' => 'Admission does not belong to the current school.',
                     ]);
@@ -101,15 +102,15 @@ class EnrollmentService
             $enrollment->notes = $data['notes'] ?? null;
 
             $meta = $data['meta'] ?? [];
-            if (! empty($data['biodata']) && is_array($data['biodata'])) {
+            if (!empty($data['biodata']) && is_array($data['biodata'])) {
                 $meta['biodata'] = $this->sanitizeBiodata($data['biodata']);
                 // Promote explicit profile_id from biodata into meta root for identity resolution.
-                if (! empty($data['biodata']['profile_id']) && empty($data['profile_id'])) {
+                if (!empty($data['biodata']['profile_id']) && empty($data['profile_id'])) {
                     $data['profile_id'] = $data['biodata']['profile_id'];
                 }
             }
-            if (! empty($data['profile_id'])) {
-                if (! Profile::query()->whereKey($data['profile_id'])->exists()) {
+            if (!empty($data['profile_id'])) {
+                if (!Profile::query()->whereKey($data['profile_id'])->exists()) {
                     throw ValidationException::withMessages([
                         'profile_id' => 'The specified profile does not exist.',
                     ]);
@@ -148,7 +149,7 @@ class EnrollmentService
         return DB::transaction(function () use ($enrollment, $actor, $biodata) {
             $locked = Enrollment::query()->whereKey($enrollment->id)->lockForUpdate()->firstOrFail();
 
-            if (! $locked->isIncomplete()) {
+            if (!$locked->isIncomplete()) {
                 throw ValidationException::withMessages([
                     'status' => 'Biodata can only be updated while enrollment is incomplete.',
                 ]);
@@ -165,7 +166,7 @@ class EnrollmentService
                 if ($profileId === null || $profileId === '') {
                     unset($meta['profile_id']);
                 } else {
-                    if (! Profile::query()->whereKey($profileId)->exists()) {
+                    if (!Profile::query()->whereKey($profileId)->exists()) {
                         throw ValidationException::withMessages([
                             'profile_id' => 'The specified profile does not exist.',
                         ]);
@@ -222,7 +223,7 @@ class EnrollmentService
         return DB::transaction(function () use ($enrollment, $instance, $actor, $data) {
             $lockedEnrollment = Enrollment::query()->whereKey($enrollment->id)->lockForUpdate()->firstOrFail();
 
-            if (! $lockedEnrollment->isIncomplete()) {
+            if (!$lockedEnrollment->isIncomplete()) {
                 throw ValidationException::withMessages([
                     'status' => 'Requirements can only be updated while enrollment is incomplete.',
                 ]);
@@ -259,7 +260,8 @@ class EnrollmentService
             }
 
             // DOCUMENT type must reference an existing document or an external reference.
-            if ($definition
+            if (
+                $definition
                 && $definition->type === EnrollmentRequirementDefinition::TYPE_DOCUMENT
                 && empty($locked->document_id)
                 && empty($locked->external_reference)
@@ -302,7 +304,7 @@ class EnrollmentService
         return DB::transaction(function () use ($enrollment, $instance, $actor, $reason) {
             $lockedEnrollment = Enrollment::query()->whereKey($enrollment->id)->lockForUpdate()->firstOrFail();
 
-            if (! $lockedEnrollment->isIncomplete()) {
+            if (!$lockedEnrollment->isIncomplete()) {
                 throw ValidationException::withMessages([
                     'status' => 'Requirements can only be updated while enrollment is incomplete.',
                 ]);
@@ -368,13 +370,13 @@ class EnrollmentService
             }
         }
         if ($missingBiodata) {
-            $blockers[] = 'Missing required biodata: '.implode(', ', $missingBiodata);
+            $blockers[] = 'Missing required biodata: ' . implode(', ', $missingBiodata);
         }
         $details['biodata'] = ['present' => $biodata, 'missing' => $missingBiodata];
 
         $identity = $this->evaluateIdentityResolution($enrollment);
         $details['identity'] = $identity;
-        if (! $identity['resolvable']) {
+        if (!$identity['resolvable']) {
             $blockers[] = $identity['message'];
         }
 
@@ -401,17 +403,17 @@ class EnrollmentService
             ];
 
             if ($schoolMismatch) {
-                $blockers[] = 'Requirement definition belongs to another school: '.($definition->name ?? $instance->definition_id);
+                $blockers[] = 'Requirement definition belongs to another school: ' . ($definition->name ?? $instance->definition_id);
             }
 
-            if ($isRequired && ! $complete) {
-                $blockers[] = 'Required requirement pending: '.($definition?->name ?? $instance->definition_id);
+            if ($isRequired && !$complete) {
+                $blockers[] = 'Required requirement pending: ' . ($definition?->name ?? $instance->definition_id);
             }
         }
 
         $financeOk = $this->financePrerequisiteSatisfied($enrollment);
         $details['finance'] = ['satisfied' => $financeOk];
-        if (! $financeOk) {
+        if (!$financeOk) {
             $blockers[] = 'Financial prerequisite not satisfied.';
         }
 
@@ -426,7 +428,7 @@ class EnrollmentService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (! $locked->isFinalizable()) {
+            if (!$locked->isFinalizable()) {
                 throw ValidationException::withMessages([
                     'status' => 'Enrollment cannot be finalized in its current state.',
                 ]);
@@ -448,7 +450,7 @@ class EnrollmentService
             }
 
             $readiness = $this->evaluateReadiness($locked);
-            if (! $readiness['ready']) {
+            if (!$readiness['ready']) {
                 throw ValidationException::withMessages([
                     'readiness' => $readiness['blockers'],
                 ]);
@@ -468,7 +470,7 @@ class EnrollmentService
 
             if ($locked->admission_id) {
                 $admission = Admission::query()->whereKey($locked->admission_id)->lockForUpdate()->first();
-                if ($admission && ! $admission->student_id) {
+                if ($admission && !$admission->student_id) {
                     $admission->student_id = $student->id;
                     $admission->save();
                 }
@@ -519,13 +521,13 @@ class EnrollmentService
 
         foreach ($instances as $instance) {
             $definition = $instance->definition;
-            if (! $definition) {
+            if (!$definition) {
                 continue;
             }
             if ($definition->type !== EnrollmentRequirementDefinition::TYPE_PAYMENT) {
                 continue;
             }
-            if (! ($definition->is_required ?? true)) {
+            if (!($definition->is_required ?? true)) {
                 continue;
             }
             if ($instance->isComplete()) {
@@ -533,7 +535,7 @@ class EnrollmentService
             }
 
             $config = is_array($definition->config) ? $definition->config : [];
-            if (! empty($config['allow_unpaid'])) {
+            if (!empty($config['allow_unpaid'])) {
                 // School-configured policy: enrollment may proceed without this payment.
                 continue;
             }
@@ -553,7 +555,7 @@ class EnrollmentService
 
         if ($explicitProfileId) {
             $exists = Profile::query()->whereKey($explicitProfileId)->exists();
-            if (! $exists) {
+            if (!$exists) {
                 return [
                     'resolvable' => false,
                     'strategy' => 'explicit',
@@ -595,7 +597,7 @@ class EnrollmentService
 
         if ($explicitProfileId) {
             $profile = Profile::query()->whereKey($explicitProfileId)->lockForUpdate()->first();
-            if (! $profile) {
+            if (!$profile) {
                 throw ValidationException::withMessages([
                     'profile_id' => 'The specified profile does not exist.',
                 ]);
@@ -623,7 +625,7 @@ class EnrollmentService
 
             $profile = new Profile();
             $this->applyBiodataToProfile($profile, $biodata);
-            if (! $profile->email) {
+            if (!$profile->email) {
                 $profile->email = $email;
             }
             $profile->save();
@@ -643,7 +645,7 @@ class EnrollmentService
 
     protected function applyBiodataToProfile(Profile $profile, array $biodata, bool $allowIdentityOverwrite = false): void
     {
-        $isNew = ! $profile->exists;
+        $isNew = !$profile->exists;
         $identityCritical = ['email', 'date_of_birth'];
 
         $map = [
@@ -660,7 +662,7 @@ class EnrollmentService
         $conflicts = [];
 
         foreach ($map as $from => $to) {
-            if (! array_key_exists($from, $biodata) || $biodata[$from] === null || $biodata[$from] === '') {
+            if (!array_key_exists($from, $biodata) || $biodata[$from] === null || $biodata[$from] === '') {
                 continue;
             }
 
@@ -695,7 +697,7 @@ class EnrollmentService
             }
 
             if (in_array($from, $identityCritical, true)) {
-                if (! $allowIdentityOverwrite) {
+                if (!$allowIdentityOverwrite) {
                     $conflicts[] = $from;
                     continue;
                 }
@@ -706,15 +708,15 @@ class EnrollmentService
 
         if ($conflicts) {
             throw ValidationException::withMessages([
-                'identity' => 'Enrollment biodata conflicts with established Profile fields ('.implode(', ', $conflicts).'). '
-                    .'Confirm identity update explicitly (confirm_identity_update) or correct the Enrollment biodata.',
+                'identity' => 'Enrollment biodata conflicts with established Profile fields (' . implode(', ', $conflicts) . '). '
+                    . 'Confirm identity update explicitly (confirm_identity_update) or correct the Enrollment biodata.',
             ]);
         }
 
-        if (empty($profile->first_name) && ! empty($biodata['first_name'])) {
+        if (empty($profile->first_name) && !empty($biodata['first_name'])) {
             $profile->first_name = trim((string) $biodata['first_name']);
         }
-        if (empty($profile->last_name) && ! empty($biodata['last_name'])) {
+        if (empty($profile->last_name) && !empty($biodata['last_name'])) {
             $profile->last_name = trim((string) $biodata['last_name']);
         }
     }
@@ -741,7 +743,7 @@ class EnrollmentService
         $hasAddress = $line1 !== '' || $line2 !== '' || $cityText !== '' || $postal !== ''
             || $countryName !== '' || $stateName !== '';
 
-        if (! $hasAddress) {
+        if (!$hasAddress) {
             return;
         }
 
@@ -839,7 +841,7 @@ class EnrollmentService
             return null;
         }
         try {
-            if (! class_exists(Country::class) || ! Schema::hasTable('countries')) {
+            if (!class_exists(Country::class) || !Schema::hasTable('countries')) {
                 return null;
             }
 
@@ -857,7 +859,7 @@ class EnrollmentService
             return null;
         }
         try {
-            if (! class_exists(State::class) || ! Schema::hasTable('states')) {
+            if (!class_exists(State::class) || !Schema::hasTable('states')) {
                 return null;
             }
 
@@ -876,7 +878,7 @@ class EnrollmentService
             return null;
         }
         try {
-            if (! class_exists(City::class) || ! Schema::hasTable('cities')) {
+            if (!class_exists(City::class) || !Schema::hasTable('cities')) {
                 return null;
             }
 
@@ -895,7 +897,7 @@ class EnrollmentService
      */
     protected function assertDocumentUsableForRequirement(Enrollment $enrollment, string $documentId): void
     {
-        if (! class_exists(Document::class)) {
+        if (!class_exists(Document::class)) {
             throw ValidationException::withMessages([
                 'document_id' => 'Document infrastructure is not available.',
             ]);
@@ -909,7 +911,7 @@ class EnrollmentService
             ]);
         }
 
-        if (! $document) {
+        if (!$document) {
             throw ValidationException::withMessages([
                 'document_id' => 'Document not found. Supply a valid document from the existing document system.',
             ]);
@@ -918,7 +920,7 @@ class EnrollmentService
         // When the document is attached to an owner, require it to belong to this enrollment context.
         $attachableType = $document->attachable_type ?? null;
         $attachableId = $document->attachable_id ?? null;
-        if (! $attachableType || ! $attachableId) {
+        if (!$attachableType || !$attachableId) {
             return; // unscoped document record — allowed minimally
         }
 
@@ -926,16 +928,16 @@ class EnrollmentService
         if ($attachableType === Enrollment::class || str_ends_with((string) $attachableType, '\\Enrollment')) {
             $allowed = (string) $attachableId === (string) $enrollment->id;
         }
-        if (! $allowed && ($attachableType === Profile::class || str_ends_with((string) $attachableType, '\\Profile'))) {
+        if (!$allowed && ($attachableType === Profile::class || str_ends_with((string) $attachableType, '\\Profile'))) {
             $linkedProfileId = $enrollment->meta['profile_id'] ?? null;
             $allowed = $linkedProfileId && (string) $attachableId === (string) $linkedProfileId;
         }
-        if (! $allowed && ($attachableType === Student::class || str_ends_with((string) $attachableType, '\\Student'))) {
+        if (!$allowed && ($attachableType === Student::class || str_ends_with((string) $attachableType, '\\Student'))) {
             $allowed = $enrollment->student_id
                 && (string) $attachableId === (string) $enrollment->student_id;
         }
 
-        if (! $allowed) {
+        if (!$allowed) {
             throw ValidationException::withMessages([
                 'document_id' => 'Document is not attached to this enrollment, its profile, or student.',
             ]);
@@ -948,7 +950,8 @@ class EnrollmentService
         array $biodata,
         Enrollment $lockedEnrollment
     ): Student {
-        $existing = Student::withTrashed()
+        $existing = Student::withoutGlobalScope(SchoolScope::class)
+            ->withTrashed()
             ->where('school_id', $school->id)
             ->where('profile_id', $profile->id)
             ->lockForUpdate()
@@ -974,7 +977,7 @@ class EnrollmentService
                 ]);
             }
 
-            if ($this->studentHasColumn('status') && method_exists($existing, 'isActive') && ! $existing->isActive()) {
+            if ($this->studentHasColumn('status') && method_exists($existing, 'isActive') && !$existing->isActive()) {
                 $existing->setAttribute('status', 'active');
                 $existing->save();
             }
@@ -994,7 +997,8 @@ class EnrollmentService
             return $student;
         } catch (QueryException $e) {
             if ($this->isUniqueConstraintViolation($e)) {
-                $winner = Student::withTrashed()
+                $winner = Student::withoutGlobalScope(SchoolScope::class)
+                    ->withTrashed()
                     ->where('school_id', $school->id)
                     ->where('profile_id', $profile->id)
                     ->lockForUpdate()
@@ -1025,16 +1029,28 @@ class EnrollmentService
     protected function sanitizeBiodata(array $biodata): array
     {
         $allowed = [
-            'first_name', 'last_name', 'middle_name', 'email', 'phone',
-            'date_of_birth', 'gender', 'nationality', 'title',
-            'address_line_1', 'address_line_2', 'city', 'state', 'postal_code', 'country',
+            'first_name',
+            'last_name',
+            'middle_name',
+            'email',
+            'phone',
+            'date_of_birth',
+            'gender',
+            'nationality',
+            'title',
+            'address_line_1',
+            'address_line_2',
+            'city',
+            'state',
+            'postal_code',
+            'country',
             'profile_id',
             'confirm_identity_update',
         ];
 
         $clean = [];
         foreach ($allowed as $key) {
-            if (! array_key_exists($key, $biodata) || $biodata[$key] === null || $biodata[$key] === '') {
+            if (!array_key_exists($key, $biodata) || $biodata[$key] === null || $biodata[$key] === '') {
                 continue;
             }
             if ($key === 'confirm_identity_update') {
@@ -1058,7 +1074,7 @@ class EnrollmentService
             ->where('school_id', $school->id)
             ->exists();
 
-        if (! $ok) {
+        if (!$ok) {
             throw ValidationException::withMessages([
                 'academic_session_id' => 'Academic session does not belong to the current school.',
             ]);
@@ -1067,7 +1083,7 @@ class EnrollmentService
 
     protected function assertAdmissionEligibleForFinalization(Enrollment $enrollment): void
     {
-        if (! $enrollment->admission_id) {
+        if (!$enrollment->admission_id) {
             return;
         }
 
@@ -1076,7 +1092,7 @@ class EnrollmentService
             ->lockForUpdate()
             ->first();
 
-        if (! $admission) {
+        if (!$admission) {
             throw ValidationException::withMessages([
                 'admission_id' => 'Linked admission no longer exists.',
             ]);
@@ -1094,7 +1110,8 @@ class EnrollmentService
             ]);
         }
 
-        if ($admission->academic_session_id
+        if (
+            $admission->academic_session_id
             && $enrollment->academic_session_id
             && $admission->academic_session_id !== $enrollment->academic_session_id
         ) {
@@ -1124,7 +1141,7 @@ class EnrollmentService
             ? $instance->definition
             : EnrollmentRequirementDefinition::query()->whereKey($instance->definition_id)->first();
 
-        if (! $definition) {
+        if (!$definition) {
             throw ValidationException::withMessages([
                 'definition_id' => 'Requirement definition not found.',
             ]);
