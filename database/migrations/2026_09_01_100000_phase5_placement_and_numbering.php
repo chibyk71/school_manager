@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Schema;
  * - student_session_placements: history-friendly fields; drop unique(student,session)
  * - registration_number_histories: immutable assignment history
  * - registration_number_assignments: CURRENT assignments — unique(school, scope_key, number) + unique(school, student)
- * - students: unique(school_id, admission_number)
+ * - students: admission_number immutability trigger (uq already exists as uq_admission_number_per_school)
  *
  * placement_id remains unsignedBigInteger matching student_session_placements.id (integer PK).
  */
@@ -88,12 +88,10 @@ return new class extends Migration
             $table->unsignedBigInteger('history_id')->nullable();
             $table->timestamps();
 
-            // Number uniqueness within a scope.
             $table->unique(
                 ['school_id', 'scope_key', 'registration_number'],
                 'uq_regnum_assignment_active'
             );
-            // Phase 5 invariant: at most one current registration number per student per school.
             $table->unique(
                 ['school_id', 'student_id'],
                 'uq_regnum_assignment_student'
@@ -103,16 +101,16 @@ return new class extends Migration
             $table->foreign('history_id')->references('id')->on('registration_number_histories')->nullOnDelete();
         });
 
-        Schema::table('students', function (Blueprint $table) {
-            $table->unique(['school_id', 'admission_number'], 'uq_students_school_admission_number');
-        });
+        // Admission number uniqueness already exists as uq_admission_number_per_school
+        // (create_students_table). Do not create a duplicate unique index here.
+
+        $this->installAdmissionNumberImmutabilityTrigger();
     }
 
     public function down(): void
     {
-        Schema::table('students', function (Blueprint $table) {
-            $table->dropUnique('uq_students_school_admission_number');
-        });
+        // Do not drop uq_admission_number_per_school — it predates Phase 5.
+        $this->dropAdmissionNumberImmutabilityTrigger();
 
         Schema::dropIfExists('registration_number_assignments');
         Schema::dropIfExists('registration_number_histories');
@@ -122,7 +120,6 @@ return new class extends Migration
             $table->dropIndex('idx_placement_section_active');
             $table->dropIndex('idx_placement_enrollment');
             $table->dropIndex('idx_placement_registration_number');
-            // dropConstrainedForeignId removes the FK and the enrollment_id column.
             $table->dropConstrainedForeignId('enrollment_id');
             $table->dropColumn([
                 'registration_number',
@@ -137,6 +134,82 @@ return new class extends Migration
         });
 
         Schema::dropIfExists('id_sequences');
+    }
+
+    /**
+     * Prevent UPDATE of students.admission_number once a non-null value is set.
+     * Application-level Eloquent guard remains; this is the DB integrity layer.
+     */
+    protected function installAdmissionNumberImmutabilityTrigger(): void
+    {
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            DB::unprepared(<<<'SQL'
+CREATE OR REPLACE FUNCTION prevent_student_admission_number_change()
+RETURNS trigger AS $$
+BEGIN
+    IF OLD.admission_number IS NOT NULL
+       AND NEW.admission_number IS DISTINCT FROM OLD.admission_number THEN
+        RAISE EXCEPTION 'admission_number is immutable once assigned';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+SQL);
+            DB::unprepared(<<<'SQL'
+DROP TRIGGER IF EXISTS trg_students_admission_number_immutable ON students;
+CREATE TRIGGER trg_students_admission_number_immutable
+BEFORE UPDATE ON students
+FOR EACH ROW
+EXECUTE PROCEDURE prevent_student_admission_number_change();
+SQL);
+            return;
+        }
+
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            DB::unprepared('DROP TRIGGER IF EXISTS trg_students_admission_number_immutable');
+            DB::unprepared(<<<'SQL'
+CREATE TRIGGER trg_students_admission_number_immutable
+BEFORE UPDATE ON students
+FOR EACH ROW
+BEGIN
+    IF OLD.admission_number IS NOT NULL
+       AND NEW.admission_number <> OLD.admission_number THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'admission_number is immutable once assigned';
+    END IF;
+END
+SQL);
+            return;
+        }
+
+        if ($driver === 'sqlite') {
+            DB::unprepared('DROP TRIGGER IF EXISTS trg_students_admission_number_immutable');
+            DB::unprepared(<<<'SQL'
+CREATE TRIGGER trg_students_admission_number_immutable
+BEFORE UPDATE ON students
+FOR EACH ROW
+WHEN OLD.admission_number IS NOT NULL
+ AND NEW.admission_number IS NOT OLD.admission_number
+BEGIN
+    SELECT RAISE(ABORT, 'admission_number is immutable once assigned');
+END;
+SQL);
+        }
+    }
+
+    protected function dropAdmissionNumberImmutabilityTrigger(): void
+    {
+        $driver = Schema::getConnection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            DB::unprepared('DROP TRIGGER IF EXISTS trg_students_admission_number_immutable ON students');
+            DB::unprepared('DROP FUNCTION IF EXISTS prevent_student_admission_number_change()');
+            return;
+        }
+
+        DB::unprepared('DROP TRIGGER IF EXISTS trg_students_admission_number_immutable');
     }
 
     protected function dropIndexIfExists(string $table, string $index): void
