@@ -1,17 +1,53 @@
 # Phase 5 — Placement & Registration Numbers
 
-See acceptance criteria in the Phase 5 mission brief.
+## Domain boundaries
 
-## Boundaries
-- Profile = person; Student = school capacity; Enrollment = session registration
-- Placement = academic location over time (history preserved)
-- Admission Number = permanent school-scoped identity
-- Registration Number = mutable scoped register identity
+| Concept | Meaning |
+|--------|---------|
+| Profile | Person identity |
+| Student | School-scoped capacity for a Profile |
+| Enrollment | Registration of a student in a school/session |
+| Placement (`student_session_placements`) | Academic location over time (class level + section) — **integer PK** |
+| Admission Number | Permanent school admission identity |
+| Registration Number | Mutable register identity within configured scope |
 
-## Capacity
-Active occupancy = placements with is_current=true and left_at null.
-Sections locked with lockForUpdate; ordered by sort_order then name.
-Override requires placements.capacity_override (or enrollments.finalize / placements.manage).
+## Placement history
+
+Mid-session section moves **end** the current placement for **that academic session only** (`left_at`, `is_current=false`) and create a **new** row. Placements in other sessions are not closed.
+
+## Capacity convention (ClassSection)
+
+- `capacity = 0` → **uncapped / not configured** (unlimited)
+- `capacity > 0` → hard capacity; automatic allocation skips full sections
+- Capacity override applies only when a positive configured capacity has been reached and the actor has permission
+
+## Capacity concurrency
+
+`allocateForEnrollment` and `placeManually` each establish `DB::transaction`. Within the transaction:
+
+1. Lock candidate section row(s) (`lockForUpdate`)
+2. Count active placements under the same lock
+3. Create placement + registration assignment
+
+Section-row lock is held for the entire placement mutation.
+
+## Admission Number
+
+Generated via `IdGenerator::generate('admission_number', $school)` using `id_sequences` (row lock + `insertOrIgnore` first-row seed). Uniqueness: `uq_students_school_admission_number`. Immutable after assignment (Student model guard). Unaffected by placement or registration changes.
+
+## Registration Number
+
+- History: `registration_number_histories` (immutable; allows historical reuse after `effective_to`)
+- **Current uniqueness**: `registration_number_assignments` unique `(school_id, scope_key, registration_number)`
+- Assignment is insert-into-assignments (DB rejects collisions); retry with next sequence on unique violation
+- Settings key: `academic.registration_number` (`scope`, `regenerate_on_section_change`, etc.)
 
 ## Sequences
-id_sequences + lockForUpdate is authoritative; cache is non-authoritative.
+
+- `id_sequences` + `insertOrIgnore` + `SELECT … FOR UPDATE` is authoritative
+- Phase 5 types (`admission_number`, `registration_number`, `student_id`) **require** the sequences table — no silent cache fallback
+- Cache is best-effort mirror only; legacy non-Phase-5 types may still use cache if sequences table is absent
+
+## Legacy pivot
+
+`student_class_section_pivot` is mirrored for `ClassSection::currentStudents()` compatibility, **scoped by academic_session_id**. Placement table remains the source of truth.
