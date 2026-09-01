@@ -22,34 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Student Model – School-Scoped capacity record (v2.2 – Lifecycle-aligned)
- *
- * Represents a person's Student capacity within one School. Personal data (name, DOB,
- * gender, photo, addresses, etc.) lives exclusively in the linked Profile.
- *
- * Design Rules Enforced (aligned with Student Lifecycle Phases 1–4):
- * - At most one Student record per (Profile, School) — unique DB constraint.
- * - One Profile may have Student capacity in multiple schools (one row per school).
- * - Session-level registration is Enrollment (may be incomplete before Student exists).
- * - Transfer to another school: mark this Student transferred and create a NEW Student
- *   in the destination school (new Profile+School capacity). Same-school re-enrollment
- *   reuses the existing Student capacity; Enrollment rows track session participation.
- * - All session/class placement data lives in student_session_placements (not here).
- * - Status and admission_type are dynamic via HasDynamicEnum.
- *
- * Features / Problems Solved:
- * - Clean separation of identity (Profile) vs school capacity (Student) vs session
- *   registration (Enrollment).
- * - Multi-tenant safety via BelongsToSchool trait.
- * - School-specific customization of status and admission_type using HasDynamicEnum.
- * - Rich guardian management via guardian_student pivot with operational flags.
- * - Full support for advanced DataTables via HasTableQuery (with profile joins).
- *
- * Fits into the Student Management Module:
- * - Core model used by all Student services and controllers.
- * - Phase 4 finalization creates/reuses this capacity after Profile resolution.
- * - Integrates with HasAddress (on Profile), HasCustomFields, and HasDynamicEnum.
  */
-
 class Student extends Model
 {
     use HasFactory,
@@ -101,6 +74,15 @@ class Student extends Model
     public function getDynamicEnumProperties(): array
     {
         return ['status', 'admission_type'];
+    }
+
+    /**
+     * Student capacity is keyed by (school_id, profile_id), not by name.
+     * SchoolScope default PARTITION BY name breaks Student queries when a school is active.
+     */
+    protected static function schoolScopePartitionColumns(): string|array
+    {
+        return 'id';
     }
 
     public function profile(): BelongsTo

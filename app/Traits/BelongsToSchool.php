@@ -36,6 +36,17 @@ trait BelongsToSchool
     }
 
     /**
+     * Columns used by SchoolScope PARTITION BY.
+     * Override on models that do not have a `name` column (e.g. Student, Address).
+     *
+     * @return string|array<int, string>
+     */
+    protected static function schoolScopePartitionColumns(): string|array
+    {
+        return 'name';
+    }
+
+    /**
      * Boot the trait by adding the SchoolScope and auto-assigning school_id.
      *
      * @return void
@@ -43,7 +54,7 @@ trait BelongsToSchool
      */
     protected static function bootBelongsToSchool(): void
     {
-        static::addGlobalScope(new SchoolScope);
+        static::addGlobalScope(new SchoolScope(static::schoolScopePartitionColumns()));
 
         static::creating(function ($model) {
             try {
