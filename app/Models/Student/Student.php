@@ -199,6 +199,21 @@ class Student extends Model
             ?? $this->guardians()->first()?->profile?->phone;
     }
 
+
+    protected static function booted(): void
+    {
+        static::updating(function (Student $student) {
+            if ($student->isDirty('admission_number')) {
+                $original = $student->getOriginal('admission_number');
+                if (!empty($original) && $original !== $student->admission_number) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'admission_number' => 'Admission number is immutable once assigned.',
+                    ]);
+                }
+            }
+        });
+    }
+
     protected static function newFactory()
     {
         return StudentFactory::new();

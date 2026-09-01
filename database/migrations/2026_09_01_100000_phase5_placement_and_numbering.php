@@ -1,0 +1,115 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('id_sequences', function (Blueprint $table) {
+            $table->id();
+            $table->string('type', 64);
+            $table->uuid('school_id')->nullable();
+            $table->string('scope_key', 191)->default('');
+            $table->unsignedInteger('year')->default(0);
+            $table->unsignedBigInteger('last_value')->default(0);
+            $table->timestamps();
+            $table->unique(['type', 'school_id', 'scope_key', 'year'], 'uq_id_sequences_scope');
+            $table->index(['school_id', 'type'], 'idx_id_sequences_school_type');
+        });
+
+        Schema::table('student_session_placements', function (Blueprint $table) {
+            $table->foreignUuid('enrollment_id')->nullable()->after('student_id')
+                ->constrained('enrollments')->nullOnDelete();
+            $table->string('registration_number', 64)->nullable()->after('class_section_id');
+            $table->boolean('capacity_override_used')->default(false)->after('notes');
+            $table->uuid('placed_by')->nullable()->after('capacity_override_used');
+            $table->json('meta')->nullable()->after('placed_by');
+        });
+
+        $this->dropIndexIfExists('student_session_placements', 'student_session_placements_student_id_academic_session_id_unique');
+        $this->dropIndexIfExists('student_session_placements', 'uq_placement_student_session');
+
+        Schema::table('student_session_placements', function (Blueprint $table) {
+            $table->index(['student_id', 'academic_session_id', 'is_current'], 'idx_placement_student_session_current');
+            $table->index(['class_section_id', 'is_current', 'left_at'], 'idx_placement_section_active');
+            $table->index(['enrollment_id'], 'idx_placement_enrollment');
+            $table->index(['registration_number'], 'idx_placement_registration_number');
+        });
+
+        Schema::create('registration_number_histories', function (Blueprint $table) {
+            $table->id();
+            $table->foreignUuid('student_id')->constrained('students')->cascadeOnDelete();
+            $table->uuid('school_id');
+            $table->foreignUuid('enrollment_id')->nullable()->constrained('enrollments')->nullOnDelete();
+            $table->unsignedBigInteger('placement_id')->nullable();
+            $table->string('registration_number', 64);
+            $table->string('scope_key', 191)->nullable();
+            $table->foreignUuid('academic_session_id')->nullable()->constrained('academic_sessions')->nullOnDelete();
+            $table->foreignUuid('class_level_id')->nullable()->constrained('class_levels')->nullOnDelete();
+            $table->foreignUuid('class_section_id')->nullable()->constrained('class_sections')->nullOnDelete();
+            $table->string('reason', 64)->nullable();
+            $table->timestamp('effective_from');
+            $table->timestamp('effective_to')->nullable();
+            $table->uuid('assigned_by')->nullable();
+            $table->json('meta')->nullable();
+            $table->timestamps();
+            $table->index(['student_id', 'effective_to'], 'idx_regnum_hist_student_active');
+            $table->index(['school_id', 'registration_number'], 'idx_regnum_hist_school_number');
+            $table->index(['school_id', 'scope_key', 'registration_number'], 'idx_regnum_hist_scope');
+            $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
+            $table->foreign('placement_id')->references('id')->on('student_session_placements')->nullOnDelete();
+        });
+
+        Schema::table('students', function (Blueprint $table) {
+            $table->unique(['school_id', 'admission_number'], 'uq_students_school_admission_number');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('students', function (Blueprint $table) {
+            $table->dropUnique('uq_students_school_admission_number');
+        });
+        Schema::dropIfExists('registration_number_histories');
+        Schema::table('student_session_placements', function (Blueprint $table) {
+            $table->dropIndex('idx_placement_student_session_current');
+            $table->dropIndex('idx_placement_section_active');
+            $table->dropIndex('idx_placement_enrollment');
+            $table->dropIndex('idx_placement_registration_number');
+            $table->dropConstrainedForeignId('enrollment_id');
+            $table->dropColumn(['enrollment_id', 'registration_number', 'capacity_override_used', 'placed_by', 'meta']);
+        });
+        Schema::table('student_session_placements', function (Blueprint $table) {
+            $table->unique(['student_id', 'academic_session_id'], 'uq_placement_student_session');
+        });
+        Schema::dropIfExists('id_sequences');
+    }
+
+    protected function dropIndexIfExists(string $table, string $index): void
+    {
+        $driver = Schema::getConnection()->getDriverName();
+        if ($driver === 'sqlite') {
+            try {
+                Schema::table($table, fn (Blueprint $b) => $b->dropUnique($index));
+            } catch (\Throwable) {
+                try {
+                    Schema::table($table, fn (Blueprint $b) => $b->dropIndex($index));
+                } catch (\Throwable) {
+                }
+            }
+            return;
+        }
+        try {
+            Schema::table($table, fn (Blueprint $b) => $b->dropUnique($index));
+        } catch (\Throwable) {
+            try {
+                Schema::table($table, fn (Blueprint $b) => $b->dropIndex($index));
+            } catch (\Throwable) {
+            }
+        }
+    }
+};

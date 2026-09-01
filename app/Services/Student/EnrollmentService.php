@@ -35,11 +35,17 @@ use Nnjeim\World\Models\State;
  * - Admission is optional; when present, one-Enrollment-per-Admission is preserved.
  * - Requirements are authoritative on the backend and re-evaluated at finalize.
  * - Finance remains the owner of financial truth (replaceable boundary stub).
- * - No Phase 5 work (section allocation, capacity, admission/registration numbers).
+ * - Phase 5: finalize allocates placement + registration number and ensures
+ *   immutable admission number (via PlacementAllocationService).
  * - No tenant infrastructure; isolation boundary is School.
  */
 class EnrollmentService
 {
+    public function __construct(
+        protected PlacementAllocationService $placementAllocation
+    ) {
+    }
+
     public function start(School $school, User $actor, array $data): Enrollment
     {
         return DB::transaction(function () use ($school, $actor, $data) {
@@ -475,6 +481,25 @@ class EnrollmentService
                 }
             }
 
+            // Phase 5: permanent admission number
+            $admissionNumber = $this->placementAllocation->ensureAdmissionNumber($student, $school);
+
+            $placementOptions = [
+                'class_level_id' => $locked->admission?->class_level_id
+                    ?? ($biodata['class_level_id'] ?? ($locked->meta['class_level_id'] ?? null)),
+                'class_section_id' => $biodata['class_section_id']
+                    ?? ($locked->meta['class_section_id'] ?? null),
+                'capacity_override' => (bool) ($locked->meta['capacity_override'] ?? false),
+            ];
+            if (!$placementOptions['class_level_id'] && $locked->admission_id) {
+                $adm = Admission::query()->whereKey($locked->admission_id)->first();
+                $placementOptions['class_level_id'] = $adm?->class_level_id;
+            }
+
+            $placement = $this->placementAllocation->allocateForEnrollment(
+                $locked, $student, $school, $actor, $placementOptions
+            );
+
             $locked->student_id = $student->id;
             $locked->status = Enrollment::STATUS_ACTIVE;
             $locked->activated_at = now();
@@ -482,13 +507,22 @@ class EnrollmentService
             $meta['finalized_at'] = now()->toIso8601String();
             $meta['finalized_by'] = $actor->id;
             $meta['profile_id'] = $profile->id;
+            $meta['placement_id'] = $placement->id;
+            $meta['admission_number'] = $admissionNumber;
+            $meta['registration_number'] = $placement->registration_number;
             $locked->meta = $meta;
             $locked->save();
 
             activity()
                 ->performedOn($locked)
                 ->causedBy($actor)
-                ->withProperties(['student_id' => $student->id, 'profile_id' => $profile->id])
+                ->withProperties([
+                    'student_id' => $student->id,
+                    'profile_id' => $profile->id,
+                    'placement_id' => $placement->id,
+                    'admission_number' => $admissionNumber,
+                    'registration_number' => $placement->registration_number,
+                ])
                 ->log('enrollment.finalized');
 
             Log::info('Enrollment finalized', [
@@ -497,6 +531,9 @@ class EnrollmentService
                 'profile_id' => $profile->id,
                 'school_id' => $school->id,
                 'actor_id' => $actor->id,
+                'placement_id' => $placement->id,
+                'admission_number' => $admissionNumber,
+                'registration_number' => $placement->registration_number,
             ]);
 
             $student->setRelation('profile', $profile);

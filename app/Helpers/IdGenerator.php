@@ -2,155 +2,208 @@
 
 namespace App\Helpers;
 
+use App\Models\IdSequence;
 use App\Models\School;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
- * IdGenerator Helper – Centralized, Safe & Configurable ID Generation
- *
- * This helper generates human-readable, prefixed identifiers using the school's customizable
- * ID format patterns (stored in settings under 'website.id_formats').
- *
- * Features / Problems Solved:
- * - Fully respects per-type patterns defined by school admins (e.g. {SCHOOL}-{PREFIX}-{YEAR}-{SEQUENCE})
- * - Supports dynamic placeholders: {PREFIX}, {SCHOOL}, {YEAR}, {SEQUENCE}
- * - School code priority: $school->code if exists → first 3 uppercase letters of name → fallback 'SCH'
- * - Atomic counter increment (cache + lock) → prevents race conditions/duplicates
- * - Zero-padding controlled per ID type via sequence_length setting
- * - Separator handling: cleans multiple consecutive separators
- * - Fallbacks: sensible defaults when no school override exists
- * - Performance: heavy caching of counters & settings (long TTL)
- * - Security: no user input in counter logic; sanitized placeholders
- * - Extensibility: easy to add new placeholders or per-type logic
- * - Production-ready: structured logging on failure, clear exceptions
- *
- * Fits into the User Management & System-Wide Module:
- * - Called from controllers/services when creating records:
- *     StudentController → generate('student_id', $school)
- *     StaffController   → generate('staff_id', $school)
- *     InvoiceService    → generate('invoice', $school)
- * - Reads settings: website.id_formats (pattern & sequence_length) + website.prefixes
- * - Integrates with: PrefixesSettingsController (admin UI to configure patterns)
- * - No direct UI — pure backend helper; results stored in model columns:
- *     admission_number, staff_id_number, guardian_number, invoice_number, etc.
- * - Multi-tenant safe: school context passed explicitly or via GetSchoolModel()
- *
- * Usage Examples:
- *   generate('student_id', $school)                → ABC-STU-2026-000123
- *   generate('staff_id', $school)                  → STF-00456
- *   generate('invoice', $school, now()->year + 1)  → INV/2027/000789
+ * IdGenerator – school-configurable IDs with DB-backed sequences (Phase 5).
+ * Cache is best-effort only; id_sequences + lockForUpdate is authoritative.
  */
-
 class IdGenerator
 {
-    /**
-     * Generate a formatted ID for the given type
-     *
-     * @param  string      $type     'student_id', 'staff_id', 'guardian_id', 'invoice', etc.
-     * @param  School|null $school   Current school (null = global/system context)
-     * @param  int|null    $year     Optional override year (defaults to current year)
-     * @return string
-     * @throws \Exception
-     */
-    public static function generate(string $type, ?School $school = null, ?int $year = null): string
-    {
-        $settings = getMergedSettings('website.id_formats', $school);
-
-        $config = $settings[$type] ?? [
-            'pattern' => '{PREFIX}-{SEQUENCE}',
-            'sequence_length' => 6,
-        ];
-
-        // Determine year (allow override, fallback to current)
-        $year = $year ?? now()->year;
-
-        // Get prefix from website.prefixes settings
+    public static function generate(
+        string $type,
+        ?School $school = null,
+        ?int $year = null,
+        ?string $scopeKey = null
+    ): string {
+        $settings = getMergedSettings('website.id_formats', $school) ?? [];
+        $config = $settings[$type] ?? self::defaultConfig($type);
+        $year = $year ?? (int) now()->year;
         $prefix = self::getPrefix($type, $school);
-
-        // Get school code (priority: school->code > 3-letter name fallback > 'SCH')
         $schoolCode = self::getSchoolCode($school);
+        $scopeKey = $scopeKey ?? '';
+        $counter = self::getNextCounter($type, $school, $year, $scopeKey);
 
-        // Get next sequential number (atomic)
-        $counter = self::getNextCounter($type, $school, $year);
-
-        // Build replacements
         $replacements = [
             '{PREFIX}' => $prefix,
             '{SCHOOL}' => $schoolCode,
             '{YEAR}' => (string) $year,
-            '{SEQUENCE}' => str_pad($counter, $config['sequence_length'], '0', STR_PAD_LEFT),
+            '{SEQUENCE}' => str_pad((string) $counter, (int) $config['sequence_length'], '0', STR_PAD_LEFT),
         ];
 
-        // Replace placeholders in pattern
         $id = strtr($config['pattern'], $replacements);
-
-        // Clean up multiple consecutive separators and trim
         $sep = preg_quote($config['separator'] ?? '-', '/');
         $id = preg_replace("/{$sep}{2,}/", $sep, $id);
         $id = trim($id, $sep . ' ');
 
-        // Final validation (should never fail in production)
-        if (empty($id) || strlen($id) > 50) {
+        if (empty($id) || strlen($id) > 64) {
             Log::error('Generated ID is invalid or too long', [
                 'type' => $type,
                 'school_id' => $school?->id,
                 'pattern' => $config['pattern'],
                 'result' => $id,
             ]);
-
             throw new \Exception("Failed to generate valid ID for type: {$type}");
         }
 
         return $id;
     }
 
-    /**
-     * Get the prefix for the ID type from settings
-     */
-    private static function getPrefix(string $type, ?School $school): string
-    {
-        $prefixSettings = getMergedSettings('website.prefixes', $school) ?? [];
+    public static function getNextCounter(
+        string $type,
+        ?School $school = null,
+        ?int $year = null,
+        ?string $scopeKey = null
+    ): int {
+        $year = $year ?? (int) now()->year;
+        $scopeKey = $scopeKey ?? '';
+        $schoolId = $school?->id;
 
-        $key = str_replace('_id', '', $type); // student_id → student
+        if (self::sequencesTableReady()) {
+            return self::nextFromDatabase($type, $schoolId, $scopeKey, $year);
+        }
 
-        return $prefixSettings[$key] ?? strtoupper(substr($type, 0, 3));
+        return self::nextFromCache($type, $schoolId, $scopeKey, $year);
     }
 
-    /**
-     * Get school code with fallback
-     */
-    private static function getSchoolCode(?School $school): string
-    {
-        $school ??= GetSchoolModel();
+    public static function resetCounter(
+        string $type,
+        ?School $school = null,
+        ?int $year = null,
+        ?string $scopeKey = null
+    ): void {
+        $year = $year ?? 0;
+        $scopeKey = $scopeKey ?? '';
+        $schoolId = $school?->id;
 
-        return strtoupper($school->code ?? substr($school->name, 0, 3));
+        if (self::sequencesTableReady()) {
+            IdSequence::query()
+                ->where('type', $type)
+                ->where('school_id', $schoolId)
+                ->where('scope_key', $scopeKey)
+                ->where('year', $year)
+                ->delete();
+        }
+
+        Cache::forget(self::cacheKey($type, $schoolId, $scopeKey, $year));
     }
 
-    /**
-     * Atomically increment and return next counter value
-     * Uses cache + lock to prevent race conditions
-     */
-    private static function getNextCounter(string $type, ?School $school, int $year): int
+    private static function nextFromDatabase(string $type, ?string $schoolId, string $scopeKey, int $year): int
     {
-        $scope = $school?->id;
-        $cacheKey = "id_counter:{$type}:{$scope}:{$year}";
+        return DB::transaction(function () use ($type, $schoolId, $scopeKey, $year) {
+            $row = IdSequence::query()
+                ->where('type', $type)
+                ->where('school_id', $schoolId)
+                ->where('scope_key', $scopeKey)
+                ->where('year', $year)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$row) {
+                try {
+                    IdSequence::query()->create([
+                        'type' => $type,
+                        'school_id' => $schoolId,
+                        'scope_key' => $scopeKey,
+                        'year' => $year,
+                        'last_value' => 0,
+                    ]);
+                } catch (\Throwable) {
+                }
+
+                $row = IdSequence::query()
+                    ->where('type', $type)
+                    ->where('school_id', $schoolId)
+                    ->where('scope_key', $scopeKey)
+                    ->where('year', $year)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+            }
+
+            $row->last_value = (int) $row->last_value + 1;
+            $row->save();
+
+            try {
+                Cache::put(self::cacheKey($type, $schoolId, $scopeKey, $year), $row->last_value, now()->addYears(10));
+            } catch (\Throwable) {
+            }
+
+            return (int) $row->last_value;
+        });
+    }
+
+    private static function nextFromCache(string $type, ?string $schoolId, string $scopeKey, int $year): int
+    {
+        $cacheKey = self::cacheKey($type, $schoolId, $scopeKey, $year);
 
         return Cache::lock($cacheKey . ':lock', 10)->block(10, function () use ($cacheKey) {
-            $counter = Cache::get($cacheKey, 0) + 1;
-            Cache::put($cacheKey, $counter, now()->addYears(10)); // very long TTL
+            $counter = (int) Cache::get($cacheKey, 0) + 1;
+            Cache::put($cacheKey, $counter, now()->addYears(10));
+
             return $counter;
         });
     }
 
-    /**
-     * Reset counter for a specific type/scope/year (admin utility – use with caution)
-     */
-    public static function resetCounter(string $type, ?School $school = null, ?int $year = null): void
+    private static function sequencesTableReady(): bool
     {
-        $scope = $school ? $school->id : 'global';
-        $yearPart = $year ?? 'no-year';
-        $cacheKey = "id_counter:{$type}:{$scope}:{$yearPart}";
-        Cache::forget($cacheKey);
+        static $ready = null;
+        if ($ready === null) {
+            try {
+                $ready = Schema::hasTable('id_sequences');
+            } catch (\Throwable) {
+                $ready = false;
+            }
+        }
+
+        return $ready;
+    }
+
+    private static function cacheKey(string $type, ?string $schoolId, string $scopeKey, int $year): string
+    {
+        return 'id_counter:' . $type . ':' . ($schoolId ?? 'global') . ':' . $scopeKey . ':' . $year;
+    }
+
+    private static function getPrefix(string $type, ?School $school): string
+    {
+        $prefixSettings = getMergedSettings('website.prefixes', $school) ?? [];
+        $key = str_replace(['_id', '_number'], '', $type);
+
+        return $prefixSettings[$key] ?? $prefixSettings[$type] ?? strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $type) ?: 'ID', 0, 3));
+    }
+
+    private static function getSchoolCode(?School $school): string
+    {
+        $school ??= function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+        if (!$school) {
+            return 'SCH';
+        }
+
+        return strtoupper($school->code ?? substr((string) $school->name, 0, 3) ?: 'SCH');
+    }
+
+    private static function defaultConfig(string $type): array
+    {
+        return match ($type) {
+            'admission_number', 'student_id' => [
+                'pattern' => '{PREFIX}/{YEAR}/{SEQUENCE}',
+                'sequence_length' => 5,
+                'separator' => '/',
+            ],
+            'registration_number' => [
+                'pattern' => '{SEQUENCE}',
+                'sequence_length' => 2,
+                'separator' => '-',
+            ],
+            default => [
+                'pattern' => '{PREFIX}-{SEQUENCE}',
+                'sequence_length' => 6,
+                'separator' => '-',
+            ],
+        };
     }
 }

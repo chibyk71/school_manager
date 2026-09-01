@@ -50,27 +50,33 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class StudentSessionPlacement extends Model
 {
     use HasFactory,
-        HasUuids,
         HasDynamicEnum;
 
     protected $fillable = [
         'student_id',
+        'enrollment_id',
         'academic_session_id',
         'class_level_id',
         'class_section_id',
+        'registration_number',
         'enrolled_at',
         'left_at',
         'is_current',
         'promotion_outcome',
         'promotion_batch_id',
         'notes',
+        'capacity_override_used',
+        'placed_by',
+        'meta',
     ];
 
     protected $casts = [
         'enrolled_at' => 'date',
         'left_at' => 'date',
         'is_current' => 'boolean',
+        'capacity_override_used' => 'boolean',
         'promotion_outcome' => 'string',
+        'meta' => 'array',
     ];
 
     // For HasDynamicEnum trait
@@ -90,6 +96,11 @@ class StudentSessionPlacement extends Model
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
+    }
+
+    public function enrollment(): BelongsTo
+    {
+        return $this->belongsTo(Enrollment::class);
     }
 
     /**

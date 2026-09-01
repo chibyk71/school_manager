@@ -4,9 +4,9 @@ namespace App\Services\Student;
 
 use App\Models\Student\Student;
 use App\Models\Student\StudentSessionPlacement;
-use App\Models\ClassLevel;
+use App\Models\Academic\ClassLevel;
 use App\Models\Academic\ClassSection;
-use App\Models\AcademicSession;
+use App\Models\Academic\AcademicSession;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;

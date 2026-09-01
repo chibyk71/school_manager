@@ -1,5 +1,7 @@
 # Phase 5 — Placement & Registration Numbers
 
+See acceptance criteria in the Phase 5 mission brief.
+
 ## Boundaries
 - Profile = person; Student = school capacity; Enrollment = session registration
 - Placement = academic location over time (history preserved)
