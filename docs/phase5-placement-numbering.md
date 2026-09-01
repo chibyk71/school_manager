@@ -54,10 +54,20 @@ Generated via `IdGenerator::generate('admission_number', $school)` using `id_seq
 
 ## Registration assignment invariant (Phase 5)
 
-A student has **at most one current registration number per school**
-(`registration_number_assignments`). Scope controls uniqueness of the number
-*value*, not the number of concurrent current rows per student. On reassignment
-all current assignment rows for that student at that school are released first.
+A student has **at most one current registration number per school**.
+Enforced by:
+
+* `unique(school_id, student_id)` on `registration_number_assignments` (`uq_regnum_assignment_student`)
+* `unique(school_id, scope_key, registration_number)` for number uniqueness within scope
+* Student row `lockForUpdate` at the start of `RegistrationNumberService::assign()`
+
+On reassignment, existing assignment rows for that student at that school are released first.
+
+## Admission Number concurrency
+
+`ensureAdmissionNumber()` locks the Student row (`SELECT … FOR UPDATE`), re-checks
+`admission_number` under the lock, then assigns. Concurrent callers for the same
+student cannot both observe NULL and overwrite each other.
 
 ## Collision retry (PostgreSQL-safe)
 
@@ -70,6 +80,6 @@ Each registration claim attempt runs inside a nested `DB::transaction`
 ## Concurrency testing note
 
 True multi-writer races require PostgreSQL/MySQL and `pcntl_fork` (or equivalent).
-SQLite serializes writers; concurrency tests in the suite skip when the driver
-or process model cannot demonstrate the race. Sequential capacity non-overfill
-and sequence uniqueness remain covered for all drivers.
+SQLite serializes writers; concurrency tests in the suite **skip** (Pest `markTestSkipped`)
+when the driver or process model cannot demonstrate the race. Sequential capacity
+non-overfill and sequence uniqueness remain covered for all drivers.
