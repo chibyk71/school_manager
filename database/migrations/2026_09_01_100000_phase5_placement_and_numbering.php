@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Schema;
  * - id_sequences: DB-backed counters (authoritative)
  * - student_session_placements: history-friendly fields; drop unique(student,session)
  * - registration_number_histories: immutable assignment history
- * - registration_number_assignments: CURRENT assignments only — unique(school, scope_key, number)
+ * - registration_number_assignments: CURRENT assignments — unique(school, scope_key, number) + unique(school, student)
  * - students: unique(school_id, admission_number)
  *
  * placement_id remains unsignedBigInteger matching student_session_placements.id (integer PK).
@@ -88,9 +88,15 @@ return new class extends Migration
             $table->unsignedBigInteger('history_id')->nullable();
             $table->timestamps();
 
+            // Number uniqueness within a scope.
             $table->unique(
                 ['school_id', 'scope_key', 'registration_number'],
                 'uq_regnum_assignment_active'
+            );
+            // Phase 5 invariant: at most one current registration number per student per school.
+            $table->unique(
+                ['school_id', 'student_id'],
+                'uq_regnum_assignment_student'
             );
             $table->index(['student_id'], 'idx_regnum_assignment_student');
             $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
