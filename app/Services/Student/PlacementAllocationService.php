@@ -15,21 +15,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
-/**
- * Phase 5 placement allocation.
- *
- * Capacity convention (ClassSection domain):
- *   capacity = 0  → uncapped / not configured (unlimited)
- *   capacity > 0  → hard capacity; override required when occupancy >= capacity
- *
- * Transaction boundary:
- *   allocateForEnrollment() and placeManually() each establish DB::transaction
- *   so section locks and placement mutations are atomic even when called outside
- *   EnrollmentService::finalize(). Nested calls from finalize() use savepoints.
- *
- * Occupancy is measured from active placements (is_current=true, left_at null)
- * belonging to the section — the authoritative source of truth.
- */
 class PlacementAllocationService
 {
     public function __construct(
@@ -46,8 +31,8 @@ class PlacementAllocationService
         array $options = []
     ): StudentSessionPlacement {
         return DB::transaction(function () use ($enrollment, $student, $school, $actor, $options) {
-            $this->assertEnrollmentSchool($enrollment, $school);
             $this->assertStudentSchool($student, $school);
+            $this->assertEnrollmentContext($enrollment, $school, $student);
 
             $classLevelId = $options['class_level_id']
                 ?? $enrollment->admission?->class_level_id
@@ -114,9 +99,18 @@ class PlacementAllocationService
                 ]);
             }
 
-            $enrollment = isset($options['enrollment_id'])
-                ? Enrollment::query()->find($options['enrollment_id'])
-                : null;
+            $this->assertAcademicSessionBelongsToSchool($sessionId, $school);
+
+            $enrollment = null;
+            if (!empty($options['enrollment_id'])) {
+                $enrollment = Enrollment::query()->find($options['enrollment_id']);
+                if (!$enrollment) {
+                    throw ValidationException::withMessages([
+                        'enrollment_id' => 'Enrollment not found.',
+                    ]);
+                }
+                $this->assertEnrollmentContext($enrollment, $school, $student, $sessionId);
+            }
 
             return $this->createPlacement(
                 student: $student,
@@ -174,15 +168,9 @@ class PlacementAllocationService
         ]);
     }
 
-    /**
-     * Capacity convention (must match ClassSection domain docs):
-     *   capacity <= 0  → unlimited (0 = uncapped / not configured)
-     *   capacity > 0   → hard limit; available when occupancy < capacity
-     */
     public function hasAvailableCapacity(ClassSection $section, bool $forUpdate = false): bool
     {
         $capacity = (int) ($section->capacity ?? 0);
-
         if ($capacity <= 0) {
             return true;
         }
@@ -190,19 +178,8 @@ class PlacementAllocationService
         return $this->activeOccupancy($section, $forUpdate) < $capacity;
     }
 
-    /**
-     * Assign a permanent Admission Number if the student does not yet have one.
-     *
-     * Serializes on the Student row (SELECT … FOR UPDATE) so concurrent callers
-     * cannot both observe NULL and overwrite each other. Re-check after the
-     * lock is mandatory — the number is immutable once assigned.
-     *
-     * Student must belong to the given School (validated before any fast-path).
-     */
     public function ensureAdmissionNumber(Student $student, School $school): string
     {
-        // School boundary before any fast-path return so a wrong-school caller
-        // cannot observe or reuse another school's permanent admission identity.
         if ($student->school_id !== $school->id) {
             throw ValidationException::withMessages([
                 'school' => 'Student does not belong to this school.',
@@ -219,7 +196,6 @@ class PlacementAllocationService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            // Re-check under lock: another transaction may have assigned already.
             if (!empty($locked->admission_number)) {
                 $student->setRawAttributes($locked->getAttributes(), true);
                 $student->syncOriginal();
@@ -241,11 +217,8 @@ class PlacementAllocationService
         });
     }
 
-    protected function assertCapacityOrOverride(
-        ClassSection $section,
-        bool $override,
-        User $actor
-    ): void {
+    protected function assertCapacityOrOverride(ClassSection $section, bool $override, User $actor): void
+    {
         ClassSection::query()->whereKey($section->id)->lockForUpdate()->first();
 
         if ($this->hasAvailableCapacity($section, forUpdate: true)) {
@@ -438,11 +411,8 @@ class PlacementAllocationService
         }
     }
 
-    protected function resolveSection(
-        string $sectionId,
-        string $classLevelId,
-        School $school
-    ): ClassSection {
+    protected function resolveSection(string $sectionId, string $classLevelId, School $school): ClassSection
+    {
         $section = ClassSection::query()
             ->whereKey($sectionId)
             ->lockForUpdate()
@@ -495,11 +465,46 @@ class PlacementAllocationService
         }
     }
 
-    protected function assertEnrollmentSchool(Enrollment $enrollment, School $school): void
-    {
+    protected function assertEnrollmentContext(
+        Enrollment $enrollment,
+        School $school,
+        Student $student,
+        ?string $expectedSessionId = null
+    ): void {
         if ($enrollment->school_id !== $school->id) {
             throw ValidationException::withMessages([
                 'enrollment' => 'Enrollment does not belong to this school.',
+            ]);
+        }
+
+        if ($enrollment->student_id && $enrollment->student_id !== $student->id) {
+            throw ValidationException::withMessages([
+                'enrollment' => 'Enrollment does not belong to this student.',
+            ]);
+        }
+
+        if ($enrollment->academic_session_id) {
+            $this->assertAcademicSessionBelongsToSchool($enrollment->academic_session_id, $school);
+        }
+
+        if ($expectedSessionId && $enrollment->academic_session_id !== $expectedSessionId) {
+            throw ValidationException::withMessages([
+                'enrollment' => 'Enrollment does not belong to the specified academic session.',
+            ]);
+        }
+    }
+
+    protected function assertAcademicSessionBelongsToSchool(string $sessionId, School $school): void
+    {
+        $session = DB::table('academic_sessions')->where('id', $sessionId)->first();
+        if (!$session) {
+            throw ValidationException::withMessages([
+                'academic_session_id' => 'Academic session not found.',
+            ]);
+        }
+        if (($session->school_id ?? null) !== $school->id) {
+            throw ValidationException::withMessages([
+                'academic_session_id' => 'Academic session does not belong to this school.',
             ]);
         }
     }
