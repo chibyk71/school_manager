@@ -16,19 +16,17 @@ use Illuminate\Validation\ValidationException;
 /**
  * Registration Number — mutable register identity within a school-configured scope.
  *
- * Current uniqueness is enforced by registration_number_assignments
- * unique(school_id, scope_key, registration_number). History remains in
- * registration_number_histories (no uniqueness there so numbers can be reused
- * after effective_to is set).
+ * Current uniqueness is enforced by registration_number_assignments:
+ *   unique(school_id, scope_key, registration_number) — number uniqueness in scope
+ *   unique(school_id, student_id) — one current number per student per school
+ *
+ * History remains in registration_number_histories (no uniqueness there so numbers
+ * can be reused after effective_to is set).
  *
  * Phase 5 invariant — current assignment:
- *   A student has at most one current registration number per school
- *   (registration_number_assignments is the current-assignment store).
- *   Scope determines uniqueness of the *number value*, not how many current
- *   rows a student may hold. On reassignment we release the student's previous
- *   current assignment(s) for that school, then claim a new number under the
- *   configured scope. Phase 6+ may refine this if multi-enrollment concurrent
- *   current numbers become a real requirement.
+ *   A student has at most one current registration number per school.
+ *   Enforced at the database (uq_regnum_assignment_student) and by locking the
+ *   Student row at the start of assign() so concurrent empty-state claims serialize.
  */
 class RegistrationNumberService
 {
@@ -82,11 +80,9 @@ class RegistrationNumberService
      * rolls back only the savepoint — the outer transaction stays usable, and
      * no orphaned history row remains from the failed attempt.
      *
-     * Flow per attempt:
-     *   savepoint begin
-     *     → create history + insert assignment
-     *   on unique violation → savepoint rollback (nothing remains) → retry
-     *   on success → commit savepoint → return number
+     * Student-side invariant is enforced by unique(school_id, student_id) and by
+     * locking the Student row before release/insert so concurrent empty-state
+     * claims cannot both succeed.
      */
     public function assign(
         Student $student,
@@ -101,8 +97,13 @@ class RegistrationNumberService
         $scopeKey = $this->buildScopeKey($school, $sessionId, $levelId, $sectionId);
         $year = $this->resolveYear($sessionId);
 
+        // Serialize assignment mutations for this student so concurrent initial
+        // claims cannot both insert under unique(school_id, student_id).
+        Student::query()->whereKey($student->id)->lockForUpdate()->firstOrFail();
+
         // Release previous current assignment(s) for this student at this school
-        // (Phase 5: one current registration number per student per school).
+        // (Phase 5: one current registration number per student per school —
+        // enforced by uq_regnum_assignment_student).
         $this->releaseCurrentAssignment($student, $school);
 
         $attempts = 0;
@@ -162,7 +163,8 @@ class RegistrationNumberService
                     throw $e;
                 }
                 // Savepoint rolled back: no orphaned history, outer txn intact.
-                // Retry with next sequence value.
+                // Retry with next sequence value (number collision) or surface
+                // student-unique violation after release (should not happen under lock).
             }
         }
 
