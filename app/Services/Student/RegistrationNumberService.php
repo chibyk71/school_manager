@@ -9,8 +9,18 @@ use App\Models\Student\RegistrationNumberHistory;
 use App\Models\Student\Student;
 use App\Models\Student\StudentSessionPlacement;
 use App\Models\User;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * Registration Number — mutable register identity within a school-configured scope.
+ *
+ * Current uniqueness is enforced by registration_number_assignments
+ * unique(school_id, scope_key, registration_number). History remains in
+ * registration_number_histories (no uniqueness there so numbers can be reused
+ * after effective_to is set).
+ */
 class RegistrationNumberService
 {
     public const SCOPE_SCHOOL_SESSION = 'school_session';
@@ -36,8 +46,12 @@ class RegistrationNumberService
         ];
     }
 
-    public function buildScopeKey(School $school, ?string $sessionId, ?string $levelId, ?string $sectionId): string
-    {
+    public function buildScopeKey(
+        School $school,
+        ?string $sessionId,
+        ?string $levelId,
+        ?string $sectionId
+    ): string {
         $scope = $this->config($school)['scope'];
 
         return match ($scope) {
@@ -49,14 +63,28 @@ class RegistrationNumberService
         };
     }
 
-    public function assign(Student $student, School $school, array $context, string $reason = self::REASON_INITIAL, ?User $actor = null): string
-    {
+    /**
+     * Allocate a new registration number, release the student's previous current
+     * assignment, write history, and claim the new number in the assignments table.
+     *
+     * Must be called inside a transaction (caller or allocate path).
+     * Uniqueness is enforced by uq_regnum_assignment_active; collisions retry
+     * with a fresh sequence value rather than relying on exists()-then-insert.
+     */
+    public function assign(
+        Student $student,
+        School $school,
+        array $context,
+        string $reason = self::REASON_INITIAL,
+        ?User $actor = null
+    ): string {
         $sessionId = $context['academic_session_id'] ?? null;
         $levelId = $context['class_level_id'] ?? null;
         $sectionId = $context['class_section_id'] ?? null;
         $scopeKey = $this->buildScopeKey($school, $sessionId, $levelId, $sectionId);
         $year = $this->resolveYear($sessionId);
 
+        // Close any active history rows for this student at this school.
         RegistrationNumberHistory::query()
             ->where('student_id', $student->id)
             ->where('school_id', $school->id)
@@ -68,65 +96,111 @@ class RegistrationNumberService
                 $row->save();
             });
 
-        $number = IdGenerator::generate('registration_number', $school, $year, $scopeKey);
-
-        $exists = RegistrationNumberHistory::query()
+        // Release previous current assignment(s) for this student so the number
+        // becomes available for reuse by others under the same scope.
+        DB::table('registration_number_assignments')
+            ->where('student_id', $student->id)
             ->where('school_id', $school->id)
-            ->where('scope_key', $scopeKey)
-            ->where('registration_number', $number)
-            ->whereNull('effective_to')
-            ->exists();
+            ->delete();
 
-        if ($exists) {
+        $attempts = 0;
+        $maxAttempts = 5;
+
+        while ($attempts < $maxAttempts) {
+            $attempts++;
             $number = IdGenerator::generate('registration_number', $school, $year, $scopeKey);
+
+            try {
+                $history = RegistrationNumberHistory::query()->create([
+                    'student_id' => $student->id,
+                    'school_id' => $school->id,
+                    'enrollment_id' => $context['enrollment_id'] ?? null,
+                    'placement_id' => $context['placement_id'] ?? null,
+                    'registration_number' => $number,
+                    'scope_key' => $scopeKey,
+                    'academic_session_id' => $sessionId,
+                    'class_level_id' => $levelId,
+                    'class_section_id' => $sectionId,
+                    'reason' => $reason,
+                    'effective_from' => now(),
+                    'effective_to' => null,
+                    'assigned_by' => $actor?->id,
+                    'meta' => $context['meta'] ?? null,
+                ]);
+
+                // Claim the number in the current-assignment table.
+                // Unique constraint rejects concurrent claims of the same number.
+                DB::table('registration_number_assignments')->insert([
+                    'school_id' => $school->id,
+                    'scope_key' => $scopeKey,
+                    'registration_number' => $number,
+                    'student_id' => $student->id,
+                    'history_id' => $history->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                return $number;
+            } catch (QueryException $e) {
+                if (!$this->isUniqueConstraintViolation($e)) {
+                    throw $e;
+                }
+                // Collision on assignment unique key — retry with next sequence value.
+            }
         }
 
-        RegistrationNumberHistory::query()->create([
-            'student_id' => $student->id,
-            'school_id' => $school->id,
-            'enrollment_id' => $context['enrollment_id'] ?? null,
-            'placement_id' => $context['placement_id'] ?? null,
-            'registration_number' => $number,
-            'scope_key' => $scopeKey,
-            'academic_session_id' => $sessionId,
-            'class_level_id' => $levelId,
-            'class_section_id' => $sectionId,
-            'reason' => $reason,
-            'effective_from' => now(),
-            'assigned_by' => $actor?->id,
-            'meta' => $context['meta'] ?? null,
+        throw ValidationException::withMessages([
+            'registration_number' => 'Unable to allocate a unique registration number for the configured scope after multiple attempts.',
         ]);
-
-        return $number;
     }
 
-    public function regenerate(Student $student, School $school, StudentSessionPlacement $placement, User $actor, ?string $notes = null): string
-    {
+    public function regenerate(
+        Student $student,
+        School $school,
+        StudentSessionPlacement $placement,
+        User $actor,
+        ?string $notes = null
+    ): string {
         if ($student->school_id !== $school->id) {
-            throw ValidationException::withMessages(['school' => 'Student does not belong to this school.']);
+            throw ValidationException::withMessages([
+                'school' => 'Student does not belong to this school.',
+            ]);
         }
         if ($placement->student_id !== $student->id) {
-            throw ValidationException::withMessages(['placement' => 'Placement does not belong to this student.']);
+            throw ValidationException::withMessages([
+                'placement' => 'Placement does not belong to this student.',
+            ]);
         }
 
-        $number = $this->assign($student, $school, [
-            'academic_session_id' => $placement->academic_session_id,
-            'class_level_id' => $placement->class_level_id,
-            'class_section_id' => $placement->class_section_id,
-            'placement_id' => $placement->id,
-            'enrollment_id' => $placement->enrollment_id,
-            'meta' => ['notes' => $notes],
-        ], self::REASON_REGENERATE, $actor);
+        return DB::transaction(function () use ($student, $school, $placement, $actor, $notes) {
+            $number = $this->assign(
+                $student,
+                $school,
+                [
+                    'academic_session_id' => $placement->academic_session_id,
+                    'class_level_id' => $placement->class_level_id,
+                    'class_section_id' => $placement->class_section_id,
+                    'placement_id' => $placement->id,
+                    'enrollment_id' => $placement->enrollment_id,
+                    'meta' => ['notes' => $notes],
+                ],
+                self::REASON_REGENERATE,
+                $actor
+            );
 
-        $placement->registration_number = $number;
-        $placement->save();
+            $placement->registration_number = $number;
+            $placement->save();
 
-        return $number;
+            return $number;
+        });
     }
 
     public function currentNumber(Student $student, ?string $schoolId = null): ?string
     {
-        $q = RegistrationNumberHistory::query()->where('student_id', $student->id)->whereNull('effective_to')->orderByDesc('effective_from');
+        $q = DB::table('registration_number_assignments')
+            ->where('student_id', $student->id)
+            ->orderByDesc('id');
+
         if ($schoolId) {
             $q->where('school_id', $schoolId);
         }
@@ -136,7 +210,10 @@ class RegistrationNumberService
 
     public function history(Student $student, ?string $schoolId = null)
     {
-        $q = RegistrationNumberHistory::query()->where('student_id', $student->id)->orderByDesc('effective_from');
+        $q = RegistrationNumberHistory::query()
+            ->where('student_id', $student->id)
+            ->orderByDesc('effective_from');
+
         if ($schoolId) {
             $q->where('school_id', $schoolId);
         }
@@ -156,8 +233,20 @@ class RegistrationNumberService
             if ($session && !empty($session->start_date)) {
                 return (int) date('Y', strtotime((string) $session->start_date));
             }
+            if ($session && !empty($session->name) && preg_match('/(20\d{2})/', (string) $session->name, $m)) {
+                return (int) $m[1];
+            }
         }
 
         return (int) now()->year;
+    }
+
+    protected function isUniqueConstraintViolation(QueryException $e): bool
+    {
+        $code = (string) ($e->errorInfo[1] ?? $e->getCode());
+
+        return in_array($code, ['1062', '23505'], true)
+            || str_contains(strtolower($e->getMessage()), 'unique')
+            || str_contains(strtolower($e->getMessage()), 'duplicate');
     }
 }
