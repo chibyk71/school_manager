@@ -116,9 +116,9 @@ return new class extends Migration
             $table->dropIndex('idx_placement_section_active');
             $table->dropIndex('idx_placement_enrollment');
             $table->dropIndex('idx_placement_registration_number');
+            // dropConstrainedForeignId removes the FK and the enrollment_id column.
             $table->dropConstrainedForeignId('enrollment_id');
             $table->dropColumn([
-                'enrollment_id',
                 'registration_number',
                 'capacity_override_used',
                 'placed_by',
