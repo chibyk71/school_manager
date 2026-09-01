@@ -5,6 +5,17 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Phase 5 — Placement & Registration Numbers
+ *
+ * - id_sequences: DB-backed counters (authoritative)
+ * - student_session_placements: history-friendly fields; drop unique(student,session)
+ * - registration_number_histories: immutable assignment history
+ * - registration_number_assignments: CURRENT assignments only — unique(school, scope_key, number)
+ * - students: unique(school_id, admission_number)
+ *
+ * placement_id remains unsignedBigInteger matching student_session_placements.id (integer PK).
+ */
 return new class extends Migration
 {
     public function up(): void
@@ -22,8 +33,11 @@ return new class extends Migration
         });
 
         Schema::table('student_session_placements', function (Blueprint $table) {
-            $table->foreignUuid('enrollment_id')->nullable()->after('student_id')
-                ->constrained('enrollments')->nullOnDelete();
+            $table->foreignUuid('enrollment_id')
+                ->nullable()
+                ->after('student_id')
+                ->constrained('enrollments')
+                ->nullOnDelete();
             $table->string('registration_number', 64)->nullable()->after('class_section_id');
             $table->boolean('capacity_override_used')->default(false)->after('notes');
             $table->uuid('placed_by')->nullable()->after('capacity_override_used');
@@ -57,11 +71,30 @@ return new class extends Migration
             $table->uuid('assigned_by')->nullable();
             $table->json('meta')->nullable();
             $table->timestamps();
+
             $table->index(['student_id', 'effective_to'], 'idx_regnum_hist_student_active');
             $table->index(['school_id', 'registration_number'], 'idx_regnum_hist_school_number');
             $table->index(['school_id', 'scope_key', 'registration_number'], 'idx_regnum_hist_scope');
             $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
             $table->foreign('placement_id')->references('id')->on('student_session_placements')->nullOnDelete();
+        });
+
+        Schema::create('registration_number_assignments', function (Blueprint $table) {
+            $table->id();
+            $table->uuid('school_id');
+            $table->string('scope_key', 191);
+            $table->string('registration_number', 64);
+            $table->foreignUuid('student_id')->constrained('students')->cascadeOnDelete();
+            $table->unsignedBigInteger('history_id')->nullable();
+            $table->timestamps();
+
+            $table->unique(
+                ['school_id', 'scope_key', 'registration_number'],
+                'uq_regnum_assignment_active'
+            );
+            $table->index(['student_id'], 'idx_regnum_assignment_student');
+            $table->foreign('school_id')->references('id')->on('schools')->cascadeOnDelete();
+            $table->foreign('history_id')->references('id')->on('registration_number_histories')->nullOnDelete();
         });
 
         Schema::table('students', function (Blueprint $table) {
@@ -74,24 +107,36 @@ return new class extends Migration
         Schema::table('students', function (Blueprint $table) {
             $table->dropUnique('uq_students_school_admission_number');
         });
+
+        Schema::dropIfExists('registration_number_assignments');
         Schema::dropIfExists('registration_number_histories');
+
         Schema::table('student_session_placements', function (Blueprint $table) {
             $table->dropIndex('idx_placement_student_session_current');
             $table->dropIndex('idx_placement_section_active');
             $table->dropIndex('idx_placement_enrollment');
             $table->dropIndex('idx_placement_registration_number');
             $table->dropConstrainedForeignId('enrollment_id');
-            $table->dropColumn(['enrollment_id', 'registration_number', 'capacity_override_used', 'placed_by', 'meta']);
+            $table->dropColumn([
+                'enrollment_id',
+                'registration_number',
+                'capacity_override_used',
+                'placed_by',
+                'meta',
+            ]);
         });
+
         Schema::table('student_session_placements', function (Blueprint $table) {
             $table->unique(['student_id', 'academic_session_id'], 'uq_placement_student_session');
         });
+
         Schema::dropIfExists('id_sequences');
     }
 
     protected function dropIndexIfExists(string $table, string $index): void
     {
         $driver = Schema::getConnection()->getDriverName();
+
         if ($driver === 'sqlite') {
             try {
                 Schema::table($table, fn (Blueprint $b) => $b->dropUnique($index));
@@ -101,8 +146,10 @@ return new class extends Migration
                 } catch (\Throwable) {
                 }
             }
+
             return;
         }
+
         try {
             Schema::table($table, fn (Blueprint $b) => $b->dropUnique($index));
         } catch (\Throwable) {
