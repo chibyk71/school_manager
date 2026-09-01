@@ -2,7 +2,6 @@
 
 namespace App\Services\Student;
 
-use App\Facades\SchoolManager;
 use App\Models\Academic\AcademicSession;
 use App\Models\Misc\Document;
 use App\Models\Profile;
@@ -786,13 +785,6 @@ class EnrollmentService
         }
 
         $primary = method_exists($profile, 'primaryAddress') ? $profile->primaryAddress() : null;
-
-        // Ensure school context so HasAddress can assign school_id for Profile (global model).
-        try {
-            SchoolManager::setActiveSchool($school);
-        } catch (\Throwable) {
-            // schoolManager may be unbound in focused unit tests
-        }
 
         if ($primary) {
             // Fill empty slots only — do not wipe established structured geo IDs.
