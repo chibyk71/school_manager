@@ -35,12 +35,6 @@ use Illuminate\Validation\ValidationException;
  *   (AddressManager.vue, AddressModal.vue).
  * - Primary flag management is enforced here – UI can trust that only one address is primary.
  *
- * Usage Examples:
- *   $student->addAddress($request->validated(), true);                    // Create & set primary
- *   $student->updateAddress($addressId, $request->validated());           // Partial update
- *   $student->setPrimaryAddress($anotherAddressId);                       // Switch primary
- *   $student->primaryAddress()?->formatted;                               // Display primary
- *
  * Dependencies:
  * - App\Models\Address (with BelongsToSchool, SoftDeletes)
  * - nnjeim/world package for countries/states/cities tables
@@ -60,13 +54,25 @@ trait HasAddress
     }
 
     /**
+     * Address queries for this owner, without SchoolScope.
+     *
+     * SchoolScope wraps SELECT in a ROW_NUMBER() subquery that is incompatible with
+     * UPDATE/DELETE on SQLite and can corrupt bindings when school context is active.
+     * Ownership is already enforced by the polymorphic addressable constraint.
+     */
+    protected function addressesForOwner(): MorphMany
+    {
+        return $this->addresses()->withoutGlobalScopes();
+    }
+
+    /**
      * Get the current primary address (if any).
      *
      * @return Address|null
      */
     public function primaryAddress(): ?Address
     {
-        return $this->addresses()->where('is_primary', true)->first();
+        return $this->addressesForOwner()->where('is_primary', true)->first();
     }
 
     /**
@@ -89,7 +95,7 @@ trait HasAddress
             ?? throw new \Exception('No active school context found when creating address.');
 
         try {
-            return $this->addresses()->create(array_merge($validated, [
+            return $this->addressesForOwner()->create(array_merge($validated, [
                 'is_primary' => $isPrimary,
                 'school_id'  => $schoolId,
             ]));
@@ -118,7 +124,7 @@ trait HasAddress
     {
         $validated = $this->validateAddressData($data, forUpdate: true);
 
-        $address = $this->addresses()->findOrFail($addressId);
+        $address = $this->addressesForOwner()->findOrFail($addressId);
 
         if ($makePrimary && !$address->is_primary) {
             $this->unsetPrimaryAddress();
@@ -127,6 +133,7 @@ trait HasAddress
 
         try {
             $address->update($validated);
+
             return $address->fresh();
         } catch (\Exception $e) {
             Log::error('Address update failed', [
@@ -150,7 +157,7 @@ trait HasAddress
      */
     public function deleteAddress(int|string $addressId): bool
     {
-        $address = $this->addresses()->findOrFail($addressId);
+        $address = $this->addressesForOwner()->findOrFail($addressId);
 
         // If deleting the primary address, unset primary flag first (prevents orphan primary state)
         if ($address->is_primary) {
@@ -169,7 +176,7 @@ trait HasAddress
      */
     public function setPrimaryAddress(int|string $addressId): Address
     {
-        $address = $this->addresses()->findOrFail($addressId);
+        $address = $this->addressesForOwner()->findOrFail($addressId);
 
         $this->unsetPrimaryAddress();
 
@@ -185,7 +192,9 @@ trait HasAddress
      */
     public function unsetPrimaryAddress(): void
     {
-        $this->addresses()->where('is_primary', true)->update(['is_primary' => false]);
+        // Must not run through SchoolScope: UPDATE (ROW_NUMBER subquery) is invalid on SQLite
+        // and ownership is already constrained by addressable morph keys.
+        $this->addressesForOwner()->where('is_primary', true)->update(['is_primary' => false]);
     }
 
     /**
@@ -196,7 +205,7 @@ trait HasAddress
      */
     public function hasAddress(bool $withTrashed = false): bool
     {
-        $query = $this->addresses();
+        $query = $this->addressesForOwner();
 
         if ($withTrashed) {
             $query = $query->withTrashed();
@@ -214,7 +223,7 @@ trait HasAddress
     {
         // Unset primary first to keep data consistent
         $this->unsetPrimaryAddress();
-        $this->addresses()->delete();
+        $this->addressesForOwner()->delete();
     }
 
     /**
@@ -224,7 +233,7 @@ trait HasAddress
      */
     public function restoreAllAddresses(): void
     {
-        $this->addresses()->withTrashed()->restore();
+        $this->addressesForOwner()->withTrashed()->restore();
     }
 
     /**
@@ -234,7 +243,7 @@ trait HasAddress
      */
     public function forceDeleteAllAddresses(): void
     {
-        $this->addresses()->withTrashed()->forceDelete();
+        $this->addressesForOwner()->withTrashed()->forceDelete();
     }
 
     /**
@@ -263,7 +272,7 @@ trait HasAddress
             'postal_code'    => ['nullable', 'string', 'max:20'],
 
             // Classification
-            'type' => [ new InDynamicEnum('type', Address::class), 'required'],
+            'type' => [new InDynamicEnum('type', Address::class), 'required'],
 
             // Geolocation
             'latitude'  => ['nullable', 'numeric', 'between:-90,90'],
