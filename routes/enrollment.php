@@ -1,11 +1,8 @@
 <?php
 
 use App\Http\Controllers\Student\EnrollmentController;
+use App\Http\Controllers\Student\PlacementController;
 use Illuminate\Support\Facades\Route;
-
-/*
-| Phase 4 Enrollment lifecycle routes
-*/
 
 Route::prefix('enrollments')->name('enrollments.')->group(function () {
     Route::get('/', [EnrollmentController::class, 'index'])->name('index');
@@ -19,4 +16,11 @@ Route::prefix('enrollments')->name('enrollments.')->group(function () {
         ->name('requirements.satisfy');
     Route::post('{enrollment}/requirements/{instance}/waive', [EnrollmentController::class, 'waiveRequirement'])
         ->name('requirements.waive');
+});
+
+Route::prefix('placements')->name('placements.')->group(function () {
+    Route::post('allocate/{enrollment}', [PlacementController::class, 'allocate'])->name('allocate');
+    Route::post('manual/{student}', [PlacementController::class, 'manual'])->name('manual');
+    Route::post('regenerate-registration/{student}', [PlacementController::class, 'regenerateRegistration'])->name('regenerate');
+    Route::get('history/{student}', [PlacementController::class, 'history'])->name('history');
 });
