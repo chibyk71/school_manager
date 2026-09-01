@@ -183,7 +183,6 @@ class PlacementAllocationService
     {
         $capacity = (int) ($section->capacity ?? 0);
 
-        // 0 = uncapped / not configured — never "at capacity"
         if ($capacity <= 0) {
             return true;
         }
@@ -197,9 +196,19 @@ class PlacementAllocationService
      * Serializes on the Student row (SELECT … FOR UPDATE) so concurrent callers
      * cannot both observe NULL and overwrite each other. Re-check after the
      * lock is mandatory — the number is immutable once assigned.
+     *
+     * Student must belong to the given School (validated before any fast-path).
      */
     public function ensureAdmissionNumber(Student $student, School $school): string
     {
+        // School boundary before any fast-path return so a wrong-school caller
+        // cannot observe or reuse another school's permanent admission identity.
+        if ($student->school_id !== $school->id) {
+            throw ValidationException::withMessages([
+                'school' => 'Student does not belong to this school.',
+            ]);
+        }
+
         if (!empty($student->admission_number)) {
             return $student->admission_number;
         }
