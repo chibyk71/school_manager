@@ -738,7 +738,9 @@ class EnrollmentService
      * Hierarchical geo (country/state/city) is resolved to nnjeim/world IDs when names match.
      * Unresolved free-text country/state remain in Enrollment.meta biodata (not forced into landmark).
      *
-     * Uses Profile::addAddress / updateAddress / primaryAddress — no second address system.
+     * Uses Profile::addAddress / updateAddress / primaryAddress as the sole production path.
+     * HasAddress validation or domain failures propagate so finalize rolls back.
+     * No silent fallback to addresses()->create().
      */
     protected function applyAddressFromBiodata(Profile $profile, array $biodata, School $school): void
     {
@@ -752,7 +754,7 @@ class EnrollmentService
         $hasAddress = $line1 !== '' || $line2 !== '' || $cityText !== '' || $postal !== ''
             || $countryName !== '' || $stateName !== '';
 
-        if (!$hasAddress) {
+        if (! $hasAddress) {
             return;
         }
 
@@ -784,56 +786,64 @@ class EnrollmentService
             }
         }
 
+        // Resolve primary before activating school context (SchoolScope is a no-op without active school).
         $primary = method_exists($profile, 'primaryAddress') ? $profile->primaryAddress() : null;
 
-        if ($primary) {
-            // Fill empty slots only — do not wipe established structured geo IDs.
-            $toUpdate = [];
-            foreach ($payload as $key => $value) {
-                $cur = $primary->getAttribute($key);
-                if ($cur === null || $cur === '') {
-                    $toUpdate[$key] = $value;
+        // Profile has no school_id; HasAddress assigns school_id via GetSchoolModel().
+        $previousSessionSchoolId = session('active_school_id');
+        try {
+            try {
+                if (app()->bound('schoolManager')) {
+                    app('schoolManager')->setActiveSchool($school);
                 }
+            } catch (\Throwable) {
+                // schoolManager may be unbound in focused unit tests
             }
-            if ($toUpdate === []) {
+
+            if ($primary) {
+                // Fill empty slots only — do not wipe established structured geo IDs.
+                $toUpdate = [];
+                foreach ($payload as $key => $value) {
+                    $cur = $primary->getAttribute($key);
+                    if ($cur === null || $cur === '') {
+                        $toUpdate[$key] = $value;
+                    }
+                }
+                if ($toUpdate === []) {
+                    return;
+                }
+
+                // Production path only: HasAddress. Failures roll back finalize.
+                $profile->updateAddress($primary->id, $toUpdate);
+
                 return;
             }
-            try {
-                $profile->updateAddress($primary->id, $toUpdate);
-            } catch (\Throwable $e) {
-                Log::warning('Enrollment address update via HasAddress failed; applying empty-slot fill', [
-                    'profile_id' => $profile->id,
-                    'error' => $e->getMessage(),
-                ]);
-                foreach ($toUpdate as $key => $value) {
-                    $primary->setAttribute($key, $value);
-                }
-                $primary->save();
+
+            // Creating a primary address requires address_line_1 (HasAddress validation).
+            if ($line1 === '') {
+                return;
             }
 
-            return;
-        }
+            $payload['type'] = 'residential';
 
-        // Creating a primary address requires address_line_1 (HasAddress validation).
-        if ($line1 === '') {
-            return;
-        }
-
-        $payload['type'] = 'residential';
-
-        try {
+            // Production path only: HasAddress. Validation/domain failures roll back finalize.
             $profile->addAddress($payload, true);
-        } catch (\Throwable $e) {
-            // Focused tests / missing dynamic enum / world tables: create via relation with school_id
-            // using the same column set HasAddress would persist.
-            Log::warning('Enrollment addAddress failed; using relation create with school context', [
-                'profile_id' => $profile->id,
-                'error' => $e->getMessage(),
-            ]);
-            $profile->addresses()->create(array_merge($payload, [
-                'school_id' => $school->id,
-                'is_primary' => true,
-            ]));
+        } finally {
+            try {
+                if ($previousSessionSchoolId) {
+                    session(['active_school_id' => $previousSessionSchoolId]);
+                } else {
+                    session()->forget('active_school_id');
+                }
+                if (app()->bound('schoolManager')) {
+                    $mgr = app('schoolManager');
+                    $ref = new \ReflectionProperty($mgr, 'activeSchool');
+                    $ref->setAccessible(true);
+                    $ref->setValue($mgr, null);
+                }
+            } catch (\Throwable) {
+                // best-effort context clear
+            }
         }
     }
 

@@ -185,6 +185,39 @@ function buildPhase4Schema(): void
         $table->softDeletes();
     });
 
+    Schema::create('countries', function (Blueprint $table) {
+        $table->unsignedBigInteger('id')->primary();
+        $table->string('name');
+        $table->string('iso2', 2)->nullable();
+        $table->timestamps();
+    });
+
+    Schema::create('states', function (Blueprint $table) {
+        $table->unsignedBigInteger('id')->primary();
+        $table->unsignedBigInteger('country_id')->nullable();
+        $table->string('name');
+        $table->timestamps();
+    });
+
+    Schema::create('cities', function (Blueprint $table) {
+        $table->unsignedBigInteger('id')->primary();
+        $table->unsignedBigInteger('state_id')->nullable();
+        $table->string('name');
+        $table->timestamps();
+    });
+
+    Schema::create('dynamic_enums', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_id')->nullable();
+        $table->string('name');
+        $table->string('label')->nullable();
+        $table->string('applies_to');
+        $table->text('description')->nullable();
+        $table->string('color')->nullable();
+        $table->json('options')->nullable();
+        $table->timestamps();
+    });
+
     Schema::create('activity_log', function (Blueprint $table) {
         $table->bigIncrements('id');
         $table->string('log_name')->nullable();
@@ -194,12 +227,39 @@ function buildPhase4Schema(): void
         $table->json('properties')->nullable();
         $table->timestamps();
     });
+
+    // HasAddress contract: country exists + Address.type dynamic enum (global).
+    DB::table('countries')->insert([
+        'id' => 1,
+        'name' => 'Nigeria',
+        'iso2' => 'NG',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('dynamic_enums')->insert([
+        'id' => (string) Str::uuid(),
+        'school_id' => null,
+        'name' => 'type',
+        'label' => 'Address Type',
+        'applies_to' => \App\Models\Address::class,
+        'options' => json_encode([
+            ['value' => 'residential', 'label' => 'Residential'],
+            ['value' => 'postal', 'label' => 'Postal'],
+            ['value' => 'billing', 'label' => 'Billing'],
+        ]),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 }
 
 function dropPhase4Schema(): void
 {
     foreach ([
         'activity_log',
+        'dynamic_enums',
+        'cities',
+        'states',
+        'countries',
         'addresses',
         'enrollment_requirement_instances',
         'enrollment_requirement_definitions',
