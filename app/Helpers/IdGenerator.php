@@ -172,18 +172,17 @@ class IdGenerator
         });
     }
 
+    /**
+     * Check whether id_sequences exists. Not cached: schema may change during
+     * tests or long-lived workers after migrations.
+     */
     private static function sequencesTableReady(): bool
     {
-        static $ready = null;
-        if ($ready === null) {
-            try {
-                $ready = Schema::hasTable('id_sequences');
-            } catch (\Throwable) {
-                $ready = false;
-            }
+        try {
+            return Schema::hasTable('id_sequences');
+        } catch (\Throwable) {
+            return false;
         }
-
-        return $ready;
     }
 
     private static function cacheKey(string $type, ?string $schoolId, string $scopeKey, int $year): string
