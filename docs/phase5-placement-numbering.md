@@ -51,3 +51,25 @@ Generated via `IdGenerator::generate('admission_number', $school)` using `id_seq
 ## Legacy pivot
 
 `student_class_section_pivot` is mirrored for `ClassSection::currentStudents()` compatibility, **scoped by academic_session_id**. Placement table remains the source of truth.
+
+## Registration assignment invariant (Phase 5)
+
+A student has **at most one current registration number per school**
+(`registration_number_assignments`). Scope controls uniqueness of the number
+*value*, not the number of concurrent current rows per student. On reassignment
+all current assignment rows for that student at that school are released first.
+
+## Collision retry (PostgreSQL-safe)
+
+Each registration claim attempt runs inside a nested `DB::transaction`
+(savepoint). Unique-constraint failures roll back only the savepoint, so:
+
+* the outer transaction stays usable;
+* no orphaned `registration_number_histories` row remains from the failed attempt.
+
+## Concurrency testing note
+
+True multi-writer races require PostgreSQL/MySQL and `pcntl_fork` (or equivalent).
+SQLite serializes writers; concurrency tests in the suite skip when the driver
+or process model cannot demonstrate the race. Sequential capacity non-overfill
+and sequence uniqueness remain covered for all drivers.
