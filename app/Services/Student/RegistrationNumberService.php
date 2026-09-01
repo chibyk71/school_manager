@@ -26,7 +26,7 @@ use Illuminate\Validation\ValidationException;
  * Phase 5 invariant — current assignment:
  *   A student has at most one current registration number per school.
  *   Enforced at the database (uq_regnum_assignment_student) and by locking the
- *   Student row at the start of assign() so concurrent empty-state claims serialize.
+ *   Student row inside assign()'s transaction so concurrent empty-state claims serialize.
  */
 class RegistrationNumberService
 {
@@ -73,7 +73,8 @@ class RegistrationNumberService
     /**
      * Allocate a new registration number for the student at this school.
      *
-     * Must be called inside (or establishes) a transaction.
+     * Establishes (or nests under) a DB transaction for the full mutation:
+     * student lock, release previous assignment, sequence allocate, claim.
      *
      * Collision handling is PostgreSQL-safe: each claim attempt runs inside a
      * nested transaction (Laravel savepoint). A unique-constraint violation
@@ -81,8 +82,8 @@ class RegistrationNumberService
      * no orphaned history row remains from the failed attempt.
      *
      * Student-side invariant is enforced by unique(school_id, student_id) and by
-     * locking the Student row before release/insert so concurrent empty-state
-     * claims cannot both succeed.
+     * locking the Student row inside the transaction so concurrent empty-state
+     * claims cannot both succeed. Student must belong to the given School.
      */
     public function assign(
         Student $student,
@@ -91,86 +92,95 @@ class RegistrationNumberService
         string $reason = self::REASON_INITIAL,
         ?User $actor = null
     ): string {
-        $sessionId = $context['academic_session_id'] ?? null;
-        $levelId = $context['class_level_id'] ?? null;
-        $sectionId = $context['class_section_id'] ?? null;
-        $scopeKey = $this->buildScopeKey($school, $sessionId, $levelId, $sectionId);
-        $year = $this->resolveYear($sessionId);
-
-        // Serialize assignment mutations for this student so concurrent initial
-        // claims cannot both insert under unique(school_id, student_id).
-        Student::query()->whereKey($student->id)->lockForUpdate()->firstOrFail();
-
-        // Release previous current assignment(s) for this student at this school
-        // (Phase 5: one current registration number per student per school —
-        // enforced by uq_regnum_assignment_student).
-        $this->releaseCurrentAssignment($student, $school);
-
-        $attempts = 0;
-        $maxAttempts = 5;
-
-        while ($attempts < $maxAttempts) {
-            $attempts++;
-            $number = IdGenerator::generate('registration_number', $school, $year, $scopeKey);
-
-            try {
-                // Nested transaction = SAVEPOINT. Unique-violation aborts only
-                // this savepoint on PostgreSQL; outer transaction remains open.
-                // History + assignment are atomic: both commit or both roll back.
-                DB::transaction(function () use (
-                    $student,
-                    $school,
-                    $context,
-                    $reason,
-                    $actor,
-                    $number,
-                    $scopeKey,
-                    $sessionId,
-                    $levelId,
-                    $sectionId
-                ) {
-                    $history = RegistrationNumberHistory::query()->create([
-                        'student_id' => $student->id,
-                        'school_id' => $school->id,
-                        'enrollment_id' => $context['enrollment_id'] ?? null,
-                        'placement_id' => $context['placement_id'] ?? null,
-                        'registration_number' => $number,
-                        'scope_key' => $scopeKey,
-                        'academic_session_id' => $sessionId,
-                        'class_level_id' => $levelId,
-                        'class_section_id' => $sectionId,
-                        'reason' => $reason,
-                        'effective_from' => now(),
-                        'effective_to' => null,
-                        'assigned_by' => $actor?->id,
-                        'meta' => $context['meta'] ?? null,
-                    ]);
-
-                    DB::table('registration_number_assignments')->insert([
-                        'school_id' => $school->id,
-                        'scope_key' => $scopeKey,
-                        'registration_number' => $number,
-                        'student_id' => $student->id,
-                        'history_id' => $history->id,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                });
-
-                return $number;
-            } catch (QueryException $e) {
-                if (!$this->isUniqueConstraintViolation($e)) {
-                    throw $e;
-                }
-                // Savepoint rolled back: no orphaned history, outer txn intact.
-                // Retry with next sequence value (number collision) or surface
-                // student-unique violation after release (should not happen under lock).
-            }
+        if ($student->school_id !== $school->id) {
+            throw ValidationException::withMessages([
+                'school' => 'Student does not belong to this school.',
+            ]);
         }
 
-        throw ValidationException::withMessages([
-            'registration_number' => 'Unable to allocate a unique registration number for the configured scope after multiple attempts.',
-        ]);
+        // Entire mutation is transactional. Nested callers (PlacementAllocationService,
+        // regenerate) use savepoints under Laravel's nested transaction behavior.
+        return DB::transaction(function () use ($student, $school, $context, $reason, $actor) {
+            $sessionId = $context['academic_session_id'] ?? null;
+            $levelId = $context['class_level_id'] ?? null;
+            $sectionId = $context['class_section_id'] ?? null;
+            $scopeKey = $this->buildScopeKey($school, $sessionId, $levelId, $sectionId);
+            $year = $this->resolveYear($sessionId);
+
+            // Serialize assignment mutations for this student so concurrent initial
+            // claims cannot both insert under unique(school_id, student_id).
+            Student::query()->whereKey($student->id)->lockForUpdate()->firstOrFail();
+
+            // Release previous current assignment(s) for this student at this school
+            // (Phase 5: one current registration number per student per school —
+            // enforced by uq_regnum_assignment_student).
+            $this->releaseCurrentAssignment($student, $school);
+
+            $attempts = 0;
+            $maxAttempts = 5;
+
+            while ($attempts < $maxAttempts) {
+                $attempts++;
+                $number = IdGenerator::generate('registration_number', $school, $year, $scopeKey);
+
+                try {
+                    // Nested transaction = SAVEPOINT. Unique-violation aborts only
+                    // this savepoint on PostgreSQL; outer transaction remains open.
+                    // History + assignment are atomic: both commit or both roll back.
+                    DB::transaction(function () use (
+                        $student,
+                        $school,
+                        $context,
+                        $reason,
+                        $actor,
+                        $number,
+                        $scopeKey,
+                        $sessionId,
+                        $levelId,
+                        $sectionId
+                    ) {
+                        $history = RegistrationNumberHistory::query()->create([
+                            'student_id' => $student->id,
+                            'school_id' => $school->id,
+                            'enrollment_id' => $context['enrollment_id'] ?? null,
+                            'placement_id' => $context['placement_id'] ?? null,
+                            'registration_number' => $number,
+                            'scope_key' => $scopeKey,
+                            'academic_session_id' => $sessionId,
+                            'class_level_id' => $levelId,
+                            'class_section_id' => $sectionId,
+                            'reason' => $reason,
+                            'effective_from' => now(),
+                            'effective_to' => null,
+                            'assigned_by' => $actor?->id,
+                            'meta' => $context['meta'] ?? null,
+                        ]);
+
+                        DB::table('registration_number_assignments')->insert([
+                            'school_id' => $school->id,
+                            'scope_key' => $scopeKey,
+                            'registration_number' => $number,
+                            'student_id' => $student->id,
+                            'history_id' => $history->id,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    });
+
+                    return $number;
+                } catch (QueryException $e) {
+                    if (!$this->isUniqueConstraintViolation($e)) {
+                        throw $e;
+                    }
+                    // Savepoint rolled back: no orphaned history, outer txn intact.
+                    // Retry with next sequence value.
+                }
+            }
+
+            throw ValidationException::withMessages([
+                'registration_number' => 'Unable to allocate a unique registration number for the configured scope after multiple attempts.',
+            ]);
+        });
     }
 
     /**
