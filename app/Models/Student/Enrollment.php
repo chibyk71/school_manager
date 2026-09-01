@@ -5,6 +5,7 @@ namespace App\Models\Student;
 use App\Models\Academic\AcademicSession;
 use App\Models\Model;
 use App\Models\School;
+use App\Models\Scopes\SchoolScope;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use Database\Factories\Student\EnrollmentFactory;
@@ -121,7 +122,7 @@ class Enrollment extends Model
     public function assertSchoolConsistency(): void
     {
         if ($this->student_id) {
-            $studentSchoolId = Student::query()
+            $studentSchoolId = Student::withoutGlobalScope(SchoolScope::class)
                 ->whereKey($this->student_id)
                 ->value('school_id');
 
