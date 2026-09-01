@@ -191,20 +191,45 @@ class PlacementAllocationService
         return $this->activeOccupancy($section, $forUpdate) < $capacity;
     }
 
+    /**
+     * Assign a permanent Admission Number if the student does not yet have one.
+     *
+     * Serializes on the Student row (SELECT … FOR UPDATE) so concurrent callers
+     * cannot both observe NULL and overwrite each other. Re-check after the
+     * lock is mandatory — the number is immutable once assigned.
+     */
     public function ensureAdmissionNumber(Student $student, School $school): string
     {
         if (!empty($student->admission_number)) {
             return $student->admission_number;
         }
 
-        $number = IdGenerator::generate('admission_number', $school);
-        $student->admission_number = $number;
-        if (empty($student->admission_date)) {
-            $student->admission_date = now()->toDateString();
-        }
-        $student->save();
+        return DB::transaction(function () use ($student, $school) {
+            $locked = Student::query()
+                ->whereKey($student->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        return $number;
+            // Re-check under lock: another transaction may have assigned already.
+            if (!empty($locked->admission_number)) {
+                $student->setRawAttributes($locked->getAttributes(), true);
+                $student->syncOriginal();
+
+                return $locked->admission_number;
+            }
+
+            $number = IdGenerator::generate('admission_number', $school);
+            $locked->admission_number = $number;
+            if (empty($locked->admission_date)) {
+                $locked->admission_date = now()->toDateString();
+            }
+            $locked->save();
+
+            $student->setRawAttributes($locked->getAttributes(), true);
+            $student->syncOriginal();
+
+            return $number;
+        });
     }
 
     protected function assertCapacityOrOverride(
