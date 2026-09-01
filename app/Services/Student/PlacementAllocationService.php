@@ -15,6 +15,21 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * Phase 5 placement allocation.
+ *
+ * Capacity convention (ClassSection domain):
+ *   capacity = 0  → uncapped / not configured (unlimited)
+ *   capacity > 0  → hard capacity; override required when occupancy >= capacity
+ *
+ * Transaction boundary:
+ *   allocateForEnrollment() and placeManually() each establish DB::transaction
+ *   so section locks and placement mutations are atomic even when called outside
+ *   EnrollmentService::finalize(). Nested calls from finalize() use savepoints.
+ *
+ * Occupancy is measured from active placements (is_current=true, left_at null)
+ * belonging to the section — the authoritative source of truth.
+ */
 class PlacementAllocationService
 {
     public function __construct(
@@ -30,36 +45,47 @@ class PlacementAllocationService
         User $actor,
         array $options = []
     ): StudentSessionPlacement {
-        $this->assertEnrollmentSchool($enrollment, $school);
-        $this->assertStudentSchool($student, $school);
+        return DB::transaction(function () use ($enrollment, $student, $school, $actor, $options) {
+            $this->assertEnrollmentSchool($enrollment, $school);
+            $this->assertStudentSchool($student, $school);
 
-        $classLevelId = $options['class_level_id']
-            ?? $enrollment->admission?->class_level_id
-            ?? ($enrollment->meta['class_level_id'] ?? null);
+            $classLevelId = $options['class_level_id']
+                ?? $enrollment->admission?->class_level_id
+                ?? ($enrollment->meta['class_level_id'] ?? null);
 
-        if (!$classLevelId) {
-            throw ValidationException::withMessages([
-                'class_level_id' => 'Target class level is required for placement.',
-            ]);
-        }
+            if (!$classLevelId) {
+                throw ValidationException::withMessages([
+                    'class_level_id' => 'Target class level is required for placement.',
+                ]);
+            }
 
-        $this->assertClassLevelBelongsToSchool($classLevelId, $school);
+            $this->assertClassLevelBelongsToSchool($classLevelId, $school);
 
-        $requestedSectionId = $options['class_section_id'] ?? null;
-        $override = (bool) ($options['capacity_override'] ?? false);
+            $requestedSectionId = $options['class_section_id'] ?? null;
+            $override = (bool) ($options['capacity_override'] ?? false);
 
-        if ($requestedSectionId) {
-            $section = $this->resolveSection($requestedSectionId, $classLevelId, $school);
-            $this->assertCapacityOrOverride($section, $override, $actor);
-        } else {
-            $section = $this->selectSectionWithCapacity($classLevelId, $school);
-            $override = false;
-        }
+            if ($requestedSectionId) {
+                $section = $this->resolveSection($requestedSectionId, $classLevelId, $school);
+                $this->assertCapacityOrOverride($section, $override, $actor);
+            } else {
+                $section = $this->selectSectionWithCapacity($classLevelId, $school);
+                $override = false;
+            }
 
-        return $this->createPlacement(
-            $student, $school, $enrollment, $classLevelId, $section, $actor, $override,
-            $options['notes'] ?? null, RegistrationNumberService::REASON_INITIAL
-        );
+            return $this->createPlacement(
+                student: $student,
+                school: $school,
+                enrollment: $enrollment,
+                classLevelId: $classLevelId,
+                section: $section,
+                actor: $actor,
+                capacityOverride: $override,
+                notes: $options['notes'] ?? null,
+                reason: RegistrationNumberService::REASON_INITIAL,
+                academicSessionId: $enrollment->academic_session_id,
+                closePrevious: true
+            );
+        });
     }
 
     public function placeManually(
@@ -70,27 +96,42 @@ class PlacementAllocationService
         User $actor,
         array $options = []
     ): StudentSessionPlacement {
-        $this->assertStudentSchool($student, $school);
-        $this->assertClassLevelBelongsToSchool($classLevelId, $school);
-        $section = $this->resolveSection($classSectionId, $classLevelId, $school);
-        $override = (bool) ($options['capacity_override'] ?? false);
-        $this->assertCapacityOrOverride($section, $override, $actor);
+        return DB::transaction(function () use ($student, $school, $classLevelId, $classSectionId, $actor, $options) {
+            $this->assertStudentSchool($student, $school);
+            $this->assertClassLevelBelongsToSchool($classLevelId, $school);
 
-        $sessionId = $options['academic_session_id'] ?? $student->currentPlacement?->academic_session_id;
-        if (!$sessionId) {
-            throw ValidationException::withMessages([
-                'academic_session_id' => 'Academic session is required for placement.',
-            ]);
-        }
+            $section = $this->resolveSection($classSectionId, $classLevelId, $school);
+            $override = (bool) ($options['capacity_override'] ?? false);
+            $this->assertCapacityOrOverride($section, $override, $actor);
 
-        $enrollment = isset($options['enrollment_id'])
-            ? Enrollment::query()->find($options['enrollment_id'])
-            : null;
+            $sessionId = $options['academic_session_id']
+                ?? $student->currentPlacement?->academic_session_id
+                ?? null;
 
-        return $this->createPlacement(
-            $student, $school, $enrollment, $classLevelId, $section, $actor, $override,
-            $options['notes'] ?? null, RegistrationNumberService::REASON_MANUAL, $sessionId, true
-        );
+            if (!$sessionId) {
+                throw ValidationException::withMessages([
+                    'academic_session_id' => 'Academic session is required for placement.',
+                ]);
+            }
+
+            $enrollment = isset($options['enrollment_id'])
+                ? Enrollment::query()->find($options['enrollment_id'])
+                : null;
+
+            return $this->createPlacement(
+                student: $student,
+                school: $school,
+                enrollment: $enrollment,
+                classLevelId: $classLevelId,
+                section: $section,
+                actor: $actor,
+                capacityOverride: $override,
+                notes: $options['notes'] ?? null,
+                reason: RegistrationNumberService::REASON_MANUAL,
+                academicSessionId: $sessionId,
+                closePrevious: true
+            );
+        });
     }
 
     public function activeOccupancy(ClassSection $section, bool $forUpdate = false): int
@@ -99,6 +140,7 @@ class PlacementAllocationService
             ->where('class_section_id', $section->id)
             ->where('is_current', true)
             ->whereNull('left_at');
+
         if ($forUpdate) {
             $q->lockForUpdate();
         }
@@ -122,7 +164,7 @@ class PlacementAllocationService
         }
 
         foreach ($sections as $section) {
-            if ($this->hasAvailableCapacity($section, true)) {
+            if ($this->hasAvailableCapacity($section, forUpdate: true)) {
                 return $section;
             }
         }
@@ -132,9 +174,16 @@ class PlacementAllocationService
         ]);
     }
 
+    /**
+     * Capacity convention (must match ClassSection domain docs):
+     *   capacity <= 0  → unlimited (0 = uncapped / not configured)
+     *   capacity > 0   → hard limit; available when occupancy < capacity
+     */
     public function hasAvailableCapacity(ClassSection $section, bool $forUpdate = false): bool
     {
         $capacity = (int) ($section->capacity ?? 0);
+
+        // 0 = uncapped / not configured — never "at capacity"
         if ($capacity <= 0) {
             return true;
         }
@@ -158,17 +207,23 @@ class PlacementAllocationService
         return $number;
     }
 
-    protected function assertCapacityOrOverride(ClassSection $section, bool $override, User $actor): void
-    {
+    protected function assertCapacityOrOverride(
+        ClassSection $section,
+        bool $override,
+        User $actor
+    ): void {
         ClassSection::query()->whereKey($section->id)->lockForUpdate()->first();
-        if ($this->hasAvailableCapacity($section, true)) {
+
+        if ($this->hasAvailableCapacity($section, forUpdate: true)) {
             return;
         }
+
         if (!$override) {
             throw ValidationException::withMessages([
                 'class_section_id' => 'Selected section is at capacity. Capacity override is required.',
             ]);
         }
+
         if (!$this->actorMayOverrideCapacity($actor)) {
             throw ValidationException::withMessages([
                 'capacity_override' => 'You are not authorized to override section capacity.',
@@ -183,6 +238,7 @@ class PlacementAllocationService
                 || $actor->isAbleTo('enrollments.finalize')
                 || $actor->isAbleTo('placements.manage');
         }
+
         if (method_exists($actor, 'can')) {
             return $actor->can('placements.capacity_override')
                 || $actor->can('enrollments.finalize')
@@ -205,7 +261,10 @@ class PlacementAllocationService
         ?string $academicSessionId = null,
         bool $closePrevious = true
     ): StudentSessionPlacement {
-        $sessionId = $academicSessionId ?? $enrollment?->academic_session_id;
+        $sessionId = $academicSessionId
+            ?? $enrollment?->academic_session_id
+            ?? null;
+
         if (!$sessionId) {
             throw ValidationException::withMessages([
                 'academic_session_id' => 'Academic session is required for placement.',
@@ -213,7 +272,7 @@ class PlacementAllocationService
         }
 
         if ($closePrevious) {
-            $this->closeCurrentPlacements($student);
+            $this->closeCurrentPlacementsForSession($student, $sessionId);
         }
 
         $placement = StudentSessionPlacement::query()->create([
@@ -225,11 +284,16 @@ class PlacementAllocationService
             'enrolled_at' => now()->toDateString(),
             'left_at' => null,
             'is_current' => true,
-            'promotion_outcome' => $reason === RegistrationNumberService::REASON_INITIAL ? 'fresh_admission' : null,
+            'promotion_outcome' => $reason === RegistrationNumberService::REASON_INITIAL
+                ? 'fresh_admission'
+                : null,
             'notes' => $notes,
             'capacity_override_used' => $capacityOverride,
             'placed_by' => $actor->id,
-            'meta' => ['capacity_override' => $capacityOverride, 'placed_at' => now()->toIso8601String()],
+            'meta' => [
+                'capacity_override' => $capacityOverride,
+                'placed_at' => now()->toIso8601String(),
+            ],
         ]);
 
         $regenerate = true;
@@ -248,13 +312,19 @@ class PlacementAllocationService
                 RegistrationNumberService::REASON_SECTION_CHANGE => RegistrationNumberService::REASON_SECTION_CHANGE,
                 default => RegistrationNumberService::REASON_INITIAL,
             };
-            $number = $this->registrationNumbers->assign($student, $school, [
-                'academic_session_id' => $sessionId,
-                'class_level_id' => $classLevelId,
-                'class_section_id' => $section->id,
-                'placement_id' => $placement->id,
-                'enrollment_id' => $enrollment?->id,
-            ], $assignReason, $actor);
+            $number = $this->registrationNumbers->assign(
+                $student,
+                $school,
+                [
+                    'academic_session_id' => $sessionId,
+                    'class_level_id' => $classLevelId,
+                    'class_section_id' => $section->id,
+                    'placement_id' => $placement->id,
+                    'enrollment_id' => $enrollment?->id,
+                ],
+                $assignReason,
+                $actor
+            );
             $placement->registration_number = $number;
             $placement->save();
         }
@@ -264,6 +334,7 @@ class PlacementAllocationService
         Log::info('Placement allocated', [
             'student_id' => $student->id,
             'section_id' => $section->id,
+            'session_id' => $sessionId,
             'placement_id' => $placement->id,
             'capacity_override' => $capacityOverride,
             'registration_number' => $placement->registration_number,
@@ -272,15 +343,19 @@ class PlacementAllocationService
         return $placement->fresh();
     }
 
-    protected function closeCurrentPlacements(Student $student): void
+    protected function closeCurrentPlacementsForSession(Student $student, string $sessionId): void
     {
         StudentSessionPlacement::query()
             ->where('student_id', $student->id)
+            ->where('academic_session_id', $sessionId)
             ->where('is_current', true)
             ->lockForUpdate()
             ->get()
             ->each(function (StudentSessionPlacement $p) {
-                $p->update(['is_current' => false, 'left_at' => now()->toDateString()]);
+                $p->update([
+                    'is_current' => false,
+                    'left_at' => now()->toDateString(),
+                ]);
             });
     }
 
@@ -292,8 +367,13 @@ class PlacementAllocationService
 
         DB::table('student_class_section_pivot')
             ->where('student_id', $student->id)
+            ->where('academic_session_id', $sessionId)
             ->where('is_current', true)
-            ->update(['is_current' => false, 'left_at' => now()->toDateString(), 'updated_at' => now()]);
+            ->update([
+                'is_current' => false,
+                'left_at' => now()->toDateString(),
+                'updated_at' => now(),
+            ]);
 
         $exists = DB::table('student_class_section_pivot')
             ->where('student_id', $student->id)
@@ -302,9 +382,14 @@ class PlacementAllocationService
             ->first();
 
         if ($exists) {
-            DB::table('student_class_section_pivot')->where('id', $exists->id)->update([
-                'is_current' => true, 'left_at' => null, 'enrolled_at' => now()->toDateString(), 'updated_at' => now(),
-            ]);
+            DB::table('student_class_section_pivot')
+                ->where('id', $exists->id)
+                ->update([
+                    'is_current' => true,
+                    'left_at' => null,
+                    'enrolled_at' => now()->toDateString(),
+                    'updated_at' => now(),
+                ]);
         } else {
             DB::table('student_class_section_pivot')->insert([
                 'student_id' => $student->id,
@@ -319,17 +404,32 @@ class PlacementAllocationService
         }
     }
 
-    protected function resolveSection(string $sectionId, string $classLevelId, School $school): ClassSection
-    {
-        $section = ClassSection::query()->whereKey($sectionId)->lockForUpdate()->first();
+    protected function resolveSection(
+        string $sectionId,
+        string $classLevelId,
+        School $school
+    ): ClassSection {
+        $section = ClassSection::query()
+            ->whereKey($sectionId)
+            ->lockForUpdate()
+            ->first();
+
         if (!$section) {
-            throw ValidationException::withMessages(['class_section_id' => 'Class section not found.']);
+            throw ValidationException::withMessages([
+                'class_section_id' => 'Class section not found.',
+            ]);
         }
+
         if ($section->school_id !== $school->id) {
-            throw ValidationException::withMessages(['class_section_id' => 'Class section does not belong to this school.']);
+            throw ValidationException::withMessages([
+                'class_section_id' => 'Class section does not belong to this school.',
+            ]);
         }
+
         if ($section->class_level_id !== $classLevelId) {
-            throw ValidationException::withMessages(['class_section_id' => 'Class section does not belong to the target class level.']);
+            throw ValidationException::withMessages([
+                'class_section_id' => 'Class section does not belong to the target class level.',
+            ]);
         }
 
         return $section;
@@ -339,8 +439,11 @@ class PlacementAllocationService
     {
         $level = ClassLevel::query()->whereKey($classLevelId)->first();
         if (!$level) {
-            throw ValidationException::withMessages(['class_level_id' => 'Class level not found.']);
+            throw ValidationException::withMessages([
+                'class_level_id' => 'Class level not found.',
+            ]);
         }
+
         $ok = false;
         if (isset($level->school_id) && $level->school_id === $school->id) {
             $ok = true;
@@ -350,22 +453,29 @@ class PlacementAllocationService
                 ->where('school_id', $school->id)
                 ->exists();
         }
+
         if (!$ok) {
-            throw ValidationException::withMessages(['class_level_id' => 'Class level does not belong to this school.']);
+            throw ValidationException::withMessages([
+                'class_level_id' => 'Class level does not belong to this school.',
+            ]);
         }
     }
 
     protected function assertEnrollmentSchool(Enrollment $enrollment, School $school): void
     {
         if ($enrollment->school_id !== $school->id) {
-            throw ValidationException::withMessages(['enrollment' => 'Enrollment does not belong to this school.']);
+            throw ValidationException::withMessages([
+                'enrollment' => 'Enrollment does not belong to this school.',
+            ]);
         }
     }
 
     protected function assertStudentSchool(Student $student, School $school): void
     {
         if ($student->school_id !== $school->id) {
-            throw ValidationException::withMessages(['student' => 'Student does not belong to this school.']);
+            throw ValidationException::withMessages([
+                'student' => 'Student does not belong to this school.',
+            ]);
         }
     }
 }
