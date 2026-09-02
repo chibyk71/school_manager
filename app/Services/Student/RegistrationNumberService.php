@@ -27,10 +27,6 @@ use Illuminate\Validation\ValidationException;
  *   A student has at most one current registration number per school.
  *   Enforced at the database (uq_regnum_assignment_student) and by locking the
  *   Student row inside assign()'s transaction so concurrent empty-state claims serialize.
- *
- * assign() is idempotent for the same student + scope/context: repeated calls return
- * the existing current number without new history unless the context changed or the
- * caller explicitly requests REASON_REGENERATE.
  */
 class RegistrationNumberService
 {
@@ -66,20 +62,22 @@ class RegistrationNumberService
         $scope = $this->config($school)['scope'];
 
         return match ($scope) {
-            self::SCOPE_SCHOOL_SESSION => "school:{$school->id}|session:" . ($sessionId ?? ''),
-            self::SCOPE_SCHOOL_SESSION_LEVEL => "school:{$school->id}|session:" . ($sessionId ?? '') . '|level:' . ($levelId ?? ''),
-            self::SCOPE_SCHOOL_LEVEL => "school:{$school->id}|level:" . ($levelId ?? ''),
-            self::SCOPE_SCHOOL_SECTION => "school:{$school->id}|section:" . ($sectionId ?? ''),
-            default => "school:{$school->id}|session:" . ($sessionId ?? '') . '|section:' . ($sectionId ?? ''),
+            self::SCOPE_SCHOOL_SESSION => implode(':', [$school->id, $sessionId ?? '']),
+            self::SCOPE_SCHOOL_SESSION_LEVEL => implode(':', [$school->id, $sessionId ?? '', $levelId ?? '']),
+            self::SCOPE_SCHOOL_LEVEL => implode(':', [$school->id, $levelId ?? '']),
+            self::SCOPE_SCHOOL_SECTION => implode(':', [$school->id, $sectionId ?? '']),
+            default => implode(':', [$school->id, $sessionId ?? '', $sectionId ?? '']),
         };
     }
 
     /**
-     * Assign (or reaffirm) the current registration number for a student.
+     * Allocate a new registration number for the student at this school.
      *
-     * Optional academic_session / class_level / class_section / enrollment /
-     * placement IDs in $context must belong to the given school. Student must
-     * belong to the given school.
+     * Establishes (or nests under) a DB transaction for the full mutation:
+     * student lock, release previous assignment, sequence allocate, claim.
+     *
+     * Context IDs (academic_session_id, class_level_id, class_section_id) must
+     * belong to the given school. Student must belong to the given school.
      */
     public function assign(
         Student $student,
@@ -193,6 +191,7 @@ class RegistrationNumberService
             ->where('student_id', $student->id)
             ->where('school_id', $school->id)
             ->whereNull('effective_to')
+            ->lockForUpdate()
             ->get()
             ->each(function (RegistrationNumberHistory $row) {
                 $row->effective_to = now();
@@ -272,6 +271,11 @@ class RegistrationNumberService
         return $q->get();
     }
 
+    public function shouldRegenerateOnSectionChange(School $school): bool
+    {
+        return (bool) $this->config($school)['regenerate_on_section_change'];
+    }
+
     protected function resolveYear(?string $sessionId): int
     {
         if ($sessionId) {
@@ -349,6 +353,11 @@ class RegistrationNumberService
                     'class_section_id' => 'Class section does not belong to this school.',
                 ]);
             }
+            if ($levelId && ($section->class_level_id ?? null) !== $levelId) {
+                throw ValidationException::withMessages([
+                    'class_section_id' => 'Class section does not belong to the target class level.',
+                ]);
+            }
         }
 
         if ($enrollmentId) {
@@ -368,6 +377,12 @@ class RegistrationNumberService
                     'enrollment_id' => 'Enrollment does not belong to this student.',
                 ]);
             }
+            if ($sessionId && !empty($enrollment->academic_session_id)
+                && $enrollment->academic_session_id !== $sessionId) {
+                throw ValidationException::withMessages([
+                    'enrollment_id' => 'Enrollment does not belong to the specified academic session.',
+                ]);
+            }
         }
 
         if ($placementId) {
@@ -382,19 +397,32 @@ class RegistrationNumberService
                     'placement_id' => 'Placement does not belong to this student.',
                 ]);
             }
+            if ($sessionId && ($placement->academic_session_id ?? null) !== $sessionId) {
+                throw ValidationException::withMessages([
+                    'placement_id' => 'Placement does not belong to the specified academic session.',
+                ]);
+            }
+            if ($levelId && ($placement->class_level_id ?? null) !== $levelId) {
+                throw ValidationException::withMessages([
+                    'placement_id' => 'Placement does not belong to the specified class level.',
+                ]);
+            }
+            if ($sectionId && ($placement->class_section_id ?? null) !== $sectionId) {
+                throw ValidationException::withMessages([
+                    'placement_id' => 'Placement does not belong to the specified class section.',
+                ]);
+            }
         }
     }
 
     protected function isUniqueConstraintViolation(QueryException $e): bool
     {
-        $code = (string) ($e->errorInfo[0] ?? $e->getCode());
-        $message = $e->getMessage();
+        $code = (string) ($e->errorInfo[1] ?? $e->getCode());
+        $sqlState = (string) ($e->errorInfo[0] ?? '');
 
-        return $code === '23000'
-            || $code === '23505'
-            || str_contains($message, 'UNIQUE constraint failed')
-            || str_contains($message, 'Duplicate entry')
-            || str_contains($message, 'unique constraint')
-            || str_contains($message, 'uq_regnum_assignment');
+        return in_array($code, ['1062', '23505'], true)
+            || $sqlState === '23505'
+            || str_contains(strtolower($e->getMessage()), 'unique')
+            || str_contains(strtolower($e->getMessage()), 'duplicate');
     }
 }
