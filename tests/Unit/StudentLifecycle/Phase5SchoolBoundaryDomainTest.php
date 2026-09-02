@@ -240,7 +240,7 @@ it('prevents query-builder mutation of an assigned admission number to a differe
     $school = p5bSchool(); $student = p5bStudent($school); ['alloc' => $alloc] = p5bServices();
     $number = $alloc->ensureAdmissionNumber($student, $school);
     expect(fn () => DB::table('students')->where('id', $student->id)->update(['admission_number' => 'HACKED-RAW']))
-        ->toThrow(\Throwable::class);
+        ->toThrow(\Illuminate\Database\QueryException::class);
     expect($student->fresh()->admission_number)->toBe($number);
 });
 
@@ -248,7 +248,7 @@ it('prevents query-builder mutation of an assigned admission number to NULL', fu
     $school = p5bSchool(); $student = p5bStudent($school); ['alloc' => $alloc] = p5bServices();
     $number = $alloc->ensureAdmissionNumber($student, $school);
     expect(fn () => DB::table('students')->where('id', $student->id)->update(['admission_number' => null]))
-        ->toThrow(\Throwable::class);
+        ->toThrow(\Illuminate\Database\QueryException::class);
     expect($student->fresh()->admission_number)->toBe($number);
 });
 
