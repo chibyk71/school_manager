@@ -133,13 +133,56 @@ function p5bServices()
     return ['reg' => $reg, 'alloc' => new PlacementAllocationService($reg, new StudentPlacementService())];
 }
 
+/**
+ * Build an in-memory Enrollment that intentionally violates school consistency.
+ * Does not persist — avoids Enrollment::saving school-consistency guards so the
+ * Phase 5 service path is what rejects the input.
+ */
+function p5bUnsavedEnrollment(array $attrs): Enrollment
+{
+    $e = new Enrollment();
+    $e->forceFill(array_merge([
+        'id' => (string) Str::uuid(),
+        'status' => Enrollment::STATUS_ACTIVE,
+        'activated_at' => now(),
+        'meta' => [],
+    ], $attrs));
+    $e->syncOriginal();
+
+    return $e;
+}
+
+/**
+ * Persist an enrollment row via query builder (bypasses model saving hooks)
+ * so placeManually can look it up by id while still carrying inconsistent context.
+ */
+function p5bRawEnrollment(array $attrs): string
+{
+    $id = $attrs['id'] ?? (string) Str::uuid();
+    DB::table('enrollments')->insert([
+        'id' => $id,
+        'student_id' => $attrs['student_id'] ?? null,
+        'school_id' => $attrs['school_id'],
+        'academic_session_id' => $attrs['academic_session_id'],
+        'admission_id' => $attrs['admission_id'] ?? null,
+        'status' => $attrs['status'] ?? Enrollment::STATUS_ACTIVE,
+        'activated_at' => $attrs['activated_at'] ?? now(),
+        'meta' => isset($attrs['meta']) ? json_encode($attrs['meta']) : null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    return $id;
+}
+
 it('rejects allocateForEnrollment when enrollment session belongs to another school', function () {
     $a = p5bSchool('A', 'AAA'); $b = p5bSchool('B', 'BBB'); $user = p5bUser();
     $sessionB = p5bSession($b); $levelA = p5bLevel($a); p5bSection($a, $levelA);
     $student = p5bStudent($a);
-    $enrollment = Enrollment::query()->create([
-        'id' => (string) Str::uuid(), 'school_id' => $a->id, 'academic_session_id' => $sessionB->id,
-        'student_id' => $student->id, 'status' => Enrollment::STATUS_ACTIVE, 'activated_at' => now(), 'meta' => [],
+    $enrollment = p5bUnsavedEnrollment([
+        'school_id' => $a->id,
+        'academic_session_id' => $sessionB->id,
+        'student_id' => $student->id,
     ]);
     ['alloc' => $alloc] = p5bServices();
     expect(fn () => $alloc->allocateForEnrollment($enrollment, $student, $a, $user, ['class_level_id' => $levelA->id]))
@@ -177,10 +220,18 @@ it('rejects registration assign when class section belongs to another school', f
     expect(DB::table('registration_number_assignments')->where('student_id', $student->id)->count())->toBe(0);
 });
 
-it('prevents query-builder mutation of an assigned admission number at the database', function () {
+it('prevents query-builder mutation of an assigned admission number to a different value', function () {
     $school = p5bSchool(); $student = p5bStudent($school); ['alloc' => $alloc] = p5bServices();
     $number = $alloc->ensureAdmissionNumber($student, $school);
     expect(fn () => DB::table('students')->where('id', $student->id)->update(['admission_number' => 'HACKED-RAW']))
+        ->toThrow(\Throwable::class);
+    expect($student->fresh()->admission_number)->toBe($number);
+});
+
+it('prevents query-builder mutation of an assigned admission number to NULL', function () {
+    $school = p5bSchool(); $student = p5bStudent($school); ['alloc' => $alloc] = p5bServices();
+    $number = $alloc->ensureAdmissionNumber($student, $school);
+    expect(fn () => DB::table('students')->where('id', $student->id)->update(['admission_number' => null]))
         ->toThrow(\Throwable::class);
     expect($student->fresh()->admission_number)->toBe($number);
 });
@@ -189,9 +240,10 @@ it('rejects allocateForEnrollment when enrollment belongs to another school', fu
     $a = p5bSchool('A', 'AAA'); $b = p5bSchool('B', 'BBB'); $user = p5bUser();
     $sessionB = p5bSession($b); $levelA = p5bLevel($a); p5bSection($a, $levelA);
     $student = p5bStudent($a);
-    $enrollment = Enrollment::query()->create([
-        'id' => (string) Str::uuid(), 'school_id' => $b->id, 'academic_session_id' => $sessionB->id,
-        'student_id' => null, 'status' => Enrollment::STATUS_ACTIVE, 'activated_at' => now(), 'meta' => [],
+    $enrollment = p5bUnsavedEnrollment([
+        'school_id' => $b->id,
+        'academic_session_id' => $sessionB->id,
+        'student_id' => null,
     ]);
     ['alloc' => $alloc] = p5bServices();
     expect(fn () => $alloc->allocateForEnrollment($enrollment, $student, $a, $user, ['class_level_id' => $levelA->id]))
@@ -205,14 +257,15 @@ it('rejects placeManually when enrollment_id belongs to another school', functio
     $sessionA = p5bSession($a); $sessionB = p5bSession($b);
     $levelA = p5bLevel($a); $secA = p5bSection($a, $levelA);
     $student = p5bStudent($a);
-    $enrollmentB = Enrollment::query()->create([
-        'id' => (string) Str::uuid(), 'school_id' => $b->id, 'academic_session_id' => $sessionB->id,
-        'student_id' => null, 'status' => Enrollment::STATUS_ACTIVE, 'activated_at' => now(), 'meta' => [],
+    $enrollmentId = p5bRawEnrollment([
+        'school_id' => $b->id,
+        'academic_session_id' => $sessionB->id,
+        'student_id' => null,
     ]);
     ['alloc' => $alloc] = p5bServices();
     expect(fn () => $alloc->placeManually($student, $a, $levelA->id, $secA->id, $user, [
         'academic_session_id' => $sessionA->id,
-        'enrollment_id' => $enrollmentB->id,
+        'enrollment_id' => $enrollmentId,
     ]))->toThrow(ValidationException::class);
     expect(StudentSessionPlacement::query()->where('student_id', $student->id)->count())->toBe(0);
     expect(DB::table('registration_number_assignments')->where('student_id', $student->id)->count())->toBe(0);
@@ -234,6 +287,73 @@ it('rejects registration assign when class level belongs to another school', fun
     $student = p5bStudent($a); ['reg' => $reg] = p5bServices();
     expect(fn () => $reg->assign($student, $a, [
         'academic_session_id' => $sessionA->id, 'class_level_id' => $levelB->id, 'class_section_id' => $secA->id,
+    ], RegistrationNumberService::REASON_INITIAL, $user))->toThrow(ValidationException::class);
+    expect(DB::table('registration_number_assignments')->where('student_id', $student->id)->count())->toBe(0);
+    expect(RegistrationNumberHistory::query()->where('student_id', $student->id)->count())->toBe(0);
+});
+
+it('rejects registration assign when enrollment_id belongs to another school', function () {
+    $a = p5bSchool('A', 'AAA'); $b = p5bSchool('B', 'BBB'); $user = p5bUser();
+    $sessionA = p5bSession($a); $sessionB = p5bSession($b);
+    $levelA = p5bLevel($a); $secA = p5bSection($a, $levelA);
+    $student = p5bStudent($a);
+    $enrollmentId = p5bRawEnrollment([
+        'school_id' => $b->id,
+        'academic_session_id' => $sessionB->id,
+        'student_id' => null,
+    ]);
+    ['reg' => $reg] = p5bServices();
+    expect(fn () => $reg->assign($student, $a, [
+        'academic_session_id' => $sessionA->id,
+        'class_level_id' => $levelA->id,
+        'class_section_id' => $secA->id,
+        'enrollment_id' => $enrollmentId,
+    ], RegistrationNumberService::REASON_INITIAL, $user))->toThrow(ValidationException::class);
+    expect(DB::table('registration_number_assignments')->where('student_id', $student->id)->count())->toBe(0);
+    expect(RegistrationNumberHistory::query()->where('student_id', $student->id)->count())->toBe(0);
+});
+
+it('rejects registration assign when enrollment_id belongs to another student', function () {
+    $a = p5bSchool('A', 'AAA'); $user = p5bUser();
+    $sessionA = p5bSession($a); $levelA = p5bLevel($a); $secA = p5bSection($a, $levelA);
+    $student = p5bStudent($a); $other = p5bStudent($a);
+    $enrollmentId = p5bRawEnrollment([
+        'school_id' => $a->id,
+        'academic_session_id' => $sessionA->id,
+        'student_id' => $other->id,
+    ]);
+    ['reg' => $reg] = p5bServices();
+    expect(fn () => $reg->assign($student, $a, [
+        'academic_session_id' => $sessionA->id,
+        'class_level_id' => $levelA->id,
+        'class_section_id' => $secA->id,
+        'enrollment_id' => $enrollmentId,
+    ], RegistrationNumberService::REASON_INITIAL, $user))->toThrow(ValidationException::class);
+    expect(DB::table('registration_number_assignments')->where('student_id', $student->id)->count())->toBe(0);
+    expect(RegistrationNumberHistory::query()->where('student_id', $student->id)->count())->toBe(0);
+});
+
+it('rejects registration assign when placement_id belongs to another student', function () {
+    $a = p5bSchool('A', 'AAA'); $user = p5bUser();
+    $sessionA = p5bSession($a); $levelA = p5bLevel($a); $secA = p5bSection($a, $levelA);
+    $student = p5bStudent($a); $other = p5bStudent($a);
+    $placementId = DB::table('student_session_placements')->insertGetId([
+        'student_id' => $other->id,
+        'enrollment_id' => null,
+        'academic_session_id' => $sessionA->id,
+        'class_level_id' => $levelA->id,
+        'class_section_id' => $secA->id,
+        'enrolled_at' => now()->toDateString(),
+        'is_current' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    ['reg' => $reg] = p5bServices();
+    expect(fn () => $reg->assign($student, $a, [
+        'academic_session_id' => $sessionA->id,
+        'class_level_id' => $levelA->id,
+        'class_section_id' => $secA->id,
+        'placement_id' => $placementId,
     ], RegistrationNumberService::REASON_INITIAL, $user))->toThrow(ValidationException::class);
     expect(DB::table('registration_number_assignments')->where('student_id', $student->id)->count())->toBe(0);
     expect(RegistrationNumberHistory::query()->where('student_id', $student->id)->count())->toBe(0);
