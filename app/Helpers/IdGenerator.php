@@ -78,19 +78,17 @@ class IdGenerator
         // Phase 5 types always require the DB sequence path when the table exists,
         // and fail hard when it does not. Legacy types keep the pre-Phase-5
         // cache-based counter even after id_sequences is present, so introducing
-        // the table does not silently change staff_id / application / etc. semantics.
+        // the table does not silently change staff_id / application counters.
         if ($requiresDb) {
             if (!self::sequencesTableReady()) {
                 throw new \RuntimeException(
-                    "id_sequences table is required for type '{$type}'. "
-                    . 'Run Phase 5 migrations before generating admission/registration numbers.'
+                    "IdGenerator requires the id_sequences table for type [{$type}]. Run Phase 5 migrations."
                 );
             }
 
             return self::nextFromDatabase($type, $schoolId, $scopeKey, $year);
         }
 
-        // Legacy path: ignore Phase 5 scopeKey so the cache key matches Phase 4.
         return self::nextFromCache($type, $schoolId, $year);
     }
 
@@ -105,7 +103,10 @@ class IdGenerator
         $requiresDb = in_array($type, self::DB_REQUIRED_TYPES, true);
 
         if ($requiresDb) {
-            $year = $year ?? 0;
+            // Must match generate()/getNextCounter(): omitted year defaults to current year,
+            // not 0 — otherwise resetCounter('admission_number', $school) would miss the
+            // sequence row that subsequent generate() increments.
+            $year = $year ?? (int) now()->year;
             if (self::sequencesTableReady()) {
                 IdSequence::query()
                     ->where('type', $type)
