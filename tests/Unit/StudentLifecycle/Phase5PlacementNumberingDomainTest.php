@@ -56,6 +56,11 @@ function dropPhase5Schema(): void
     Schema::dropIfExists('profiles');
     Schema::dropIfExists('users');
     Schema::dropIfExists('id_sequences');
+    Schema::dropIfExists('permission_role');
+    Schema::dropIfExists('permission_user');
+    Schema::dropIfExists('role_user');
+    Schema::dropIfExists('permissions');
+    Schema::dropIfExists('roles');
     Schema::dropIfExists('settings');
     Schema::dropIfExists('schools');
 }
@@ -80,6 +85,39 @@ function buildPhase5Schema(): void
         $t->json('value')->nullable();
         $t->nullableUuidMorphs('model'); // model_type, model_id
         $t->timestamps();
+    });
+    // Minimal Laratrust tables so isAbleTo() can run against an unauthorized user
+    // without "no such table: roles". No roles/permissions are seeded — user remains unauthorized.
+    Schema::create('roles', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->string('name')->unique();
+        $t->string('display_name')->nullable();
+        $t->string('description')->nullable();
+        $t->uuid('school_id')->nullable();
+        $t->timestamps();
+    });
+    Schema::create('permissions', function (Blueprint $t) {
+        $t->id();
+        $t->string('name')->unique();
+        $t->string('display_name')->nullable();
+        $t->string('description')->nullable();
+        $t->timestamps();
+    });
+    Schema::create('role_user', function (Blueprint $t) {
+        $t->uuid('role_id');
+        $t->uuid('user_id');
+        $t->string('user_type');
+        $t->string('school_section_id')->nullable();
+    });
+    Schema::create('permission_user', function (Blueprint $t) {
+        $t->unsignedBigInteger('permission_id');
+        $t->uuid('user_id');
+        $t->string('user_type');
+        $t->string('school_section_id')->nullable();
+    });
+    Schema::create('permission_role', function (Blueprint $t) {
+        $t->unsignedBigInteger('permission_id');
+        $t->uuid('role_id');
     });
     Schema::create('users', function (Blueprint $t) {
         $t->uuid('id')->primary(); $t->string('name')->nullable(); $t->string('email')->nullable(); $t->timestamps();
