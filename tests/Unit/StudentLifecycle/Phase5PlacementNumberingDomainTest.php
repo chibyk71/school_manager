@@ -56,6 +56,7 @@ function dropPhase5Schema(): void
     Schema::dropIfExists('profiles');
     Schema::dropIfExists('users');
     Schema::dropIfExists('id_sequences');
+    Schema::dropIfExists('settings');
     Schema::dropIfExists('schools');
 }
 
@@ -71,6 +72,14 @@ function buildPhase5Schema(): void
         $t->json('data')->nullable();
         $t->timestamps();
         $t->softDeletes();
+    });
+    // ruangdeveloper/laravel-settings — used by getMergedSettings / IdGenerator / RegistrationNumberService
+    Schema::create('settings', function (Blueprint $t) {
+        $t->id();
+        $t->string('key');
+        $t->json('value')->nullable();
+        $t->nullableUuidMorphs('model'); // model_type, model_id
+        $t->timestamps();
     });
     Schema::create('users', function (Blueprint $t) {
         $t->uuid('id')->primary(); $t->string('name')->nullable(); $t->string('email')->nullable(); $t->timestamps();
