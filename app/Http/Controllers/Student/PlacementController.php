@@ -66,6 +66,64 @@ class PlacementController extends Controller
         ]);
     }
 
+    /**
+     * Phase 6 — move student to another section in the same class level/session.
+     */
+    public function changeSection(Request $request, Student $student)
+    {
+        Gate::authorize('placements.change_section');
+        $data = $request->validate([
+            'class_section_id' => ['required', 'uuid'],
+            'capacity_override' => ['sometimes', 'boolean'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'enrollment_id' => ['nullable', 'uuid'],
+        ]);
+        $school = School::query()->findOrFail($student->school_id);
+        $placement = $this->allocation->changeSection(
+            $student,
+            $school,
+            $data['class_section_id'],
+            $request->user(),
+            $data
+        );
+
+        return response()->json([
+            'placement' => $placement,
+            'admission_number' => $student->fresh()->admission_number,
+            'registration_number' => $this->registrationNumbers->currentNumber($student, $school->id),
+        ]);
+    }
+
+    /**
+     * Phase 6 — administrative class-level move (not formal promotion).
+     */
+    public function changeClass(Request $request, Student $student)
+    {
+        Gate::authorize('placements.change_class');
+        $data = $request->validate([
+            'class_level_id' => ['required', 'uuid'],
+            'class_section_id' => ['required', 'uuid'],
+            'capacity_override' => ['sometimes', 'boolean'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'enrollment_id' => ['nullable', 'uuid'],
+        ]);
+        $school = School::query()->findOrFail($student->school_id);
+        $placement = $this->allocation->changeClass(
+            $student,
+            $school,
+            $data['class_level_id'],
+            $data['class_section_id'],
+            $request->user(),
+            $data
+        );
+
+        return response()->json([
+            'placement' => $placement,
+            'admission_number' => $student->fresh()->admission_number,
+            'registration_number' => $this->registrationNumbers->currentNumber($student, $school->id),
+        ]);
+    }
+
     public function history(Student $student)
     {
         Gate::authorize('view', $student);
