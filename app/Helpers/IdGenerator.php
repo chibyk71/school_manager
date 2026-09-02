@@ -90,7 +90,8 @@ class IdGenerator
             return self::nextFromDatabase($type, $schoolId, $scopeKey, $year);
         }
 
-        return self::nextFromCache($type, $schoolId, $scopeKey, $year);
+        // Legacy path: ignore Phase 5 scopeKey so the cache key matches Phase 4.
+        return self::nextFromCache($type, $schoolId, $year);
     }
 
     public static function resetCounter(
@@ -99,27 +100,41 @@ class IdGenerator
         ?int $year = null,
         ?string $scopeKey = null
     ): void {
-        $year = $year ?? 0;
         $scopeKey = $scopeKey ?? '';
         $schoolId = $school?->id;
+        $requiresDb = in_array($type, self::DB_REQUIRED_TYPES, true);
 
-        if (self::sequencesTableReady()) {
-            IdSequence::query()
-                ->where('type', $type)
-                ->where('school_id', $schoolId)
-                ->where('scope_key', $scopeKey)
-                ->where('year', $year)
-                ->delete();
+        if ($requiresDb) {
+            $year = $year ?? 0;
+            if (self::sequencesTableReady()) {
+                IdSequence::query()
+                    ->where('type', $type)
+                    ->where('school_id', $schoolId)
+                    ->where('scope_key', $scopeKey)
+                    ->where('year', $year)
+                    ->delete();
+            }
+            // Best-effort mirror only (Phase 5 path).
+            Cache::forget(self::phase5MirrorCacheKey($type, $schoolId, $scopeKey, $year));
+            return;
         }
 
-        Cache::forget(self::cacheKey($type, $schoolId, $scopeKey, $year));
+        // Legacy: exact pre-Phase-5 reset key shape for the generate() path
+        // (integer year). When year is omitted, also clear the historical
+        // 'no-year' admin key used by the Phase 4 resetCounter utility.
+        if ($year === null) {
+            $scope = $school ? $school->id : 'global';
+            Cache::forget("id_counter:{$type}:{$scope}:no-year");
+            $year = (int) now()->year;
+        }
+        Cache::forget(self::legacyCacheKey($type, $schoolId, $year));
     }
 
     /**
- * Database-safe sequence allocation.
- * First-row creation uses insertOrIgnore (does not abort the transaction on unique conflict).
- * The row is then locked with FOR UPDATE and incremented.
- */
+     * Database-safe sequence allocation.
+     * First-row creation uses insertOrIgnore (does not abort the transaction on unique conflict).
+     * The row is then locked with FOR UPDATE and incremented.
+     */
     private static function nextFromDatabase(
         string $type,
         ?string $schoolId,
@@ -150,7 +165,7 @@ class IdGenerator
 
             try {
                 Cache::put(
-                    self::cacheKey($type, $schoolId, $scopeKey, $year),
+                    self::phase5MirrorCacheKey($type, $schoolId, $scopeKey, $year),
                     $row->last_value,
                     now()->addYears(10)
                 );
@@ -161,13 +176,18 @@ class IdGenerator
         });
     }
 
+    /**
+     * Pre-Phase-5 cache counter path for non-DB_REQUIRED_TYPES.
+     * Key format is intentionally identical to Phase 4:
+     *   id_counter:{type}:{schoolId}:{year}
+     * (null schoolId interpolates as empty string, matching $school?->id).
+     */
     private static function nextFromCache(
         string $type,
         ?string $schoolId,
-        string $scopeKey,
         int $year
     ): int {
-        $cacheKey = self::cacheKey($type, $schoolId, $scopeKey, $year);
+        $cacheKey = self::legacyCacheKey($type, $schoolId, $year);
 
         return Cache::lock($cacheKey . ':lock', 10)->block(10, function () use ($cacheKey) {
             $counter = (int) Cache::get($cacheKey, 0) + 1;
@@ -190,8 +210,26 @@ class IdGenerator
         }
     }
 
-    private static function cacheKey(string $type, ?string $schoolId, string $scopeKey, int $year): string
+    /**
+     * Exact pre-Phase-5 cache key used by getNextCounter for legacy types.
+     * Must not gain a scopeKey segment — existing deployments already store
+     * counters under this shape.
+     */
+    private static function legacyCacheKey(string $type, ?string $schoolId, int $year): string
     {
+        return "id_counter:{$type}:{$schoolId}:{$year}";
+    }
+
+    /**
+     * Optional best-effort mirror after a Phase 5 DB sequence allocation.
+     * Not used as the source of truth and not shared with legacy types.
+     */
+    private static function phase5MirrorCacheKey(
+        string $type,
+        ?string $schoolId,
+        string $scopeKey,
+        int $year
+    ): string {
         return 'id_counter:' . $type . ':' . ($schoolId ?? 'global') . ':' . $scopeKey . ':' . $year;
     }
 
