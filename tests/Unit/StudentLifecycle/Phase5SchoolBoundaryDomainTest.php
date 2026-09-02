@@ -51,7 +51,14 @@ function p5bDrop(): void
 function p5bBuild(): void
 {
     Schema::create('schools', function (Blueprint $t) {
-        $t->uuid('id')->primary(); $t->string('name'); $t->string('code')->nullable(); $t->timestamps(); $t->softDeletes();
+        $t->uuid('id')->primary();
+        $t->string('name');
+        $t->string('code')->nullable();
+        // School model auto-generates slug and merges extras into data on create.
+        $t->string('slug')->nullable();
+        $t->json('data')->nullable();
+        $t->timestamps();
+        $t->softDeletes();
     });
     Schema::create('users', function (Blueprint $t) {
         $t->uuid('id')->primary(); $t->string('name')->nullable(); $t->string('email')->nullable(); $t->timestamps();
