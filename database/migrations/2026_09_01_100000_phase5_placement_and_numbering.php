@@ -168,6 +168,7 @@ SQL);
         }
 
         if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            // Use null-safe <=> so assigning NULL after a non-null value is also rejected.
             DB::unprepared('DROP TRIGGER IF EXISTS trg_students_admission_number_immutable');
             DB::unprepared(<<<'SQL'
 CREATE TRIGGER trg_students_admission_number_immutable
@@ -175,7 +176,7 @@ BEFORE UPDATE ON students
 FOR EACH ROW
 BEGIN
     IF OLD.admission_number IS NOT NULL
-       AND NEW.admission_number <> OLD.admission_number THEN
+       AND NOT (NEW.admission_number <=> OLD.admission_number) THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'admission_number is immutable once assigned';
     END IF;
