@@ -21,6 +21,8 @@ Route::prefix('enrollments')->name('enrollments.')->group(function () {
 Route::prefix('placements')->name('placements.')->group(function () {
     Route::post('allocate/{enrollment}', [PlacementController::class, 'allocate'])->name('allocate');
     Route::post('manual/{student}', [PlacementController::class, 'manual'])->name('manual');
+    Route::post('change-section/{student}', [PlacementController::class, 'changeSection'])->name('change-section');
+    Route::post('change-class/{student}', [PlacementController::class, 'changeClass'])->name('change-class');
     Route::post('regenerate-registration/{student}', [PlacementController::class, 'regenerateRegistration'])->name('regenerate');
     Route::get('history/{student}', [PlacementController::class, 'history'])->name('history');
 });
