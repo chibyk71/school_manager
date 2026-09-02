@@ -26,14 +26,14 @@ Mid-session section moves **end** the current placement for **that academic sess
 `allocateForEnrollment` and `placeManually` each establish `DB::transaction`. Within the transaction:
 
 1. Lock candidate section row(s) (`lockForUpdate`)
-2. Count active placements under the same lock
+2. Count **session-scoped** active placements (`class_section_id` + `academic_session_id` + `is_current` + `left_at IS NULL`) under the same lock
 3. Create placement + registration assignment
 
-Section-row lock is held for the entire placement mutation.
+Section-row lock is held for the entire placement mutation. Placements from other academic sessions do not consume capacity.
 
 ## Admission Number
 
-Generated via `IdGenerator::generate('admission_number', $school)` using `id_sequences` (row lock + `insertOrIgnore` first-row seed). Uniqueness: `uq_students_school_admission_number`. Immutable after assignment (Student model guard). Unaffected by placement or registration changes.
+Generated via `IdGenerator::generate('admission_number', $school)` using `id_sequences` (row lock + `insertOrIgnore` first-row seed). Uniqueness: pre-existing `uq_admission_number_per_school` on `(school_id, admission_number)`. Immutable after assignment (Student model guard + DB trigger). Unaffected by placement or registration changes.
 
 ## Registration Number
 
@@ -44,9 +44,10 @@ Generated via `IdGenerator::generate('admission_number', $school)` using `id_seq
 
 ## Sequences
 
-- `id_sequences` + `insertOrIgnore` + `SELECT … FOR UPDATE` is authoritative
+- `id_sequences` + `insertOrIgnore` + `SELECT … FOR UPDATE` is authoritative for Phase 5 types
 - Phase 5 types (`admission_number`, `registration_number`, `student_id`) **require** the sequences table — no silent cache fallback
-- Cache is best-effort mirror only; legacy non-Phase-5 types may still use cache if sequences table is absent
+- Legacy non-Phase-5 identifier types (e.g. `staff_id`, application numbers) continue to use the pre-existing cache counter path even when `id_sequences` exists — Phase 5 does not rewrite their storage semantics
+- Cache is best-effort mirror only for Phase 5 types after a successful DB allocation
 
 ## Legacy pivot
 
@@ -78,8 +79,3 @@ Each registration claim attempt runs inside a nested `DB::transaction`
 * no orphaned `registration_number_histories` row remains from the failed attempt.
 
 ## Concurrency testing note
-
-True multi-writer races require PostgreSQL/MySQL and `pcntl_fork` (or equivalent).
-SQLite serializes writers; concurrency tests in the suite **skip** (Pest `markTestSkipped`)
-when the driver or process model cannot demonstrate the race. Sequential capacity
-non-overfill and sequence uniqueness remain covered for all drivers.
