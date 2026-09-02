@@ -171,10 +171,17 @@ it('does not create duplicate history when re-assigning the same logical context
     expect(RegistrationNumberHistory::query()->where('student_id', $student->id)->count())->toBe(1);
 });
 
-it('generates a new registration number when the assignment context changes', function () {
+it('releases and reassigns when the registration context (scope) changes', function () {
+    // Default scope is school_session_section — each section has its own sequence, so the
+    // formatted number may legitimately restart at "01". What must change is the active
+    // assignment's scope_key and history (previous closed, new current).
     $school = p5iSchool(); $user = p5iUser(); $session = p5iSession($school); $level = p5iLevel($school);
     $secA = p5iSection($school, $level, 'A'); $secB = p5iSection($school, $level, 'B');
     $student = p5iStudent($school); $reg = p5iReg();
+
+    $scopeA = $reg->buildScopeKey($school, $session->id, $level->id, $secA->id);
+    $scopeB = $reg->buildScopeKey($school, $session->id, $level->id, $secB->id);
+    expect($scopeA)->not->toBe($scopeB);
 
     $first = $reg->assign($student, $school, [
         'academic_session_id' => $session->id, 'class_level_id' => $level->id, 'class_section_id' => $secA->id,
@@ -184,11 +191,20 @@ it('generates a new registration number when the assignment context changes', fu
         'academic_session_id' => $session->id, 'class_level_id' => $level->id, 'class_section_id' => $secB->id,
     ], RegistrationNumberService::REASON_SECTION_CHANGE, $user);
 
-    expect($second)->not->toBe($first);
+    $current = DB::table('registration_number_assignments')->where('student_id', $student->id)->first();
+    expect($current)->not->toBeNull();
+    expect($current->scope_key)->toBe($scopeB);
+    expect($current->registration_number)->toBe($second);
     expect(DB::table('registration_number_assignments')->where('student_id', $student->id)->count())->toBe(1);
-    expect(DB::table('registration_number_assignments')->where('student_id', $student->id)->value('registration_number'))->toBe($second);
-    expect(RegistrationNumberHistory::query()->where('student_id', $student->id)->count())->toBe(2);
-    expect(RegistrationNumberHistory::query()->where('student_id', $student->id)->whereNull('effective_to')->count())->toBe(1);
+
+    $histories = RegistrationNumberHistory::query()->where('student_id', $student->id)->orderBy('id')->get();
+    expect($histories)->toHaveCount(2);
+    expect($histories[0]->scope_key)->toBe($scopeA);
+    expect($histories[0]->registration_number)->toBe($first);
+    expect($histories[0]->effective_to)->not->toBeNull();
+    expect($histories[1]->scope_key)->toBe($scopeB);
+    expect($histories[1]->registration_number)->toBe($second);
+    expect($histories[1]->effective_to)->toBeNull();
 });
 
 it('explicit regenerate forces a new registration number for the same context', function () {
