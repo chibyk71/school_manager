@@ -363,6 +363,45 @@ class PlacementAllocationService
         });
     }
 
+    public function ensureAdmissionNumber(Student $student, School $school): string
+    {
+        if ($student->school_id !== $school->id) {
+            throw ValidationException::withMessages([
+                'school' => 'Student does not belong to this school.',
+            ]);
+        }
+
+        if (!empty($student->admission_number)) {
+            return $student->admission_number;
+        }
+
+        return DB::transaction(function () use ($student, $school) {
+            $locked = Student::query()
+                ->whereKey($student->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (!empty($locked->admission_number)) {
+                $student->setRawAttributes($locked->getAttributes(), true);
+                $student->syncOriginal();
+
+                return $locked->admission_number;
+            }
+
+            $number = IdGenerator::generate('admission_number', $school);
+            $locked->admission_number = $number;
+            if (empty($locked->admission_date)) {
+                $locked->admission_date = now()->toDateString();
+            }
+            $locked->save();
+
+            $student->setRawAttributes($locked->getAttributes(), true);
+            $student->syncOriginal();
+
+            return $number;
+        });
+    }
+
     protected function resolveSectionForCapacity(
         string $classLevelId,
         ?string $classSectionId,
@@ -502,8 +541,10 @@ class PlacementAllocationService
             'left_at' => null,
             'notes' => $notes,
             'capacity_override_used' => $capacityOverride,
+            'placed_by' => $actor->id,
             'meta' => [
                 'reason' => $reason,
+                'capacity_override' => $capacityOverride,
                 'actor_id' => $actor->id,
             ],
         ]);
@@ -513,35 +554,33 @@ class PlacementAllocationService
             $shouldAssign = $this->registrationNumbers->shouldRegenerateOnSectionChange($school);
         } elseif ($reason === RegistrationNumberService::REASON_CLASS_CHANGE) {
             $shouldAssign = $this->registrationNumbers->shouldRegenerateOnClassChange($school);
+        } elseif ($reason === RegistrationNumberService::REASON_PROMOTION) {
+            $cfg = $this->registrationNumbers->config($school);
+            $shouldAssign = (bool) ($cfg['regenerate_on_promotion'] ?? true);
         }
 
         if ($shouldAssign) {
-            try {
-                $number = $this->registrationNumbers->assign(
-                    $student,
-                    $school,
-                    [
-                        'academic_session_id' => $academicSessionId,
-                        'class_level_id' => $classLevelId,
-                        'class_section_id' => $section->id,
-                        'placement_id' => $placement->id,
-                        'enrollment_id' => $enrollment?->id,
-                    ],
-                    $reason,
-                    $actor
-                );
-                $placement->registration_number = $number;
-                $placement->save();
-            } catch (\Throwable $e) {
-                Log::warning('Registration number assign failed during placement', [
-                    'student_id' => $student->id,
-                    'reason' => $reason,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        } else {
-            $placement->registration_number = $this->registrationNumbers->currentNumber($student, $school->id);
+            $number = $this->registrationNumbers->assign(
+                $student,
+                $school,
+                [
+                    'academic_session_id' => $academicSessionId,
+                    'class_level_id' => $classLevelId,
+                    'class_section_id' => $section->id,
+                    'placement_id' => $placement->id,
+                    'enrollment_id' => $enrollment?->id,
+                ],
+                $reason,
+                $actor
+            );
+            $placement->registration_number = $number;
             $placement->save();
+        } else {
+            $current = $this->registrationNumbers->currentNumber($student, $school->id);
+            if ($current) {
+                $placement->registration_number = $current;
+                $placement->save();
+            }
         }
 
         if (Schema::hasColumn('students', 'current_placement_id')) {
@@ -563,10 +602,9 @@ class PlacementAllocationService
 
     protected function assertStudentIsActiveForPlacementChange(Student $student): void
     {
-        $terminal = ['withdrawn', 'transferred', 'graduated', 'deceased'];
-        if (in_array($student->status, $terminal, true)) {
+        if (in_array($student->status, ['withdrawn', 'transferred', 'graduated', 'deceased'], true)) {
             throw ValidationException::withMessages([
-                'student' => 'Cannot change placement for a student in terminal status.',
+                'student' => 'Cannot change placement for a student in terminal status: '.$student->status,
             ]);
         }
     }
@@ -574,17 +612,35 @@ class PlacementAllocationService
     protected function assertEnrollmentContext(Enrollment $enrollment, School $school, Student $student): void
     {
         if ((string) $enrollment->school_id !== (string) $school->id) {
-            throw ValidationException::withMessages(['enrollment' => 'Enrollment does not belong to this school.']);
+            throw ValidationException::withMessages([
+                'enrollment' => 'Enrollment does not belong to this school.',
+            ]);
         }
         if ($enrollment->student_id && (string) $enrollment->student_id !== (string) $student->id) {
-            throw ValidationException::withMessages(['enrollment' => 'Enrollment does not belong to this student.']);
+            throw ValidationException::withMessages([
+                'enrollment' => 'Enrollment does not belong to this student.',
+            ]);
         }
     }
 
     protected function assertClassLevelBelongsToSchool(string $classLevelId, School $school): void
     {
-        $level = ClassLevel::query()->find($classLevelId);
-        if (!$level || (string) $level->school_id !== (string) $school->id) {
+        $level = ClassLevel::query()->withoutGlobalScopes()->whereKey($classLevelId)->first();
+        if (!$level) {
+            throw ValidationException::withMessages([
+                'class_level_id' => 'Class level not found.',
+            ]);
+        }
+        $ok = false;
+        if (isset($level->school_id) && (string) $level->school_id === (string) $school->id) {
+            $ok = true;
+        } elseif (!empty($level->school_section_id) && Schema::hasTable('school_sections')) {
+            $ok = DB::table('school_sections')
+                ->where('id', $level->school_section_id)
+                ->where('school_id', $school->id)
+                ->exists();
+        }
+        if (!$ok) {
             throw ValidationException::withMessages([
                 'class_level_id' => 'Class level does not belong to this school.',
             ]);
@@ -595,17 +651,23 @@ class PlacementAllocationService
     {
         $session = DB::table('academic_sessions')->where('id', $sessionId)->first();
         if (!$session) {
-            throw ValidationException::withMessages(['academic_session_id' => 'Academic session not found.']);
+            throw ValidationException::withMessages([
+                'academic_session_id' => 'Academic session not found.',
+            ]);
         }
         if (($session->school_id ?? null) !== $school->id) {
-            throw ValidationException::withMessages(['academic_session_id' => 'Academic session does not belong to this school.']);
+            throw ValidationException::withMessages([
+                'academic_session_id' => 'Academic session does not belong to this school.',
+            ]);
         }
     }
 
     protected function assertStudentSchool(Student $student, School $school): void
     {
         if ((string) $student->school_id !== (string) $school->id) {
-            throw ValidationException::withMessages(['student' => 'Student does not belong to this school.']);
+            throw ValidationException::withMessages([
+                'student' => 'Student does not belong to this school.',
+            ]);
         }
     }
 }
