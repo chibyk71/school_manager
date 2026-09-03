@@ -2,6 +2,7 @@
 
 namespace App\Services\Student;
 
+use App\Models\Student\Enrollment;
 use App\Models\Student\Student;
 use App\Models\Student\StudentSessionPlacement;
 use App\Models\User;
@@ -112,17 +113,22 @@ class StudentStatusService
     }
 
     /**
-     * Withdraw a student (voluntary exit)
+     * Withdraw a student (voluntary exit).
+     * Phase 6: also ends active Enrollment(s) for the school without deleting history.
      */
     public function withdraw(Student $student, string $reason, Carbon $date, User $changedBy): void
     {
         $this->validateTransition($student, 'withdrawn');
 
         DB::transaction(function () use ($student, $reason, $date, $changedBy) {
-            // Mark current placement as left
             if ($student->currentPlacement) {
                 $this->placementService->markAsLeft($student, $date, "Withdrawn: {$reason}");
             }
+
+            $this->closeActiveEnrollments($student, Enrollment::STATUS_WITHDRAWN, [
+                'withdrawn_at' => $date,
+                'notes' => $reason,
+            ]);
 
             $student->update([
                 'status' => 'withdrawn',
@@ -138,12 +144,12 @@ class StudentStatusService
                 'changed_by' => $changedBy->id,
             ]);
         });
-
-        // TODO: Fire StudentStatusChanged event + notify guardians
     }
 
     /**
-     * Mark student as graduated
+     * Mark student as graduated (formal completion).
+     * Prefer invoking via Promotion module for academic graduation; this remains
+     * the shared status primitive used by ProcessStudentPromotion::applyGraduate.
      */
     public function markGraduated(Student $student, Carbon $date, User $changedBy): void
     {
@@ -153,6 +159,11 @@ class StudentStatusService
             if ($student->currentPlacement) {
                 $this->placementService->markAsLeft($student, $date, 'Graduated');
             }
+
+            $this->closeActiveEnrollments($student, Enrollment::STATUS_COMPLETED, [
+                'completed_at' => $date,
+                'notes' => 'Graduated',
+            ]);
 
             $student->update([
                 'status' => 'graduated',
@@ -196,22 +207,36 @@ class StudentStatusService
     }
 
     /**
-     * Transfer student out of the school (within or outside tenant)
+     * Transfer student out of the school (within or outside tenant).
+     * Phase 6: ends active Enrollment as transferred_out; preserves history.
      */
-    public function transferOut(Student $student, string $destination, string $reason, User $changedBy): void
-    {
+    public function transferOut(
+        Student $student,
+        string $destination,
+        string $reason,
+        User $changedBy,
+        ?Carbon $effectiveDate = null
+    ): void {
         $this->validateTransition($student, 'transferred');
 
-        DB::transaction(function () use ($student, $destination, $reason, $changedBy) {
+        $date = $effectiveDate ?? now();
+
+        DB::transaction(function () use ($student, $destination, $reason, $changedBy, $date) {
             if ($student->currentPlacement) {
-                $this->placementService->markAsLeft($student, now(), "Transferred to: {$destination}");
+                $this->placementService->markAsLeft($student, $date, "Transferred to: {$destination}");
             }
+
+            $this->closeActiveEnrollments($student, Enrollment::STATUS_TRANSFERRED_OUT, [
+                'transferred_out_at' => $date,
+                'notes' => $reason,
+                'meta' => ['transfer_destination' => $destination],
+            ]);
 
             $student->update([
                 'status' => 'transferred',
                 'status_reason' => $reason,
                 'transfer_destination' => $destination,
-                'status_date' => now()->toDateString(),
+                'status_date' => $date->toDateString(),
                 'status_changed_by' => $changedBy->id,
             ]);
 
@@ -220,6 +245,63 @@ class StudentStatusService
                 'destination' => $destination,
                 'changed_by' => $changedBy->id,
             ]);
+        });
+    }
+
+    /**
+     * Controller-facing dispatcher used by StudentStatusController.
+     */
+    public function changeStatus(
+        Student $student,
+        string $newStatus,
+        ?string $reason,
+        Carbon $effectiveDate,
+        User $changedBy
+    ): void {
+        match ($newStatus) {
+            'activate' => $this->activate($student, $changedBy),
+            'suspend' => $this->suspend($student, (string) $reason, null, $changedBy),
+            'graduate' => $this->markGraduated($student, $effectiveDate, $changedBy),
+            'withdraw' => $this->withdraw($student, (string) $reason, $effectiveDate, $changedBy),
+            'transfer' => $this->transferOut(
+                $student,
+                $reason ?? 'External transfer',
+                (string) $reason,
+                $changedBy,
+                $effectiveDate
+            ),
+            default => throw ValidationException::withMessages([
+                'status' => "Unsupported status action: {$newStatus}",
+            ]),
+        };
+    }
+
+    /**
+     * End active enrollments for the student at their school.
+     * Does not delete historical Enrollment rows.
+     */
+    protected function closeActiveEnrollments(Student $student, string $enrollmentStatus, array $attrs = []): void
+    {
+        $query = Enrollment::query()
+            ->where('student_id', $student->id)
+            ->where('school_id', $student->school_id)
+            ->where('status', Enrollment::STATUS_ACTIVE)
+            ->lockForUpdate();
+
+        $query->get()->each(function (Enrollment $enrollment) use ($enrollmentStatus, $attrs) {
+            $payload = array_merge([
+                'status' => $enrollmentStatus,
+            ], $attrs);
+
+            if (isset($payload['notes']) && !empty($enrollment->notes)) {
+                $payload['notes'] = trim($enrollment->notes."\n".$payload['notes']);
+            }
+
+            if (isset($payload['meta']) && is_array($payload['meta'])) {
+                $payload['meta'] = array_merge($enrollment->meta ?? [], $payload['meta']);
+            }
+
+            $enrollment->update($payload);
         });
     }
 
@@ -240,15 +322,15 @@ class StudentStatusService
         };
 
         if (!in_array($student->status, $allowedFrom)) {
-            throw new ValidationException(validator([], [
+            throw ValidationException::withMessages([
                 'status' => "Cannot change status from '{$student->status}' to '{$newStatus}'.",
-            ]));
+            ]);
         }
 
         if ($student->status === $newStatus) {
-            throw new ValidationException(validator([], [
+            throw ValidationException::withMessages([
                 'status' => "Student is already '{$newStatus}'.",
-            ]));
+            ]);
         }
     }
 }
