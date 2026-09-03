@@ -11,6 +11,8 @@ use App\Models\Promotion\PromotionStudent;
 use App\Models\Student\Student;
 use App\Models\Student\StudentSessionPlacement;
 use App\Models\User;
+use App\Models\School;
+use App\Services\Student\PlacementAllocationService;
 use App\Services\Student\StudentPlacementService;
 use App\Services\Student\StudentStatusService;
 use App\States\Promotion\Completed;
@@ -39,7 +41,8 @@ class ProcessStudentPromotion implements ShouldQueue
 
     public function handle(
         StudentPlacementService $placementService,
-        StudentStatusService $statusService
+        StudentStatusService $statusService,
+        PlacementAllocationService $allocationService
     ): void {
         $this->batch->refresh();
 
@@ -68,6 +71,7 @@ class ProcessStudentPromotion implements ShouldQueue
                     &$failed,
                     $placementService,
                     $statusService,
+                    $allocationService,
                     $fromSession,
                     $nextSession
                 ) {
@@ -76,6 +80,7 @@ class ProcessStudentPromotion implements ShouldQueue
                             $studentRecord,
                             $placementService,
                             $statusService,
+                            $allocationService,
                             $fromSession,
                             $nextSession,
                             $processed,
@@ -124,6 +129,7 @@ class ProcessStudentPromotion implements ShouldQueue
         PromotionStudent $studentRecord,
         StudentPlacementService $placementService,
         StudentStatusService $statusService,
+        PlacementAllocationService $allocationService,
         ?AcademicSession $fromSession,
         ?AcademicSession $nextSession,
         int &$processed,
@@ -134,6 +140,7 @@ class ProcessStudentPromotion implements ShouldQueue
                 $studentRecord,
                 $placementService,
                 $statusService,
+                $allocationService,
                 $fromSession,
                 $nextSession,
                 &$processed
@@ -148,10 +155,10 @@ class ProcessStudentPromotion implements ShouldQueue
 
                 match ($finalOutcome) {
                     'promote' => $this->applyPromote(
-                        $student, $studentRecord, $placementService, $fromSession, $nextSession, $toSessionId, $toSectionId
+                        $student, $studentRecord, $placementService, $allocationService, $fromSession, $nextSession, $actor, $toSessionId, $toSectionId
                     ),
                     'repeat' => $this->applyRepeat(
-                        $student, $studentRecord, $placementService, $fromSession, $nextSession, $toSessionId, $toSectionId
+                        $student, $studentRecord, $placementService, $allocationService, $fromSession, $nextSession, $actor, $toSessionId, $toSectionId
                     ),
                     'graduate' => $this->applyGraduate($student, $studentRecord, $statusService, $actor),
                     'incomplete' => throw new \RuntimeException(
@@ -205,8 +212,10 @@ class ProcessStudentPromotion implements ShouldQueue
         Student $student,
         PromotionStudent $studentRecord,
         StudentPlacementService $placementService,
+        PlacementAllocationService $allocationService,
         ?AcademicSession $fromSession,
         ?AcademicSession $nextSession,
+        ?User $actor,
         ?string &$toSessionId,
         ?string &$toSectionId
     ): void {
@@ -225,13 +234,30 @@ class ProcessStudentPromotion implements ShouldQueue
 
         $this->stampFromPlacement($student, $fromSession, 'promoted');
 
-        $placementService->placeOrUpdateInSession($student, [
-            'academic_session_id' => $nextSession->id,
-            'class_level_id' => $section->class_level_id,
-            'class_section_id' => $section->id,
-            'promotion_outcome' => 'promoted',
-            'notes' => 'Promoted via batch '.$this->batch->id,
-        ]);
+        $school = School::query()->find($student->school_id);
+        if ($school && $actor) {
+            $allocationService->placeForPromotionOutcome(
+                $student,
+                $school,
+                $nextSession->id,
+                $section->class_level_id,
+                $section->id,
+                $actor,
+                'promoted',
+                [
+                    'notes' => 'Promoted via batch '.$this->batch->id,
+                    'capacity_override' => false,
+                ]
+            );
+        } else {
+            $placementService->placeOrUpdateInSession($student, [
+                'academic_session_id' => $nextSession->id,
+                'class_level_id' => $section->class_level_id,
+                'class_section_id' => $section->id,
+                'promotion_outcome' => 'promoted',
+                'notes' => 'Promoted via batch '.$this->batch->id,
+            ]);
+        }
 
         $toSessionId = $nextSession->id;
         $toSectionId = $section->id;
@@ -241,8 +267,10 @@ class ProcessStudentPromotion implements ShouldQueue
         Student $student,
         PromotionStudent $studentRecord,
         StudentPlacementService $placementService,
+        PlacementAllocationService $allocationService,
         ?AcademicSession $fromSession,
         ?AcademicSession $nextSession,
+        ?User $actor,
         ?string &$toSessionId,
         ?string &$toSectionId
     ): void {
@@ -263,13 +291,30 @@ class ProcessStudentPromotion implements ShouldQueue
 
         $this->stampFromPlacement($student, $fromSession, 'repeated');
 
-        $placementService->placeOrUpdateInSession($student, [
-            'academic_session_id' => $nextSession->id,
-            'class_level_id' => $section->class_level_id,
-            'class_section_id' => $section->id,
-            'promotion_outcome' => 'repeated',
-            'notes' => 'Repeated via batch '.$this->batch->id,
-        ]);
+        $school = School::query()->find($student->school_id);
+        if ($school && $actor) {
+            $allocationService->placeForPromotionOutcome(
+                $student,
+                $school,
+                $nextSession->id,
+                $section->class_level_id,
+                $section->id,
+                $actor,
+                'repeated',
+                [
+                    'notes' => 'Repeated via batch '.$this->batch->id,
+                    'capacity_override' => false,
+                ]
+            );
+        } else {
+            $placementService->placeOrUpdateInSession($student, [
+                'academic_session_id' => $nextSession->id,
+                'class_level_id' => $section->class_level_id,
+                'class_section_id' => $section->id,
+                'promotion_outcome' => 'repeated',
+                'notes' => 'Repeated via batch '.$this->batch->id,
+            ]);
+        }
 
         $toSessionId = $nextSession->id;
         $toSectionId = $section->id;
