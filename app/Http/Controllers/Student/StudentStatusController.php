@@ -46,6 +46,7 @@ class StudentStatusController
      * Expected payload:
      *   status: activate | suspend | graduate | withdraw | transfer
      *   reason: string (required for suspend/withdraw/transfer)
+     *   destination: string (required for transfer — independent of reason)
      *   effective_date: date (optional, defaults to today)
      */
     public function update(Request $request, Student $student)
@@ -55,6 +56,7 @@ class StudentStatusController
         $request->validate([
             'status'         => ['required', 'string', 'in:activate,suspend,graduate,withdraw,transfer'],
             'reason'         => ['required_if:status,suspend,withdraw,transfer', 'nullable', 'string', 'min:10', 'max:1000'],
+            'destination'    => ['required_if:status,transfer', 'nullable', 'string', 'min:2', 'max:255'],
             'effective_date' => ['nullable', 'date'],
         ]);
 
@@ -62,9 +64,10 @@ class StudentStatusController
             $this->statusService->changeStatus(
                 student:       $student,
                 newStatus:     $request->string('status'),
-                reason:        $request->string('reason'),
+                reason:        $request->input('reason'),
                 effectiveDate: $request->date('effective_date') ?? now(),
                 changedBy:     auth()->user(),
+                destination:   $request->input('destination'),
             );
 
             $label = ucfirst($request->string('status'));
