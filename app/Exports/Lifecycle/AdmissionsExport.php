@@ -24,19 +24,7 @@ class AdmissionsExport implements FromQuery, WithHeadings, WithMapping, ShouldAu
     {
         return app(LifecycleOperationalService::class)
             ->admissionsQuery($this->school, $this->filters)
-            ->select([
-                'id',
-                'admission_number',
-                'application_id',
-                'academic_session_id',
-                'class_level_id',
-                'status',
-                'acceptance_deadline',
-                'registration_ends_at',
-                'offered_at',
-                'accepted_at',
-                'created_at',
-            ]);
+            ->with(['academicSession:id,name', 'classLevel:id,name']);
     }
 
     public function headings(): array
@@ -63,8 +51,8 @@ class AdmissionsExport implements FromQuery, WithHeadings, WithMapping, ShouldAu
         return [
             $row->admission_number,
             $row->application_id,
-            $row->academic_session_id,
-            $row->class_level_id,
+            $row->academicSession->name ?? $row->academic_session_id,
+            $row->classLevel->name ?? $row->class_level_id,
             $row->status,
             $row->application_id ? 'application' : 'direct',
             optional($row->acceptance_deadline)->toDateTimeString(),

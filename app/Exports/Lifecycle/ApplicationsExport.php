@@ -24,21 +24,7 @@ class ApplicationsExport implements FromQuery, WithHeadings, WithMapping, Should
     {
         return app(LifecycleOperationalService::class)
             ->applicationsQuery($this->school, $this->filters)
-            ->select([
-                'id',
-                'application_number',
-                'first_name',
-                'middle_name',
-                'last_name',
-                'email',
-                'academic_session_id',
-                'class_level_id',
-                'status',
-                'source',
-                'fee_payment_status',
-                'submitted_at',
-                'created_at',
-            ]);
+            ->with(['academicSession:id,name', 'classLevel:id,name']);
     }
 
     public function headings(): array
@@ -71,8 +57,8 @@ class ApplicationsExport implements FromQuery, WithHeadings, WithMapping, Should
             $row->application_number,
             $name,
             $row->email,
-            $row->academic_session_id,
-            $row->class_level_id,
+            $row->academicSession->name ?? $row->academic_session_id,
+            $row->classLevel->name ?? $row->class_level_id,
             $row->status,
             $row->source ?? null,
             $row->fee_payment_status ?? null,
