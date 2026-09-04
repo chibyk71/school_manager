@@ -19,8 +19,19 @@ class LifecycleReportsController extends Controller
         $this->authorizeReport();
 
         $school = GetSchoolModel();
-        $sessionId = $request->string('academic_session_id')->toString() ?: null;
-        $filters = array_filter(['academic_session_id' => $sessionId]);
+        $filters = array_filter([
+            'academic_session_id' => $request->string('academic_session_id')->toString() ?: null,
+            'status' => $request->input('status'),
+            'class_level_id' => $request->string('class_level_id')->toString() ?: null,
+            'source' => $request->string('source')->toString() ?: null,
+            'has_application' => $request->string('has_application')->toString() ?: null,
+            'origin' => $request->string('origin')->toString() ?: null,
+            'finalized' => $request->input('finalized'),
+            'date_from' => $request->string('date_from')->toString() ?: null,
+            'date_to' => $request->string('date_to')->toString() ?: null,
+        ], fn ($v) => $v !== null && $v !== '');
+
+        $sessionId = $filters['academic_session_id'] ?? null;
 
         $payload = [
             'applications' => $this->ops->applicationReport($school, $filters),
@@ -28,7 +39,7 @@ class LifecycleReportsController extends Controller
             'enrollments' => $this->ops->enrollmentReport($school, $filters),
             'placement' => $this->ops->placementReport($school, $filters),
             'funnel' => $this->ops->lifecycleFunnel($school, $sessionId),
-            'filters' => ['academic_session_id' => $sessionId],
+            'filters' => $filters,
         ];
 
         if ($request->wantsJson()) {
@@ -43,8 +54,16 @@ class LifecycleReportsController extends Controller
         $this->authorizeReport();
 
         $school = GetSchoolModel();
-        $sessionId = $request->string('academic_session_id')->toString() ?: null;
-        $filters = array_filter(['academic_session_id' => $sessionId]);
+        $filters = array_filter([
+            'academic_session_id' => $request->string('academic_session_id')->toString() ?: null,
+            'status' => $request->input('status'),
+            'class_level_id' => $request->string('class_level_id')->toString() ?: null,
+            'source' => $request->string('source')->toString() ?: null,
+            'has_application' => $request->string('has_application')->toString() ?: null,
+            'origin' => $request->string('origin')->toString() ?: null,
+            'finalized' => $request->input('finalized'),
+        ], fn ($v) => $v !== null && $v !== '');
+        $sessionId = $filters['academic_session_id'] ?? null;
         $section = $request->string('section')->toString() ?: 'funnel';
 
         $data = match ($section) {

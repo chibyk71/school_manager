@@ -109,6 +109,8 @@ class DashboardController extends Controller
                 'student_attendance' => $attendance->studentTrend(),
                 'staff_attendance'   => $attendance->staffTrend(),
             ],
+            // Phase 7: expose lifecycle operational counts to admin dashboard widgets
+            'lifecycle' => $lifecycle,
         ];
     }
 

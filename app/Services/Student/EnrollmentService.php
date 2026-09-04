@@ -46,8 +46,11 @@ use Nnjeim\World\Models\State;
 class EnrollmentService
 {
     public function __construct(
-        protected PlacementAllocationService $placementAllocation
+        protected PlacementAllocationService $placementAllocation,
+        protected ?LifecycleNotificationService $lifecycleNotifications = null
     ) {
+        // Optional for focused unit tests that construct the service manually.
+        $this->lifecycleNotifications = $lifecycleNotifications ?? app(LifecycleNotificationService::class);
     }
 
     public function start(School $school, User $actor, array $data): Enrollment
@@ -1227,9 +1230,10 @@ class EnrollmentService
     }
 
 
+
     /**
-     * Incomplete-enrollment reminders. Idempotent via meta.incomplete_reminder_sent_at.
-     * Only processes non-finalized enrollments that have been idle for $days days.
+     * Incomplete-enrollment reminders.
+     * Idempotency uses successful NotificationLog delivery, not queue-dispatch meta flags.
      */
     public function processIncompleteReminders(int $days = 3, ?School $school = null): int
     {
@@ -1246,18 +1250,22 @@ class EnrollmentService
 
         $query->orderBy('id')->chunkById(100, function ($enrollments) use (&$count) {
             foreach ($enrollments as $enrollment) {
-                $meta = $enrollment->meta ?? [];
-                if (! empty($meta['incomplete_reminder_sent_at'])) {
+                $schoolModel = School::query()->find($enrollment->school_id);
+                if (! $schoolModel) {
                     continue;
                 }
 
-                $sent = $this->safeNotify($enrollment, EnrollmentIncompleteNotification::class, [
-                    'reminder' => true,
-                ]);
-                if ($sent) {
-                    $meta['incomplete_reminder_sent_at'] = now()->toIso8601String();
-                    $enrollment->meta = $meta;
-                    $enrollment->saveQuietly();
+                $sent = $this->lifecycleNotifications->notify(
+                    $schoolModel,
+                    'enrollment_incomplete_reminder',
+                    EnrollmentIncompleteNotification::class,
+                    $enrollment,
+                    [
+                        'reminder' => true,
+                        'reminder_key' => 'enrollment_incomplete:'.$enrollment->id,
+                    ]
+                );
+                if ($sent > 0) {
                     $count++;
                 }
             }
@@ -1267,7 +1275,7 @@ class EnrollmentService
     }
 
     /**
-     * Outstanding required-requirement reminders. Idempotent via meta.requirements_reminder_sent_at.
+     * Outstanding required-requirement reminders (NotificationLog-backed idempotency).
      */
     public function processOutstandingRequirementReminders(?School $school = null): int
     {
@@ -1286,20 +1294,22 @@ class EnrollmentService
 
         $query->orderBy('id')->chunkById(100, function ($enrollments) use (&$count) {
             foreach ($enrollments as $enrollment) {
-                $meta = $enrollment->meta ?? [];
-                if (! empty($meta['requirements_reminder_sent_at'])) {
+                $schoolModel = School::query()->find($enrollment->school_id);
+                if (! $schoolModel) {
                     continue;
                 }
 
-                $sent = $this->safeNotify(
-                    $enrollment,
+                $sent = $this->lifecycleNotifications->notify(
+                    $schoolModel,
+                    'enrollment_requirements_reminder',
                     EnrollmentRequirementsOutstandingNotification::class,
-                    ['reminder' => true]
+                    $enrollment,
+                    [
+                        'reminder' => true,
+                        'reminder_key' => 'enrollment_requirements:'.$enrollment->id,
+                    ]
                 );
-                if ($sent) {
-                    $meta['requirements_reminder_sent_at'] = now()->toIso8601String();
-                    $enrollment->meta = $meta;
-                    $enrollment->saveQuietly();
+                if ($sent > 0) {
                     $count++;
                 }
             }
@@ -1310,88 +1320,16 @@ class EnrollmentService
 
     protected function notifyFinalized(Enrollment $enrollment): void
     {
-        $this->safeNotify($enrollment, EnrollmentFinalizedNotification::class);
+        $school = School::query()->find($enrollment->school_id);
+        if (! $school) {
+            return;
+        }
+
+        $this->lifecycleNotifications->notify(
+            $school,
+            'enrollment_finalized',
+            EnrollmentFinalizedNotification::class,
+            $enrollment
+        );
     }
-
-    /**
-     * Dispatch without failing the domain operation.
-     *
-     * @return bool true when dispatch succeeded or there were no recipients
-     */
-    protected function safeNotify(Enrollment $enrollment, string $notificationClass, array $extra = []): bool
-    {
-        try {
-            $recipients = $this->resolveNotificationRecipients($enrollment);
-            if ($recipients->isEmpty()) {
-                return true;
-            }
-            Notification::send($recipients, new $notificationClass($enrollment, $extra));
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('Enrollment notification failed', [
-                'enrollment_id' => $enrollment->id,
-                'notification' => $notificationClass,
-                'error' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
-    }
-
-    /**
-     * Resolve mail recipients from enrollment biodata, linked admission, or student profile.
-     * Does not force User creation.
-     *
-     * @return \Illuminate\Support\Collection<int, object>
-     */
-    protected function resolveNotificationRecipients(Enrollment $enrollment): \Illuminate\Support\Collection
-    {
-        $emails = collect();
-
-        $biodata = $enrollment->meta['biodata'] ?? [];
-        foreach (['email', 'guardian_email', 'contact_email', 'parent_email'] as $key) {
-            if (! empty($biodata[$key]) && filter_var($biodata[$key], FILTER_VALIDATE_EMAIL)) {
-                $emails->push($biodata[$key]);
-            }
-        }
-
-        if ($enrollment->admission_id) {
-            $admission = $enrollment->relationLoaded('admission')
-                ? $enrollment->admission
-                : Admission::query()->whereKey($enrollment->admission_id)->first();
-            if ($admission) {
-                foreach (['email', 'guardian_email', 'contact_email'] as $key) {
-                    $val = data_get($admission, $key) ?? data_get($admission->meta ?? [], $key);
-                    if ($val && filter_var($val, FILTER_VALIDATE_EMAIL)) {
-                        $emails->push($val);
-                    }
-                }
-            }
-        }
-
-        if ($enrollment->student_id) {
-            $student = $enrollment->relationLoaded('student')
-                ? $enrollment->student
-                : Student::query()->whereKey($enrollment->student_id)->first();
-            $email = data_get($student, 'profile.email') ?? data_get($student, 'email');
-            if ($email && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $emails->push($email);
-            }
-        }
-
-        return $emails->unique()->filter()->map(function ($email) {
-            return new class($email) {
-                use \Illuminate\Notifications\Notifiable;
-
-                public function __construct(public string $email) {}
-
-                public function routeNotificationForMail(): string
-                {
-                    return $this->email;
-                }
-            };
-        });
-    }
-
 }

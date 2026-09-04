@@ -81,17 +81,9 @@ class LifecycleOperationalService
         $sectionsNearCapacity = ClassSection::query()
             ->where('school_id', $schoolId)
             ->where('capacity', '>', 0)
-            ->whereRaw('capacity > 0')
-            ->get()
-            ->filter(function (ClassSection $section) {
-                $remaining = $section->getRemainingCapacity();
-                if ($remaining === null) {
-                    return false;
-                }
-                $capacity = (int) $section->capacity;
-                // Approaching = less than 15% remaining or ≤ 2 seats.
-                return $remaining <= max(2, (int) floor($capacity * 0.15));
-            })
+            ->whereRaw(
+                "(capacity - (SELECT COUNT(*) FROM student_session_placements ssp WHERE ssp.class_section_id = class_sections.id AND ssp.is_current = 1)) <= GREATEST(2, FLOOR(capacity * 0.15))"
+            )
             ->count();
 
         return [
@@ -210,6 +202,7 @@ class LifecycleOperationalService
                 ]);
             });
 
+        $totalMatching = $items->count();
         $sorted = $items
             ->sortBy(function (array $item) {
                 $severityOrder = ['critical' => 0, 'high' => 1, 'medium' => 2, 'low' => 3];
@@ -221,7 +214,8 @@ class LifecycleOperationalService
 
         return [
             'items' => $sorted->all(),
-            'total' => $sorted->count(),
+            'returned_count' => $sorted->count(),
+            'total' => $totalMatching,
         ];
     }
 
@@ -274,11 +268,13 @@ class LifecycleOperationalService
                 ]);
             });
 
+        $totalMatching = $items->count();
         $sorted = $items->sortBy('deadline')->values()->take($limit);
 
         return [
             'items' => $sorted->all(),
-            'total' => $sorted->count(),
+            'returned_count' => $sorted->count(),
+            'total' => $totalMatching,
         ];
     }
 
@@ -354,11 +350,13 @@ class LifecycleOperationalService
                 ]);
             });
 
+        $totalMatching = $items->count();
         $sorted = $items->sortByDesc('at')->values()->take($limit);
 
         return [
             'items' => $sorted->all(),
-            'total' => $sorted->count(),
+            'returned_count' => $sorted->count(),
+            'total' => $totalMatching,
         ];
     }
 
@@ -371,6 +369,21 @@ class LifecycleOperationalService
         $q = StudentApplication::query()->where('school_id', $school->id);
         if (! empty($filters['academic_session_id'])) {
             $q->where('academic_session_id', $filters['academic_session_id']);
+        }
+        if (! empty($filters['status'])) {
+            $q->whereIn('status', (array) $filters['status']);
+        }
+        if (! empty($filters['class_level_id'])) {
+            $q->where('class_level_id', $filters['class_level_id']);
+        }
+        if (! empty($filters['source'])) {
+            $q->where('source', $filters['source']);
+        }
+        if (! empty($filters['date_from'])) {
+            $q->where('submitted_at', '>=', $filters['date_from']);
+        }
+        if (! empty($filters['date_to'])) {
+            $q->where('submitted_at', '<=', $filters['date_to']);
         }
 
         $byStatus = (clone $q)
@@ -385,10 +398,24 @@ class LifecycleOperationalService
             ->pluck('aggregate', 'class_level_id')
             ->all();
 
+        $bySource = (clone $q)
+            ->selectRaw('source, count(*) as aggregate')
+            ->groupBy('source')
+            ->pluck('aggregate', 'source')
+            ->all();
+
+        $approved = (int) ($byStatus[StudentApplication::STATUS_APPROVED] ?? 0);
+        $total = array_sum($byStatus);
+        $conversion = $total > 0 ? round($approved / $total, 4) : null;
+
         return [
-            'total' => array_sum($byStatus),
+            'total' => $total,
             'by_status' => $byStatus,
             'by_class_level' => $byClassLevel,
+            'by_source' => $bySource,
+            'approved' => $approved,
+            'approval_rate' => $conversion,
+            'filters_applied' => array_keys(array_filter($filters)),
         ];
     }
 
@@ -402,6 +429,19 @@ class LifecycleOperationalService
         if (! empty($filters['academic_session_id'])) {
             $q->where('academic_session_id', $filters['academic_session_id']);
         }
+        if (! empty($filters['status'])) {
+            $q->whereIn('status', (array) $filters['status']);
+        }
+        if (! empty($filters['class_level_id'])) {
+            $q->where('class_level_id', $filters['class_level_id']);
+        }
+        if (! empty($filters['has_application'])) {
+            if ($filters['has_application'] === 'yes') {
+                $q->whereNotNull('application_id');
+            } elseif ($filters['has_application'] === 'no') {
+                $q->whereNull('application_id');
+            }
+        }
 
         $byStatus = (clone $q)
             ->selectRaw('status, count(*) as aggregate')
@@ -409,28 +449,34 @@ class LifecycleOperationalService
             ->pluck('aggregate', 'status')
             ->all();
 
-        $issued = (int) ($byStatus[Admission::STATUS_OFFERED] ?? 0)
-            + (int) ($byStatus[Admission::STATUS_ACCEPTED] ?? 0)
-            + (int) ($byStatus[Admission::STATUS_DECLINED] ?? 0)
-            + (int) ($byStatus[Admission::STATUS_EXPIRED] ?? 0)
-            + (int) ($byStatus[Admission::STATUS_CANCELLED] ?? 0)
-            + (int) ($byStatus[Admission::STATUS_PENDING] ?? 0);
-
+        $issued = array_sum($byStatus);
         $accepted = (int) ($byStatus[Admission::STATUS_ACCEPTED] ?? 0);
         $declined = (int) ($byStatus[Admission::STATUS_DECLINED] ?? 0);
         $expired = (int) ($byStatus[Admission::STATUS_EXPIRED] ?? 0);
+        $cancelled = (int) ($byStatus[Admission::STATUS_CANCELLED] ?? 0);
 
-        $decided = $accepted + $declined + $expired;
-        $acceptanceRate = $decided > 0 ? round($accepted / $decided, 4) : null;
+        // Explicit business rule: acceptance rate among terminal offer outcomes
+        // (accepted + declined + expired + cancelled). Active offers excluded.
+        $terminal = $accepted + $declined + $expired + $cancelled;
+        $acceptanceRate = $terminal > 0 ? round($accepted / $terminal, 4) : null;
+
+        $fromApplication = (clone $q)->whereNotNull('application_id')->count();
+        $direct = (clone $q)->whereNull('application_id')->count();
 
         return [
-            'total' => array_sum($byStatus),
+            'total' => $issued,
             'by_status' => $byStatus,
             'issued' => $issued,
             'accepted' => $accepted,
             'declined' => $declined,
             'expired' => $expired,
+            'cancelled' => $cancelled,
+            'terminal_outcomes' => $terminal,
             'acceptance_rate' => $acceptanceRate,
+            'acceptance_rate_definition' => 'accepted / (accepted + declined + expired + cancelled); active offers excluded',
+            'from_application' => $fromApplication,
+            'direct' => $direct,
+            'filters_applied' => array_keys(array_filter($filters)),
         ];
     }
 
@@ -443,6 +489,23 @@ class LifecycleOperationalService
         $q = Enrollment::query()->where('school_id', $school->id);
         if (! empty($filters['academic_session_id'])) {
             $q->where('academic_session_id', $filters['academic_session_id']);
+        }
+        if (! empty($filters['status'])) {
+            $q->whereIn('status', (array) $filters['status']);
+        }
+        if (array_key_exists('finalized', $filters) && $filters['finalized'] !== null && $filters['finalized'] !== '') {
+            if (filter_var($filters['finalized'], FILTER_VALIDATE_BOOLEAN)) {
+                $q->whereIn('status', [Enrollment::STATUS_ACTIVE, Enrollment::STATUS_COMPLETED]);
+            } else {
+                $q->whereIn('status', [Enrollment::STATUS_DRAFT, Enrollment::STATUS_IN_PROGRESS]);
+            }
+        }
+        if (! empty($filters['origin'])) {
+            if ($filters['origin'] === 'admission') {
+                $q->whereNotNull('admission_id');
+            } elseif ($filters['origin'] === 'direct') {
+                $q->whereNull('admission_id');
+            }
         }
 
         $byStatus = (clone $q)
@@ -466,6 +529,7 @@ class LifecycleOperationalService
             'incomplete' => $incomplete,
             'admission_origin' => $admissionOrigin,
             'direct' => $direct,
+            'filters_applied' => array_keys(array_filter($filters, fn ($v) => $v !== null && $v !== '')),
         ];
     }
 
@@ -474,6 +538,44 @@ class LifecycleOperationalService
      *
      * @return array<string, int>
      */
+    /**
+     * Placement / capacity snapshot (Phase 5/6).
+     *
+     * @return array<string, mixed>
+     */
+    public function placementReport(School $school, array $filters = []): array
+    {
+        $schoolId = $school->id;
+
+        return [
+            'sections_with_capacity' => ClassSection::query()
+                ->where('school_id', $schoolId)
+                ->where('capacity', '>', 0)
+                ->count(),
+            'sections_near_capacity' => ClassSection::query()
+                ->where('school_id', $schoolId)
+                ->where('capacity', '>', 0)
+                ->whereRaw(
+                    "(capacity - (SELECT COUNT(*) FROM student_session_placements ssp WHERE ssp.class_section_id = class_sections.id AND ssp.is_current = 1)) <= GREATEST(2, FLOOR(capacity * 0.15))"
+                )
+                ->count(),
+            'sections_full' => ClassSection::query()
+                ->where('school_id', $schoolId)
+                ->where('capacity', '>', 0)
+                ->whereRaw(
+                    "(SELECT COUNT(*) FROM student_session_placements ssp WHERE ssp.class_section_id = class_sections.id AND ssp.is_current = 1) >= capacity"
+                )
+                ->count(),
+            'active_enrollments_unplaced' => Enrollment::query()
+                ->where('school_id', $schoolId)
+                ->where('status', Enrollment::STATUS_ACTIVE)
+                ->whereDoesntHave('student.sessionPlacements', function ($q) {
+                    $q->where('is_current', true);
+                })
+                ->count(),
+        ];
+    }
+
     public function lifecycleFunnel(School $school, ?string $sessionId = null): array
     {
         $schoolId = $school->id;

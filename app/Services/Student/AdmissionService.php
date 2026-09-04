@@ -12,6 +12,8 @@ use App\Notifications\Student\AdmissionAcceptedNotification;
 use App\Notifications\Student\AdmissionDeclinedNotification;
 use App\Notifications\Student\AdmissionExpiredNotification;
 use App\Notifications\Student\AdmissionOfferedNotification;
+use App\Notifications\Student\AdmissionAcceptanceDeadlineReminder;
+use App\Notifications\Student\AdmissionRegistrationWindowReminder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
@@ -27,8 +29,11 @@ use Illuminate\Validation\ValidationException;
 class AdmissionService
 {
     public function __construct(
-        protected StudentApplicationService $applicationService
-    ) {}
+        protected StudentApplicationService $applicationService,
+        protected ?LifecycleNotificationService $lifecycleNotifications = null
+    ) {
+        $this->lifecycleNotifications = $lifecycleNotifications ?? app(LifecycleNotificationService::class);
+    }
 
     public function createFromApplication(
         StudentApplication $application,
@@ -468,8 +473,7 @@ class AdmissionService
             ->whereIn('status', [Admission::STATUS_OFFERED, Admission::STATUS_PENDING])
             ->whereNotNull('acceptance_deadline')
             ->where('acceptance_deadline', '>', now())
-            ->where('acceptance_deadline', '<=', $deadline)
-            ->whereNull('reminder_sent_at');
+            ->where('acceptance_deadline', '<=', $deadline);
 
         if ($school) {
             $query->where('school_id', $school->id);
@@ -478,27 +482,74 @@ class AdmissionService
         $count = 0;
         $query->orderBy('id')->chunkById(100, function ($admissions) use (&$count) {
             foreach ($admissions as $admission) {
-                DB::transaction(function () use ($admission, &$count) {
-                    $locked = Admission::query()->whereKey($admission->id)->lockForUpdate()->first();
-                    if (! $locked || $locked->reminder_sent_at || ! $locked->isOfferActive()) {
-                        return;
-                    }
+                if (! $admission->isOfferActive()) {
+                    continue;
+                }
+                $schoolModel = School::query()->find($admission->school_id);
+                if (! $schoolModel) {
+                    continue;
+                }
 
-                    try {
-                        $dispatched = $this->notifyDeadlineReminder($locked);
-                        if ($dispatched) {
-                            $locked->reminder_sent_at = now();
-                            $locked->save();
-                            $count++;
-                        }
-                    } catch (\Throwable $e) {
-                        // Leave reminder_sent_at null so a later run can retry.
-                        Log::warning('Admission deadline reminder failed', [
-                            'admission_id' => $locked->id,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
-                });
+                $sent = $this->lifecycleNotifications->notify(
+                    $schoolModel,
+                    'admission_deadline_reminder',
+                    AdmissionAcceptanceDeadlineReminder::class,
+                    $admission,
+                    [
+                        'reminder' => true,
+                        'reminder_key' => 'admission_acceptance:'.$admission->id,
+                    ]
+                );
+                if ($sent > 0) {
+                    $count++;
+                }
+            }
+        });
+
+        return $count;
+    }
+
+    /**
+     * Remind accepted admissions whose registration window is approaching/ending.
+     * Skips admissions that already have an enrollment or left accepted status.
+     */
+    public function processRegistrationWindowReminders(int $withinHours = 72, ?School $school = null): int
+    {
+        $deadline = now()->addHours($withinHours);
+
+        $query = Admission::query()
+            ->where('status', Admission::STATUS_ACCEPTED)
+            ->whereNotNull('registration_ends_at')
+            ->where('registration_ends_at', '>', now())
+            ->where('registration_ends_at', '<=', $deadline)
+            ->whereDoesntHave('enrollment');
+
+        if ($school) {
+            $query->where('school_id', $school->id);
+        }
+
+        $count = 0;
+        $query->orderBy('id')->chunkById(100, function ($admissions) use (&$count) {
+            foreach ($admissions as $admission) {
+                $schoolModel = School::query()->find($admission->school_id);
+                if (! $schoolModel) {
+                    continue;
+                }
+
+                $sent = $this->lifecycleNotifications->notify(
+                    $schoolModel,
+                    'admission_deadline_reminder',
+                    AdmissionRegistrationWindowReminder::class,
+                    $admission,
+                    [
+                        'reminder' => true,
+                        'registration_window' => true,
+                        'reminder_key' => 'admission_registration:'.$admission->id,
+                    ]
+                );
+                if ($sent > 0) {
+                    $count++;
+                }
             }
         });
 
@@ -589,85 +640,32 @@ class AdmissionService
 
     protected function notifyOffered(Admission $admission): void
     {
-        $this->safeNotify($admission, AdmissionOfferedNotification::class);
+        $this->lifecycleNotify($admission, 'admission_offered', AdmissionOfferedNotification::class);
     }
 
     protected function notifyAccepted(Admission $admission): void
     {
-        $this->safeNotify($admission, AdmissionAcceptedNotification::class);
+        $this->lifecycleNotify($admission, 'admission_accepted', AdmissionAcceptedNotification::class);
     }
 
     protected function notifyDeclined(Admission $admission): void
     {
-        $this->safeNotify($admission, AdmissionDeclinedNotification::class);
+        $this->lifecycleNotify($admission, 'admission_declined', AdmissionDeclinedNotification::class);
     }
 
     protected function notifyExpired(Admission $admission): void
     {
-        $this->safeNotify($admission, AdmissionExpiredNotification::class);
+        $this->lifecycleNotify($admission, 'admission_expired', AdmissionExpiredNotification::class);
     }
 
-    /**
-     * @return bool true when dispatch completed (or there were no recipients); false on failure
-     */
-    protected function notifyDeadlineReminder(Admission $admission): bool
+    protected function lifecycleNotify(Admission $admission, string $preferenceKey, string $notificationClass, array $extra = []): void
     {
-        return $this->safeNotify($admission, AdmissionOfferedNotification::class, ['reminder' => true]);
-    }
-
-    /**
-     * Dispatch a notification without failing the domain transaction.
-     *
-     * @return bool true if dispatch succeeded or there were no recipients; false if dispatch threw
-     */
-    protected function safeNotify(Admission $admission, string $notificationClass, array $extra = []): bool
-    {
-        try {
-            $recipients = $this->resolveNotificationRecipients($admission);
-            if ($recipients->isEmpty()) {
-                return true;
-            }
-            Notification::send($recipients, new $notificationClass($admission, $extra));
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('Admission notification failed', [
-                'admission_id' => $admission->id,
-                'notification' => $notificationClass,
-                'error' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
-    }
-
-    protected function resolveNotificationRecipients(Admission $admission): \Illuminate\Support\Collection
-    {
-        $emails = collect();
-
-        if ($admission->application) {
-            if ($admission->application->email) {
-                $emails->push($admission->application->email);
-            }
+        $school = School::query()->find($admission->school_id);
+        if (! $school) {
+            return;
         }
 
-        $candidate = $admission->configs['candidate'] ?? [];
-        if (! empty($candidate['email'])) {
-            $emails->push($candidate['email']);
-        }
-
-        return $emails->unique()->filter()->map(function ($email) {
-            return new class($email)
-            {
-                use \Illuminate\Notifications\Notifiable;
-
-                public function __construct(public string $email) {}
-
-                public function routeNotificationForMail(): string
-                {
-                    return $this->email;
-                }
-            };
-        });
+        $this->lifecycleNotifications->notify($school, $preferenceKey, $notificationClass, $admission, $extra);
     }
 }
+

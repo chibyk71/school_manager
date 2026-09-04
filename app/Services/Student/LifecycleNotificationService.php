@@ -14,6 +14,7 @@ use App\Services\SmsService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
@@ -63,11 +64,11 @@ class LifecycleNotificationService
     ): bool {
         return NotificationLog::query()
             ->where('school_id', $school->id)
-            ->where('notifiable_type', $context->getMorphClass())
-            ->where('notifiable_id', $context->getKey())
             ->where('notification_type', $notificationClass)
             ->where('success', true)
             ->where('metadata->reminder_key', $reminderKey)
+            ->where('metadata->lifecycle_type', $context->getMorphClass())
+            ->where('metadata->lifecycle_id', (string) $context->getKey())
             ->exists();
     }
 
@@ -94,7 +95,11 @@ class LifecycleNotificationService
 
         $recipients = $this->resolveRecipients($context);
         if ($recipients->isEmpty()) {
-            $this->logAttempt($school, $context, $notificationClass, 'mail', '', false, 'No recipients resolved', [
+            Log::info('Lifecycle notification skipped: no recipients', [
+                'school_id' => $school->id,
+                'context' => get_class($context),
+                'context_id' => $context->getKey(),
+                'notification' => $notificationClass,
                 'preference_key' => $preferenceKey,
                 'reminder_key' => $reminderKey,
             ]);
@@ -112,21 +117,21 @@ class LifecycleNotificationService
 
                 Notification::send($recipient, $notification);
 
-                // Queue dispatch is not delivery success. Log "accepted for delivery"
-                // with success=false until a channel confirms delivery, unless send is sync.
-                $this->logAttempt(
+                // Queued dispatch is NOT delivery success. Do not write success=true here.
+                // A separate delivery hook / channel may mark success; reminders only suppress
+                // on alreadyDeliveredSuccessfully (success=true + reminder_key).
+                $this->logDispatch(
                     $school,
                     $context,
+                    $recipient,
                     $notificationClass,
                     'mail',
-                    $this->recipientAddress($recipient),
                     false,
                     null,
                     [
                         'preference_key' => $preferenceKey,
                         'reminder_key' => $reminderKey,
                         'phase' => 'dispatched',
-                        'notifiable_class' => is_object($recipient) ? get_class($recipient) : null,
                     ]
                 );
 
@@ -139,12 +144,12 @@ class LifecycleNotificationService
                     'notification' => $notificationClass,
                     'error' => $e->getMessage(),
                 ]);
-                $this->logAttempt(
+                $this->logDispatch(
                     $school,
                     $context,
+                    $recipient,
                     $notificationClass,
                     'mail',
-                    $this->recipientAddress($recipient),
                     false,
                     $e->getMessage(),
                     [
@@ -157,24 +162,6 @@ class LifecycleNotificationService
         }
 
         return $sent;
-    }
-
-    /**
-     * Mark a prior dispatch as successfully delivered (called from channel/listener hooks).
-     */
-    public function markDelivered(
-        School $school,
-        Model $context,
-        string $notificationClass,
-        string $channel,
-        string $recipient,
-        ?string $reminderKey = null,
-        array $metadata = []
-    ): void {
-        $this->logAttempt($school, $context, $notificationClass, $channel, $recipient, true, null, array_merge($metadata, [
-            'reminder_key' => $reminderKey,
-            'phase' => 'delivered',
-        ]));
     }
 
     /**
@@ -319,32 +306,56 @@ class LifecycleNotificationService
         return '';
     }
 
-    protected function logAttempt(
+    /**
+     * Record a dispatch or delivery attempt.
+     * notifiable_* is the actual recipient model when available (Guardian/User).
+     * Lifecycle correlation lives in metadata (lifecycle_type, lifecycle_id, reminder_key).
+     * notification_id is a unique correlation UUID for this attempt — not the lifecycle entity id.
+     */
+    protected function logDispatch(
         School $school,
         Model $context,
+        object $recipient,
         string $notificationClass,
         string $channel,
-        string $recipient,
         bool $success,
         ?string $error,
         array $metadata = []
     ): void {
+        $recipientAddress = $this->recipientAddress($recipient);
+
+        // Prefer real recipient models as notifiable; fall back to lifecycle context.
+        if ($recipient instanceof Model && $recipient->getKey()) {
+            $notifiableType = $recipient->getMorphClass();
+            $notifiableId = $recipient->getKey();
+        } else {
+            $notifiableType = $context->getMorphClass();
+            $notifiableId = $context->getKey();
+        }
+
+        $meta = array_merge([
+            'lifecycle_type' => $context->getMorphClass(),
+            'lifecycle_id' => (string) $context->getKey(),
+            'recipient_address' => $recipientAddress,
+            'recipient_class' => is_object($recipient) ? get_class($recipient) : null,
+        ], $metadata);
+
         try {
             NotificationLog::create([
                 'school_id' => $school->id,
-                'notifiable_type' => $context->getMorphClass(),
-                'notifiable_id' => $context->getKey(),
-                // notification morph: store class name as type; id uses context key as correlation
+                'notifiable_type' => $notifiableType,
+                'notifiable_id' => $notifiableId,
                 'notification_type' => $notificationClass,
-                'notification_id' => $context->getKey(),
+                'notification_id' => (string) Str::uuid(),
                 'channel' => $channel,
                 'provider' => $channel === 'mail' ? 'mail' : null,
-                'recipient' => $recipient !== '' ? $recipient : 'unknown',
-                'message' => class_basename($notificationClass).($metadata['reminder_key'] ?? '' ? ' ['.$metadata['reminder_key'].']' : ''),
+                'recipient' => $recipientAddress !== '' ? $recipientAddress : 'unknown',
+                'message' => class_basename($notificationClass)
+                    .(! empty($meta['reminder_key']) ? ' ['.$meta['reminder_key'].']' : ''),
                 'success' => $success,
                 'error' => $error,
                 'segments' => 1,
-                'metadata' => $metadata,
+                'metadata' => $meta,
                 'delivered_at' => $success ? now() : null,
             ]);
         } catch (\Throwable $e) {
@@ -354,4 +365,32 @@ class LifecycleNotificationService
             ]);
         }
     }
+
+    /**
+     * Mark successful delivery (e.g. from a MessageSent / channel hook).
+     */
+    public function markDelivered(
+        School $school,
+        Model $context,
+        object $recipient,
+        string $notificationClass,
+        string $channel = 'mail',
+        ?string $reminderKey = null,
+        array $metadata = []
+    ): void {
+        $this->logDispatch(
+            $school,
+            $context,
+            $recipient,
+            $notificationClass,
+            $channel,
+            true,
+            null,
+            array_merge($metadata, [
+                'reminder_key' => $reminderKey,
+                'phase' => 'delivered',
+            ])
+        );
+    }
 }
+
