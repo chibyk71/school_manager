@@ -2,17 +2,18 @@
 
 namespace App\Listeners\Student;
 
-use App\Models\School;
 use App\Services\Student\LifecycleNotificationService;
 use Illuminate\Notifications\Events\NotificationFailed;
 use Illuminate\Notifications\Events\NotificationSent;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Marks lifecycle notification deliveries as successful once the channel accepts them.
+ * Finalizes lifecycle NotificationLog rows after channel outcome.
  *
- * Notification::send() / queue dispatch alone must not set success=true; this listener
- * runs after the channel send (including under Notification::fake() in tests).
+ * Correlation: notification->extra['dispatch_id'] matches NotificationLog.metadata.dispatch_id
+ * written at queue/dispatch time with success=false / phase=dispatched.
+ *
+ * Queueing alone never sets success=true.
  */
 class LogLifecycleNotificationDelivery
 {
@@ -27,42 +28,26 @@ class LogLifecycleNotificationDelivery
             return;
         }
 
-        // Only track lifecycle-managed notifications (preference or reminder context).
-        if (empty($extra['preference_key']) && empty($extra['reminder_key'])) {
+        // Only lifecycle-managed notifications carry preference_key / reminder_key / dispatch_id.
+        if (empty($extra['preference_key']) && empty($extra['reminder_key']) && empty($extra['dispatch_id'])) {
             return;
         }
 
-        $schoolId = $extra['school_id'] ?? null;
-        if (! $schoolId) {
-            return;
-        }
+        $dispatchId = $extra['dispatch_id'] ?? null;
+        if (! is_string($dispatchId) || $dispatchId === '') {
+            Log::warning('Lifecycle NotificationSent without dispatch_id; cannot finalize log', [
+                'notification' => $event->notification::class,
+            ]);
 
-        $school = School::query()->find($schoolId);
-        if (! $school) {
-            return;
-        }
-
-        $context = $this->resolveContext($event->notification, $extra);
-        if (! $context) {
             return;
         }
 
         try {
-            $this->lifecycleNotifications->markDelivered(
-                $school,
-                $context,
-                $event->notifiable,
-                $event->notification::class,
-                $event->channel ?: 'mail',
-                $extra['reminder_key'] ?? null,
-                [
-                    'preference_key' => $extra['preference_key'] ?? null,
-                    'phase' => 'delivered',
-                ]
-            );
+            $this->lifecycleNotifications->markDispatchOutcome($dispatchId, true, null);
         } catch (\Throwable $e) {
             Log::warning('Failed to mark lifecycle notification delivered', [
                 'error' => $e->getMessage(),
+                'dispatch_id' => $dispatchId,
                 'notification' => $event->notification::class,
             ]);
         }
@@ -70,12 +55,31 @@ class LogLifecycleNotificationDelivery
 
     public function handleFailed(NotificationFailed $event): void
     {
-        // Explicit no-op for success flag: failures must not create success=true rows.
-        // A dispatch_failed / channel failure row may already exist from notify().
-        Log::info('Lifecycle notification channel failed', [
+        $extra = $this->extraFrom($event->notification);
+        $dispatchId = is_array($extra) ? ($extra['dispatch_id'] ?? null) : null;
+
+        $error = null;
+        if (isset($event->data) && is_array($event->data)) {
+            $error = isset($event->data['message']) ? (string) $event->data['message'] : json_encode($event->data);
+        }
+
+        if (is_string($dispatchId) && $dispatchId !== '') {
+            try {
+                $this->lifecycleNotifications->markDispatchOutcome($dispatchId, false, $error);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to mark lifecycle notification failed', [
+                    'error' => $e->getMessage(),
+                    'dispatch_id' => $dispatchId,
+                ]);
+            }
+
+            return;
+        }
+
+        Log::info('Lifecycle notification channel failed without dispatch_id', [
             'notification' => $event->notification::class,
             'channel' => $event->channel ?? null,
-            'error' => isset($event->data['message']) ? (string) $event->data['message'] : null,
+            'error' => $error,
         ]);
     }
 
@@ -86,22 +90,5 @@ class LogLifecycleNotificationDelivery
         }
 
         return $notification->extra;
-    }
-
-    protected function resolveContext(object $notification, array $extra): ?object
-    {
-        foreach (['enrollment', 'admission', 'application', 'student'] as $prop) {
-            if (property_exists($notification, $prop) && is_object($notification->{$prop})) {
-                return $notification->{$prop};
-            }
-        }
-
-        $type = $extra['lifecycle_type'] ?? null;
-        $id = $extra['lifecycle_id'] ?? null;
-        if ($type && $id && class_exists($type)) {
-            return $type::query()->find($id);
-        }
-
-        return null;
     }
 }
