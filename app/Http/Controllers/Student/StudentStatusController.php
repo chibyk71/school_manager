@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Student;
 
-use App\Models\Academic\Student;
+use App\Models\Student\Student;
 use App\Services\Student\StudentStatusService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
