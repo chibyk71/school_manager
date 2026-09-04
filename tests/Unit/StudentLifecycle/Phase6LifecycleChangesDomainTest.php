@@ -5,6 +5,9 @@ uses(Tests\TestCase::class);
 /**
  * Phase 6 — Lifecycle Changes domain tests.
  * Section/class change, transfer/withdrawal, promotion placement integration.
+ *
+ * Helpers are prefixed p6* (not p5*) so this file does not collide with
+ * Phase5PlacementNumberingDomainTest when Pest loads the suite.
  */
 
 use App\Helpers\IdGenerator;
@@ -184,15 +187,19 @@ function buildPhase6Schema(): void
         $t->timestamps();
         $t->softDeletes();
     });
+    // Align with Phase 5/6 PlacementAllocationService create payload:
+    // school_id + joined_at are written by placeForPromotionOutcome / createPlacement.
     Schema::create('student_session_placements', function (Blueprint $t) {
         $t->id();
         $t->uuid('student_id');
+        $t->uuid('school_id');
         $t->uuid('enrollment_id')->nullable();
         $t->uuid('academic_session_id');
         $t->uuid('class_level_id');
         $t->uuid('class_section_id')->nullable();
         $t->string('registration_number', 64)->nullable();
-        $t->date('enrolled_at');
+        $t->timestamp('joined_at')->nullable();
+        $t->date('enrolled_at')->nullable();
         $t->date('left_at')->nullable();
         $t->boolean('is_current')->default(false);
         $t->string('promotion_outcome', 50)->nullable();
@@ -204,6 +211,7 @@ function buildPhase6Schema(): void
         $t->timestamps();
         $t->index(['class_section_id', 'is_current', 'left_at']);
         $t->index(['student_id', 'academic_session_id', 'is_current']);
+        $t->index(['school_id', 'academic_session_id', 'is_current']);
     });
     Schema::create('registration_number_histories', function (Blueprint $t) {
         $t->id();
@@ -256,51 +264,51 @@ function buildPhase6Schema(): void
     });
 }
 
-function p5School(string $name = 'Alpha', string $code = 'ALP'): School
+function p6School(string $name = 'Alpha', string $code = 'ALP'): School
 {
     return School::query()->create(['id' => (string) Str::uuid(), 'name' => $name, 'code' => $code]);
 }
-function p5User(): User
+function p6User(): User
 {
     return User::query()->create(['id' => (string) Str::uuid(), 'name' => 'Staff', 'email' => Str::random(8).'@t.local']);
 }
-function p5Profile(): Profile
+function p6Profile(): Profile
 {
     return Profile::query()->create(['id' => (string) Str::uuid(), 'first_name' => 'Ada', 'last_name' => 'Lovelace', 'email' => Str::random(6).'@ex.test']);
 }
-function p5Student(School $school, ?Profile $profile = null): Student
+function p6Student(School $school, ?Profile $profile = null): Student
 {
-    $profile ??= p5Profile();
+    $profile ??= p6Profile();
     return Student::query()->create(['id' => (string) Str::uuid(), 'school_id' => $school->id, 'profile_id' => $profile->id, 'status' => 'active']);
 }
-function p5Session(School $school, string $name = '2026/2027'): object
+function p6Session(School $school, string $name = '2026/2027'): object
 {
     $id = (string) Str::uuid();
     DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $school->id, 'name' => $name, 'start_date' => '2026-09-01', 'is_current' => true, 'created_at' => now(), 'updated_at' => now()]);
     return (object) ['id' => $id, 'name' => $name];
 }
-function p5SchoolSection(School $school): object
+function p6SchoolSection(School $school): object
 {
     $id = (string) Str::uuid();
     DB::table('school_sections')->insert(['id' => $id, 'school_id' => $school->id, 'name' => 'Junior', 'created_at' => now(), 'updated_at' => now()]);
     return (object) ['id' => $id];
 }
-function p5Level(School $school, ?object $schoolSection = null, string $name = 'JSS1'): ClassLevel
+function p6Level(School $school, ?object $schoolSection = null, string $name = 'JSS1'): ClassLevel
 {
-    $schoolSection ??= p5SchoolSection($school);
+    $schoolSection ??= p6SchoolSection($school);
     $id = (string) Str::uuid();
     DB::table('class_levels')->insert(['id' => $id, 'school_section_id' => $schoolSection->id, 'name' => $name, 'sort_order' => 10, 'sequence' => 10, 'created_at' => now(), 'updated_at' => now()]);
     return ClassLevel::query()->withoutGlobalScopes()->findOrFail($id);
 }
-function p5Section(School $school, ClassLevel $level, string $name, int $capacity, int $sort): ClassSection
+function p6Section(School $school, ClassLevel $level, string $name, int $capacity, int $sort): ClassSection
 {
     return ClassSection::query()->create(['id' => (string) Str::uuid(), 'school_id' => $school->id, 'class_level_id' => $level->id, 'name' => $name, 'display_name' => $level->name.$name, 'capacity' => $capacity, 'sort_order' => $sort]);
 }
-function p5Enrollment(School $school, object $session, ?Student $student = null): Enrollment
+function p6Enrollment(School $school, object $session, ?Student $student = null): Enrollment
 {
     return Enrollment::query()->create(['id' => (string) Str::uuid(), 'school_id' => $school->id, 'academic_session_id' => $session->id, 'student_id' => $student?->id, 'status' => Enrollment::STATUS_ACTIVE, 'activated_at' => now(), 'meta' => []]);
 }
-function p5Services(): array
+function p6Services(): array
 {
     $reg = new RegistrationNumberService();
     $place = new StudentPlacementService();
@@ -310,15 +318,15 @@ function p5Services(): array
 }
 
 it('changes section and preserves placement history', function () {
-    $school = p5School();
-    $user = p5User();
-    $student = p5Student($school);
-    $session = p5Session($school);
-    $level = p5Level($school);
-    $secA = p5Section($school, $level, 'A', 40, 1);
-    $secB = p5Section($school, $level, 'B', 40, 2);
-    p5Enrollment($school, $session, $student);
-    $svc = p5Services();
+    $school = p6School();
+    $user = p6User();
+    $student = p6Student($school);
+    $session = p6Session($school);
+    $level = p6Level($school);
+    $secA = p6Section($school, $level, 'A', 40, 1);
+    $secB = p6Section($school, $level, 'B', 40, 2);
+    p6Enrollment($school, $session, $student);
+    $svc = p6Services();
     $first = $svc['alloc']->placeManually($student, $school, $level->id, $secA->id, $user, ['academic_session_id' => $session->id]);
     $admission = $svc['alloc']->ensureAdmissionNumber($student, $school);
 
@@ -342,19 +350,19 @@ it('changes section and preserves placement history', function () {
 });
 
 it('rejects section change to full section without capacity override', function () {
-    $school = p5School();
-    $user = p5User();
-    $session = p5Session($school);
-    $level = p5Level($school);
-    $secA = p5Section($school, $level, 'A', 40, 1);
-    $secB = p5Section($school, $level, 'B', 1, 2);
-    $svc = p5Services();
+    $school = p6School();
+    $user = p6User();
+    $session = p6Session($school);
+    $level = p6Level($school);
+    $secA = p6Section($school, $level, 'A', 40, 1);
+    $secB = p6Section($school, $level, 'B', 1, 2);
+    $svc = p6Services();
 
-    $occupant = p5Student($school);
+    $occupant = p6Student($school);
     $svc['alloc']->placeManually($occupant, $school, $level->id, $secB->id, $user, ['academic_session_id' => $session->id]);
 
-    $student = p5Student($school);
-    p5Enrollment($school, $session, $student);
+    $student = p6Student($school);
+    p6Enrollment($school, $session, $student);
     $svc['alloc']->placeManually($student, $school, $level->id, $secA->id, $user, ['academic_session_id' => $session->id]);
 
     expect(fn () => $svc['alloc']->changeSection($student, $school, $secB->id, $user, []))
@@ -362,17 +370,17 @@ it('rejects section change to full section without capacity override', function 
 });
 
 it('rejects cross-school section change', function () {
-    $school = p5School();
-    $other = p5School('Other', 'OTH');
-    $user = p5User();
-    $session = p5Session($school);
-    $level = p5Level($school);
-    $secA = p5Section($school, $level, 'A', 40, 1);
-    $otherLevel = p5Level($other);
-    $otherSec = p5Section($other, $otherLevel, 'X', 40, 1);
-    $student = p5Student($school);
-    p5Enrollment($school, $session, $student);
-    $svc = p5Services();
+    $school = p6School();
+    $other = p6School('Other', 'OTH');
+    $user = p6User();
+    $session = p6Session($school);
+    $level = p6Level($school);
+    $secA = p6Section($school, $level, 'A', 40, 1);
+    $otherLevel = p6Level($other);
+    $otherSec = p6Section($other, $otherLevel, 'X', 40, 1);
+    $student = p6Student($school);
+    p6Enrollment($school, $session, $student);
+    $svc = p6Services();
     $svc['alloc']->placeManually($student, $school, $level->id, $secA->id, $user, ['academic_session_id' => $session->id]);
 
     expect(fn () => $svc['alloc']->changeSection($student, $school, $otherSec->id, $user, []))
@@ -380,17 +388,17 @@ it('rejects cross-school section change', function () {
 });
 
 it('changes class level within session and keeps admission number', function () {
-    $school = p5School();
-    $user = p5User();
-    $session = p5Session($school);
-    $ss = p5SchoolSection($school);
-    $jss1 = p5Level($school, $ss, 'JSS1');
-    $jss2 = p5Level($school, $ss, 'JSS2');
-    $sec1 = p5Section($school, $jss1, 'A', 40, 1);
-    $sec2 = p5Section($school, $jss2, 'A', 40, 1);
-    $student = p5Student($school);
-    p5Enrollment($school, $session, $student);
-    $svc = p5Services();
+    $school = p6School();
+    $user = p6User();
+    $session = p6Session($school);
+    $ss = p6SchoolSection($school);
+    $jss1 = p6Level($school, $ss, 'JSS1');
+    $jss2 = p6Level($school, $ss, 'JSS2');
+    $sec1 = p6Section($school, $jss1, 'A', 40, 1);
+    $sec2 = p6Section($school, $jss2, 'A', 40, 1);
+    $student = p6Student($school);
+    p6Enrollment($school, $session, $student);
+    $svc = p6Services();
     $first = $svc['alloc']->placeManually($student, $school, $jss1->id, $sec1->id, $user, ['academic_session_id' => $session->id]);
     $admission = $svc['alloc']->ensureAdmissionNumber($student, $school);
 
@@ -406,14 +414,14 @@ it('changes class level within session and keeps admission number', function () 
 });
 
 it('withdrawal ends active enrollment and current placement without deleting history', function () {
-    $school = p5School();
-    $user = p5User();
-    $session = p5Session($school);
-    $level = p5Level($school);
-    $sec = p5Section($school, $level, 'A', 40, 1);
-    $student = p5Student($school);
-    $enrollment = p5Enrollment($school, $session, $student);
-    $svc = p5Services();
+    $school = p6School();
+    $user = p6User();
+    $session = p6Session($school);
+    $level = p6Level($school);
+    $sec = p6Section($school, $level, 'A', 40, 1);
+    $student = p6Student($school);
+    $enrollment = p6Enrollment($school, $session, $student);
+    $svc = p6Services();
     $placement = $svc['alloc']->placeManually($student, $school, $level->id, $sec->id, $user, ['academic_session_id' => $session->id]);
     $admission = $svc['alloc']->ensureAdmissionNumber($student, $school);
 
@@ -435,14 +443,14 @@ it('withdrawal ends active enrollment and current placement without deleting his
 });
 
 it('transfer out ends enrollment as transferred_out and preserves admission number', function () {
-    $school = p5School();
-    $user = p5User();
-    $session = p5Session($school);
-    $level = p5Level($school);
-    $sec = p5Section($school, $level, 'A', 40, 1);
-    $student = p5Student($school);
-    $enrollment = p5Enrollment($school, $session, $student);
-    $svc = p5Services();
+    $school = p6School();
+    $user = p6User();
+    $session = p6Session($school);
+    $level = p6Level($school);
+    $sec = p6Section($school, $level, 'A', 40, 1);
+    $student = p6Student($school);
+    $enrollment = p6Enrollment($school, $session, $student);
+    $svc = p6Services();
     $svc['alloc']->placeManually($student, $school, $level->id, $sec->id, $user, ['academic_session_id' => $session->id]);
     $admission = $svc['alloc']->ensureAdmissionNumber($student, $school);
 
@@ -460,22 +468,22 @@ it('transfer out ends enrollment as transferred_out and preserves admission numb
 });
 
 it('placeForPromotionOutcome creates next-session placement and keeps admission number', function () {
-    $school = p5School();
-    $user = p5User();
-    $session1 = p5Session($school, '2025/2026');
+    $school = p6School();
+    $user = p6User();
+    $session1 = p6Session($school, '2025/2026');
     $id2 = (string) Str::uuid();
     DB::table('academic_sessions')->insert([
         'id' => $id2, 'school_id' => $school->id, 'name' => '2026/2027',
         'start_date' => '2026-09-01', 'is_current' => false,
         'created_at' => now(), 'updated_at' => now(),
     ]);
-    $ss = p5SchoolSection($school);
-    $jss1 = p5Level($school, $ss, 'JSS1');
-    $jss2 = p5Level($school, $ss, 'JSS2');
-    $sec1 = p5Section($school, $jss1, 'A', 40, 1);
-    $sec2 = p5Section($school, $jss2, 'A', 40, 1);
-    $student = p5Student($school);
-    $svc = p5Services();
+    $ss = p6SchoolSection($school);
+    $jss1 = p6Level($school, $ss, 'JSS1');
+    $jss2 = p6Level($school, $ss, 'JSS2');
+    $sec1 = p6Section($school, $jss1, 'A', 40, 1);
+    $sec2 = p6Section($school, $jss2, 'A', 40, 1);
+    $student = p6Student($school);
+    $svc = p6Services();
     $svc['alloc']->placeManually($student, $school, $jss1->id, $sec1->id, $user, ['academic_session_id' => $session1->id]);
     $admission = $svc['alloc']->ensureAdmissionNumber($student, $school);
 
@@ -495,21 +503,23 @@ it('placeForPromotionOutcome creates next-session placement and keeps admission 
 });
 
 it('rejects section change when student is withdrawn', function () {
-    $school = p5School();
-    $user = p5User();
-    $session = p5Session($school);
-    $level = p5Level($school);
-    $secA = p5Section($school, $level, 'A', 40, 1);
-    $secB = p5Section($school, $level, 'B', 40, 2);
-    $student = p5Student($school);
+    $school = p6School();
+    $user = p6User();
+    $session = p6Session($school);
+    $level = p6Level($school);
+    $secA = p6Section($school, $level, 'A', 40, 1);
+    $secB = p6Section($school, $level, 'B', 40, 2);
+    $student = p6Student($school);
     $student->update(['status' => 'withdrawn']);
-    $svc = p5Services();
+    $svc = p6Services();
 
     StudentSessionPlacement::query()->create([
         'student_id' => $student->id,
+        'school_id' => $school->id,
         'academic_session_id' => $session->id,
         'class_level_id' => $level->id,
         'class_section_id' => $secA->id,
+        'joined_at' => now(),
         'enrolled_at' => now()->toDateString(),
         'is_current' => true,
     ]);
@@ -519,15 +529,15 @@ it('rejects section change when student is withdrawn', function () {
 });
 
 it('preserves registration number history when section change regenerates', function () {
-    $school = p5School();
-    $user = p5User();
-    $session = p5Session($school);
-    $level = p5Level($school);
-    $secA = p5Section($school, $level, 'A', 40, 1);
-    $secB = p5Section($school, $level, 'B', 40, 2);
-    $student = p5Student($school);
-    p5Enrollment($school, $session, $student);
-    $svc = p5Services();
+    $school = p6School();
+    $user = p6User();
+    $session = p6Session($school);
+    $level = p6Level($school);
+    $secA = p6Section($school, $level, 'A', 40, 1);
+    $secB = p6Section($school, $level, 'B', 40, 2);
+    $student = p6Student($school);
+    p6Enrollment($school, $session, $student);
+    $svc = p6Services();
 
     DB::table('settings')->insert([
         'key' => 'academic.registration_number',
@@ -560,19 +570,19 @@ it('ProcessStudentPromotion always uses placeForPromotionOutcome and never legac
 });
 
 it('rejects capacity override when actor is not authorized', function () {
-    $school = p5School();
-    $user = p5User();
-    $session = p5Session($school);
-    $level = p5Level($school);
-    $secA = p5Section($school, $level, 'A', 40, 1);
-    $secB = p5Section($school, $level, 'B', 1, 2);
-    $svc = p5Services();
+    $school = p6School();
+    $user = p6User();
+    $session = p6Session($school);
+    $level = p6Level($school);
+    $secA = p6Section($school, $level, 'A', 40, 1);
+    $secB = p6Section($school, $level, 'B', 1, 2);
+    $svc = p6Services();
 
-    $occupant = p5Student($school);
+    $occupant = p6Student($school);
     $svc['alloc']->placeManually($occupant, $school, $level->id, $secB->id, $user, ['academic_session_id' => $session->id]);
 
-    $student = p5Student($school);
-    p5Enrollment($school, $session, $student);
+    $student = p6Student($school);
+    p6Enrollment($school, $session, $student);
     $svc['alloc']->placeManually($student, $school, $level->id, $secA->id, $user, ['academic_session_id' => $session->id]);
 
     expect(fn () => $svc['alloc']->changeSection($student, $school, $secB->id, $user, [
