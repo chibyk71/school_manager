@@ -38,9 +38,6 @@ class LifecycleReportsController extends Controller
         ]);
     }
 
-    /**
-     * Download a lifecycle report section via Laravel Excel (CSV or XLSX).
-     */
     public function export(Request $request): BinaryFileResponse
     {
         $this->authorizeReport();
@@ -53,11 +50,16 @@ class LifecycleReportsController extends Controller
             $format = 'csv';
         }
 
+        if ($section === 'funnel') {
+            abort(422, 'Funnel is a summary view; export applications, admissions, enrollments, or placements instead.');
+        }
+
         $export = match ($section) {
             'admissions' => new AdmissionsExport($school, $filters),
             'enrollments' => new EnrollmentsExport($school, $filters),
             'placement', 'placements' => new PlacementsExport($school, $filters),
-            default => new ApplicationsExport($school, $filters),
+            'applications' => new ApplicationsExport($school, $filters),
+            default => abort(422, 'Unknown report section for export.'),
         };
 
         $filename = 'lifecycle-'.$section.'-'.now()->format('Ymd-His').'.'.$format;
@@ -68,15 +70,14 @@ class LifecycleReportsController extends Controller
         return Excel::download($export, $filename, $writerType);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     protected function reportFilters(Request $request): array
     {
         return array_filter([
             'academic_session_id' => $request->string('academic_session_id')->toString() ?: null,
             'status' => $request->input('status'),
             'class_level_id' => $request->string('class_level_id')->toString() ?: null,
+            'class_section_id' => $request->string('class_section_id')->toString() ?: null,
+            'section_id' => $request->string('section_id')->toString() ?: null,
             'source' => $request->string('source')->toString() ?: null,
             'has_application' => $request->string('has_application')->toString() ?: null,
             'origin' => $request->string('origin')->toString() ?: null,
