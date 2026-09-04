@@ -256,7 +256,18 @@ class PlacementAllocationService
             }
 
             $sessionId = $sessionHint ?? $current->academic_session_id;
-            $newSection = $this->resolveSection($destinationSectionId, $destinationClassLevelId, $school);
+            // Lock destination section row before capacity evaluation (same strategy as changeSection).
+            $newSection = ClassSection::query()->lockForUpdate()->findOrFail($destinationSectionId);
+            if ((string) $newSection->school_id !== (string) $school->id) {
+                throw ValidationException::withMessages([
+                    'class_section_id' => 'Class section does not belong to this school.',
+                ]);
+            }
+            if ((string) $newSection->class_level_id !== (string) $destinationClassLevelId) {
+                throw ValidationException::withMessages([
+                    'class_section_id' => 'Selected section does not belong to the given class level.',
+                ]);
+            }
             $override = (bool) ($options['capacity_override'] ?? false);
             $this->assertCapacityAvailable($newSection, $sessionId, $actor, $override);
 
@@ -325,13 +336,29 @@ class PlacementAllocationService
                 ]);
             }
 
+            $enrollmentId = $options['enrollment_id'] ?? null;
+            if ($enrollmentId) {
+                $enrollment = Enrollment::query()->find($enrollmentId);
+                if (! $enrollment) {
+                    throw ValidationException::withMessages([
+                        'enrollment_id' => 'Enrollment not found.',
+                    ]);
+                }
+                $this->assertEnrollmentContext($enrollment, $school, $student);
+                if ((string) $enrollment->academic_session_id !== (string) $academicSessionId) {
+                    throw ValidationException::withMessages([
+                        'enrollment_id' => 'Enrollment does not belong to the target academic session.',
+                    ]);
+                }
+            }
+
             $placement = StudentSessionPlacement::query()->create([
                 'student_id' => $student->id,
                 'school_id' => $school->id,
                 'academic_session_id' => $academicSessionId,
                 'class_level_id' => $classLevelId,
                 'class_section_id' => $section->id,
-                'enrollment_id' => $options['enrollment_id'] ?? null,
+                'enrollment_id' => $enrollmentId,
                 'is_current' => true,
                 'joined_at' => now(),
                 'enrolled_at' => now(),
