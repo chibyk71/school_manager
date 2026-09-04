@@ -293,55 +293,39 @@ class StudentApplicationService
 
     protected function notifySubmitted(StudentApplication $application): void
     {
-        try {
-            $email = $application->email
-                ?? data_get($application->guardians_data, '0.email');
-
-            if ($email) {
-                Notification::route('mail', $email)
-                    ->notify(new ApplicationSubmittedNotification($application));
-            }
-        } catch (\Throwable $e) {
-            Log::warning('Application submitted notification failed', [
-                'application_id' => $application->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        $this->lifecycleNotify($application, 'application_submitted', ApplicationSubmittedNotification::class);
     }
 
     protected function notifyApproved(StudentApplication $application): void
     {
-        try {
-            $email = $application->email
-                ?? data_get($application->guardians_data, '0.email');
-
-            if ($email) {
-                Notification::route('mail', $email)
-                    ->notify(new ApplicationApprovedNotification($application));
-            }
-        } catch (\Throwable $e) {
-            Log::warning('Application approved notification failed', [
-                'application_id' => $application->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        $this->lifecycleNotify($application, 'application_approved', ApplicationApprovedNotification::class);
     }
 
     protected function notifyRejected(StudentApplication $application): void
     {
-        try {
-            $email = $application->email
-                ?? data_get($application->guardians_data, '0.email');
+        $this->lifecycleNotify($application, 'application_rejected', ApplicationRejectedNotification::class);
+    }
 
-            if ($email) {
-                Notification::route('mail', $email)
-                    ->notify(new ApplicationRejectedNotification($application));
+    protected function lifecycleNotify(StudentApplication $application, string $preferenceKey, string $notificationClass): void
+    {
+        try {
+            $school = School::query()->find($application->school_id);
+            if (! $school) {
+                return;
             }
+            app(LifecycleNotificationService::class)->notify(
+                $school,
+                $preferenceKey,
+                $notificationClass,
+                $application
+            );
         } catch (\Throwable $e) {
-            Log::warning('Application rejected notification failed', [
+            Log::warning('Application lifecycle notification failed', [
                 'application_id' => $application->id,
+                'preference' => $preferenceKey,
                 'error' => $e->getMessage(),
             ]);
         }
     }
 }
+

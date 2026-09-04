@@ -8,9 +8,6 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-/**
- * Phase 7 lifecycle reports – school-scoped aggregates over authoritative records.
- */
 class LifecycleReportsController extends Controller
 {
     public function __construct(
@@ -29,6 +26,7 @@ class LifecycleReportsController extends Controller
             'applications' => $this->ops->applicationReport($school, $filters),
             'admissions' => $this->ops->admissionReport($school, $filters),
             'enrollments' => $this->ops->enrollmentReport($school, $filters),
+            'placement' => $this->ops->placementReport($school, $filters),
             'funnel' => $this->ops->lifecycleFunnel($school, $sessionId),
             'filters' => ['academic_session_id' => $sessionId],
         ];
@@ -53,6 +51,7 @@ class LifecycleReportsController extends Controller
             'applications' => $this->ops->applicationReport($school, $filters),
             'admissions' => $this->ops->admissionReport($school, $filters),
             'enrollments' => $this->ops->enrollmentReport($school, $filters),
+            'placement' => $this->ops->placementReport($school, $filters),
             default => ['funnel' => $this->ops->lifecycleFunnel($school, $sessionId)],
         };
 
@@ -87,12 +86,21 @@ class LifecycleReportsController extends Controller
             abort(403);
         }
 
-        $allowed = $user->can('viewAny', \App\Models\Student\Enrollment::class)
-            || $user->can('viewAny', \App\Models\Student\Admission::class)
-            || $user->can('viewAny', \App\Models\Student\StudentApplication::class);
-
-        if (! $allowed) {
-            abort(403);
+        if (method_exists($user, 'isAbleTo') && $user->isAbleTo('lifecycle-reports.view')) {
+            return;
         }
+        if (method_exists($user, 'hasPermission') && $user->hasPermission('lifecycle-reports.view')) {
+            return;
+        }
+
+        $canApps = $user->can('viewAny', \App\Models\Student\StudentApplication::class);
+        $canAdm = $user->can('viewAny', \App\Models\Student\Admission::class);
+        $canEnr = $user->can('viewAny', \App\Models\Student\Enrollment::class);
+
+        if ($canApps && $canAdm && $canEnr) {
+            return;
+        }
+
+        abort(403);
     }
 }

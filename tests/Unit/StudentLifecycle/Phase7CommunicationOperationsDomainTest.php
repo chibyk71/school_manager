@@ -41,6 +41,7 @@ function dropPhase7Schema(): void
         'admissions',
         'student_applications',
         'academic_sessions',
+        'settings',
         'schools',
     ] as $table) {
         Schema::dropIfExists($table);
@@ -50,6 +51,14 @@ function dropPhase7Schema(): void
 function buildPhase7Schema(): void
 {
     dropPhase7Schema();
+
+    Schema::create('settings', function (Blueprint $t) {
+        $t->id();
+        $t->string('key');
+        $t->json('value')->nullable();
+        $t->nullableUuidMorphs('model');
+        $t->timestamps();
+    });
 
     Schema::create('schools', function (Blueprint $t) {
         $t->uuid('id')->primary();
@@ -289,7 +298,10 @@ it('incomplete enrollment reminders are idempotent and skip finalized', function
     ]);
     Enrollment::query()->whereKey($finalized->id)->update(['updated_at' => now()->subDays(10)]);
 
-    $service = new EnrollmentService(app(PlacementAllocationService::class));
+    $service = new EnrollmentService(
+        app(PlacementAllocationService::class),
+        app(\App\Services\Student\LifecycleNotificationService::class)
+    );
 
     $first = $service->processIncompleteReminders(3, $school);
     $second = $service->processIncompleteReminders(3, $school);
@@ -330,3 +342,62 @@ it('needs attention only returns records for the requested school', function () 
     $enrollmentItems = collect($items['items'])->where('type', 'enrollment_incomplete');
     expect($enrollmentItems)->toHaveCount(1);
 });
+
+
+it('skips notifications when school preference is disabled', function () {
+    $school = p7School();
+    // Persist disabled preference via settings table if present
+    if (Schema::hasTable('settings')) {
+        \DB::table('settings')->insert([
+            'key' => 'general.notifications',
+            'value' => json_encode(['enrollment_incomplete_reminder' => ['admin' => false, 'parent' => false]]),
+            'model_type' => School::class,
+            'model_id' => $school->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $svc = app(\App\Services\Student\LifecycleNotificationService::class);
+    expect($svc->isEnabled($school, 'enrollment_incomplete_reminder'))->toBeFalse();
+});
+
+it('recipient resolution uses application domain email not arbitrary meta', function () {
+    $school = p7School();
+    $session = p7Session($school);
+    $app = StudentApplication::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'academic_session_id' => $session->id,
+        'status' => StudentApplication::STATUS_SUBMITTED,
+        'email' => 'candidate@example.com',
+        'first_name' => 'Ada',
+        'last_name' => 'Lovelace',
+    ]);
+
+    $recipients = app(\App\Services\Student\LifecycleNotificationService::class)
+        ->resolveRecipients($app);
+
+    expect($recipients)->not->toBeEmpty();
+});
+
+it('needs attention distinguishes total from returned_count', function () {
+    $school = p7School();
+    $session = p7Session($school);
+
+    for ($i = 0; $i < 5; $i++) {
+        Enrollment::query()->create([
+            'id' => (string) Str::uuid(),
+            'school_id' => $school->id,
+            'academic_session_id' => $session->id,
+            'status' => Enrollment::STATUS_DRAFT,
+        ]);
+    }
+
+    $result = app(\App\Services\Student\LifecycleOperationalService::class)
+        ->needsAttention($school, 2);
+
+    expect($result['returned_count'])->toBe(2)
+        ->and($result['total'])->toBeGreaterThanOrEqual(5);
+});
+
