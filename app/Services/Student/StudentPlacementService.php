@@ -18,7 +18,7 @@ class StudentPlacementService
         $this->validatePlacementData($data);
 
         return DB::transaction(function () use ($student, $data) {
-            $this->unsetCurrentPlacement($student);
+            $this->unsetCurrentPlacement($student, $data['academic_session_id']);
 
             $placement = StudentSessionPlacement::create([
                 'student_id' => $student->id,
@@ -59,7 +59,7 @@ class StudentPlacementService
                 ->first();
 
             if ($existing) {
-                $this->unsetCurrentPlacement($student);
+                $this->unsetCurrentPlacement($student, $data['academic_session_id']);
 
                 $existing->update([
                     'class_level_id' => $data['class_level_id'],
@@ -169,16 +169,21 @@ class StudentPlacementService
     private function validatePlacementData(array $data): void
     {
         if (empty($data['academic_session_id']) || empty($data['class_level_id'])) {
-            throw new ValidationException(validator([], [
+            throw ValidationException::withMessages([
                 'academic_session_id' => 'required',
                 'class_level_id' => 'required',
-            ]));
+            ]);
         }
     }
 
-    private function unsetCurrentPlacement(Student $student): void
+    /**
+     * Clear is_current only for this student within the given academic session.
+     * Placements in other sessions remain current (session-scoped invariant).
+     */
+    private function unsetCurrentPlacement(Student $student, string $academicSessionId): void
     {
         StudentSessionPlacement::where('student_id', $student->id)
+            ->where('academic_session_id', $academicSessionId)
             ->where('is_current', true)
             ->update(['is_current' => false]);
     }
