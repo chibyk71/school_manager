@@ -8,6 +8,7 @@ use App\Models\Student\StudentSessionPlacement;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 
@@ -121,9 +122,7 @@ class StudentStatusService
         $this->validateTransition($student, 'withdrawn');
 
         DB::transaction(function () use ($student, $reason, $date, $changedBy) {
-            if ($student->currentPlacement) {
-                $this->placementService->markAsLeft($student, $date, "Withdrawn: {$reason}");
-            }
+            $this->closeAllCurrentPlacements($student, $date, "Withdrawn: {$reason}");
 
             $this->closeActiveEnrollments($student, Enrollment::STATUS_WITHDRAWN, [
                 'withdrawn_at' => $date,
@@ -156,9 +155,7 @@ class StudentStatusService
         $this->validateTransition($student, 'graduated');
 
         DB::transaction(function () use ($student, $date, $changedBy) {
-            if ($student->currentPlacement) {
-                $this->placementService->markAsLeft($student, $date, 'Graduated');
-            }
+            $this->closeAllCurrentPlacements($student, $date, 'Graduated');
 
             $this->closeActiveEnrollments($student, Enrollment::STATUS_COMPLETED, [
                 'completed_at' => $date,
@@ -185,9 +182,7 @@ class StudentStatusService
     public function markDeceased(Student $student, Carbon $date, string $notes, User $changedBy): void
     {
         DB::transaction(function () use ($student, $date, $notes, $changedBy) {
-            if ($student->currentPlacement) {
-                $this->placementService->markAsLeft($student, $date, 'Deceased');
-            }
+            $this->closeAllCurrentPlacements($student, $date, 'Deceased');
 
             $student->update([
                 'status' => 'deceased',
@@ -222,9 +217,7 @@ class StudentStatusService
         $date = $effectiveDate ?? now();
 
         DB::transaction(function () use ($student, $destination, $reason, $changedBy, $date) {
-            if ($student->currentPlacement) {
-                $this->placementService->markAsLeft($student, $date, "Transferred to: {$destination}");
-            }
+            $this->closeAllCurrentPlacements($student, $date, "Transferred to: {$destination}");
 
             $this->closeActiveEnrollments($student, Enrollment::STATUS_TRANSFERRED_OUT, [
                 'transferred_out_at' => $date,
@@ -256,7 +249,8 @@ class StudentStatusService
         string $newStatus,
         ?string $reason,
         Carbon $effectiveDate,
-        User $changedBy
+        User $changedBy,
+        ?string $destination = null
     ): void {
         match ($newStatus) {
             'activate' => $this->activate($student, $changedBy),
@@ -265,8 +259,8 @@ class StudentStatusService
             'withdraw' => $this->withdraw($student, (string) $reason, $effectiveDate, $changedBy),
             'transfer' => $this->transferOut(
                 $student,
-                $reason ?? 'External transfer',
-                (string) $reason,
+                (string) ($destination ?: 'External transfer'),
+                (string) ($reason ?: 'Transfer'),
                 $changedBy,
                 $effectiveDate
             ),
@@ -274,6 +268,44 @@ class StudentStatusService
                 'status' => "Unsupported status action: {$newStatus}",
             ]),
         };
+    }
+
+    /**
+     * Close every current placement for this student at their school.
+     *
+     * Placement currency is session-scoped (at most one current row per
+     * student per academic session). A school-level terminal status
+     * (withdraw / transfer / graduate / deceased) therefore ends all
+     * open current rows for that school, not only the single ambiguous
+     * Student::currentPlacement relation.
+     *
+     * Historical rows (is_current=false / left_at set) are left untouched.
+     */
+    protected function closeAllCurrentPlacements(Student $student, Carbon $date, string $note): void
+    {
+        $query = StudentSessionPlacement::query()
+            ->where('student_id', $student->id)
+            ->where('is_current', true)
+            ->whereNull('left_at')
+            ->lockForUpdate();
+
+        // When the placements table carries school_id, keep the close school-scoped.
+        if (Schema::hasColumn('student_session_placements', 'school_id')) {
+            $query->where(function ($q) use ($student) {
+                $q->where('school_id', $student->school_id)->orWhereNull('school_id');
+            });
+        }
+
+        $query->get()->each(function (StudentSessionPlacement $placement) use ($date, $note) {
+            $notes = $placement->notes
+                ? trim($placement->notes."\n".$note)
+                : $note;
+            $placement->update([
+                'is_current' => false,
+                'left_at' => $date->toDateString(),
+                'notes' => $notes,
+            ]);
+        });
     }
 
     /**
