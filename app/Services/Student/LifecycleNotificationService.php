@@ -30,15 +30,16 @@ class LifecycleNotificationService
     ) {}
 
     /**
-     * Whether the school has enabled this lifecycle preference for any audience.
+     * Whether the school enabled this lifecycle preference for a specific audience.
+     * Settings shape: ['admin' => bool, 'parent' => bool, ...].
+     * Lifecycle candidate/guardian notifications use audience "parent".
      */
-    public function isEnabled(School $school, string $preferenceKey): bool
+    public function isEnabled(School $school, string $preferenceKey, ?string $audience = 'parent'): bool
     {
         $settings = getMergedSettings('general.notifications', $school) ?? [];
         $pref = $settings[$preferenceKey] ?? null;
 
         if ($pref === null) {
-            // Unspecified keys default to enabled so schools are not silent until configured.
             return true;
         }
 
@@ -47,17 +48,16 @@ class LifecycleNotificationService
         }
 
         if (is_array($pref)) {
+            if ($audience !== null) {
+                return (bool) ($pref[$audience] ?? false);
+            }
+
             return in_array(true, $pref, true);
         }
 
         return (bool) $pref;
     }
 
-    /**
-     * True when a successful delivery was already logged for this reminder key.
-     * When $recipient is provided, the check is scoped to that recipient so one
-     * guardian's success cannot suppress another guardian's retry.
-     */
     public function alreadyDeliveredSuccessfully(
         School $school,
         Model $context,
@@ -86,11 +86,6 @@ class LifecycleNotificationService
         return $q->exists();
     }
 
-    /**
-     * Dispatch a lifecycle notification to resolved recipients.
-     *
-     * @return int number of notifiables notified (0 if skipped/disabled/no recipients)
-     */
     public function notify(
         School $school,
         string $preferenceKey,
@@ -98,7 +93,8 @@ class LifecycleNotificationService
         Model $context,
         array $extra = []
     ): int {
-        if (! $this->isEnabled($school, $preferenceKey)) {
+        $audience = $extra['audience'] ?? 'parent';
+        if (! $this->isEnabled($school, $preferenceKey, $audience)) {
             return 0;
         }
 
@@ -106,19 +102,9 @@ class LifecycleNotificationService
 
         $recipients = $this->resolveRecipients($context);
         if ($recipients->isEmpty()) {
-            Log::info('Lifecycle notification skipped: no recipients', [
-                'school_id' => $school->id,
-                'context' => get_class($context),
-                'context_id' => $context->getKey(),
-                'notification' => $notificationClass,
-                'preference_key' => $preferenceKey,
-                'reminder_key' => $reminderKey,
-            ]);
-
             return 0;
         }
 
-        // Per-recipient idempotency: only skip recipients that already have success=true.
         if ($reminderKey) {
             $recipients = $recipients->filter(
                 fn ($recipient) => ! $this->alreadyDeliveredSuccessfully(
@@ -135,114 +121,218 @@ class LifecycleNotificationService
             }
         }
 
-        // Lifecycle notification classes currently declare mail channels only.
-        // Never route phone-only recipients through the mail path.
-        $mailRecipients = $recipients->filter(fn ($r) => $this->hasValidEmail($r))->values();
-
-        if ($mailRecipients->isEmpty()) {
-            Log::info('Lifecycle notification skipped: no mail-capable recipients', [
-                'school_id' => $school->id,
-                'context' => get_class($context),
-                'context_id' => $context->getKey(),
-                'notification' => $notificationClass,
-                'preference_key' => $preferenceKey,
-                'reminder_key' => $reminderKey,
-                'resolved_total' => $recipients->count(),
-            ]);
-
-            return 0;
-        }
-
         $sent = 0;
-        foreach ($mailRecipients as $recipient) {
-            // Correlation id is created BEFORE queue so the delivery listener can
-            // update this exact NotificationLog row after channel success/failure.
-            $dispatchId = (string) Str::uuid();
-            $payload = array_merge($extra, [
-                'preference_key' => $preferenceKey,
-                'school_id' => $school->id,
-                'lifecycle_type' => $context->getMorphClass(),
-                'lifecycle_id' => (string) $context->getKey(),
-                'reminder_key' => $reminderKey,
-                'dispatch_id' => $dispatchId,
-                'channel' => 'mail',
-            ]);
+        foreach ($recipients as $recipient) {
+            $channels = $this->channelsFor($recipient, $school);
+            if ($channels === []) {
+                continue;
+            }
 
-            try {
-                $notification = new $notificationClass($context, $payload);
-
-                // Ensure AnonymousNotifiable uses email route only (never phone as mail).
-                $mailable = $this->asMailNotifiable($recipient);
-                if ($mailable === null) {
-                    continue;
+            foreach ($channels as $channel) {
+                if ($channel === 'mail') {
+                    $sent += $this->dispatchMail(
+                        $school,
+                        $context,
+                        $recipient,
+                        $notificationClass,
+                        $preferenceKey,
+                        $reminderKey,
+                        $extra
+                    ) ? 1 : 0;
+                } elseif ($channel === 'sms') {
+                    $sent += $this->dispatchSms(
+                        $school,
+                        $context,
+                        $recipient,
+                        $notificationClass,
+                        $preferenceKey,
+                        $reminderKey,
+                        $extra
+                    ) ? 1 : 0;
                 }
-
-                Notification::send($mailable, $notification);
-
-                // Queue accept is NOT delivery success. Record phase=dispatched.
-                // LogLifecycleNotificationDelivery updates this row on NotificationSent.
-                // Notification::fake() does not fire NotificationSent — finalize here.
-                $isFake = Notification::getFacadeRoot() instanceof \Illuminate\Support\Testing\Fakes\NotificationFake;
-
-                $this->logDispatch(
-                    $school,
-                    $context,
-                    $mailable,
-                    $notificationClass,
-                    'mail',
-                    $isFake,
-                    null,
-                    [
-                        'preference_key' => $preferenceKey,
-                        'reminder_key' => $reminderKey,
-                        'dispatch_id' => $dispatchId,
-                        'phase' => $isFake ? 'delivered' : 'dispatched',
-                        'channel' => 'mail',
-                    ]
-                );
-
-                $sent++;
-            } catch (\Throwable $e) {
-                Log::warning('Lifecycle notification dispatch failed', [
-                    'school_id' => $school->id,
-                    'context' => get_class($context),
-                    'context_id' => $context->getKey(),
-                    'notification' => $notificationClass,
-                    'error' => $e->getMessage(),
-                ]);
-                $this->logDispatch(
-                    $school,
-                    $context,
-                    $recipient,
-                    $notificationClass,
-                    'mail',
-                    false,
-                    $e->getMessage(),
-                    [
-                        'preference_key' => $preferenceKey,
-                        'reminder_key' => $reminderKey,
-                        'dispatch_id' => $dispatchId,
-                        'phase' => 'dispatch_failed',
-                        'channel' => 'mail',
-                    ]
-                );
             }
         }
 
         return $sent;
     }
 
-    /**
-     * Resolve notifiables from the authoritative lifecycle model.
-     *
-     * Order of preference:
-     * 1. Linked Student guardians (Profile contact)
-     * 2. Linked Student profile / user
-     * 3. Application domain contact fields (pre-identity)
-     * 4. Admission candidate contact via application / configs
-     *
-     * @return Collection<int, object>
-     */
+    /** @return list<string> */
+    public function channelsFor(object $recipient, School $school): array
+    {
+        $channels = [];
+        if ($this->hasValidEmail($recipient)) {
+            $channels[] = 'mail';
+        }
+        if ($this->hasValidPhone($recipient) && $this->smsEnabledForSchool($school)) {
+            $channels[] = 'sms';
+        }
+
+        return $channels;
+    }
+
+    protected function smsEnabledForSchool(School $school): bool
+    {
+        $smsSettings = getMergedSettings('sms', $school) ?? [];
+
+        return ! empty($smsSettings['enabled'] ?? true)
+            && ! empty($smsSettings['providers'] ?? []);
+    }
+
+    protected function dispatchMail(
+        School $school,
+        Model $context,
+        object $recipient,
+        string $notificationClass,
+        string $preferenceKey,
+        ?string $reminderKey,
+        array $extra
+    ): bool {
+        $mailable = $this->asMailNotifiable($recipient);
+        if ($mailable === null) {
+            return false;
+        }
+
+        $dispatchId = (string) Str::uuid();
+        $payload = array_merge($extra, [
+            'preference_key' => $preferenceKey,
+            'school_id' => $school->id,
+            'lifecycle_type' => $context->getMorphClass(),
+            'lifecycle_id' => (string) $context->getKey(),
+            'reminder_key' => $reminderKey,
+            'dispatch_id' => $dispatchId,
+            'channel' => 'mail',
+        ]);
+
+        try {
+            $notification = new $notificationClass($context, $payload);
+            Notification::send($mailable, $notification);
+
+            $isFake = Notification::getFacadeRoot() instanceof \Illuminate\Support\Testing\Fakes\NotificationFake;
+
+            $this->logDispatch(
+                $school,
+                $context,
+                $mailable,
+                $notificationClass,
+                'mail',
+                $isFake,
+                null,
+                [
+                    'preference_key' => $preferenceKey,
+                    'reminder_key' => $reminderKey,
+                    'dispatch_id' => $dispatchId,
+                    'phase' => $isFake ? 'delivered' : 'dispatched',
+                    'channel' => 'mail',
+                ]
+            );
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('Lifecycle mail notification dispatch failed', [
+                'school_id' => $school->id,
+                'context_id' => $context->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+            $this->logDispatch(
+                $school,
+                $context,
+                $mailable,
+                $notificationClass,
+                'mail',
+                false,
+                $e->getMessage(),
+                [
+                    'preference_key' => $preferenceKey,
+                    'reminder_key' => $reminderKey,
+                    'dispatch_id' => $dispatchId,
+                    'phase' => 'dispatch_failed',
+                    'channel' => 'mail',
+                ]
+            );
+
+            return false;
+        }
+    }
+
+    protected function dispatchSms(
+        School $school,
+        Model $context,
+        object $recipient,
+        string $notificationClass,
+        string $preferenceKey,
+        ?string $reminderKey,
+        array $extra
+    ): bool {
+        $phone = $this->recipientPhone($recipient);
+        if ($phone === '') {
+            return false;
+        }
+
+        $dispatchId = (string) Str::uuid();
+        $message = $this->smsBody($notificationClass, $context, $extra);
+
+        try {
+            $ok = $this->sms->send($phone, $message, $school);
+            $this->logDispatch(
+                $school,
+                $context,
+                $recipient,
+                $notificationClass,
+                'sms',
+                $ok,
+                $ok ? null : 'SMS providers failed or disabled',
+                [
+                    'preference_key' => $preferenceKey,
+                    'reminder_key' => $reminderKey,
+                    'dispatch_id' => $dispatchId,
+                    'phase' => $ok ? 'delivered' : 'failed',
+                    'channel' => 'sms',
+                    'provider' => 'school_sms',
+                ]
+            );
+
+            return $ok;
+        } catch (\Throwable $e) {
+            Log::warning('Lifecycle SMS notification failed', [
+                'school_id' => $school->id,
+                'context_id' => $context->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+            $this->logDispatch(
+                $school,
+                $context,
+                $recipient,
+                $notificationClass,
+                'sms',
+                false,
+                $e->getMessage(),
+                [
+                    'preference_key' => $preferenceKey,
+                    'reminder_key' => $reminderKey,
+                    'dispatch_id' => $dispatchId,
+                    'phase' => 'failed',
+                    'channel' => 'sms',
+                ]
+            );
+
+            return false;
+        }
+    }
+
+    protected function smsBody(string $notificationClass, Model $context, array $extra): string
+    {
+        $base = class_basename($notificationClass);
+        $parts = [
+            'School Manager:',
+            str_replace(['Notification', 'Reminder'], ['', ' reminder'], $base),
+        ];
+        if (! empty($extra['reminder'])) {
+            $parts[] = 'Action may be required before the deadline.';
+        }
+
+        return trim(preg_replace('/\s+/', ' ', implode(' ', $parts)));
+    }
+
     public function resolveRecipients(Model $context): Collection
     {
         if ($context instanceof Enrollment) {
@@ -304,7 +394,6 @@ class LifecycleNotificationService
             $recipients = $recipients->merge($this->resolveForApplication($application));
         }
 
-        // Domain candidate snapshot on admission configs (existing AdmissionService pattern)
         $candidateEmail = data_get($admission->configs ?? [], 'candidate.email');
         if ($candidateEmail && filter_var($candidateEmail, FILTER_VALIDATE_EMAIL)) {
             $recipients->push($this->mailRoute($candidateEmail));
@@ -317,12 +406,10 @@ class LifecycleNotificationService
     {
         $recipients = collect();
 
-        // Authoritative application contact columns (not arbitrary meta)
         if ($application->email && filter_var($application->email, FILTER_VALIDATE_EMAIL)) {
             $recipients->push($this->mailRoute($application->email));
         }
 
-        // Domain guardians_data is the pre-identity guardian capture on the application
         $guardians = $application->guardians_data;
         if (is_array($guardians)) {
             foreach ($guardians as $g) {
@@ -336,16 +423,12 @@ class LifecycleNotificationService
         return $recipients->unique(fn ($r) => $this->recipientAddress($r))->values();
     }
 
-    /**
-     * @return Collection<int, Guardian|AnonymousNotifiable>
-     */
     protected function guardiansAsNotifiables(Student $student): Collection
     {
         $guardians = $student->relationLoaded('guardians')
             ? $student->guardians
             : $student->guardians()->with('profile')->get();
 
-        // Keep guardians with email and/or phone; channel selection happens at dispatch.
         return $guardians->filter(function ($guardian) {
             return $guardian instanceof Guardian
                 && ($this->hasValidEmail($guardian) || $this->hasValidPhone($guardian));
@@ -357,9 +440,6 @@ class LifecycleNotificationService
         return Notification::route('mail', $email);
     }
 
-    /**
-     * True when the notifiable exposes a valid email suitable for the mail channel.
-     */
     public function hasValidEmail(object $recipient): bool
     {
         $email = $this->recipientEmail($recipient);
@@ -367,9 +447,6 @@ class LifecycleNotificationService
         return $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL);
     }
 
-    /**
-     * True when the notifiable exposes a phone suitable for SMS (not used as mail).
-     */
     public function hasValidPhone(object $recipient): bool
     {
         $phone = $this->recipientPhone($recipient);
@@ -416,9 +493,6 @@ class LifecycleNotificationService
         return '';
     }
 
-    /**
-     * Build a mail-only notifiable. Phone-only recipients return null.
-     */
     protected function asMailNotifiable(object $recipient): ?object
     {
         if (! $this->hasValidEmail($recipient)) {
@@ -429,32 +503,14 @@ class LifecycleNotificationService
             return $recipient;
         }
 
-        $email = $this->recipientEmail($recipient);
-
-        return $this->mailRoute($email);
+        return $this->mailRoute($this->recipientEmail($recipient));
     }
 
-    /**
-     * Address used for NotificationLog.recipient — email for mail channel.
-     */
     protected function recipientAddress(object $recipient): string
     {
-        $email = $this->recipientEmail($recipient);
-        if ($email !== '') {
-            return $email;
-        }
-
-        // Do not fall back to phone for mail-oriented logging identity when email is absent
-        // and we are not on an SMS path.
-        return '';
+        return $this->recipientEmail($recipient);
     }
 
-    /**
-     * Record a dispatch or delivery attempt.
-     * notifiable_* is the actual recipient model when available (Guardian/User).
-     * Lifecycle correlation lives in metadata (lifecycle_type, lifecycle_id, reminder_key).
-     * notification_id is unused (0); correlation lives in metadata.dispatch_id.
-     */
     protected function logDispatch(
         School $school,
         Model $context,
@@ -465,9 +521,10 @@ class LifecycleNotificationService
         ?string $error,
         array $metadata = []
     ): void {
-        $recipientAddress = $this->recipientAddress($recipient);
+        $recipientAddress = $channel === 'sms'
+            ? $this->recipientPhone($recipient)
+            : $this->recipientEmail($recipient);
 
-        // Prefer real recipient models as notifiable; fall back to lifecycle context.
         if ($recipient instanceof Model && $recipient->getKey()) {
             $notifiableType = $recipient->getMorphClass();
             $notifiableId = $recipient->getKey();
@@ -493,7 +550,7 @@ class LifecycleNotificationService
                 'notification_type' => $notificationClass,
                 'notification_id' => 0,
                 'channel' => $channel,
-                'provider' => $channel === 'mail' ? 'mail' : null,
+                'provider' => $channel === 'mail' ? 'mail' : ($meta['provider'] ?? 'school_sms'),
                 'recipient' => $recipientAddress !== '' ? $recipientAddress : 'unknown',
                 'message' => class_basename($notificationClass)
                     .(! empty($meta['reminder_key']) ? ' ['.$meta['reminder_key'].']' : ''),
@@ -511,10 +568,6 @@ class LifecycleNotificationService
         }
     }
 
-    /**
-     * Mark successful delivery (creates a success row when no prior dispatch_id exists).
-     * Prefer markDispatchOutcome() when a dispatch_id is known so the pending row is updated.
-     */
     public function markDelivered(
         School $school,
         Model $context,
@@ -546,10 +599,6 @@ class LifecycleNotificationService
         );
     }
 
-    /**
-     * Update the NotificationLog row for a specific dispatch_id after channel outcome.
-     * Used by LogLifecycleNotificationDelivery on NotificationSent / NotificationFailed.
-     */
     public function markDispatchOutcome(string $dispatchId, bool $success, ?string $error = null): bool
     {
         $log = NotificationLog::query()
@@ -558,11 +607,6 @@ class LifecycleNotificationService
             ->first();
 
         if (! $log) {
-            Log::info('Lifecycle notification delivery outcome has no matching dispatch log', [
-                'dispatch_id' => $dispatchId,
-                'success' => $success,
-            ]);
-
             return false;
         }
 
