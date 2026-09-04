@@ -417,6 +417,152 @@ it('per-recipient reminder idempotency does not suppress other recipients', func
     ))->toBeFalse();
 });
 
+
+it('delivery event finalizes dispatch log and suppresses retries; failure stays retryable', function () {
+    $school = p7School();
+    $session = p7Session($school);
+    $svc = app(\App\Services\Student\LifecycleNotificationService::class);
+
+    $enrollment = Enrollment::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'academic_session_id' => $session->id,
+        'status' => Enrollment::STATUS_IN_PROGRESS,
+        'meta' => ['biodata' => ['email' => 'parent@example.com']],
+        'updated_at' => now()->subDays(5),
+    ]);
+    Enrollment::query()->whereKey($enrollment->id)->update(['updated_at' => now()->subDays(5)]);
+
+    $recipientA = \Illuminate\Support\Facades\Notification::route('mail', 'a@example.com');
+    $recipientB = \Illuminate\Support\Facades\Notification::route('mail', 'b@example.com');
+    $reminderKey = 'enrollment_incomplete:'.$enrollment->id;
+    $dispatchA = (string) Str::uuid();
+    $dispatchB = (string) Str::uuid();
+
+    // Pending dispatches (production queue-accept path)
+    \App\Models\NotificationLog::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'notifiable_type' => $enrollment->getMorphClass(),
+        'notifiable_id' => $enrollment->getKey(),
+        'notification_type' => EnrollmentIncompleteNotification::class,
+        'notification_id' => 0,
+        'channel' => 'mail',
+        'recipient' => 'a@example.com',
+        'message' => 'EnrollmentIncompleteNotification',
+        'success' => false,
+        'metadata' => [
+            'dispatch_id' => $dispatchA,
+            'reminder_key' => $reminderKey,
+            'lifecycle_type' => $enrollment->getMorphClass(),
+            'lifecycle_id' => (string) $enrollment->getKey(),
+            'phase' => 'dispatched',
+        ],
+    ]);
+    \App\Models\NotificationLog::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'notifiable_type' => $enrollment->getMorphClass(),
+        'notifiable_id' => $enrollment->getKey(),
+        'notification_type' => EnrollmentIncompleteNotification::class,
+        'notification_id' => 0,
+        'channel' => 'mail',
+        'recipient' => 'b@example.com',
+        'message' => 'EnrollmentIncompleteNotification',
+        'success' => false,
+        'metadata' => [
+            'dispatch_id' => $dispatchB,
+            'reminder_key' => $reminderKey,
+            'lifecycle_type' => $enrollment->getMorphClass(),
+            'lifecycle_id' => (string) $enrollment->getKey(),
+            'phase' => 'dispatched',
+        ],
+    ]);
+
+    // Recipient A delivers successfully; B fails
+    expect($svc->markDispatchOutcome($dispatchA, true, null))->toBeTrue();
+    expect($svc->markDispatchOutcome($dispatchB, false, 'SMTP rejected'))->toBeTrue();
+
+    $logA = \App\Models\NotificationLog::query()->where('metadata->dispatch_id', $dispatchA)->first();
+    $logB = \App\Models\NotificationLog::query()->where('metadata->dispatch_id', $dispatchB)->first();
+
+    expect($logA->success)->toBeTrue()
+        ->and($logA->delivered_at)->not->toBeNull()
+        ->and(data_get($logA->metadata, 'phase'))->toBe('delivered');
+
+    expect($logB->success)->toBeFalse()
+        ->and($logB->delivered_at)->toBeNull()
+        ->and(data_get($logB->metadata, 'phase'))->toBe('failed');
+
+    // A suppressed, B still retryable
+    expect($svc->alreadyDeliveredSuccessfully(
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $reminderKey, $recipientA
+    ))->toBeTrue();
+
+    expect($svc->alreadyDeliveredSuccessfully(
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $reminderKey, $recipientB
+    ))->toBeFalse();
+});
+
+it('NotificationSent listener finalizes matching dispatch_id log', function () {
+    $school = p7School();
+    $session = p7Session($school);
+    $svc = app(\App\Services\Student\LifecycleNotificationService::class);
+
+    $enrollment = Enrollment::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'academic_session_id' => $session->id,
+        'status' => Enrollment::STATUS_IN_PROGRESS,
+        'meta' => ['biodata' => ['email' => 'hook@example.com']],
+    ]);
+
+    $dispatchId = (string) Str::uuid();
+    $reminderKey = 'enrollment_incomplete:'.$enrollment->id;
+
+    \App\Models\NotificationLog::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'notifiable_type' => $enrollment->getMorphClass(),
+        'notifiable_id' => $enrollment->getKey(),
+        'notification_type' => EnrollmentIncompleteNotification::class,
+        'notification_id' => 0,
+        'channel' => 'mail',
+        'recipient' => 'hook@example.com',
+        'message' => 'EnrollmentIncompleteNotification',
+        'success' => false,
+        'metadata' => [
+            'dispatch_id' => $dispatchId,
+            'reminder_key' => $reminderKey,
+            'lifecycle_type' => $enrollment->getMorphClass(),
+            'lifecycle_id' => (string) $enrollment->getKey(),
+            'phase' => 'dispatched',
+            'preference_key' => 'enrollment_incomplete_reminder',
+        ],
+    ]);
+
+    $notification = new EnrollmentIncompleteNotification($enrollment, [
+        'preference_key' => 'enrollment_incomplete_reminder',
+        'school_id' => $school->id,
+        'lifecycle_type' => $enrollment->getMorphClass(),
+        'lifecycle_id' => (string) $enrollment->getKey(),
+        'reminder_key' => $reminderKey,
+        'dispatch_id' => $dispatchId,
+    ]);
+
+    $notifiable = \Illuminate\Support\Facades\Notification::route('mail', 'hook@example.com');
+    $listener = app(\App\Listeners\Student\LogLifecycleNotificationDelivery::class);
+    $listener->handleSent(new \Illuminate\Notifications\Events\NotificationSent(
+        $notifiable,
+        $notification,
+        'mail'
+    ));
+
+    $log = \App\Models\NotificationLog::query()->where('metadata->dispatch_id', $dispatchId)->first();
+    expect($log->success)->toBeTrue()
+        ->and(data_get($log->metadata, 'phase'))->toBe('delivered');
+});
+
 it('skips notifications when school preference is disabled', function () {
     $school = p7School();
     // Persist disabled preference via settings table if present
