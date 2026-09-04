@@ -729,7 +729,7 @@ it('allows only one of two concurrent processes to claim the final capacity slot
         $pids[] = $pid;
     }
     $codes = [];
-    foreach ($pids as $pid) use ($status) {
+    foreach ($pids as $pid) {
         pcntl_waitpid($pid, $status);
         $codes[] = pcntl_wexitstatus($status);
     }
