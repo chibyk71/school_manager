@@ -146,6 +146,7 @@ class SettingsDefaultsSeeder extends Seeder
                 'admission_declined' => ['admin' => true, 'parent' => true],
                 'admission_expired' => ['admin' => true, 'parent' => true],
                 'admission_deadline_reminder' => ['admin' => true, 'parent' => true],
+                'admission_registration_window_reminder' => ['admin' => true, 'parent' => true],
                 'enrollment_finalized' => ['admin' => true, 'parent' => true],
                 'enrollment_incomplete_reminder' => ['admin' => true, 'parent' => true],
                 'enrollment_requirements_reminder' => ['admin' => true, 'parent' => true],

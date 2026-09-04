@@ -364,6 +364,93 @@ class LifecycleOperationalService
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
+
+    /**
+     * Filtered application query for reports/exports (school-scoped).
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    public function applicationsQuery(School $school, array $filters = [])
+    {
+        $q = StudentApplication::query()->where('school_id', $school->id);
+        if (! empty($filters['academic_session_id'])) {
+            $q->where('academic_session_id', $filters['academic_session_id']);
+        }
+        if (! empty($filters['status'])) {
+            $q->whereIn('status', (array) $filters['status']);
+        }
+        if (! empty($filters['class_level_id'])) {
+            $q->where('class_level_id', $filters['class_level_id']);
+        }
+        if (! empty($filters['source'])) {
+            $q->where('source', $filters['source']);
+        }
+        if (! empty($filters['date_from'])) {
+            $q->where('submitted_at', '>=', $filters['date_from']);
+        }
+        if (! empty($filters['date_to'])) {
+            $q->where('submitted_at', '<=', $filters['date_to']);
+        }
+
+        return $q->orderBy('submitted_at');
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function admissionsQuery(School $school, array $filters = [])
+    {
+        $q = Admission::query()->where('school_id', $school->id);
+        if (! empty($filters['academic_session_id'])) {
+            $q->where('academic_session_id', $filters['academic_session_id']);
+        }
+        if (! empty($filters['status'])) {
+            $q->whereIn('status', (array) $filters['status']);
+        }
+        if (! empty($filters['class_level_id'])) {
+            $q->where('class_level_id', $filters['class_level_id']);
+        }
+        if (! empty($filters['has_application'])) {
+            if ($filters['has_application'] === 'yes') {
+                $q->whereNotNull('application_id');
+            } elseif ($filters['has_application'] === 'no') {
+                $q->whereNull('application_id');
+            }
+        }
+
+        return $q->orderByDesc('offered_at');
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function enrollmentsQuery(School $school, array $filters = [])
+    {
+        $q = Enrollment::query()->where('school_id', $school->id);
+        if (! empty($filters['academic_session_id'])) {
+            $q->where('academic_session_id', $filters['academic_session_id']);
+        }
+        if (! empty($filters['status'])) {
+            $q->whereIn('status', (array) $filters['status']);
+        }
+        if (array_key_exists('finalized', $filters) && $filters['finalized'] !== null && $filters['finalized'] !== '') {
+            if (filter_var($filters['finalized'], FILTER_VALIDATE_BOOLEAN)) {
+                $q->whereIn('status', [Enrollment::STATUS_ACTIVE, Enrollment::STATUS_COMPLETED]);
+            } else {
+                $q->whereIn('status', [Enrollment::STATUS_DRAFT, Enrollment::STATUS_IN_PROGRESS]);
+            }
+        }
+        if (! empty($filters['origin'])) {
+            if ($filters['origin'] === 'admission') {
+                $q->whereNotNull('admission_id');
+            } elseif ($filters['origin'] === 'direct') {
+                $q->whereNull('admission_id');
+            }
+        }
+
+        return $q->orderByDesc('created_at');
+    }
+
     public function applicationReport(School $school, array $filters = []): array
     {
         $q = StudentApplication::query()->where('school_id', $school->id);

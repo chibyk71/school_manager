@@ -135,8 +135,26 @@ class LifecycleNotificationService
             }
         }
 
+        // Lifecycle notification classes currently declare mail channels only.
+        // Never route phone-only recipients through the mail path.
+        $mailRecipients = $recipients->filter(fn ($r) => $this->hasValidEmail($r))->values();
+
+        if ($mailRecipients->isEmpty()) {
+            Log::info('Lifecycle notification skipped: no mail-capable recipients', [
+                'school_id' => $school->id,
+                'context' => get_class($context),
+                'context_id' => $context->getKey(),
+                'notification' => $notificationClass,
+                'preference_key' => $preferenceKey,
+                'reminder_key' => $reminderKey,
+                'resolved_total' => $recipients->count(),
+            ]);
+
+            return 0;
+        }
+
         $sent = 0;
-        foreach ($recipients as $recipient) {
+        foreach ($mailRecipients as $recipient) {
             // Correlation id is created BEFORE queue so the delivery listener can
             // update this exact NotificationLog row after channel success/failure.
             $dispatchId = (string) Str::uuid();
@@ -147,12 +165,19 @@ class LifecycleNotificationService
                 'lifecycle_id' => (string) $context->getKey(),
                 'reminder_key' => $reminderKey,
                 'dispatch_id' => $dispatchId,
+                'channel' => 'mail',
             ]);
 
             try {
                 $notification = new $notificationClass($context, $payload);
 
-                Notification::send($recipient, $notification);
+                // Ensure AnonymousNotifiable uses email route only (never phone as mail).
+                $mailable = $this->asMailNotifiable($recipient);
+                if ($mailable === null) {
+                    continue;
+                }
+
+                Notification::send($mailable, $notification);
 
                 // Queue accept is NOT delivery success. Record phase=dispatched.
                 // LogLifecycleNotificationDelivery updates this row on NotificationSent.
@@ -162,7 +187,7 @@ class LifecycleNotificationService
                 $this->logDispatch(
                     $school,
                     $context,
-                    $recipient,
+                    $mailable,
                     $notificationClass,
                     'mail',
                     $isFake,
@@ -172,6 +197,7 @@ class LifecycleNotificationService
                         'reminder_key' => $reminderKey,
                         'dispatch_id' => $dispatchId,
                         'phase' => $isFake ? 'delivered' : 'dispatched',
+                        'channel' => 'mail',
                     ]
                 );
 
@@ -197,6 +223,7 @@ class LifecycleNotificationService
                         'reminder_key' => $reminderKey,
                         'dispatch_id' => $dispatchId,
                         'phase' => 'dispatch_failed',
+                        'channel' => 'mail',
                     ]
                 );
             }
@@ -318,9 +345,10 @@ class LifecycleNotificationService
             ? $student->guardians
             : $student->guardians()->with('profile')->get();
 
+        // Keep guardians with email and/or phone; channel selection happens at dispatch.
         return $guardians->filter(function ($guardian) {
             return $guardian instanceof Guardian
-                && ($guardian->profile?->email || $guardian->profile?->phone);
+                && ($this->hasValidEmail($guardian) || $this->hasValidPhone($guardian));
         })->values();
     }
 
@@ -329,21 +357,95 @@ class LifecycleNotificationService
         return Notification::route('mail', $email);
     }
 
-    protected function recipientAddress(object $recipient): string
+    /**
+     * True when the notifiable exposes a valid email suitable for the mail channel.
+     */
+    public function hasValidEmail(object $recipient): bool
+    {
+        $email = $this->recipientEmail($recipient);
+
+        return $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL);
+    }
+
+    /**
+     * True when the notifiable exposes a phone suitable for SMS (not used as mail).
+     */
+    public function hasValidPhone(object $recipient): bool
+    {
+        $phone = $this->recipientPhone($recipient);
+
+        return $phone !== '' && ! filter_var($phone, FILTER_VALIDATE_EMAIL);
+    }
+
+    public function recipientEmail(object $recipient): string
     {
         if ($recipient instanceof AnonymousNotifiable) {
-            return (string) ($recipient->routeNotificationFor('mail') ?? '');
+            $route = $recipient->routeNotificationFor('mail');
+
+            return is_string($route) ? $route : '';
         }
         if ($recipient instanceof Guardian) {
-            return (string) ($recipient->profile?->email ?? $recipient->profile?->phone ?? '');
+            return (string) ($recipient->profile?->email ?? '');
         }
         if ($recipient instanceof User) {
             return (string) ($recipient->email ?? '');
         }
         if (method_exists($recipient, 'routeNotificationFor')) {
-            return (string) ($recipient->routeNotificationFor('mail') ?? '');
+            $route = $recipient->routeNotificationFor('mail');
+
+            return is_string($route) ? $route : '';
         }
 
+        return '';
+    }
+
+    public function recipientPhone(object $recipient): string
+    {
+        if ($recipient instanceof Guardian) {
+            return (string) ($recipient->profile?->phone ?? '');
+        }
+        if ($recipient instanceof User && property_exists($recipient, 'phone')) {
+            return (string) ($recipient->phone ?? '');
+        }
+        if ($recipient instanceof AnonymousNotifiable) {
+            $route = $recipient->routeNotificationFor('sms');
+
+            return is_string($route) ? $route : '';
+        }
+
+        return '';
+    }
+
+    /**
+     * Build a mail-only notifiable. Phone-only recipients return null.
+     */
+    protected function asMailNotifiable(object $recipient): ?object
+    {
+        if (! $this->hasValidEmail($recipient)) {
+            return null;
+        }
+
+        if ($recipient instanceof Guardian || $recipient instanceof User) {
+            return $recipient;
+        }
+
+        $email = $this->recipientEmail($recipient);
+
+        return $this->mailRoute($email);
+    }
+
+    /**
+     * Address used for NotificationLog.recipient — email for mail channel.
+     */
+    protected function recipientAddress(object $recipient): string
+    {
+        $email = $this->recipientEmail($recipient);
+        if ($email !== '') {
+            return $email;
+        }
+
+        // Do not fall back to phone for mail-oriented logging identity when email is absent
+        // and we are not on an SMS path.
         return '';
     }
 

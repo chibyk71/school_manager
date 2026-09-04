@@ -2,11 +2,17 @@
 
 namespace App\Http\Controllers\Student;
 
+use App\Exports\Lifecycle\AdmissionsExport;
+use App\Exports\Lifecycle\ApplicationsExport;
+use App\Exports\Lifecycle\EnrollmentsExport;
+use App\Exports\Lifecycle\PlacementsExport;
 use App\Http\Controllers\Controller;
+use App\Models\School;
 use App\Services\Student\LifecycleOperationalService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class LifecycleReportsController extends Controller
 {
@@ -18,8 +24,56 @@ class LifecycleReportsController extends Controller
     {
         $this->authorizeReport();
 
-        $school = GetSchoolModel();
-        $filters = array_filter([
+        $school = $this->currentSchool();
+        $filters = $this->reportFilters($request);
+        $sessionId = $filters['academic_session_id'] ?? null;
+
+        return Inertia::render('Student/Lifecycle/Reports', [
+            'applications' => $this->ops->applicationReport($school, $filters),
+            'admissions' => $this->ops->admissionReport($school, $filters),
+            'enrollments' => $this->ops->enrollmentReport($school, $filters),
+            'placement' => $this->ops->placementReport($school, $filters),
+            'funnel' => $this->ops->lifecycleFunnel($school, $sessionId),
+            'filters' => $filters,
+        ]);
+    }
+
+    /**
+     * Download a lifecycle report section via Laravel Excel (CSV or XLSX).
+     */
+    public function export(Request $request): BinaryFileResponse
+    {
+        $this->authorizeReport();
+
+        $school = $this->currentSchool();
+        $filters = $this->reportFilters($request);
+        $section = $request->string('section')->toString() ?: 'applications';
+        $format = strtolower($request->string('format')->toString() ?: 'csv');
+        if (! in_array($format, ['csv', 'xlsx'], true)) {
+            $format = 'csv';
+        }
+
+        $export = match ($section) {
+            'admissions' => new AdmissionsExport($school, $filters),
+            'enrollments' => new EnrollmentsExport($school, $filters),
+            'placement', 'placements' => new PlacementsExport($school, $filters),
+            default => new ApplicationsExport($school, $filters),
+        };
+
+        $filename = 'lifecycle-'.$section.'-'.now()->format('Ymd-His').'.'.$format;
+        $writerType = $format === 'xlsx'
+            ? \Maatwebsite\Excel\Excel::XLSX
+            : \Maatwebsite\Excel\Excel::CSV;
+
+        return Excel::download($export, $filename, $writerType);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function reportFilters(Request $request): array
+    {
+        return array_filter([
             'academic_session_id' => $request->string('academic_session_id')->toString() ?: null,
             'status' => $request->input('status'),
             'class_level_id' => $request->string('class_level_id')->toString() ?: null,
@@ -30,72 +84,16 @@ class LifecycleReportsController extends Controller
             'date_from' => $request->string('date_from')->toString() ?: null,
             'date_to' => $request->string('date_to')->toString() ?: null,
         ], fn ($v) => $v !== null && $v !== '');
-
-        $sessionId = $filters['academic_session_id'] ?? null;
-
-        $payload = [
-            'applications' => $this->ops->applicationReport($school, $filters),
-            'admissions' => $this->ops->admissionReport($school, $filters),
-            'enrollments' => $this->ops->enrollmentReport($school, $filters),
-            'placement' => $this->ops->placementReport($school, $filters),
-            'funnel' => $this->ops->lifecycleFunnel($school, $sessionId),
-            'filters' => $filters,
-        ];
-
-        if ($request->wantsJson()) {
-            return response()->json($payload);
-        }
-
-        return Inertia::render('Student/Lifecycle/Reports', $payload);
     }
 
-    public function export(Request $request): StreamedResponse
+    protected function currentSchool(): School
     {
-        $this->authorizeReport();
-
-        $school = GetSchoolModel();
-        $filters = array_filter([
-            'academic_session_id' => $request->string('academic_session_id')->toString() ?: null,
-            'status' => $request->input('status'),
-            'class_level_id' => $request->string('class_level_id')->toString() ?: null,
-            'source' => $request->string('source')->toString() ?: null,
-            'has_application' => $request->string('has_application')->toString() ?: null,
-            'origin' => $request->string('origin')->toString() ?: null,
-            'finalized' => $request->input('finalized'),
-        ], fn ($v) => $v !== null && $v !== '');
-        $sessionId = $filters['academic_session_id'] ?? null;
-        $section = $request->string('section')->toString() ?: 'funnel';
-
-        $data = match ($section) {
-            'applications' => $this->ops->applicationReport($school, $filters),
-            'admissions' => $this->ops->admissionReport($school, $filters),
-            'enrollments' => $this->ops->enrollmentReport($school, $filters),
-            'placement' => $this->ops->placementReport($school, $filters),
-            default => ['funnel' => $this->ops->lifecycleFunnel($school, $sessionId)],
-        };
-
-        $filename = 'lifecycle-'.$section.'-'.now()->format('Ymd-His').'.csv';
-
-        return response()->streamDownload(function () use ($data) {
-            $out = fopen('php://output', 'w');
-            fputcsv($out, ['key', 'value']);
-            $this->flattenCsv($data, $out);
-            fclose($out);
-        }, $filename, [
-            'Content-Type' => 'text/csv',
-        ]);
-    }
-
-    protected function flattenCsv(array $data, $out, string $prefix = ''): void
-    {
-        foreach ($data as $key => $value) {
-            $label = $prefix === '' ? (string) $key : $prefix.'.'.$key;
-            if (is_array($value)) {
-                $this->flattenCsv($value, $out, $label);
-            } else {
-                fputcsv($out, [$label, $value]);
-            }
+        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+        if (! $school instanceof School) {
+            abort(403, 'School context required.');
         }
+
+        return $school;
     }
 
     protected function authorizeReport(): void

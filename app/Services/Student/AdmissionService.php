@@ -538,7 +538,7 @@ class AdmissionService
 
                 $sent = $this->lifecycleNotifications->notify(
                     $schoolModel,
-                    'admission_deadline_reminder',
+                    'admission_registration_window_reminder',
                     AdmissionRegistrationWindowReminder::class,
                     $admission,
                     [
