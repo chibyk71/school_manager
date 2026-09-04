@@ -90,7 +90,7 @@ function p5iBuild(): void
         $t->unique(['school_id', 'profile_id']);
     });
     Schema::create('student_session_placements', function (Blueprint $t) {
-        $t->id(); $t->uuid('student_id'); $t->uuid('academic_session_id'); $t->uuid('class_level_id'); $t->uuid('class_section_id')->nullable(); $t->string('registration_number', 64)->nullable(); $t->date('enrolled_at'); $t->boolean('is_current')->default(false); $t->timestamps();
+        $t->id(); $t->uuid('student_id'); $t->uuid('school_id')->nullable(); $t->uuid('academic_session_id'); $t->uuid('class_level_id'); $t->uuid('class_section_id')->nullable(); $t->string('registration_number', 64)->nullable(); $t->timestamp('joined_at')->nullable(); $t->date('enrolled_at')->nullable(); $t->date('left_at')->nullable(); $t->boolean('is_current')->default(false); $t->timestamps();
     });
     Schema::create('registration_number_histories', function (Blueprint $t) {
         $t->id(); $t->uuid('student_id'); $t->uuid('school_id'); $t->uuid('enrollment_id')->nullable(); $t->unsignedBigInteger('placement_id')->nullable(); $t->string('registration_number', 64); $t->string('scope_key', 191)->nullable(); $t->uuid('academic_session_id')->nullable(); $t->uuid('class_level_id')->nullable(); $t->uuid('class_section_id')->nullable(); $t->string('reason', 64)->nullable(); $t->timestamp('effective_from'); $t->timestamp('effective_to')->nullable(); $t->uuid('assigned_by')->nullable(); $t->json('meta')->nullable(); $t->timestamps();
