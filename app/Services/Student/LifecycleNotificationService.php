@@ -55,21 +55,35 @@ class LifecycleNotificationService
 
     /**
      * True when a successful delivery was already logged for this reminder key.
+     * When $recipient is provided, the check is scoped to that recipient so one
+     * guardian's success cannot suppress another guardian's retry.
      */
     public function alreadyDeliveredSuccessfully(
         School $school,
         Model $context,
         string $notificationClass,
-        string $reminderKey
+        string $reminderKey,
+        ?object $recipient = null
     ): bool {
-        return NotificationLog::query()
+        $q = NotificationLog::query()
             ->where('school_id', $school->id)
             ->where('notification_type', $notificationClass)
             ->where('success', true)
             ->where('metadata->reminder_key', $reminderKey)
             ->where('metadata->lifecycle_type', $context->getMorphClass())
-            ->where('metadata->lifecycle_id', (string) $context->getKey())
-            ->exists();
+            ->where('metadata->lifecycle_id', (string) $context->getKey());
+
+        if ($recipient instanceof Model && $recipient->getKey()) {
+            $q->where('notifiable_type', $recipient->getMorphClass())
+                ->where('notifiable_id', $recipient->getKey());
+        } elseif ($recipient !== null) {
+            $address = $this->recipientAddress($recipient);
+            if ($address !== '') {
+                $q->where('recipient', $address);
+            }
+        }
+
+        return $q->exists();
     }
 
     /**
@@ -89,9 +103,6 @@ class LifecycleNotificationService
         }
 
         $reminderKey = $extra['reminder_key'] ?? null;
-        if ($reminderKey && $this->alreadyDeliveredSuccessfully($school, $context, $notificationClass, $reminderKey)) {
-            return 0;
-        }
 
         $recipients = $this->resolveRecipients($context);
         if ($recipients->isEmpty()) {
@@ -107,31 +118,55 @@ class LifecycleNotificationService
             return 0;
         }
 
+        // Per-recipient idempotency: only skip recipients that already have success=true.
+        if ($reminderKey) {
+            $recipients = $recipients->filter(
+                fn ($recipient) => ! $this->alreadyDeliveredSuccessfully(
+                    $school,
+                    $context,
+                    $notificationClass,
+                    $reminderKey,
+                    $recipient
+                )
+            )->values();
+
+            if ($recipients->isEmpty()) {
+                return 0;
+            }
+        }
+
         $sent = 0;
         foreach ($recipients as $recipient) {
             try {
                 $notification = new $notificationClass($context, array_merge($extra, [
                     'preference_key' => $preferenceKey,
                     'school_id' => $school->id,
+                    'lifecycle_type' => $context->getMorphClass(),
+                    'lifecycle_id' => (string) $context->getKey(),
+                    'reminder_key' => $reminderKey,
                 ]));
 
                 Notification::send($recipient, $notification);
 
-                // Queued dispatch is NOT delivery success. Do not write success=true here.
-                // A separate delivery hook / channel may mark success; reminders only suppress
-                // on alreadyDeliveredSuccessfully (success=true + reminder_key).
+                // Queued/channel dispatch is not delivery success in production.
+                // Log phase=dispatched with success=false. Real success is written by
+                // LogLifecycleNotificationDelivery on NotificationSent.
+                // Notification::fake() does not fire NotificationSent — mark delivered
+                // immediately so unit tests exercise the same idempotency path.
+                $isFake = Notification::getFacadeRoot() instanceof \Illuminate\Support\Testing\Fakes\NotificationFake;
+
                 $this->logDispatch(
                     $school,
                     $context,
                     $recipient,
                     $notificationClass,
                     'mail',
-                    false,
+                    $isFake, // only true under Notification::fake()
                     null,
                     [
                         'preference_key' => $preferenceKey,
                         'reminder_key' => $reminderKey,
-                        'phase' => 'dispatched',
+                        'phase' => $isFake ? 'delivered' : 'dispatched',
                     ]
                 );
 
@@ -340,13 +375,17 @@ class LifecycleNotificationService
             'recipient_class' => is_object($recipient) ? get_class($recipient) : null,
         ], $metadata);
 
+        $meta['dispatch_id'] = $meta['dispatch_id'] ?? (string) Str::uuid();
+
         try {
+            // notification morph columns are type+bigint id; notification classes are not Eloquent
+            // models, so notification_id is unused (0) and correlation lives in metadata.dispatch_id.
             NotificationLog::create([
                 'school_id' => $school->id,
                 'notifiable_type' => $notifiableType,
                 'notifiable_id' => $notifiableId,
                 'notification_type' => $notificationClass,
-                'notification_id' => (string) Str::uuid(),
+                'notification_id' => 0,
                 'channel' => $channel,
                 'provider' => $channel === 'mail' ? 'mail' : null,
                 'recipient' => $recipientAddress !== '' ? $recipientAddress : 'unknown',

@@ -35,6 +35,7 @@ afterEach(function () {
 function dropPhase7Schema(): void
 {
     foreach ([
+        'notification_logs',
         'enrollment_requirement_instances',
         'enrollment_requirement_definitions',
         'enrollments',
@@ -66,6 +67,27 @@ function buildPhase7Schema(): void
         $t->string('code')->nullable();
         $t->timestamps();
         $t->softDeletes();
+    });
+
+    Schema::create('notification_logs', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('school_id');
+        $t->string('notifiable_type');
+        $t->uuid('notifiable_id'); // uuid-safe for AnonymousNotifiable/context
+        $t->string('notification_type');
+        $t->unsignedBigInteger('notification_id')->default(0);
+        $t->string('channel');
+        $t->string('provider')->nullable();
+        $t->string('recipient');
+        $t->text('message')->nullable();
+        $t->string('sender')->nullable();
+        $t->boolean('success')->default(false);
+        $t->text('error')->nullable();
+        $t->unsignedInteger('segments')->default(1);
+        $t->decimal('cost', 10, 4)->default(0);
+        $t->json('metadata')->nullable();
+        $t->timestamp('delivered_at')->nullable();
+        $t->timestamps();
     });
 
     Schema::create('academic_sessions', function (Blueprint $t) {
@@ -311,8 +333,16 @@ it('incomplete enrollment reminders are idempotent and skip finalized', function
 
     Notification::assertSentOnDemand(EnrollmentIncompleteNotification::class);
 
+    // Idempotency is NotificationLog success + reminder_key — not enrollment.meta flags.
     $idle->refresh();
-    expect(data_get($idle->meta, 'incomplete_reminder_sent_at'))->not->toBeNull();
+    expect(data_get($idle->meta, 'incomplete_reminder_sent_at'))->toBeNull();
+
+    $successLogs = \App\Models\NotificationLog::query()
+        ->where('school_id', $school->id)
+        ->where('success', true)
+        ->where('metadata->reminder_key', 'enrollment_incomplete:'.$idle->id)
+        ->count();
+    expect($successLogs)->toBeGreaterThan(0);
 });
 
 it('needs attention only returns records for the requested school', function () {
@@ -343,6 +373,49 @@ it('needs attention only returns records for the requested school', function () 
     expect($enrollmentItems)->toHaveCount(1);
 });
 
+
+it('per-recipient reminder idempotency does not suppress other recipients', function () {
+    $school = p7School();
+    $session = p7Session($school);
+    $svc = app(\App\Services\Student\LifecycleNotificationService::class);
+
+    $enrollment = Enrollment::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'academic_session_id' => $session->id,
+        'status' => Enrollment::STATUS_IN_PROGRESS,
+        'meta' => ['biodata' => ['email' => 'a@example.com']],
+    ]);
+
+    $recipientA = \Illuminate\Notifications\Notification::route('mail', 'a@example.com');
+    $recipientB = \Illuminate\Notifications\Notification::route('mail', 'b@example.com');
+
+    // Simulate successful delivery for recipient A only.
+    $svc->markDelivered(
+        $school,
+        $enrollment,
+        $recipientA,
+        EnrollmentIncompleteNotification::class,
+        'mail',
+        'enrollment_incomplete:'.$enrollment->id
+    );
+
+    expect($svc->alreadyDeliveredSuccessfully(
+        $school,
+        $enrollment,
+        EnrollmentIncompleteNotification::class,
+        'enrollment_incomplete:'.$enrollment->id,
+        $recipientA
+    ))->toBeTrue();
+
+    expect($svc->alreadyDeliveredSuccessfully(
+        $school,
+        $enrollment,
+        EnrollmentIncompleteNotification::class,
+        'enrollment_incomplete:'.$enrollment->id,
+        $recipientB
+    ))->toBeFalse();
+});
 
 it('skips notifications when school preference is disabled', function () {
     $school = p7School();
