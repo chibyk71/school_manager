@@ -411,3 +411,4 @@ require __DIR__ . '/employee_management.php';
 require __DIR__ . '/promotion.php';
 require __DIR__ . '/applications.php';
 require __DIR__ . '/enrollment.php';
+require __DIR__ . '/lifecycle.php';

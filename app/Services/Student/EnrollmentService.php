@@ -13,9 +13,13 @@ use App\Models\Student\EnrollmentRequirementDefinition;
 use App\Models\Student\EnrollmentRequirementInstance;
 use App\Models\Student\Student;
 use App\Models\User;
+use App\Notifications\Student\EnrollmentFinalizedNotification;
+use App\Notifications\Student\EnrollmentIncompleteNotification;
+use App\Notifications\Student\EnrollmentRequirementsOutstandingNotification;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Nnjeim\World\Models\City;
@@ -42,8 +46,11 @@ use Nnjeim\World\Models\State;
 class EnrollmentService
 {
     public function __construct(
-        protected PlacementAllocationService $placementAllocation
+        protected PlacementAllocationService $placementAllocation,
+        protected ?LifecycleNotificationService $lifecycleNotifications = null
     ) {
+        // Optional for focused unit tests that construct the service manually.
+        $this->lifecycleNotifications = $lifecycleNotifications ?? app(LifecycleNotificationService::class);
     }
 
     public function start(School $school, User $actor, array $data): Enrollment
@@ -427,7 +434,7 @@ class EnrollmentService
 
     public function finalize(Enrollment $enrollment, User $actor): Enrollment
     {
-        return DB::transaction(function () use ($enrollment, $actor) {
+        $finalized = DB::transaction(function () use ($enrollment, $actor) {
             $locked = Enrollment::query()
                 ->whereKey($enrollment->id)
                 ->lockForUpdate()
@@ -548,6 +555,13 @@ class EnrollmentService
 
             return $refreshed;
         });
+
+        // Side-effect: notification must not roll back a successful finalize.
+        if ($finalized instanceof Enrollment) {
+            $this->notifyFinalized($finalized);
+        }
+
+        return $finalized;
     }
 
     /**
@@ -1213,5 +1227,109 @@ class EnrollmentService
         } catch (\Throwable) {
             return false;
         }
+    }
+
+
+
+    /**
+     * Incomplete-enrollment reminders.
+     * Idempotency uses successful NotificationLog delivery, not queue-dispatch meta flags.
+     */
+    public function processIncompleteReminders(int $days = 3, ?School $school = null): int
+    {
+        $count = 0;
+        $cutoff = now()->subDays(max(1, $days));
+
+        $query = Enrollment::query()
+            ->whereIn('status', [Enrollment::STATUS_DRAFT, Enrollment::STATUS_IN_PROGRESS])
+            ->where('updated_at', '<=', $cutoff);
+
+        if ($school) {
+            $query->where('school_id', $school->id);
+        }
+
+        $query->orderBy('id')->chunkById(100, function ($enrollments) use (&$count) {
+            foreach ($enrollments as $enrollment) {
+                $schoolModel = School::query()->find($enrollment->school_id);
+                if (! $schoolModel) {
+                    continue;
+                }
+
+                $sent = $this->lifecycleNotifications->notify(
+                    $schoolModel,
+                    'enrollment_incomplete_reminder',
+                    EnrollmentIncompleteNotification::class,
+                    $enrollment,
+                    [
+                        'reminder' => true,
+                        'reminder_key' => 'enrollment_incomplete:'.$enrollment->id,
+                    ]
+                );
+                if ($sent > 0) {
+                    $count++;
+                }
+            }
+        });
+
+        return $count;
+    }
+
+    /**
+     * Outstanding required-requirement reminders (NotificationLog-backed idempotency).
+     */
+    public function processOutstandingRequirementReminders(?School $school = null): int
+    {
+        $count = 0;
+
+        $query = Enrollment::query()
+            ->whereIn('status', [Enrollment::STATUS_DRAFT, Enrollment::STATUS_IN_PROGRESS])
+            ->whereHas('requirementInstances', function ($q) {
+                $q->where('status', EnrollmentRequirementInstance::STATUS_PENDING)
+                    ->whereHas('definition', fn ($d) => $d->where('is_required', true));
+            });
+
+        if ($school) {
+            $query->where('school_id', $school->id);
+        }
+
+        $query->orderBy('id')->chunkById(100, function ($enrollments) use (&$count) {
+            foreach ($enrollments as $enrollment) {
+                $schoolModel = School::query()->find($enrollment->school_id);
+                if (! $schoolModel) {
+                    continue;
+                }
+
+                $sent = $this->lifecycleNotifications->notify(
+                    $schoolModel,
+                    'enrollment_requirements_reminder',
+                    EnrollmentRequirementsOutstandingNotification::class,
+                    $enrollment,
+                    [
+                        'reminder' => true,
+                        'reminder_key' => 'enrollment_requirements:'.$enrollment->id,
+                    ]
+                );
+                if ($sent > 0) {
+                    $count++;
+                }
+            }
+        });
+
+        return $count;
+    }
+
+    protected function notifyFinalized(Enrollment $enrollment): void
+    {
+        $school = School::query()->find($enrollment->school_id);
+        if (! $school) {
+            return;
+        }
+
+        $this->lifecycleNotifications->notify(
+            $school,
+            'enrollment_finalized',
+            EnrollmentFinalizedNotification::class,
+            $enrollment
+        );
     }
 }

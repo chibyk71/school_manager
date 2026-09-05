@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Support\DashboardWidgets;
+use App\Services\Student\LifecycleOperationalService;
 use App\Metrics\StudentMetric;
 use App\Metrics\StaffMetric;
 use App\Metrics\FinanceMetric;
@@ -77,6 +78,16 @@ class DashboardController extends Controller
 
     private function adminData(): array
     {
+        $lifecycle = [];
+        try {
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+            if ($school) {
+                $lifecycle = app(LifecycleOperationalService::class)->dashboardCounts($school);
+            }
+        } catch (\Throwable $e) {
+            $lifecycle = [];
+        }
+
         $attendance = app(AttendanceMetric::class);
 
         return [
@@ -98,6 +109,8 @@ class DashboardController extends Controller
                 'student_attendance' => $attendance->studentTrend(),
                 'staff_attendance'   => $attendance->staffTrend(),
             ],
+            // Phase 7: expose lifecycle operational counts to admin dashboard widgets
+            'lifecycle' => $lifecycle,
         ];
     }
 

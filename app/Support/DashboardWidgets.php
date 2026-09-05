@@ -49,6 +49,16 @@ class DashboardWidgets
             'required_permissions' => ['view-child-info'],
             'dashboards' => ['parent'],
         ],
+        'lifecycle-ops' => [
+            'description' => 'Student lifecycle operational counts: applications, offers, enrollments needing attention.',
+            'required_permissions' => ['applications.view', 'admissions.view', 'enrollments.view'],
+            'dashboards' => ['admin', 'academic'],
+        ],
+        'lifecycle-deadlines' => [
+            'description' => 'Upcoming admission acceptance and registration deadlines.',
+            'required_permissions' => ['admissions.view'],
+            'dashboards' => ['admin', 'academic'],
+        ],
         // Add more widgets as needed...
     ];
 

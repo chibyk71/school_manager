@@ -7,15 +7,16 @@ use Illuminate\Console\Command;
 
 /**
  * Expire outstanding admission offers past their acceptance deadline.
- * Also sends deadline reminders for offers approaching the deadline.
+ * Also sends deadline and registration-window reminders.
  */
 class ExpireAdmissionsCommand extends Command
 {
     protected $signature = 'admissions:process-lifecycle
                             {--reminders : Also send deadline reminders}
-                            {--reminder-hours=48 : Hours before deadline to remind}';
+                            {--reminder-hours=48 : Hours before acceptance deadline to remind}
+                            {--registration-hours=72 : Hours before registration window end to remind}';
 
-    protected $description = 'Expire past-deadline admission offers and optionally send deadline reminders';
+    protected $description = 'Expire past-deadline admission offers and optionally send reminders';
 
     public function handle(AdmissionService $admissionService): int
     {
@@ -25,7 +26,11 @@ class ExpireAdmissionsCommand extends Command
         if ($this->option('reminders')) {
             $hours = (int) $this->option('reminder-hours');
             $reminded = $admissionService->processDeadlineReminders($hours);
-            $this->info("Sent {$reminded} deadline reminder(s).");
+            $this->info("Sent {$reminded} acceptance deadline reminder(s).");
+
+            $regHours = (int) $this->option('registration-hours');
+            $regReminded = $admissionService->processRegistrationWindowReminders($regHours);
+            $this->info("Sent {$regReminded} registration-window reminder(s).");
         }
 
         return self::SUCCESS;
