@@ -736,3 +736,33 @@ it('applications export query is school-scoped', function () {
     expect($ops->applicationsQuery($schoolA, [])->count())->toBe(1);
 });
 
+
+
+it('parent=false does not enable parent lifecycle notifications when only admin is true', function () {
+    $school = p7School('Audience');
+    if (Schema::hasTable('settings')) {
+        \DB::table('settings')->insert([
+            'key' => 'general.notifications',
+            'value' => json_encode([
+                'enrollment_incomplete_reminder' => ['admin' => true, 'parent' => false],
+            ]),
+            'model_type' => School::class,
+            'model_id' => $school->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $svc = app(\App\Services\Student\LifecycleNotificationService::class);
+    expect($svc->isEnabled($school, 'enrollment_incomplete_reminder', 'parent'))->toBeFalse();
+    expect($svc->isEnabled($school, 'enrollment_incomplete_reminder', 'admin'))->toBeTrue();
+});
+
+it('channelsFor returns mail and sms independently', function () {
+    $school = p7School('Channels');
+    $svc = app(\App\Services\Student\LifecycleNotificationService::class);
+
+    $emailOnly = \Illuminate\Support\Facades\Notification::route('mail', 'e@example.com');
+    expect($svc->channelsFor($emailOnly, $school))->toContain('mail')
+        ->and($svc->channelsFor($emailOnly, $school))->not->toContain('sms');
+});
