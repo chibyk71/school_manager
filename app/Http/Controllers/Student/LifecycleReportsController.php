@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Student;
 use App\Exports\Lifecycle\AdmissionsExport;
 use App\Exports\Lifecycle\ApplicationsExport;
 use App\Exports\Lifecycle\EnrollmentsExport;
+use App\Exports\Lifecycle\FunnelExport;
 use App\Exports\Lifecycle\PlacementsExport;
 use App\Http\Controllers\Controller;
 use App\Models\School;
@@ -53,14 +54,11 @@ class LifecycleReportsController extends Controller
             $format = 'csv';
         }
 
-        if ($section === 'funnel') {
-            abort(422, 'Funnel is a summary view; export applications, admissions, enrollments, or placements instead.');
-        }
-
         $export = match ($section) {
             'admissions' => new AdmissionsExport($school, $filters),
             'enrollments' => new EnrollmentsExport($school, $filters),
             'placement', 'placements' => new PlacementsExport($school, $filters),
+            'funnel' => new FunnelExport($school, $filters),
             'applications' => new ApplicationsExport($school, $filters),
             default => abort(422, 'Unknown report section for export.'),
         };
@@ -82,12 +80,19 @@ class LifecycleReportsController extends Controller
             'academic_session_id' => $request->string('academic_session_id')->toString() ?: null,
             'status' => $request->input('status'),
             'class_level_id' => $request->string('class_level_id')->toString() ?: null,
+            'class_section_id' => $request->string('class_section_id')->toString()
+                ?: ($request->string('section_id')->toString() ?: null),
+            'section_id' => $request->string('section_id')->toString() ?: null,
             'source' => $request->string('source')->toString() ?: null,
             'has_application' => $request->string('has_application')->toString() ?: null,
             'origin' => $request->string('origin')->toString() ?: null,
             'finalized' => $request->input('finalized'),
+            'review_state' => $request->string('review_state')->toString() ?: null,
+            'acceptance_state' => $request->string('acceptance_state')->toString() ?: null,
             'date_from' => $request->string('date_from')->toString() ?: null,
             'date_to' => $request->string('date_to')->toString() ?: null,
+            'deadline_from' => $request->string('deadline_from')->toString() ?: null,
+            'deadline_to' => $request->string('deadline_to')->toString() ?: null,
         ], fn ($v) => $v !== null && $v !== '');
     }
 
