@@ -21,8 +21,12 @@ class LifecycleOperationsController extends Controller
         $this->authorizeOperations();
 
         $school = GetSchoolModel();
-        $data = $this->ops->needsAttention($school, $request->integer('limit', 50));
-        $data['items'] = $this->filterItemsByPermission($data['items'] ?? []);
+        $categories = $this->authorizedCategories();
+        $data = $this->ops->needsAttention(
+            $school,
+            $request->integer('limit', 50),
+            $categories
+        );
 
         if ($request->wantsJson()) {
             return response()->json($data);
@@ -41,8 +45,16 @@ class LifecycleOperationsController extends Controller
 
         $school = GetSchoolModel();
         $days = max(1, min(90, $request->integer('within_days', 14)));
-        $data = $this->ops->upcomingDeadlines($school, $days, $request->integer('limit', 50));
-        $data['items'] = $this->filterItemsByPermission($data['items'] ?? []);
+        $categories = array_values(array_intersect(
+            $this->authorizedCategories(),
+            ['admissions', 'enrollments']
+        ));
+        $data = $this->ops->upcomingDeadlines(
+            $school,
+            $days,
+            $request->integer('limit', 50),
+            $categories
+        );
 
         if ($request->wantsJson()) {
             return response()->json($data);
@@ -62,8 +74,13 @@ class LifecycleOperationsController extends Controller
 
         $school = GetSchoolModel();
         $days = max(1, min(90, $request->integer('within_days', 14)));
-        $data = $this->ops->recentlyCompleted($school, $days, $request->integer('limit', 50));
-        $data['items'] = $this->filterItemsByPermission($data['items'] ?? []);
+        $categories = $this->authorizedCategories();
+        $data = $this->ops->recentlyCompleted(
+            $school,
+            $days,
+            $request->integer('limit', 50),
+            $categories
+        );
 
         if ($request->wantsJson()) {
             return response()->json($data);
@@ -82,19 +99,20 @@ class LifecycleOperationsController extends Controller
         $this->authorizeOperations();
 
         $school = GetSchoolModel();
+        $categories = $this->authorizedCategories();
         $counts = $this->ops->dashboardCounts($school);
 
-        if (! $this->userCan('applications.view')) {
+        if (! in_array('applications', $categories, true)) {
             unset($counts['applications_awaiting_review']);
         }
-        if (! $this->userCan('admissions.view')) {
+        if (! in_array('admissions', $categories, true)) {
             unset(
                 $counts['offers_awaiting_acceptance'],
                 $counts['offers_expiring_soon'],
                 $counts['accepted_awaiting_registration']
             );
         }
-        if (! $this->userCan('enrollments.view')) {
+        if (! in_array('enrollments', $categories, true)) {
             unset(
                 $counts['enrollments_in_progress'],
                 $counts['ready_for_finalization'],
@@ -104,16 +122,36 @@ class LifecycleOperationsController extends Controller
 
         return response()->json([
             'counts' => $counts,
-            'needs_attention' => $this->filterItemsByPermission(
-                $this->ops->needsAttention($school, 10)['items'] ?? []
-            ),
-            'upcoming_deadlines' => $this->filterItemsByPermission(
-                $this->ops->upcomingDeadlines($school, 7, 10)['items'] ?? []
-            ),
-            'recently_completed' => $this->filterItemsByPermission(
-                $this->ops->recentlyCompleted($school, 7, 10)['items'] ?? []
-            ),
+            'needs_attention' => $this->ops->needsAttention($school, 10, $categories)['items'] ?? [],
+            'upcoming_deadlines' => $this->ops->upcomingDeadlines(
+                $school,
+                7,
+                10,
+                array_values(array_intersect($categories, ['admissions', 'enrollments']))
+            )['items'] ?? [],
+            'recently_completed' => $this->ops->recentlyCompleted($school, 7, 10, $categories)['items'] ?? [],
         ]);
+    }
+
+    /**
+     * Lifecycle categories the current user is permitted to view.
+     *
+     * @return list<string>
+     */
+    protected function authorizedCategories(): array
+    {
+        $categories = [];
+        if ($this->userCan('applications.view')) {
+            $categories[] = 'applications';
+        }
+        if ($this->userCan('admissions.view')) {
+            $categories[] = 'admissions';
+        }
+        if ($this->userCan('enrollments.view')) {
+            $categories[] = 'enrollments';
+        }
+
+        return $categories;
     }
 
     protected function authorizeOperations(): void
@@ -162,33 +200,5 @@ class LifecycleOperationsController extends Controller
             'enrollments.view' => $user->can('viewAny', Enrollment::class),
             default => false,
         };
-    }
-
-    protected function filterItemsByPermission(array $items): array
-    {
-        return array_values(array_filter($items, function (array $item) {
-            $type = $item['type'] ?? '';
-
-            if (str_starts_with($type, 'application_')) {
-                return $this->userCan('applications.view');
-            }
-            if (in_array($type, [
-                'offer_awaiting_acceptance',
-                'accepted_awaiting_registration',
-                'acceptance_deadline',
-                'registration_window_end',
-                'offer_issued',
-                'offer_accepted',
-            ], true) || str_starts_with($type, 'offer_')) {
-                return $this->userCan('admissions.view');
-            }
-            if (str_starts_with($type, 'enrollment_')) {
-                return $this->userCan('enrollments.view');
-            }
-
-            return $this->userCan('applications.view')
-                || $this->userCan('admissions.view')
-                || $this->userCan('enrollments.view');
-        }));
     }
 }
