@@ -287,10 +287,10 @@ it('does not count prior-session placements toward current-session section capac
         'id' => (string) Str::uuid(),
         'school_id' => $school->id,
         'name' => 'JSS1A',
-        'capacity' => 2,
+        'capacity' => 10,
     ]);
 
-    for ($i = 0; $i < 2; $i++) {
+    for ($i = 0; $i < 9; $i++) {
         $st = new Student;
         $st->forceFill([
             'id' => (string) Str::uuid(),
@@ -314,7 +314,7 @@ it('does not count prior-session placements toward current-session section capac
 
     expect($counts['sections_near_capacity'])->toBe(0);
 
-    for ($i = 0; $i < 2; $i++) {
+    for ($i = 0; $i < 9; $i++) {
         $st = new Student;
         $st->forceFill([
             'id' => (string) Str::uuid(),

@@ -83,6 +83,14 @@ function buildPhase7ReportsSchema(): void
         $t->softDeletes();
     });
 
+    
+    Schema::create('students', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('school_id');
+        $t->string('status')->nullable();
+        $t->timestamps();
+        $t->softDeletes();
+    });
     Schema::create('student_applications', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->uuid('school_id');
