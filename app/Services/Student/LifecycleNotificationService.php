@@ -178,14 +178,59 @@ class LifecycleNotificationService
         Model $context,
         array $extra = []
     ): int {
-        $audience = $extra['audience'] ?? 'parent';
+        // Explicit audience → single path. Otherwise deliver independently to every
+        // audience enabled in the preference (parent + admin), matching seeded shape.
+        $explicitAudience = $extra['audience'] ?? null;
+        if ($explicitAudience !== null) {
+            return $this->notifyAudience(
+                $school,
+                $preferenceKey,
+                $notificationClass,
+                $context,
+                $explicitAudience,
+                $extra
+            );
+        }
+
+        $sent = 0;
+        foreach (['parent', 'admin'] as $audience) {
+            if ($this->isEnabled($school, $preferenceKey, $audience)) {
+                $sent += $this->notifyAudience(
+                    $school,
+                    $preferenceKey,
+                    $notificationClass,
+                    $context,
+                    $audience,
+                    $extra
+                );
+            }
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Deliver to one audience (parent/candidate or admin/staff).
+     */
+    protected function notifyAudience(
+        School $school,
+        string $preferenceKey,
+        string $notificationClass,
+        Model $context,
+        string $audience,
+        array $extra = []
+    ): int {
         if (! $this->isEnabled($school, $preferenceKey, $audience)) {
             return 0;
         }
 
         $reminderKey = $extra['reminder_key'] ?? null;
+        // Scope reminder keys per audience so parent success does not suppress admin (and vice versa).
+        $audienceReminderKey = $reminderKey !== null
+            ? $reminderKey.':'.$audience
+            : null;
 
-        $recipients = $this->resolveRecipients($context);
+        $recipients = $this->resolveRecipients($context, $audience, $school);
         if ($recipients->isEmpty()) {
             Log::info('Lifecycle notification skipped: no recipients', [
                 'school_id' => $school->id,
@@ -193,33 +238,35 @@ class LifecycleNotificationService
                 'context_id' => $context->getKey(),
                 'notification' => $notificationClass,
                 'preference_key' => $preferenceKey,
+                'audience' => $audience,
                 'reminder_key' => $reminderKey,
             ]);
 
             return 0;
         }
 
-        // Per-recipient idempotency: only skip recipients that already have success=true
-        // for this reminder (any successful channel counts as delivered for that recipient).
-        if ($reminderKey) {
-            // Suppress successful deliveries and in-flight (queued) dispatches.
-            // Failed dispatches remain eligible for retry.
-            $recipients = $recipients->filter(
-                fn ($recipient) => ! $this->shouldSuppressReminder(
+        // Concurrent-safe claim for reminder slots before dispatch.
+        if ($audienceReminderKey) {
+            $claimed = [];
+            foreach ($recipients as $recipient) {
+                if ($this->claimReminderSlot(
                     $school,
                     $context,
                     $notificationClass,
-                    $reminderKey,
+                    $audienceReminderKey,
                     $recipient
-                )
-            )->values();
-
+                )) {
+                    $claimed[] = $recipient;
+                }
+            }
+            $recipients = collect($claimed)->values();
             if ($recipients->isEmpty()) {
                 return 0;
             }
         }
 
         $sent = 0;
+        $payload = array_merge($extra, ['audience' => $audience]);
         foreach ($recipients as $recipient) {
             $channels = $this->channelsFor($recipient, $school);
             if ($channels === []) {
@@ -234,8 +281,8 @@ class LifecycleNotificationService
                         $recipient,
                         $notificationClass,
                         $preferenceKey,
-                        $reminderKey,
-                        $extra
+                        $audienceReminderKey,
+                        $payload
                     ) ? 1 : 0;
                 } elseif ($channel === 'sms') {
                     $sent += $this->dispatchSms(
@@ -244,14 +291,67 @@ class LifecycleNotificationService
                         $recipient,
                         $notificationClass,
                         $preferenceKey,
-                        $reminderKey,
-                        $extra
+                        $audienceReminderKey,
+                        $payload
                     ) ? 1 : 0;
                 }
             }
         }
 
         return $sent;
+    }
+
+    /**
+     * Atomically claim a reminder delivery slot for one recipient.
+     *
+     * Uses a transaction + row lock on existing logs so concurrent workers cannot
+     * both pass suppression and both dispatch. Failed prior attempts remain retryable.
+     */
+    public function claimReminderSlot(
+        School $school,
+        Model $context,
+        string $notificationClass,
+        string $reminderKey,
+        ?object $recipient = null
+    ): bool {
+        return \Illuminate\Support\Facades\DB::transaction(function () use (
+            $school, $context, $notificationClass, $reminderKey, $recipient
+        ) {
+            $q = NotificationLog::query()
+                ->where('school_id', $school->id)
+                ->where('notification_type', $notificationClass)
+                ->where('metadata->reminder_key', $reminderKey)
+                ->where('metadata->lifecycle_type', $context->getMorphClass())
+                ->where('metadata->lifecycle_id', (string) $context->getKey())
+                ->where(function ($inner) {
+                    $inner->where('success', true)
+                        ->orWhere('metadata->phase', 'dispatched')
+                        ->orWhere('metadata->phase', 'claimed');
+                });
+            $q = $this->applyRecipientFilter($q, $recipient);
+            $existing = $q->lockForUpdate()->exists();
+            if ($existing) {
+                return false;
+            }
+
+            // Claim row — subsequent concurrent workers see phase=claimed under lock.
+            $this->logDispatch(
+                $school,
+                $context,
+                $recipient ?? new AnonymousNotifiable,
+                $notificationClass,
+                'claim',
+                false,
+                null,
+                [
+                    'reminder_key' => $reminderKey,
+                    'phase' => 'claimed',
+                    'channel' => 'claim',
+                ]
+            );
+
+            return true;
+        });
     }
 
     /**
@@ -441,8 +541,26 @@ class LifecycleNotificationService
      *
      * @return Collection<int, object>
      */
-    public function resolveRecipients(Model $context): Collection
+    /**
+     * Resolve notifiables for the given audience.
+     *
+     * parent  → candidate / guardian / student profile contacts (existing path)
+     * admin   → school staff users with the relevant lifecycle view permission
+     *           (reuses Laratrust + school membership; no new subsystem)
+     *
+     * @return Collection<int, object>
+     */
+    public function resolveRecipients(Model $context, string $audience = 'parent', ?School $school = null): Collection
     {
+        if ($audience === 'admin') {
+            $school = $school ?? $this->schoolFromContext($context);
+            if (! $school) {
+                return collect();
+            }
+
+            return $this->resolveStaffRecipients($school, $context);
+        }
+
         if ($context instanceof Enrollment) {
             return $this->resolveForEnrollment($context);
         }
@@ -454,6 +572,78 @@ class LifecycleNotificationService
         }
 
         return collect();
+    }
+
+    /**
+     * Map lifecycle context to the staff permission used for admin audience targeting.
+     */
+    protected function staffPermissionForContext(Model $context): string
+    {
+        return match (true) {
+            $context instanceof StudentApplication => 'applications.view',
+            $context instanceof Admission => 'admissions.view',
+            $context instanceof Enrollment => 'enrollments.view',
+            default => 'applications.view',
+        };
+    }
+
+    /**
+     * Staff/admin recipients for a school, filtered by lifecycle permission.
+     * Pattern mirrors NotifyAdminOnSectionDeactivated / Promotion approver resolution.
+     *
+     * @return Collection<int, User>
+     */
+    public function resolveStaffRecipients(School $school, Model $context): Collection
+    {
+        $permission = $this->staffPermissionForContext($context);
+        $schoolId = $school->id;
+
+        try {
+            $users = User::query()
+                ->where('is_active', true)
+                ->where(function ($q) use ($schoolId) {
+                    $q->whereHas('schools', fn ($s) => $s->where('schools.id', $schoolId));
+                })
+                ->get();
+        } catch (\Throwable $e) {
+            Log::warning('Lifecycle admin recipient resolution failed', [
+                'school_id' => $schoolId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return collect();
+        }
+
+        return $users
+            ->filter(function (User $user) use ($permission) {
+                if (method_exists($user, 'isAbleTo') && $user->isAbleTo($permission)) {
+                    return true;
+                }
+                if (method_exists($user, 'hasPermission') && $user->hasPermission($permission)) {
+                    return true;
+                }
+                // Laratrust permission() scope may already have filtered; keep broad checks.
+                if (method_exists($user, 'hasPermissionTo')) {
+                    try {
+                        return $user->hasPermissionTo($permission);
+                    } catch (\Throwable) {
+                        return false;
+                    }
+                }
+
+                return false;
+            })
+            ->values();
+    }
+
+    protected function schoolFromContext(Model $context): ?School
+    {
+        $schoolId = $context->school_id ?? null;
+        if (! $schoolId) {
+            return null;
+        }
+
+        return School::query()->find($schoolId);
     }
 
     protected function resolveForEnrollment(Enrollment $enrollment): Collection
