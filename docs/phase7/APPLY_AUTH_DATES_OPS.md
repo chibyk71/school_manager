@@ -1,30 +1,38 @@
-# Apply LifecycleOperationalService auth + inclusive dates
+# URGENT: Restore LifecycleOperationalService.php
 
-The GitHub connector cannot reliably push the full ~37KB `LifecycleOperationalService.php` in one shot from this agent.
+The file on the branch tip was briefly overwritten by a failed large-file push.
 
-**Required file (complete):** project artifacts path:
+## Immediate restore (required)
 
-`artifacts/phase7/LifecycleOperationalService.auth-dates.php`
-
-Also present as:
-- `artifacts/phase7/LifecycleOperationalService.auth-dates.php`
-
-## What this version adds
-
-1. `normalizeReportFilters()` — `date_from`/`deadline_from` → startOfDay; `date_to`/`deadline_to` → endOfDay (used by applications/admissions/enrollments queries).
-2. `needsAttention` / `upcomingDeadlines` / `recentlyCompleted` accept `?array $categories` and **count + limit only authorized categories** (`applications` | `admissions` | `enrollments`).
-3. `placementsQuery` filters by `school_id` on the placement row (Phase 6).
-4. Stray empty docblock removed.
-
-## Apply locally
+From a local clone with the project artifacts folder available:
 
 ```bash
+# Option A — full Phase 7 auth+dates+category fix (preferred)
 cp artifacts/phase7/LifecycleOperationalService.auth-dates.php \
    app/Services/Student/LifecycleOperationalService.php
+
+# Option B — last known good pre-auth service (af326ac tip content)
+# git show af326ac5:app/Services/Student/LifecycleOperationalService.php \
+#   > app/Services/Student/LifecycleOperationalService.php
+# Then still apply Option A for category/date fixes.
+
 git add app/Services/Student/LifecycleOperationalService.php
-git commit -m "fix(student-lifecycle): category-scoped ops feeds + inclusive date filters"
+git commit -m "fix(student-lifecycle): restore LifecycleOperationalService with category + inclusive date filters"
 git push origin feature/student-lifecycle-phase7
 ```
 
-Controller already passes `$this->authorizedCategories()` (commit b98d377).
-Reports controller already calls `normalizeReportFilters` (commit de8a689).
+Also available: `artifacts/phase7/LifecycleOperationalService.pre-corruption.php` (tip content before placeholder).
+
+## What auth-dates version adds
+
+1. `normalizeReportFilters()` — inclusive day bounds for date_from/date_to/deadline_*
+2. `needsAttention` / `upcomingDeadlines` / `recentlyCompleted` accept `?array $categories` and scope **count + limit** to permitted categories
+3. `placementsQuery` uses placement `school_id`
+4. Report queries call normalize once
+
+## Already on the branch
+
+- Operations controller passes authorized categories (with Reflection fallback if service not yet restored) — `76051df`
+- Reports controller passes session/level/section options + normalizeReportFilters — `de8a689`
+- Reports.vue PrimeVue Select filters — `af326ac`
+- Tests: `Phase7AuthAndDateFiltersTest.php` — `b98d377`
