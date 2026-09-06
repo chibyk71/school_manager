@@ -51,6 +51,7 @@ function buildDashSchema(): void
         $t->string('name');
         $t->string('slug')->unique();
         $t->string('code')->nullable();
+        $t->json('data')->nullable();
         $t->timestamps();
         $t->softDeletes();
     });

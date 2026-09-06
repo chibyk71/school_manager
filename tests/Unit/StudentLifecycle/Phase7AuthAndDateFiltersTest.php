@@ -48,6 +48,7 @@ function buildP7AuthSchema(): void
         $t->string('name');
         $t->string('slug')->unique();
         $t->string('code')->nullable();
+        $t->json('data')->nullable();
         $t->timestamps();
         $t->softDeletes();
     });
@@ -57,6 +58,7 @@ function buildP7AuthSchema(): void
         $t->uuid('school_id');
         $t->string('name');
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('student_applications', function (Blueprint $t) {
@@ -111,7 +113,7 @@ function p7aSchool(string $name): School
 function p7aSession(School $school): object
 {
     $id = (string) Str::uuid();
-    \DB::table('academic_sessions')->insert([
+    \Illuminate\Support\Facades\DB::table('academic_sessions')->insert([
         'id' => $id,
         'school_id' => $school->id,
         'name' => '2026/2027',
