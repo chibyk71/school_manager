@@ -79,6 +79,7 @@ function buildBoundarySchema(): void
         $t->string('name')->nullable();
         $t->unsignedInteger('capacity')->default(0);
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('students', function (Blueprint $t) {
@@ -95,6 +96,7 @@ function buildBoundarySchema(): void
         $t->uuid('academic_session_id')->nullable();
         $t->string('status');
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('admissions', function (Blueprint $t) {
@@ -104,6 +106,7 @@ function buildBoundarySchema(): void
         $t->string('status');
         $t->timestamp('acceptance_deadline')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('enrollments', function (Blueprint $t) {
@@ -114,6 +117,7 @@ function buildBoundarySchema(): void
         $t->string('status');
         $t->timestamp('activated_at')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('student_session_placements', function (Blueprint $t) {

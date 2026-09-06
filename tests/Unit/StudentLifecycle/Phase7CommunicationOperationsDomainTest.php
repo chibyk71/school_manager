@@ -40,6 +40,8 @@ function dropPhase7Schema(): void
         'notification_logs',
         'enrollment_requirement_instances',
         'enrollment_requirement_definitions',
+        'student_session_placements',
+        'students',
         'enrollments',
         'admissions',
         'student_applications',
@@ -147,6 +149,25 @@ function buildPhase7Schema(): void
         $t->json('meta')->nullable();
         $t->timestamps();
         $t->softDeletes();
+    });
+
+    
+    Schema::create('students', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('school_id');
+        $t->string('status')->nullable();
+        $t->timestamps();
+        $t->softDeletes();
+    });
+
+    Schema::create('student_session_placements', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('school_id')->nullable();
+        $t->uuid('student_id');
+        $t->uuid('academic_session_id');
+        $t->uuid('class_section_id')->nullable();
+        $t->boolean('is_current')->default(true);
+        $t->timestamps();
     });
 
     Schema::create('enrollment_requirement_definitions', function (Blueprint $t) {
@@ -394,8 +415,8 @@ it('per-recipient reminder idempotency does not suppress other recipients', func
         'meta' => ['biodata' => ['email' => 'a@example.com']],
     ]);
 
-    $recipientA = \Illuminate\Notifications\Notification::route('mail', 'a@example.com');
-    $recipientB = \Illuminate\Notifications\Notification::route('mail', 'b@example.com');
+    $recipientA = Notification::route('mail', 'a@example.com');
+    $recipientB = Notification::route('mail', 'b@example.com');
 
     // Simulate successful delivery for recipient A only.
     $svc->markDelivered(

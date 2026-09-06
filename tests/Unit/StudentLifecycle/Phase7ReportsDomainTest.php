@@ -13,9 +13,9 @@ use App\Models\Student\StudentApplication;
 use App\Services\Student\LifecycleOperationalService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use \Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     config(['activitylog.enabled' => false]);
@@ -70,6 +70,7 @@ function buildPhase7ReportsSchema(): void
         $t->uuid('school_id');
         $t->string('name');
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('class_sections', function (Blueprint $t) {
@@ -79,6 +80,7 @@ function buildPhase7ReportsSchema(): void
         $t->string('name');
         $t->unsignedInteger('capacity')->default(0);
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('student_applications', function (Blueprint $t) {
@@ -93,6 +95,7 @@ function buildPhase7ReportsSchema(): void
         $t->string('last_name')->nullable();
         $t->timestamp('submitted_at')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('admissions', function (Blueprint $t) {
@@ -107,6 +110,7 @@ function buildPhase7ReportsSchema(): void
         $t->timestamp('accepted_at')->nullable();
         $t->timestamp('acceptance_deadline')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('enrollments', function (Blueprint $t) {
@@ -118,6 +122,7 @@ function buildPhase7ReportsSchema(): void
         $t->string('status');
         $t->timestamp('activated_at')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('student_session_placements', function (Blueprint $t) {
@@ -146,7 +151,7 @@ function p7rSchool(string $name): School
 function p7rSession(School $school): object
 {
     $id = (string) Str::uuid();
-    \Illuminate\Support\Facades\DB::table('academic_sessions')->insert([
+    DB::table('academic_sessions')->insert([
         'id' => $id,
         'school_id' => $school->id,
         'name' => '2026/2027',
@@ -258,7 +263,7 @@ it('placement report does not silently truncate beyond 50 sections', function ()
     $school = p7rSchool('PlacementMany');
     $session = p7rSession($school);
     $levelId = (string) Str::uuid();
-    \Illuminate\Support\Facades\DB::table('class_levels')->insert([
+    DB::table('class_levels')->insert([
         'id' => $levelId,
         'school_id' => $school->id,
         'name' => 'JSS1',
@@ -269,7 +274,7 @@ it('placement report does not silently truncate beyond 50 sections', function ()
     $sectionCount = 55;
     for ($i = 0; $i < $sectionCount; $i++) {
         $sectionId = (string) Str::uuid();
-        \Illuminate\Support\Facades\DB::table('class_sections')->insert([
+        DB::table('class_sections')->insert([
             'id' => $sectionId,
             'school_id' => $school->id,
             'class_level_id' => $levelId,
@@ -279,7 +284,7 @@ it('placement report does not silently truncate beyond 50 sections', function ()
             'updated_at' => now(),
         ]);
         if ($i < 10) {
-            \Illuminate\Support\Facades\DB::table('student_session_placements')->insert([
+            DB::table('student_session_placements')->insert([
                 'id' => (string) Str::uuid(),
                 'student_id' => (string) Str::uuid(),
                 'class_section_id' => $sectionId,
@@ -325,14 +330,14 @@ it('placement and application reports remain school-scoped', function () {
     ]);
 
     $levelA = (string) Str::uuid();
-    \Illuminate\Support\Facades\DB::table('class_levels')->insert([
+    DB::table('class_levels')->insert([
         'id' => $levelA,
         'school_id' => $schoolA->id,
         'name' => 'A',
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    \Illuminate\Support\Facades\DB::table('class_sections')->insert([
+    DB::table('class_sections')->insert([
         'id' => (string) Str::uuid(),
         'school_id' => $schoolA->id,
         'class_level_id' => $levelA,
@@ -342,7 +347,7 @@ it('placement and application reports remain school-scoped', function () {
         'updated_at' => now(),
     ]);
     $levelB = (string) Str::uuid();
-    \Illuminate\Support\Facades\DB::table('class_levels')->insert([
+    DB::table('class_levels')->insert([
         'id' => $levelB,
         'school_id' => $schoolB->id,
         'name' => 'B',

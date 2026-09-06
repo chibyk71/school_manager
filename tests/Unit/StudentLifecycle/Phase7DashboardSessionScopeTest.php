@@ -33,6 +33,8 @@ function dropDashSchema(): void
     foreach ([
         'student_session_placements',
         'enrollments',
+        'admissions',
+        'student_applications',
         'students',
         'class_sections',
         'academic_sessions',
@@ -65,12 +67,33 @@ function buildDashSchema(): void
         $t->softDeletes();
     });
 
+    
+    Schema::create('student_applications', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('school_id');
+        $t->uuid('academic_session_id')->nullable();
+        $t->string('status');
+        $t->timestamps();
+        $t->softDeletes();
+    });
+
+    Schema::create('admissions', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('school_id');
+        $t->uuid('academic_session_id')->nullable();
+        $t->string('status');
+        $t->timestamp('acceptance_deadline')->nullable();
+        $t->timestamps();
+        $t->softDeletes();
+    });
+
     Schema::create('class_sections', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->uuid('school_id');
         $t->string('name')->nullable();
         $t->unsignedInteger('capacity')->default(0);
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('students', function (Blueprint $t) {
@@ -89,6 +112,7 @@ function buildDashSchema(): void
         $t->string('status');
         $t->timestamp('activated_at')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('student_session_placements', function (Blueprint $t) {

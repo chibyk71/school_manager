@@ -13,6 +13,7 @@ use App\Models\Student\StudentApplication;
 use App\Services\Student\LifecycleOperationalService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -71,6 +72,7 @@ function buildP7AuthSchema(): void
         $t->string('last_name')->nullable();
         $t->timestamp('submitted_at')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('admissions', function (Blueprint $t) {
@@ -85,6 +87,7 @@ function buildP7AuthSchema(): void
         $t->timestamp('acceptance_deadline')->nullable();
         $t->timestamp('registration_ends_at')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('enrollments', function (Blueprint $t) {
@@ -95,6 +98,7 @@ function buildP7AuthSchema(): void
         $t->string('status');
         $t->timestamp('activated_at')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 }
 
@@ -113,7 +117,7 @@ function p7aSchool(string $name): School
 function p7aSession(School $school): object
 {
     $id = (string) Str::uuid();
-    \DB::table('academic_sessions')->insert([
+    DB::table('academic_sessions')->insert([
         'id' => $id,
         'school_id' => $school->id,
         'name' => '2026/2027',
