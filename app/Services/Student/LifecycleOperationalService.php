@@ -47,35 +47,43 @@ class LifecycleOperationalService
     /**
      * Actionable counts for dashboard cards.
      *
-     * When $session is null, resolves the school's current session via
-     * AcademicCalendarService (established School Manager convention).
-     * Placement and capacity are always evaluated against that operational session.
+     * Session resolution is owned by AcademicCalendarService (or an explicit
+     * $session passed by the caller for tests). This method never queries
+     * academic_sessions and never treats a missing session as "all sessions".
+     *
+     * When $session is null, all session-dependent metrics are zero.
      *
      * @return array<string, int>
      */
     public function dashboardCounts(School $school, ?AcademicSession $session = null): array
     {
-        $schoolId = $school->id;
+        $empty = [
+            'applications_awaiting_review' => 0,
+            'offers_awaiting_acceptance' => 0,
+            'offers_expiring_soon' => 0,
+            'accepted_awaiting_registration' => 0,
+            'enrollments_in_progress' => 0,
+            'ready_for_finalization' => 0,
+            'awaiting_placement' => 0,
+            'sections_near_capacity' => 0,
+        ];
 
+        // Lifecycle boundary: no session ⇒ no operational metrics (not historical aggregate).
         if ($session === null) {
-            $session = app(\App\Services\AcademicCalendarService::class)->currentSession();
-            // currentSession() is school-context aware; still guard cross-school misuse
-            if ($session && (string) $session->school_id !== (string) $schoolId) {
-                $session = AcademicSession::query()
-                    ->where('school_id', $schoolId)
-                    ->where('is_current', true)
-                    ->first();
-            }
-        } elseif ((string) $session->school_id !== (string) $schoolId) {
-            // Do not leak another school's session into this school's dashboard
-            $session = null;
+            return $empty;
         }
 
-        $sessionId = $session?->id;
+        // Guard school isolation — never accept another school's session.
+        if ((string) $session->school_id !== (string) $school->id) {
+            return $empty;
+        }
+
+        $schoolId = $school->id;
+        $sessionId = $session->id;
 
         $applicationsAwaitingReview = StudentApplication::query()
             ->where('school_id', $schoolId)
-            ->when($sessionId, fn ($q) => $q->where('academic_session_id', $sessionId))
+            ->where('academic_session_id', $sessionId)
             ->whereIn('status', [
                 StudentApplication::STATUS_SUBMITTED,
                 StudentApplication::STATUS_UNDER_REVIEW,
@@ -85,13 +93,13 @@ class LifecycleOperationalService
 
         $offersAwaitingAcceptance = Admission::query()
             ->where('school_id', $schoolId)
-            ->when($sessionId, fn ($q) => $q->where('academic_session_id', $sessionId))
+            ->where('academic_session_id', $sessionId)
             ->whereIn('status', [Admission::STATUS_OFFERED, Admission::STATUS_PENDING])
             ->count();
 
         $offersExpiringSoon = Admission::query()
             ->where('school_id', $schoolId)
-            ->when($sessionId, fn ($q) => $q->where('academic_session_id', $sessionId))
+            ->where('academic_session_id', $sessionId)
             ->whereIn('status', [Admission::STATUS_OFFERED, Admission::STATUS_PENDING])
             ->whereNotNull('acceptance_deadline')
             ->whereBetween('acceptance_deadline', [now(), now()->addDays(7)])
@@ -99,20 +107,20 @@ class LifecycleOperationalService
 
         $acceptedAwaitingRegistration = Admission::query()
             ->where('school_id', $schoolId)
-            ->when($sessionId, fn ($q) => $q->where('academic_session_id', $sessionId))
+            ->where('academic_session_id', $sessionId)
             ->where('status', Admission::STATUS_ACCEPTED)
             ->whereDoesntHave('enrollment')
             ->count();
 
         $enrollmentsInProgress = Enrollment::query()
             ->where('school_id', $schoolId)
-            ->when($sessionId, fn ($q) => $q->where('academic_session_id', $sessionId))
+            ->where('academic_session_id', $sessionId)
             ->whereIn('status', [Enrollment::STATUS_DRAFT, Enrollment::STATUS_IN_PROGRESS])
             ->count();
 
         $readyForFinalization = Enrollment::query()
             ->where('school_id', $schoolId)
-            ->when($sessionId, fn ($q) => $q->where('academic_session_id', $sessionId))
+            ->where('academic_session_id', $sessionId)
             ->whereIn('status', [Enrollment::STATUS_DRAFT, Enrollment::STATUS_IN_PROGRESS])
             ->whereDoesntHave('requirementInstances', function ($q) {
                 $q->where('status', \App\Models\Student\EnrollmentRequirementInstance::STATUS_PENDING)
@@ -120,39 +128,25 @@ class LifecycleOperationalService
             })
             ->count();
 
-        // Placement is session-specific: an is_current placement in a prior session
-        // does not satisfy an active enrollment for the operational session.
+        // Placement is session-specific: prior-session is_current placement does not satisfy this session.
         $awaitingPlacement = Enrollment::query()
             ->where('school_id', $schoolId)
+            ->where('academic_session_id', $sessionId)
             ->where('status', Enrollment::STATUS_ACTIVE)
-            ->when($sessionId, fn ($q) => $q->where('academic_session_id', $sessionId))
             ->whereDoesntHave('student.sessionPlacements', function ($q) use ($sessionId) {
-                $q->where('is_current', true);
-                if ($sessionId) {
-                    $q->where('academic_session_id', $sessionId);
-                } else {
-                    // Correlate to the enrollment row's own academic_session_id
-                    $q->whereColumn(
-                        'student_session_placements.academic_session_id',
-                        'enrollments.academic_session_id'
-                    );
-                }
+                $q->where('is_current', true)
+                    ->where('academic_session_id', $sessionId);
             })
             ->count();
 
-        if ($sessionId) {
-            $sectionsNearCapacity = ClassSection::query()
-                ->where('school_id', $schoolId)
-                ->where('capacity', '>', 0)
-                ->whereRaw(
-                    "(capacity - (SELECT COUNT(*) FROM student_session_placements ssp WHERE ssp.class_section_id = class_sections.id AND ssp.is_current = 1 AND ssp.academic_session_id = ?)) <= GREATEST(2, FLOOR(capacity * 0.15))",
-                    [$sessionId]
-                )
-                ->count();
-        } else {
-            // No operational session: avoid mixing historical placements into capacity pressure
-            $sectionsNearCapacity = 0;
-        }
+        $sectionsNearCapacity = ClassSection::query()
+            ->where('school_id', $schoolId)
+            ->where('capacity', '>', 0)
+            ->whereRaw(
+                "(capacity - (SELECT COUNT(*) FROM student_session_placements ssp WHERE ssp.class_section_id = class_sections.id AND ssp.is_current = 1 AND ssp.academic_session_id = ?)) <= GREATEST(2, FLOOR(capacity * 0.15))",
+                [$sessionId]
+            )
+            ->count();
 
         return [
             'applications_awaiting_review' => $applicationsAwaitingReview,
@@ -163,8 +157,6 @@ class LifecycleOperationalService
             'ready_for_finalization' => $readyForFinalization,
             'awaiting_placement' => $awaitingPlacement,
             'sections_near_capacity' => $sectionsNearCapacity,
-            // optional context for UI/debugging (non-breaking extra key)
-            // kept as count-only contract for existing consumers — do not add session id here
         ];
     }
 

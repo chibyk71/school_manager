@@ -11,6 +11,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Academic\ClassLevel;
 use App\Models\Academic\ClassSection;
 use App\Models\School;
+use App\Services\AcademicCalendarService;
 use App\Services\Student\LifecycleOperationalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -21,7 +22,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 class LifecycleReportsController extends Controller
 {
     public function __construct(
-        protected LifecycleOperationalService $ops
+        protected LifecycleOperationalService $ops,
+        protected AcademicCalendarService $calendar
     ) {}
 
     public function index(Request $request)
@@ -99,23 +101,14 @@ class LifecycleReportsController extends Controller
         return $this->ops->normalizeReportFilters($raw);
     }
 
+    /**
+     * Session filter options — owned by Academic Calendar (not Lifecycle).
+     *
+     * @return list<array{id: string, name: string, is_current: bool}>
+     */
     protected function sessionOptions(School $school): array
     {
-        if (! Schema::hasTable('academic_sessions')) {
-            return [];
-        }
-
-        $q = \DB::table('academic_sessions')->where('school_id', $school->id)->orderByDesc('created_at');
-        $cols = ['id', 'name'];
-        if (Schema::hasColumn('academic_sessions', 'is_current')) {
-            $cols[] = 'is_current';
-        }
-
-        return $q->get($cols)->map(fn ($row) => [
-            'id' => (string) $row->id,
-            'name' => (string) $row->name,
-            'is_current' => (bool) ($row->is_current ?? false),
-        ])->all();
+        return $this->calendar->sessionsForSchool($school);
     }
 
     protected function classLevelOptions(School $school): array

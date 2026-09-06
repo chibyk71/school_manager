@@ -2,7 +2,7 @@
 
 namespace App\Services\Student;
 
-use App\Models\Academic\AcademicSession;
+use App\Services\AcademicCalendarService;
 use App\Models\Academic\ClassLevel;
 use App\Models\School;
 use App\Models\Student\Admission;
@@ -621,7 +621,7 @@ class AdmissionService
             }
         }
         if ($sessionId) {
-            $ok = AcademicSession::query()->whereKey($sessionId)->where('school_id', $school->id)->exists();
+            $ok = app(AcademicCalendarService::class)->sessionBelongsToSchool($school, $sessionId);
             if (! $ok) {
                 throw ValidationException::withMessages([
                     'academic_session_id' => 'Academic session does not belong to the current school.',
@@ -668,4 +668,3 @@ class AdmissionService
         $this->lifecycleNotifications->notify($school, $preferenceKey, $notificationClass, $admission, $extra);
     }
 }
-

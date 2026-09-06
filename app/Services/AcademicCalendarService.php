@@ -8,6 +8,7 @@ use App\Events\Academic\TermActivated;
 use App\Events\Academic\TermClosed;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
+use App\Models\School;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Cache;
@@ -22,30 +23,13 @@ use Throwable;
  * This is the **single source of truth** for all calendar-related operations in the system.
  * All controllers, jobs, commands, etc., MUST use this service instead of direct model queries.
  *
- * Features / Problems Solved:
- * ────────────────────────────────────────────────────────────────
- * • Strict enforcement of single active session per school
- * • Strict enforcement of single active term per session
- * • Date immutability: start_date locked after activation
- * • Date hierarchy: term dates MUST be inside parent session dates
- * • Safe activation/closure with transaction + events
- * • Restricted reopen logic: only last closed term, only if next is pending
- * • Cache invalidation for current session/term (performance + consistency)
- * • Comprehensive validation exceptions + logging
- * • Prepares for future integration (promotion module listens to SessionClosed event)
- *
- * Fits into the Academic Calendar Module:
- * ────────────────────────────────────────────────────────────────
- * • Central orchestrator — used by controllers (AcademicSessionController, TermController)
- * • Protects business invariants that raw Eloquent queries could break
- * • Dispatches domain events for loose coupling (e.g. SessionClosedEvent → PromotionEngine)
- * • Works with HasDynamicEnum for school-customizable status values
- *
  * Usage Guidelines:
  *   $service = app(AcademicCalendarService::class);
  *   $service->activateSession($session);
  *   $service->closeTerm($term);
  *   $service->currentSession(); // cached & safe
+ *   $service->sessionsForSchool($school); // filter/report options
+ *   $service->sessionBelongsToSchool($school, $sessionId); // membership checks
  */
 class AcademicCalendarService
 {
@@ -100,6 +84,45 @@ class AcademicCalendarService
                 ->where('is_active', true)
                 ->first();
         });
+    }
+
+    /**
+     * List academic sessions for a school (filter / report options).
+     *
+     * Ordered: current session first, then most recently created.
+     * Does not implement operational-session policy (see currentSession()).
+     *
+     * @return list<array{id: string, name: string, is_current: bool}>
+     */
+    public function sessionsForSchool(School|string $school): array
+    {
+        $schoolId = is_object($school) ? $school->id : $school;
+
+        return AcademicSession::query()
+            ->where('school_id', $schoolId)
+            ->orderByDesc('is_current')
+            ->orderByDesc('created_at')
+            ->get(['id', 'name', 'is_current'])
+            ->map(fn (AcademicSession $row) => [
+                'id' => (string) $row->id,
+                'name' => (string) $row->name,
+                'is_current' => (bool) $row->is_current,
+            ])
+            ->all();
+    }
+
+    /**
+     * Whether the given session id belongs to the school.
+     * Prefer this over ad-hoc AcademicSession queries in other modules.
+     */
+    public function sessionBelongsToSchool(School|string $school, string $sessionId): bool
+    {
+        $schoolId = is_object($school) ? $school->id : $school;
+
+        return AcademicSession::query()
+            ->whereKey($sessionId)
+            ->where('school_id', $schoolId)
+            ->exists();
     }
 
     // ────────────────────────────────────────────────────────────────
