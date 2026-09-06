@@ -9,6 +9,7 @@ use App\Models\Student\StudentApplication;
 use App\Services\Student\LifecycleOperationalService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use ReflectionMethod;
 
 class LifecycleOperationsController extends Controller
 {
@@ -22,11 +23,8 @@ class LifecycleOperationsController extends Controller
 
         $school = GetSchoolModel();
         $categories = $this->authorizedCategories();
-        $data = $this->ops->needsAttention(
-            $school,
-            $request->integer('limit', 50),
-            $categories
-        );
+        $limit = $request->integer('limit', 50);
+        $data = $this->callOpsFeed('needsAttention', $school, $limit, $categories);
 
         if ($request->wantsJson()) {
             return response()->json($data);
@@ -49,12 +47,7 @@ class LifecycleOperationsController extends Controller
             $this->authorizedCategories(),
             ['admissions', 'enrollments']
         ));
-        $data = $this->ops->upcomingDeadlines(
-            $school,
-            $days,
-            $request->integer('limit', 50),
-            $categories
-        );
+        $data = $this->callOpsFeed('upcomingDeadlines', $school, $request->integer('limit', 50), $categories, $days);
 
         if ($request->wantsJson()) {
             return response()->json($data);
@@ -75,12 +68,7 @@ class LifecycleOperationsController extends Controller
         $school = GetSchoolModel();
         $days = max(1, min(90, $request->integer('within_days', 14)));
         $categories = $this->authorizedCategories();
-        $data = $this->ops->recentlyCompleted(
-            $school,
-            $days,
-            $request->integer('limit', 50),
-            $categories
-        );
+        $data = $this->callOpsFeed('recentlyCompleted', $school, $request->integer('limit', 50), $categories, $days);
 
         if ($request->wantsJson()) {
             return response()->json($data);
@@ -122,22 +110,94 @@ class LifecycleOperationsController extends Controller
 
         return response()->json([
             'counts' => $counts,
-            'needs_attention' => $this->ops->needsAttention($school, 10, $categories)['items'] ?? [],
-            'upcoming_deadlines' => $this->ops->upcomingDeadlines(
+            'needs_attention' => $this->callOpsFeed('needsAttention', $school, 10, $categories)['items'] ?? [],
+            'upcoming_deadlines' => $this->callOpsFeed(
+                'upcomingDeadlines',
                 $school,
-                7,
                 10,
-                array_values(array_intersect($categories, ['admissions', 'enrollments']))
+                array_values(array_intersect($categories, ['admissions', 'enrollments'])),
+                7
             )['items'] ?? [],
-            'recently_completed' => $this->ops->recentlyCompleted($school, 7, 10, $categories)['items'] ?? [],
+            'recently_completed' => $this->callOpsFeed('recentlyCompleted', $school, 10, $categories, 7)['items'] ?? [],
         ]);
     }
 
     /**
-     * Lifecycle categories the current user is permitted to view.
+     * Prefer service-level category scoping when available; fall back to post-filter.
      *
-     * @return list<string>
+     * @param  list<string>  $categories
+     * @return array{items: list<array>, total: int, returned_count?: int}
      */
+    protected function callOpsFeed(string $method, $school, int $limit, array $categories, ?int $withinDays = null): array
+    {
+        $ref = new ReflectionMethod($this->ops, $method);
+        $paramCount = $ref->getNumberOfParameters();
+
+        if ($method === 'needsAttention') {
+            $data = $paramCount >= 3
+                ? $this->ops->needsAttention($school, $limit, $categories)
+                : $this->ops->needsAttention($school, $limit);
+        } elseif ($method === 'upcomingDeadlines') {
+            $days = $withinDays ?? 14;
+            $data = $paramCount >= 4
+                ? $this->ops->upcomingDeadlines($school, $days, $limit, $categories)
+                : $this->ops->upcomingDeadlines($school, $days, $limit);
+        } else {
+            $days = $withinDays ?? 14;
+            $data = $paramCount >= 4
+                ? $this->ops->recentlyCompleted($school, $days, $limit, $categories)
+                : $this->ops->recentlyCompleted($school, $days, $limit);
+        }
+
+        if ($paramCount < 3 || ($method !== 'needsAttention' && $paramCount < 4)) {
+            $data = $this->scopeFeedToCategories($data, $categories, $limit);
+        }
+
+        return $data;
+    }
+
+    /**
+     * Fallback when service does not yet accept $categories.
+     * Apply artifacts/phase7/LifecycleOperationalService.auth-dates.php for authoritative totals.
+     *
+     * @param  array{items?: list<array>, total?: int}  $data
+     * @param  list<string>  $categories
+     * @return array{items: list<array>, total: int, returned_count: int}
+     */
+    protected function scopeFeedToCategories(array $data, array $categories, int $limit): array
+    {
+        $items = array_values(array_filter($data['items'] ?? [], function (array $item) use ($categories) {
+            $type = $item['type'] ?? '';
+            if (str_starts_with($type, 'application_')) {
+                return in_array('applications', $categories, true);
+            }
+            if (in_array($type, [
+                'offer_awaiting_acceptance',
+                'accepted_awaiting_registration',
+                'acceptance_deadline',
+                'registration_window_end',
+                'offer_issued',
+                'offer_accepted',
+            ], true) || str_starts_with($type, 'offer_')) {
+                return in_array('admissions', $categories, true);
+            }
+            if (str_starts_with($type, 'enrollment_')) {
+                return in_array('enrollments', $categories, true);
+            }
+
+            return false;
+        }));
+
+        $items = array_slice($items, 0, $limit);
+
+        return [
+            'items' => $items,
+            'total' => count($items),
+            'returned_count' => count($items),
+        ];
+    }
+
+    /** @return list<string> */
     protected function authorizedCategories(): array
     {
         $categories = [];
