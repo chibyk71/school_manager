@@ -295,6 +295,7 @@ it('placement report does not silently truncate beyond 50 sections', function ()
         if ($i < 10) {
             DB::table('student_session_placements')->insert([
                 'id' => (string) Str::uuid(),
+                'school_id' => $school->id,
                 'student_id' => (string) Str::uuid(),
                 'class_section_id' => $sectionId,
                 'class_level_id' => $levelId,
