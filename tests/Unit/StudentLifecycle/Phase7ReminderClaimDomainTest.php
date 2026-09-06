@@ -5,19 +5,15 @@ uses(Tests\TestCase::class);
 /**
  * Phase 7 — reminder claim / idempotency lifecycle.
  *
- * Invariants:
- * - failed dispatch remains retryable (no stuck phase=claimed)
- * - successful delivery suppresses subsequent reminder for that channel
- * - parent and admin keys are independent
- * - mail and SMS do not suppress each other
- * - non-reminder notifications create no claim rows
- * - concurrent lock prevents double claim of the same slot
+ * Exercises the real notify()/lock/suppress path where practical, not only
+ * pre-seeded NotificationLog rows.
  */
 
 use App\Models\NotificationLog;
 use App\Models\School;
 use App\Models\Student\Enrollment;
 use App\Notifications\Student\EnrollmentIncompleteNotification;
+use App\Services\SmsService;
 use App\Services\Student\LifecycleNotificationService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
@@ -36,6 +32,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
+    \Mockery::close();
     dropReminderClaimSchema();
 });
 
@@ -58,10 +55,15 @@ function buildReminderClaimSchema(): void
         $t->timestamps();
     });
 
+    // Match minimum columns required by School::creating (slug + data) and soft deletes.
     Schema::create('schools', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->string('name');
+        $t->string('slug')->unique();
+        $t->string('code')->nullable();
+        $t->json('data')->nullable();
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('enrollments', function (Blueprint $t) {
@@ -91,47 +93,48 @@ function buildReminderClaimSchema(): void
     });
 }
 
-function makeSchool(): School
+function makeSchool(string $name = 'Claim Test School'): School
 {
     return School::query()->create([
         'id' => (string) Str::uuid(),
-        'name' => 'Claim Test School',
+        'name' => $name,
+        // slug/data filled by School::creating when columns exist
     ]);
 }
 
-function makeEnrollment(School $school, array $meta = []): Enrollment
+function makeEnrollment(School $school, array $biodata = []): Enrollment
 {
     return Enrollment::query()->create([
         'id' => (string) Str::uuid(),
         'school_id' => $school->id,
         'status' => 'draft',
-        'meta' => array_merge([
-            'biodata' => [
+        'meta' => [
+            'biodata' => array_merge([
                 'email' => 'parent@example.com',
                 'phone' => '08012345678',
-            ],
-        ], $meta),
+            ], $biodata),
+        ],
     ]);
 }
 
-function enableLifecyclePrefs(School $school): void
+function mailRecipient(string $email = 'parent@example.com'): AnonymousNotifiable
 {
-    \DB::table('settings')->insert([
-        'key' => 'general.notifications',
-        'value' => json_encode([
-            'enrollment_incomplete_reminder' => ['parent' => true, 'admin' => true],
-            'enrollment_finalized' => ['parent' => true, 'admin' => false],
-        ]),
-        'model_type' => School::class,
-        'model_id' => $school->id,
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+    return (new AnonymousNotifiable)->route('mail', $email);
 }
+
+function smsRecipient(string $phone = '08012345678'): AnonymousNotifiable
+{
+    return (new AnonymousNotifiable)->route('sms', $phone);
+}
+
+it('creates school with slug via model boot when fixture has slug column', function () {
+    $school = makeSchool('Alpha Secondary');
+    expect($school->slug)->not->toBeEmpty()
+        ->and($school->exists)->toBeTrue();
+});
 
 it('does not create claim-phase rows for non-reminder notifications', function () {
     $school = makeSchool();
-    enableLifecyclePrefs($school);
     $enrollment = makeEnrollment($school);
 
     $svc = app(LifecycleNotificationService::class);
@@ -140,95 +143,151 @@ it('does not create claim-phase rows for non-reminder notifications', function (
         'enrollment_finalized',
         EnrollmentIncompleteNotification::class,
         $enrollment,
-        ['audience' => 'parent']
+        ['audience' => 'parent'] // no reminder_key
     );
 
-    expect(
-        NotificationLog::query()->where('metadata->phase', 'claimed')->count()
-    )->toBe(0);
+    expect(NotificationLog::query()->where('metadata->phase', 'claimed')->count())->toBe(0);
 });
 
-it('suppresses subsequent reminder after successful delivery for same channel', function () {
+it('suppresses same channel after successful delivery via notify path', function () {
     $school = makeSchool();
-    enableLifecyclePrefs($school);
-    $enrollment = makeEnrollment($school);
+    // Email-only biodata so only mail channel fires
+    $enrollment = makeEnrollment($school, ['email' => 'ok@example.com', 'phone' => null]);
+
     $svc = app(LifecycleNotificationService::class);
-    $key = 'enrollment_incomplete:'.$enrollment->id.':parent';
+    $key = 'enrollment_incomplete:'.$enrollment->id;
 
-    NotificationLog::query()->create([
-        'id' => (string) Str::uuid(),
-        'school_id' => $school->id,
-        'notification_type' => EnrollmentIncompleteNotification::class,
-        'channel' => 'mail',
-        'recipient' => 'mail:parent@example.com',
-        'message' => 'ok',
-        'success' => true,
-        'metadata' => [
+    $sent = $svc->notify(
+        $school,
+        'enrollment_incomplete_reminder',
+        EnrollmentIncompleteNotification::class,
+        $enrollment,
+        [
+            'audience' => 'parent',
+            'reminder' => true,
             'reminder_key' => $key,
-            'lifecycle_type' => $enrollment->getMorphClass(),
-            'lifecycle_id' => (string) $enrollment->id,
-            'phase' => 'delivered',
-            'channel' => 'mail',
-        ],
-        'delivered_at' => now(),
-    ]);
+        ]
+    );
 
-    $recipient = (new AnonymousNotifiable)->route('mail', 'parent@example.com');
+    expect($sent)->toBeGreaterThan(0);
+
+    $audienceKey = $key.':parent';
+    $recipient = mailRecipient('ok@example.com');
 
     expect($svc->shouldSuppressReminder(
         $school,
         $enrollment,
         EnrollmentIncompleteNotification::class,
-        $key,
+        $audienceKey,
         $recipient,
         'mail'
     ))->toBeTrue();
 
-    // SMS channel must remain eligible (mail success must not suppress SMS).
+    // SMS not suppressed by mail success
     expect($svc->shouldSuppressReminder(
         $school,
         $enrollment,
         EnrollmentIncompleteNotification::class,
-        $key,
+        $audienceKey,
         $recipient,
         'sms'
     ))->toBeFalse();
 });
 
-it('allows retry after failed dispatch (no stuck claimed phase)', function () {
+it('allows retry after a real failed SMS dispatch through notify', function () {
     $school = makeSchool();
-    enableLifecyclePrefs($school);
+    // Phone-only so SMS is the only channel
+    $enrollment = makeEnrollment($school, [
+        'email' => null,
+        'phone' => '08099998888',
+    ]);
+
+    $key = 'enrollment_incomplete:'.$enrollment->id;
+    $audienceKey = $key.':parent';
+
+    $failingSms = \Mockery::mock(SmsService::class);
+    $failingSms->shouldReceive('send')->once()->andReturn(false);
+    $svcFail = new LifecycleNotificationService($failingSms);
+
+    $sent1 = $svcFail->notify(
+        $school,
+        'enrollment_incomplete_reminder',
+        EnrollmentIncompleteNotification::class,
+        $enrollment,
+        [
+            'audience' => 'parent',
+            'reminder' => true,
+            'reminder_key' => $key,
+        ]
+    );
+    expect($sent1)->toBe(0);
+
+    $failed = NotificationLog::query()
+        ->where('school_id', $school->id)
+        ->where('channel', 'sms')
+        ->where('success', false)
+        ->where('metadata->reminder_key', $audienceKey)
+        ->count();
+    expect($failed)->toBeGreaterThan(0);
+
+    // Stuck claimed must not exist / must not suppress
+    expect(
+        NotificationLog::query()->where('metadata->phase', 'claimed')->count()
+    )->toBe(0);
+
+    $recipient = smsRecipient('08099998888');
+    $probe = new LifecycleNotificationService(\Mockery::mock(SmsService::class));
+    expect($probe->shouldSuppressReminder(
+        $school,
+        $enrollment,
+        EnrollmentIncompleteNotification::class,
+        $audienceKey,
+        $recipient,
+        'sms'
+    ))->toBeFalse();
+
+    // Retry succeeds
+    $okSms = \Mockery::mock(SmsService::class);
+    $okSms->shouldReceive('send')->once()->andReturn(true);
+    $svcOk = new LifecycleNotificationService($okSms);
+
+    $sent2 = $svcOk->notify(
+        $school,
+        'enrollment_incomplete_reminder',
+        EnrollmentIncompleteNotification::class,
+        $enrollment,
+        [
+            'audience' => 'parent',
+            'reminder' => true,
+            'reminder_key' => $key,
+        ]
+    );
+    expect($sent2)->toBeGreaterThan(0);
+
+    expect($probe->shouldSuppressReminder(
+        $school,
+        $enrollment,
+        EnrollmentIncompleteNotification::class,
+        $audienceKey,
+        $recipient,
+        'sms'
+    ))->toBeTrue();
+});
+
+it('treats only phase=dispatched as in-flight; legacy claimed does not suppress', function () {
+    $school = makeSchool();
     $enrollment = makeEnrollment($school);
     $svc = app(LifecycleNotificationService::class);
     $key = 'enrollment_incomplete:'.$enrollment->id.':parent';
-    $recipient = (new AnonymousNotifiable)->route('mail', 'parent@example.com');
+    $recipient = mailRecipient();
 
-    NotificationLog::query()->create([
-        'id' => (string) Str::uuid(),
-        'school_id' => $school->id,
-        'notification_type' => EnrollmentIncompleteNotification::class,
-        'channel' => 'mail',
-        'recipient' => 'mail:parent@example.com',
-        'message' => 'fail',
-        'success' => false,
-        'error' => 'SMTP down',
-        'metadata' => [
-            'reminder_key' => $key,
-            'lifecycle_type' => $enrollment->getMorphClass(),
-            'lifecycle_id' => (string) $enrollment->id,
-            'phase' => 'dispatch_failed',
-            'channel' => 'mail',
-        ],
-    ]);
-
-    // Legacy stuck claim row (pre-fix) should not block either.
     NotificationLog::query()->create([
         'id' => (string) Str::uuid(),
         'school_id' => $school->id,
         'notification_type' => EnrollmentIncompleteNotification::class,
         'channel' => 'claim',
         'recipient' => 'mail:parent@example.com',
-        'message' => 'claim',
+        'message' => 'legacy claim',
         'success' => false,
         'metadata' => [
             'reminder_key' => $key,
@@ -240,30 +299,12 @@ it('allows retry after failed dispatch (no stuck claimed phase)', function () {
     ]);
 
     expect($svc->hasPendingDispatch(
-        $school,
-        $enrollment,
-        EnrollmentIncompleteNotification::class,
-        $key,
-        $recipient,
-        'mail'
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $key, $recipient, 'mail'
     ))->toBeFalse();
 
     expect($svc->shouldSuppressReminder(
-        $school,
-        $enrollment,
-        EnrollmentIncompleteNotification::class,
-        $key,
-        $recipient,
-        'mail'
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $key, $recipient, 'mail'
     ))->toBeFalse();
-});
-
-it('suppresses while a dispatch is genuinely in-flight', function () {
-    $school = makeSchool();
-    $enrollment = makeEnrollment($school);
-    $svc = app(LifecycleNotificationService::class);
-    $key = 'enrollment_incomplete:'.$enrollment->id.':parent';
-    $recipient = (new AnonymousNotifiable)->route('mail', 'parent@example.com');
 
     NotificationLog::query()->create([
         'id' => (string) Str::uuid(),
@@ -284,47 +325,31 @@ it('suppresses while a dispatch is genuinely in-flight', function () {
     ]);
 
     expect($svc->hasPendingDispatch(
-        $school,
-        $enrollment,
-        EnrollmentIncompleteNotification::class,
-        $key,
-        $recipient,
-        'mail'
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $key, $recipient, 'mail'
     ))->toBeTrue();
 });
 
-it('keeps parent and admin reminder keys independent', function () {
+it('keeps parent and admin reminder keys independent after notify', function () {
     $school = makeSchool();
-    $enrollment = makeEnrollment($school);
+    $enrollment = makeEnrollment($school, ['email' => 'p@example.com', 'phone' => null]);
     $svc = app(LifecycleNotificationService::class);
-    $parentKey = 'enrollment_incomplete:'.$enrollment->id.':parent';
-    $adminKey = 'enrollment_incomplete:'.$enrollment->id.':admin';
-    $recipient = (new AnonymousNotifiable)->route('mail', 'parent@example.com');
+    $base = 'enrollment_incomplete:'.$enrollment->id;
 
-    NotificationLog::query()->create([
-        'id' => (string) Str::uuid(),
-        'school_id' => $school->id,
-        'notification_type' => EnrollmentIncompleteNotification::class,
-        'channel' => 'mail',
-        'recipient' => 'mail:parent@example.com',
-        'message' => 'ok',
-        'success' => true,
-        'metadata' => [
-            'reminder_key' => $parentKey,
-            'lifecycle_type' => $enrollment->getMorphClass(),
-            'lifecycle_id' => (string) $enrollment->id,
-            'phase' => 'delivered',
-            'channel' => 'mail',
-        ],
-        'delivered_at' => now(),
-    ]);
+    $svc->notify(
+        $school,
+        'enrollment_incomplete_reminder',
+        EnrollmentIncompleteNotification::class,
+        $enrollment,
+        ['audience' => 'parent', 'reminder' => true, 'reminder_key' => $base]
+    );
 
+    $recipient = mailRecipient('p@example.com');
     expect($svc->shouldSuppressReminder(
-        $school, $enrollment, EnrollmentIncompleteNotification::class, $parentKey, $recipient, 'mail'
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $base.':parent', $recipient, 'mail'
     ))->toBeTrue();
 
     expect($svc->shouldSuppressReminder(
-        $school, $enrollment, EnrollmentIncompleteNotification::class, $adminKey, $recipient, 'mail'
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $base.':admin', $recipient, 'mail'
     ))->toBeFalse();
 });
 
@@ -334,22 +359,22 @@ it('uses distinct lock keys per channel and audience', function () {
     $svc = app(LifecycleNotificationService::class);
     $parentKey = 'enrollment_incomplete:'.$enrollment->id.':parent';
     $adminKey = 'enrollment_incomplete:'.$enrollment->id.':admin';
-    $recipient = (new AnonymousNotifiable)->route('mail', 'parent@example.com');
+    $recipient = mailRecipient();
 
     $mailParent = $svc->reminderLockKey($school, $enrollment, EnrollmentIncompleteNotification::class, $parentKey, $recipient, 'mail');
     $smsParent = $svc->reminderLockKey($school, $enrollment, EnrollmentIncompleteNotification::class, $parentKey, $recipient, 'sms');
     $mailAdmin = $svc->reminderLockKey($school, $enrollment, EnrollmentIncompleteNotification::class, $adminKey, $recipient, 'mail');
 
-    expect($mailParent)->not->toBe($smsParent);
-    expect($mailParent)->not->toBe($mailAdmin);
+    expect($mailParent)->not->toBe($smsParent)
+        ->and($mailParent)->not->toBe($mailAdmin);
 });
 
-it('rejects a second lock acquisition for the same reminder slot', function () {
+it('rejects a second concurrent lock acquisition for the same reminder slot', function () {
     $school = makeSchool();
     $enrollment = makeEnrollment($school);
     $svc = app(LifecycleNotificationService::class);
     $key = 'enrollment_incomplete:'.$enrollment->id.':parent';
-    $recipient = (new AnonymousNotifiable)->route('mail', 'parent@example.com');
+    $recipient = mailRecipient();
 
     $lockKey = $svc->reminderLockKey(
         $school,
