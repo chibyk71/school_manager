@@ -2,7 +2,7 @@
 
 namespace App\Services\Student;
 
-use App\Models\Academic\AcademicSession;
+use App\Services\AcademicCalendarService;
 use App\Models\Misc\Document;
 use App\Models\Profile;
 use App\Models\School;
@@ -1135,12 +1135,9 @@ class EnrollmentService
 
     protected function assertSessionBelongsToSchool(School $school, string $sessionId): void
     {
-        $ok = AcademicSession::query()
-            ->whereKey($sessionId)
-            ->where('school_id', $school->id)
-            ->exists();
+        $ok = app(AcademicCalendarService::class)->sessionBelongsToSchool($school, $sessionId);
 
-        if (!$ok) {
+        if (! $ok) {
             throw ValidationException::withMessages([
                 'academic_session_id' => 'Academic session does not belong to the current school.',
             ]);

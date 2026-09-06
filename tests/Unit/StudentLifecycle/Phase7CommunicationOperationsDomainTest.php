@@ -8,6 +8,7 @@ uses(Tests\TestCase::class);
  * funnel reports, and notification side-effects not corrupting state.
  */
 
+use App\Models\Academic\AcademicSession;
 use App\Models\School;
 use App\Models\Student\Admission;
 use App\Models\Student\Enrollment;
@@ -176,18 +177,16 @@ function p7School(string $name = 'School A'): School
     ]);
 }
 
-function p7Session(School $school): object
+function p7Session(School $school): AcademicSession
 {
-    $id = (string) Str::uuid();
-    \DB::table('academic_sessions')->insert([
-        'id' => $id,
+    $session = new AcademicSession;
+    $session->forceFill([
+        'id' => (string) Str::uuid(),
         'school_id' => $school->id,
         'name' => '2026/2027',
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+    ])->save();
 
-    return (object) ['id' => $id];
+    return $session->fresh();
 }
 
 it('dashboard counts are school-scoped', function () {
@@ -229,8 +228,8 @@ it('dashboard counts are school-scoped', function () {
     ]);
 
     $ops = app(LifecycleOperationalService::class);
-    $countsA = $ops->dashboardCounts($schoolA);
-    $countsB = $ops->dashboardCounts($schoolB);
+    $countsA = $ops->dashboardCounts($schoolA, $sessionA);
+    $countsB = $ops->dashboardCounts($schoolB, $sessionB);
 
     expect($countsA['applications_awaiting_review'])->toBe(1)
         ->and($countsB['applications_awaiting_review'])->toBe(1)
@@ -246,8 +245,8 @@ it('dashboard counts are school-scoped', function () {
         'submitted_at' => now(),
     ]);
 
-    expect($ops->dashboardCounts($schoolA)['applications_awaiting_review'])->toBe(1)
-        ->and($ops->dashboardCounts($schoolB)['applications_awaiting_review'])->toBe(2);
+    expect($ops->dashboardCounts($schoolA, $sessionA)['applications_awaiting_review'])->toBe(1)
+        ->and($ops->dashboardCounts($schoolB, $sessionB)['applications_awaiting_review'])->toBe(2);
 });
 
 it('lifecycle funnel uses authoritative school records only', function () {
@@ -765,4 +764,66 @@ it('channelsFor returns mail and sms independently', function () {
     $emailOnly = \Illuminate\Support\Facades\Notification::route('mail', 'e@example.com');
     expect($svc->channelsFor($emailOnly, $school))->toContain('mail')
         ->and($svc->channelsFor($emailOnly, $school))->not->toContain('sms');
+});
+
+
+it('pending dispatch suppresses re-queue while failed remains retryable', function () {
+    $school = p7School();
+    $session = p7Session($school);
+    $svc = app(\App\Services\Student\LifecycleNotificationService::class);
+
+    $enrollment = Enrollment::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'academic_session_id' => $session->id,
+        'status' => Enrollment::STATUS_IN_PROGRESS,
+        'meta' => ['biodata' => ['email' => 'pending@example.com']],
+    ]);
+
+    $recipient = \Illuminate\Support\Facades\Notification::route('mail', 'pending@example.com');
+    $reminderKey = 'enrollment_incomplete:'.$enrollment->id;
+    $dispatchId = (string) Str::uuid();
+
+    \App\Models\NotificationLog::query()->create([
+        'id' => (string) Str::uuid(),
+        'school_id' => $school->id,
+        'notifiable_type' => $enrollment->getMorphClass(),
+        'notifiable_id' => $enrollment->getKey(),
+        'notification_type' => EnrollmentIncompleteNotification::class,
+        'notification_id' => 0,
+        'channel' => 'mail',
+        'recipient' => 'pending@example.com',
+        'message' => 'EnrollmentIncompleteNotification',
+        'success' => false,
+        'metadata' => [
+            'dispatch_id' => $dispatchId,
+            'reminder_key' => $reminderKey,
+            'lifecycle_type' => $enrollment->getMorphClass(),
+            'lifecycle_id' => (string) $enrollment->getKey(),
+            'phase' => 'dispatched',
+        ],
+    ]);
+
+    expect($svc->hasPendingDispatch(
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $reminderKey, $recipient
+    ))->toBeTrue();
+
+    expect($svc->shouldSuppressReminder(
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $reminderKey, $recipient
+    ))->toBeTrue();
+
+    // Failure clears pending suppression and allows retry
+    expect($svc->markDispatchOutcome($dispatchId, false, 'SMTP timeout'))->toBeTrue();
+
+    expect($svc->hasPendingDispatch(
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $reminderKey, $recipient
+    ))->toBeFalse();
+
+    expect($svc->alreadyDeliveredSuccessfully(
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $reminderKey, $recipient
+    ))->toBeFalse();
+
+    expect($svc->shouldSuppressReminder(
+        $school, $enrollment, EnrollmentIncompleteNotification::class, $reminderKey, $recipient
+    ))->toBeFalse();
 });

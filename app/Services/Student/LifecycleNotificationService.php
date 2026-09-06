@@ -103,6 +103,57 @@ class LifecycleNotificationService
     }
 
     /**
+     * True when a non-terminal dispatch is still in flight for this reminder key
+     * (queued/accepted but not yet delivered or failed). Prevents duplicate enqueue
+     * while a prior copy is pending. Failed dispatches remain retryable.
+     */
+    public function hasPendingDispatch(
+        School $school,
+        Model $context,
+        string $notificationClass,
+        string $reminderKey,
+        ?object $recipient = null
+    ): bool {
+        $q = NotificationLog::query()
+            ->where('school_id', $school->id)
+            ->where('notification_type', $notificationClass)
+            ->where('success', false)
+            ->where('metadata->reminder_key', $reminderKey)
+            ->where('metadata->lifecycle_type', $context->getMorphClass())
+            ->where('metadata->lifecycle_id', (string) $context->getKey())
+            ->where('metadata->phase', 'dispatched');
+
+        if ($recipient instanceof Model && $recipient->getKey()) {
+            $q->where('notifiable_type', $recipient->getMorphClass())
+                ->where('notifiable_id', $recipient->getKey());
+        } elseif ($recipient !== null) {
+            $identity = $this->recipientIdentity($recipient);
+            if ($identity !== '') {
+                $q->where('recipient', $identity);
+            }
+        }
+
+        return $q->exists();
+    }
+
+    /**
+     * Skip recipient when already delivered or a dispatch is still pending.
+     */
+    public function shouldSuppressReminder(
+        School $school,
+        Model $context,
+        string $notificationClass,
+        string $reminderKey,
+        ?object $recipient = null
+    ): bool {
+        return $this->alreadyDeliveredSuccessfully(
+            $school, $context, $notificationClass, $reminderKey, $recipient
+        ) || $this->hasPendingDispatch(
+            $school, $context, $notificationClass, $reminderKey, $recipient
+        );
+    }
+
+    /**
      * Dispatch a lifecycle notification to resolved recipients.
      *
      * @return int number of notifiables notified (0 if skipped/disabled/no recipients)
@@ -138,8 +189,10 @@ class LifecycleNotificationService
         // Per-recipient idempotency: only skip recipients that already have success=true
         // for this reminder (any successful channel counts as delivered for that recipient).
         if ($reminderKey) {
+            // Suppress successful deliveries and in-flight (queued) dispatches.
+            // Failed dispatches remain eligible for retry.
             $recipients = $recipients->filter(
-                fn ($recipient) => ! $this->alreadyDeliveredSuccessfully(
+                fn ($recipient) => ! $this->shouldSuppressReminder(
                     $school,
                     $context,
                     $notificationClass,
