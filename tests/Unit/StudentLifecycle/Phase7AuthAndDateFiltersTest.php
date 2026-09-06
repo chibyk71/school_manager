@@ -113,7 +113,7 @@ function p7aSchool(string $name): School
 function p7aSession(School $school): object
 {
     $id = (string) Str::uuid();
-    \Illuminate\Support\Facades\DB::table('academic_sessions')->insert([
+    \DB::table('academic_sessions')->insert([
         'id' => $id,
         'school_id' => $school->id,
         'name' => '2026/2027',

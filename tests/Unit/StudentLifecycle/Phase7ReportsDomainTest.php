@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use \Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     config(['activitylog.enabled' => false]);
@@ -51,6 +52,7 @@ function buildPhase7ReportsSchema(): void
         $t->string('name');
         $t->string('slug')->unique();
         $t->string('code')->nullable();
+        $t->json('data')->nullable();
         $t->timestamps();
         $t->softDeletes();
     });
@@ -60,6 +62,7 @@ function buildPhase7ReportsSchema(): void
         $t->uuid('school_id');
         $t->string('name');
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('class_levels', function (Blueprint $t) {
@@ -143,7 +146,7 @@ function p7rSchool(string $name): School
 function p7rSession(School $school): object
 {
     $id = (string) Str::uuid();
-    \DB::table('academic_sessions')->insert([
+    \Illuminate\Support\Facades\DB::table('academic_sessions')->insert([
         'id' => $id,
         'school_id' => $school->id,
         'name' => '2026/2027',
@@ -255,7 +258,7 @@ it('placement report does not silently truncate beyond 50 sections', function ()
     $school = p7rSchool('PlacementMany');
     $session = p7rSession($school);
     $levelId = (string) Str::uuid();
-    \DB::table('class_levels')->insert([
+    \Illuminate\Support\Facades\DB::table('class_levels')->insert([
         'id' => $levelId,
         'school_id' => $school->id,
         'name' => 'JSS1',
@@ -266,7 +269,7 @@ it('placement report does not silently truncate beyond 50 sections', function ()
     $sectionCount = 55;
     for ($i = 0; $i < $sectionCount; $i++) {
         $sectionId = (string) Str::uuid();
-        \DB::table('class_sections')->insert([
+        \Illuminate\Support\Facades\DB::table('class_sections')->insert([
             'id' => $sectionId,
             'school_id' => $school->id,
             'class_level_id' => $levelId,
@@ -276,7 +279,7 @@ it('placement report does not silently truncate beyond 50 sections', function ()
             'updated_at' => now(),
         ]);
         if ($i < 10) {
-            \DB::table('student_session_placements')->insert([
+            \Illuminate\Support\Facades\DB::table('student_session_placements')->insert([
                 'id' => (string) Str::uuid(),
                 'student_id' => (string) Str::uuid(),
                 'class_section_id' => $sectionId,
@@ -322,14 +325,14 @@ it('placement and application reports remain school-scoped', function () {
     ]);
 
     $levelA = (string) Str::uuid();
-    \DB::table('class_levels')->insert([
+    \Illuminate\Support\Facades\DB::table('class_levels')->insert([
         'id' => $levelA,
         'school_id' => $schoolA->id,
         'name' => 'A',
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    \DB::table('class_sections')->insert([
+    \Illuminate\Support\Facades\DB::table('class_sections')->insert([
         'id' => (string) Str::uuid(),
         'school_id' => $schoolA->id,
         'class_level_id' => $levelA,
@@ -339,14 +342,14 @@ it('placement and application reports remain school-scoped', function () {
         'updated_at' => now(),
     ]);
     $levelB = (string) Str::uuid();
-    \DB::table('class_levels')->insert([
+    \Illuminate\Support\Facades\DB::table('class_levels')->insert([
         'id' => $levelB,
         'school_id' => $schoolB->id,
         'name' => 'B',
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    \DB::table('class_sections')->insert([
+    DB::table('class_sections')->insert([
         'id' => (string) Str::uuid(),
         'school_id' => $schoolB->id,
         'class_level_id' => $levelB,

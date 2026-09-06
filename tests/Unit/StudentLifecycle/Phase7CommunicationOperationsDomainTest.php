@@ -19,6 +19,7 @@ use App\Services\Student\LifecycleOperationalService;
 use App\Services\Student\PlacementAllocationService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -67,6 +68,7 @@ function buildPhase7Schema(): void
         $t->string('name');
         $t->string('slug')->unique();
         $t->string('code')->nullable();
+        $t->json('data')->nullable();
         $t->timestamps();
         $t->softDeletes();
     });
@@ -97,6 +99,7 @@ function buildPhase7Schema(): void
         $t->uuid('school_id');
         $t->string('name');
         $t->timestamps();
+        $t->softDeletes();
     });
 
     Schema::create('student_applications', function (Blueprint $t) {
@@ -573,7 +576,7 @@ it('registration window reminder preference is school-scoped and honored', funct
     $schoolB = p7School('PrefB');
 
     if (Schema::hasTable('settings')) {
-        \DB::table('settings')->insert([
+        DB::table('settings')->insert([
             'key' => 'general.notifications',
             'value' => json_encode(['admission_registration_window_reminder' => ['admin' => false, 'parent' => false]]),
             'model_type' => School::class,
@@ -650,7 +653,7 @@ it('skips notifications when school preference is disabled', function () {
     $school = p7School();
     // Persist disabled preference via settings table if present
     if (Schema::hasTable('settings')) {
-        \DB::table('settings')->insert([
+        DB::table('settings')->insert([
             'key' => 'general.notifications',
             'value' => json_encode(['enrollment_incomplete_reminder' => ['admin' => false, 'parent' => false]]),
             'model_type' => School::class,
@@ -741,7 +744,7 @@ it('applications export query is school-scoped', function () {
 it('parent=false does not enable parent lifecycle notifications when only admin is true', function () {
     $school = p7School('Audience');
     if (Schema::hasTable('settings')) {
-        \DB::table('settings')->insert([
+        DB::table('settings')->insert([
             'key' => 'general.notifications',
             'value' => json_encode([
                 'enrollment_incomplete_reminder' => ['admin' => true, 'parent' => false],
