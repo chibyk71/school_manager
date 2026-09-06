@@ -49,6 +49,7 @@ function buildDashSchema(): void
     Schema::create('schools', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->string('name');
+        $t->string('slug')->unique();
         $t->string('code')->nullable();
         $t->timestamps();
         $t->softDeletes();
@@ -232,7 +233,7 @@ it('dashboard counts remain school-scoped', function () {
     $studentB = new Student;
     $studentB->forceFill([
         'id' => (string) Str::uuid(),
-        'school_id' => $schoolB->id,
+        'school_id' => $school->id ?? $schoolB->id,
         'status' => 'active',
     ])->save();
 

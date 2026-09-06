@@ -46,6 +46,7 @@ function buildP7AuthSchema(): void
     Schema::create('schools', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->string('name');
+        $t->string('slug')->unique();
         $t->string('code')->nullable();
         $t->timestamps();
         $t->softDeletes();
