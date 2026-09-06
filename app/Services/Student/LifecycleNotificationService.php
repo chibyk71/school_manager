@@ -64,12 +64,6 @@ class LifecycleNotificationService
     }
 
     /**
-     * True when a successful delivery was already logged for this reminder key.
-     * When $recipient is provided, the check is scoped to that recipient so one
-     * guardian's success cannot suppress another guardian's retry.
-     */
-
-    /**
      * Match NotificationLog.recipient against route identity and bare address forms.
      */
     protected function applyRecipientFilter($query, ?object $recipient)
@@ -142,7 +136,10 @@ class LifecycleNotificationService
             ->where('metadata->reminder_key', $reminderKey)
             ->where('metadata->lifecycle_type', $context->getMorphClass())
             ->where('metadata->lifecycle_id', (string) $context->getKey())
-            ->where('metadata->phase', 'dispatched');
+            ->where(function ($inner) {
+                $inner->where('metadata->phase', 'dispatched')
+                    ->orWhere('metadata->phase', 'claimed');
+            });
 
         $q = $this->applyRecipientFilter($q, $recipient);
 
@@ -168,6 +165,9 @@ class LifecycleNotificationService
 
     /**
      * Dispatch a lifecycle notification to resolved recipients.
+     *
+     * When audience is omitted, delivers independently to every audience enabled
+     * in the preference (parent + admin), matching the seeded settings shape.
      *
      * @return int number of notifiables notified (0 if skipped/disabled/no recipients)
      */
@@ -231,6 +231,7 @@ class LifecycleNotificationService
             : null;
 
         $recipients = $this->resolveRecipients($context, $audience, $school);
+        $recipients = $this->resolveRecipients($context, $audience, $school);
         if ($recipients->isEmpty()) {
             Log::info('Lifecycle notification skipped: no recipients', [
                 'school_id' => $school->id,
@@ -238,6 +239,7 @@ class LifecycleNotificationService
                 'context_id' => $context->getKey(),
                 'notification' => $notificationClass,
                 'preference_key' => $preferenceKey,
+                'audience' => $audience,
                 'audience' => $audience,
                 'reminder_key' => $reminderKey,
             ]);
@@ -254,7 +256,13 @@ class LifecycleNotificationService
                     $context,
                     $notificationClass,
                     $audienceReminderKey,
+                    $audienceReminderKey,
                     $recipient
+                )) {
+                    $claimed[] = $recipient;
+                }
+            }
+            $recipients = collect($claimed)->values();
                 )) {
                     $claimed[] = $recipient;
                 }
@@ -266,6 +274,7 @@ class LifecycleNotificationService
         }
 
         $sent = 0;
+        $payload = array_merge($extra, ['audience' => $audience]);
         $payload = array_merge($extra, ['audience' => $audience]);
         foreach ($recipients as $recipient) {
             $channels = $this->channelsFor($recipient, $school);
@@ -283,6 +292,8 @@ class LifecycleNotificationService
                         $preferenceKey,
                         $audienceReminderKey,
                         $payload
+                        $audienceReminderKey,
+                        $payload
                     ) ? 1 : 0;
                 } elseif ($channel === 'sms') {
                     $sent += $this->dispatchSms(
@@ -291,6 +302,8 @@ class LifecycleNotificationService
                         $recipient,
                         $notificationClass,
                         $preferenceKey,
+                        $audienceReminderKey,
+                        $payload
                         $audienceReminderKey,
                         $payload
                     ) ? 1 : 0;

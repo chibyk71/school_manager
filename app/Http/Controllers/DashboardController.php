@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Support\DashboardWidgets;
+use App\Services\AcademicCalendarService;
 use App\Services\Student\LifecycleOperationalService;
 use App\Metrics\StudentMetric;
 use App\Metrics\StaffMetric;
@@ -82,7 +83,10 @@ class DashboardController extends Controller
         try {
             $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             if ($school) {
-                $lifecycle = app(LifecycleOperationalService::class)->dashboardCounts($school);
+                // Session resolution is owned by AcademicCalendarService — pass it in.
+                // dashboardCounts(null) intentionally returns zeros (session boundary).
+                $session = app(AcademicCalendarService::class)->currentSession();
+                $lifecycle = app(LifecycleOperationalService::class)->dashboardCounts($school, $session);
             }
         } catch (\Throwable $e) {
             $lifecycle = [];
