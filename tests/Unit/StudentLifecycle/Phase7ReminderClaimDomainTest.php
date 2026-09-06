@@ -98,7 +98,6 @@ function makeSchool(string $name = 'Claim Test School'): School
     return School::query()->create([
         'id' => (string) Str::uuid(),
         'name' => $name,
-        // slug/data filled by School::creating when columns exist
     ]);
 }
 
@@ -114,6 +113,21 @@ function makeEnrollment(School $school, array $biodata = []): Enrollment
                 'phone' => '08012345678',
             ], $biodata),
         ],
+    ]);
+}
+
+function seedSmsEnabled(School $school): void
+{
+    \DB::table('settings')->insert([
+        'key' => 'sms',
+        'value' => json_encode([
+            'enabled' => true,
+            'providers' => ['log' => ['driver' => 'log']],
+        ]),
+        'model_type' => School::class,
+        'model_id' => $school->id,
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
 }
 
@@ -143,7 +157,7 @@ it('does not create claim-phase rows for non-reminder notifications', function (
         'enrollment_finalized',
         EnrollmentIncompleteNotification::class,
         $enrollment,
-        ['audience' => 'parent'] // no reminder_key
+        ['audience' => 'parent']
     );
 
     expect(NotificationLog::query()->where('metadata->phase', 'claimed')->count())->toBe(0);
@@ -151,7 +165,6 @@ it('does not create claim-phase rows for non-reminder notifications', function (
 
 it('suppresses same channel after successful delivery via notify path', function () {
     $school = makeSchool();
-    // Email-only biodata so only mail channel fires
     $enrollment = makeEnrollment($school, ['email' => 'ok@example.com', 'phone' => null]);
 
     $svc = app(LifecycleNotificationService::class);
@@ -183,7 +196,6 @@ it('suppresses same channel after successful delivery via notify path', function
         'mail'
     ))->toBeTrue();
 
-    // SMS not suppressed by mail success
     expect($svc->shouldSuppressReminder(
         $school,
         $enrollment,
@@ -196,7 +208,7 @@ it('suppresses same channel after successful delivery via notify path', function
 
 it('allows retry after a real failed SMS dispatch through notify', function () {
     $school = makeSchool();
-    // Phone-only so SMS is the only channel
+    seedSmsEnabled($school);
     $enrollment = makeEnrollment($school, [
         'email' => null,
         'phone' => '08099998888',
@@ -230,7 +242,6 @@ it('allows retry after a real failed SMS dispatch through notify', function () {
         ->count();
     expect($failed)->toBeGreaterThan(0);
 
-    // Stuck claimed must not exist / must not suppress
     expect(
         NotificationLog::query()->where('metadata->phase', 'claimed')->count()
     )->toBe(0);
@@ -246,7 +257,6 @@ it('allows retry after a real failed SMS dispatch through notify', function () {
         'sms'
     ))->toBeFalse();
 
-    // Retry succeeds
     $okSms = \Mockery::mock(SmsService::class);
     $okSms->shouldReceive('send')->once()->andReturn(true);
     $svcOk = new LifecycleNotificationService($okSms);
