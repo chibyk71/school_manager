@@ -233,7 +233,7 @@ it('dashboard counts remain school-scoped', function () {
     $studentB = new Student;
     $studentB->forceFill([
         'id' => (string) Str::uuid(),
-        'school_id' => $school->id ?? $schoolB->id,
+        'school_id' => $schoolB->id,
         'status' => 'active',
     ])->save();
 
