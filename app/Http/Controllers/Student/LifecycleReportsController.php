@@ -8,9 +8,12 @@ use App\Exports\Lifecycle\EnrollmentsExport;
 use App\Exports\Lifecycle\FunnelExport;
 use App\Exports\Lifecycle\PlacementsExport;
 use App\Http\Controllers\Controller;
+use App\Models\Academic\ClassLevel;
+use App\Models\Academic\ClassSection;
 use App\Models\School;
 use App\Services\Student\LifecycleOperationalService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -36,12 +39,12 @@ class LifecycleReportsController extends Controller
             'placement' => $this->ops->placementReport($school, $filters),
             'funnel' => $this->ops->lifecycleFunnel($school, $sessionId),
             'filters' => $filters,
+            'academicSessions' => $this->sessionOptions($school),
+            'classLevels' => $this->classLevelOptions($school),
+            'classSections' => $this->classSectionOptions($school, $filters['class_level_id'] ?? null),
         ]);
     }
 
-    /**
-     * Download a lifecycle report section via Laravel Excel (CSV or XLSX).
-     */
     public function export(Request $request): BinaryFileResponse
     {
         $this->authorizeReport();
@@ -71,12 +74,9 @@ class LifecycleReportsController extends Controller
         return Excel::download($export, $filename, $writerType);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     protected function reportFilters(Request $request): array
     {
-        return array_filter([
+        $raw = array_filter([
             'academic_session_id' => $request->string('academic_session_id')->toString() ?: null,
             'status' => $request->input('status'),
             'class_level_id' => $request->string('class_level_id')->toString() ?: null,
@@ -94,6 +94,62 @@ class LifecycleReportsController extends Controller
             'deadline_from' => $request->string('deadline_from')->toString() ?: null,
             'deadline_to' => $request->string('deadline_to')->toString() ?: null,
         ], fn ($v) => $v !== null && $v !== '');
+
+        // Inclusive day bounds applied once in the domain service.
+        return $this->ops->normalizeReportFilters($raw);
+    }
+
+    protected function sessionOptions(School $school): array
+    {
+        if (! Schema::hasTable('academic_sessions')) {
+            return [];
+        }
+
+        $q = \DB::table('academic_sessions')->where('school_id', $school->id)->orderByDesc('created_at');
+        $cols = ['id', 'name'];
+        if (Schema::hasColumn('academic_sessions', 'is_current')) {
+            $cols[] = 'is_current';
+        }
+
+        return $q->get($cols)->map(fn ($row) => [
+            'id' => (string) $row->id,
+            'name' => (string) $row->name,
+            'is_current' => (bool) ($row->is_current ?? false),
+        ])->all();
+    }
+
+    protected function classLevelOptions(School $school): array
+    {
+        if (! class_exists(ClassLevel::class) || ! Schema::hasTable('class_levels')) {
+            return [];
+        }
+
+        return ClassLevel::query()
+            ->where('school_id', $school->id)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn ($row) => ['id' => (string) $row->id, 'name' => (string) $row->name])
+            ->all();
+    }
+
+    protected function classSectionOptions(School $school, ?string $classLevelId = null): array
+    {
+        if (! class_exists(ClassSection::class) || ! Schema::hasTable('class_sections')) {
+            return [];
+        }
+
+        $q = ClassSection::query()->where('school_id', $school->id)->orderBy('name');
+        if ($classLevelId) {
+            $q->where('class_level_id', $classLevelId);
+        }
+
+        return $q->get(['id', 'name', 'class_level_id'])
+            ->map(fn ($row) => [
+                'id' => (string) $row->id,
+                'name' => (string) $row->name,
+                'class_level_id' => $row->class_level_id ? (string) $row->class_level_id : null,
+            ])
+            ->all();
     }
 
     protected function currentSchool(): School
