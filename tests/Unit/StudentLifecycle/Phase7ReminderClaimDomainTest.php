@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     config(['activitylog.enabled' => false]);
@@ -118,7 +119,7 @@ function makeEnrollment(School $school, array $biodata = []): Enrollment
 
 function seedSmsEnabled(School $school): void
 {
-    \DB::table('settings')->insert([
+    DB::table('settings')->insert([
         'key' => 'sms',
         'value' => json_encode([
             'enabled' => true,
