@@ -108,8 +108,10 @@ function buildDashSchema(): void
         $t->uuid('id')->primary();
         $t->uuid('school_id');
         $t->uuid('academic_session_id')->nullable();
+        $t->uuid('admission_id')->nullable();
         $t->uuid('student_id')->nullable();
         $t->string('status');
+        $t->json('meta')->nullable();
         $t->timestamp('activated_at')->nullable();
         $t->timestamps();
         $t->softDeletes();

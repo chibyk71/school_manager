@@ -44,13 +44,7 @@ class LifecycleNotificationService
         $pref = $settings[$preferenceKey] ?? null;
 
         if ($pref === null) {
-            // Explicit lifecycle preference keys must be present in school settings.
-            // Unspecified keys other than registration-window still default enabled for
-            // backward compatibility; registration-window requires explicit configuration.
-            if ($preferenceKey === 'admission_registration_window_reminder') {
-                return false;
-            }
-
+            // Unspecified preference keys default to enabled.
             return true;
         }
 
@@ -473,6 +467,24 @@ class LifecycleNotificationService
                 : Admission::query()->with('application')->find($enrollment->admission_id);
             if ($admission) {
                 $recipients = $recipients->merge($this->resolveForAdmission($admission));
+            }
+        }
+
+        // Incomplete enrollments may only have biodata on the enrollment record.
+        if ($recipients->isEmpty()) {
+            $meta = $enrollment->meta ?? [];
+            if (is_string($meta)) {
+                $decoded = json_decode($meta, true);
+                $meta = is_array($decoded) ? $decoded : [];
+            }
+            $biodata = is_array($meta) ? ($meta['biodata'] ?? []) : [];
+            $email = is_array($biodata) ? ($biodata['email'] ?? null) : null;
+            if (is_string($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $recipients->push($this->mailRoute($email));
+            }
+            $phone = is_array($biodata) ? ($biodata['phone'] ?? null) : null;
+            if (is_string($phone) && ($normalized = $this->normalizePhone($phone)) !== '') {
+                $recipients->push($this->smsRoute($normalized));
             }
         }
 

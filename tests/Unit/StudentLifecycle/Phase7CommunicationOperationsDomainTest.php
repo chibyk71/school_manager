@@ -41,6 +41,7 @@ function dropPhase7Schema(): void
         'enrollment_requirement_instances',
         'enrollment_requirement_definitions',
         'student_session_placements',
+        'class_sections',
         'students',
         'enrollments',
         'admissions',
@@ -152,6 +153,15 @@ function buildPhase7Schema(): void
     });
 
     
+    
+    Schema::create('class_sections', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('school_id');
+        $t->string('name')->nullable();
+        $t->unsignedInteger('capacity')->default(0);
+        $t->timestamps();
+        $t->softDeletes();
+    });
     Schema::create('students', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->uuid('school_id');

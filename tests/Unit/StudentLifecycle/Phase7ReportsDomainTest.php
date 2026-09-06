@@ -122,6 +122,7 @@ function buildPhase7ReportsSchema(): void
         $t->string('status');
         $t->timestamp('activated_at')->nullable();
         $t->timestamps();
+        $t->json('meta')->nullable();
         $t->softDeletes();
     });
 

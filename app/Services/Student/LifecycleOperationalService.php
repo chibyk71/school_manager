@@ -143,7 +143,7 @@ class LifecycleOperationalService
             ->where('school_id', $schoolId)
             ->where('capacity', '>', 0)
             ->whereRaw(
-                "(capacity - (SELECT COUNT(*) FROM student_session_placements ssp WHERE ssp.class_section_id = class_sections.id AND ssp.is_current = 1 AND ssp.academic_session_id = ?)) <= GREATEST(2, FLOOR(capacity * 0.15))",
+                "(capacity - (SELECT COUNT(*) FROM student_session_placements ssp WHERE ssp.class_section_id = class_sections.id AND ssp.is_current = 1 AND ssp.academic_session_id = ?)) <= (CASE WHEN 2 > FLOOR(capacity * 0.15) THEN 2 ELSE FLOOR(capacity * 0.15) END)",
                 [$sessionId]
             )
             ->count();
@@ -833,12 +833,12 @@ class LifecycleOperationalService
             ->when(! empty($filters['class_level_id']), fn ($q) => $q->where('class_level_id', $filters['class_level_id']));
         if ($sessionId) {
             $near->whereRaw(
-                "(capacity - {$capacitySql}) <= GREATEST(2, FLOOR(capacity * 0.15))",
+                "(capacity - {$capacitySql}) <= (CASE WHEN 2 > FLOOR(capacity * 0.15) THEN 2 ELSE FLOOR(capacity * 0.15) END)",
                 [$sessionId]
             );
         } else {
             $near->whereRaw(
-                "(capacity - {$capacitySql}) <= GREATEST(2, FLOOR(capacity * 0.15))"
+                "(capacity - {$capacitySql}) <= (CASE WHEN 2 > FLOOR(capacity * 0.15) THEN 2 ELSE FLOOR(capacity * 0.15) END)"
             );
         }
 
