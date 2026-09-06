@@ -14,9 +14,10 @@ use App\Services\SmsService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 
 /**
  * Phase 7 lifecycle communications — preferences, recipients, logging.
@@ -35,10 +36,6 @@ class LifecycleNotificationService
      * Whether the school enabled this lifecycle preference for a specific audience.
      *
      * Settings shape: ['admin' => bool, 'parent' => bool, ...].
-     * Lifecycle candidate/guardian notifications use audience "parent".
-     * Staff-facing notifications use "admin" (or teacher when applicable).
-     * When $audience is null, returns true only if the preference is a scalar true
-     * or the array is non-empty with at least one true — callers should pass audience.
      */
     public function isEnabled(School $school, string $preferenceKey, ?string $audience = 'parent'): bool
     {
@@ -46,7 +43,6 @@ class LifecycleNotificationService
         $pref = $settings[$preferenceKey] ?? null;
 
         if ($pref === null) {
-            // Unspecified preference keys default to enabled.
             return true;
         }
 
@@ -99,12 +95,16 @@ class LifecycleNotificationService
         });
     }
 
+    /**
+     * True when a successful delivery was logged for this reminder (+ optional channel).
+     */
     public function alreadyDeliveredSuccessfully(
         School $school,
         Model $context,
         string $notificationClass,
         string $reminderKey,
-        ?object $recipient = null
+        ?object $recipient = null,
+        ?string $channel = null
     ): bool {
         $q = NotificationLog::query()
             ->where('school_id', $school->id)
@@ -114,22 +114,29 @@ class LifecycleNotificationService
             ->where('metadata->lifecycle_type', $context->getMorphClass())
             ->where('metadata->lifecycle_id', (string) $context->getKey());
 
+        if ($channel !== null) {
+            $q->where(function ($inner) use ($channel) {
+                $inner->where('channel', $channel)
+                    ->orWhere('metadata->channel', $channel);
+            });
+        }
+
         $q = $this->applyRecipientFilter($q, $recipient);
 
         return $q->exists();
     }
 
     /**
-     * True when a non-terminal dispatch is still in flight for this reminder key
-     * (queued/accepted but not yet delivered or failed). Prevents duplicate enqueue
-     * while a prior copy is pending. Failed dispatches remain retryable.
+     * True when a non-terminal in-flight dispatch exists (queued, not yet delivered/failed).
+     * Failed and released phases are NOT pending — retries remain allowed.
      */
     public function hasPendingDispatch(
         School $school,
         Model $context,
         string $notificationClass,
         string $reminderKey,
-        ?object $recipient = null
+        ?object $recipient = null,
+        ?string $channel = null
     ): bool {
         $q = NotificationLog::query()
             ->where('school_id', $school->id)
@@ -138,40 +145,64 @@ class LifecycleNotificationService
             ->where('metadata->reminder_key', $reminderKey)
             ->where('metadata->lifecycle_type', $context->getMorphClass())
             ->where('metadata->lifecycle_id', (string) $context->getKey())
-            ->where(function ($inner) {
-                $inner->where('metadata->phase', 'dispatched')
-                    ->orWhere('metadata->phase', 'claimed');
+            ->where('metadata->phase', 'dispatched');
+
+        if ($channel !== null) {
+            $q->where(function ($inner) use ($channel) {
+                $inner->where('channel', $channel)
+                    ->orWhere('metadata->channel', $channel);
             });
+        }
 
         $q = $this->applyRecipientFilter($q, $recipient);
 
         return $q->exists();
     }
 
-    /**
-     * Skip recipient when already delivered or a dispatch is still pending.
-     */
     public function shouldSuppressReminder(
         School $school,
         Model $context,
         string $notificationClass,
         string $reminderKey,
-        ?object $recipient = null
+        ?object $recipient = null,
+        ?string $channel = null
     ): bool {
         return $this->alreadyDeliveredSuccessfully(
-            $school, $context, $notificationClass, $reminderKey, $recipient
+            $school, $context, $notificationClass, $reminderKey, $recipient, $channel
         ) || $this->hasPendingDispatch(
-            $school, $context, $notificationClass, $reminderKey, $recipient
+            $school, $context, $notificationClass, $reminderKey, $recipient, $channel
         );
+    }
+
+    /**
+     * Deterministic lock key for one reminder slot (school + context + class + key + recipient + channel).
+     */
+    public function reminderLockKey(
+        School $school,
+        Model $context,
+        string $notificationClass,
+        string $reminderKey,
+        ?object $recipient = null,
+        ?string $channel = null
+    ): string {
+        $recipientPart = $recipient !== null ? $this->recipientIdentity($recipient) : 'any';
+        $channelPart = $channel ?? 'any';
+
+        return 'lifecycle-reminder:'.hash('sha256', implode('|', [
+            (string) $school->id,
+            $context->getMorphClass(),
+            (string) $context->getKey(),
+            $notificationClass,
+            $reminderKey,
+            $recipientPart,
+            $channelPart,
+        ]));
     }
 
     /**
      * Dispatch a lifecycle notification to resolved recipients.
      *
-     * When audience is omitted, delivers independently to every audience enabled
-     * in the preference (parent + admin), matching the seeded settings shape.
-     *
-     * @return int number of notifiables notified (0 if skipped/disabled/no recipients)
+     * @return int number of channel dispatches that reported success
      */
     public function notify(
         School $school,
@@ -180,8 +211,6 @@ class LifecycleNotificationService
         Model $context,
         array $extra = []
     ): int {
-        // Explicit audience → single path. Otherwise deliver independently to every
-        // audience enabled in the preference (parent + admin), matching seeded shape.
         $explicitAudience = $extra['audience'] ?? null;
         if ($explicitAudience !== null) {
             return $this->notifyAudience(
@@ -213,6 +242,10 @@ class LifecycleNotificationService
 
     /**
      * Deliver to one audience (parent/candidate or admin/staff).
+     *
+     * Reminder path: per-recipient per-channel Cache lock + suppress checks.
+     * No permanent phase=claimed rows — failed attempts leave phase=failed/dispatch_failed
+     * and remain retryable. In-flight only while phase=dispatched.
      */
     protected function notifyAudience(
         School $school,
@@ -227,7 +260,6 @@ class LifecycleNotificationService
         }
 
         $reminderKey = $extra['reminder_key'] ?? null;
-        // Scope reminder keys per audience so parent success does not suppress admin (and vice versa).
         $audienceReminderKey = $reminderKey !== null
             ? $reminderKey.':'.$audience
             : null;
@@ -247,28 +279,9 @@ class LifecycleNotificationService
             return 0;
         }
 
-        // Concurrent-safe claim for reminder slots before dispatch.
-        if ($audienceReminderKey) {
-            $claimed = [];
-            foreach ($recipients as $recipient) {
-                if ($this->claimReminderSlot(
-                    $school,
-                    $context,
-                    $notificationClass,
-                    $audienceReminderKey,
-                    $recipient
-                )) {
-                    $claimed[] = $recipient;
-                }
-            }
-            $recipients = collect($claimed)->values();
-            if ($recipients->isEmpty()) {
-                return 0;
-            }
-        }
-
         $sent = 0;
         $payload = array_merge($extra, ['audience' => $audience]);
+
         foreach ($recipients as $recipient) {
             $channels = $this->channelsFor($recipient, $school);
             if ($channels === []) {
@@ -276,24 +289,59 @@ class LifecycleNotificationService
             }
 
             foreach ($channels as $channel) {
-                if ($channel === 'mail') {
-                    $sent += $this->dispatchMail(
+                if ($audienceReminderKey) {
+                    $lock = Cache::lock(
+                        $this->reminderLockKey(
+                            $school,
+                            $context,
+                            $notificationClass,
+                            $audienceReminderKey,
+                            $recipient,
+                            $channel
+                        ),
+                        30
+                    );
+
+                    if (! $lock->get()) {
+                        // Another worker holds the lock for this exact slot.
+                        continue;
+                    }
+
+                    try {
+                        if ($this->shouldSuppressReminder(
+                            $school,
+                            $context,
+                            $notificationClass,
+                            $audienceReminderKey,
+                            $recipient,
+                            $channel
+                        )) {
+                            continue;
+                        }
+
+                        $sent += $this->dispatchChannel(
+                            $channel,
+                            $school,
+                            $context,
+                            $recipient,
+                            $notificationClass,
+                            $preferenceKey,
+                            $audienceReminderKey,
+                            $payload
+                        ) ? 1 : 0;
+                    } finally {
+                        optional($lock)->release();
+                    }
+                } else {
+                    // Non-reminder: no claim / no lock — fire and log.
+                    $sent += $this->dispatchChannel(
+                        $channel,
                         $school,
                         $context,
                         $recipient,
                         $notificationClass,
                         $preferenceKey,
-                        $audienceReminderKey,
-                        $payload
-                    ) ? 1 : 0;
-                } elseif ($channel === 'sms') {
-                    $sent += $this->dispatchSms(
-                        $school,
-                        $context,
-                        $recipient,
-                        $notificationClass,
-                        $preferenceKey,
-                        $audienceReminderKey,
+                        null,
                         $payload
                     ) ? 1 : 0;
                 }
@@ -303,57 +351,40 @@ class LifecycleNotificationService
         return $sent;
     }
 
-    /**
-     * Atomically claim a reminder delivery slot for one recipient.
-     *
-     * Uses a transaction + row lock on existing logs so concurrent workers cannot
-     * both pass suppression and both dispatch. Failed prior attempts remain retryable.
-     */
-    public function claimReminderSlot(
+    protected function dispatchChannel(
+        string $channel,
         School $school,
         Model $context,
+        object $recipient,
         string $notificationClass,
-        string $reminderKey,
-        ?object $recipient = null
+        string $preferenceKey,
+        ?string $reminderKey,
+        array $payload
     ): bool {
-        return \Illuminate\Support\Facades\DB::transaction(function () use (
-            $school, $context, $notificationClass, $reminderKey, $recipient
-        ) {
-            $q = NotificationLog::query()
-                ->where('school_id', $school->id)
-                ->where('notification_type', $notificationClass)
-                ->where('metadata->reminder_key', $reminderKey)
-                ->where('metadata->lifecycle_type', $context->getMorphClass())
-                ->where('metadata->lifecycle_id', (string) $context->getKey())
-                ->where(function ($inner) {
-                    $inner->where('success', true)
-                        ->orWhere('metadata->phase', 'dispatched')
-                        ->orWhere('metadata->phase', 'claimed');
-                });
-            $q = $this->applyRecipientFilter($q, $recipient);
-            $existing = $q->lockForUpdate()->exists();
-            if ($existing) {
-                return false;
-            }
-
-            // Claim row — subsequent concurrent workers see phase=claimed under lock.
-            $this->logDispatch(
+        if ($channel === 'mail') {
+            return $this->dispatchMail(
                 $school,
                 $context,
-                $recipient ?? new AnonymousNotifiable,
+                $recipient,
                 $notificationClass,
-                'claim',
-                false,
-                null,
-                [
-                    'reminder_key' => $reminderKey,
-                    'phase' => 'claimed',
-                    'channel' => 'claim',
-                ]
+                $preferenceKey,
+                $reminderKey,
+                $payload
             );
+        }
+        if ($channel === 'sms') {
+            return $this->dispatchSms(
+                $school,
+                $context,
+                $recipient,
+                $notificationClass,
+                $preferenceKey,
+                $reminderKey,
+                $payload
+            );
+        }
 
-            return true;
-        });
+        return false;
     }
 
     /**
