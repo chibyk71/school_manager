@@ -116,6 +116,23 @@ function buildDashSchema(): void
         $t->timestamps();
         $t->softDeletes();
     });
+    Schema::create('enrollment_requirement_definitions', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('school_id');
+        $t->string('name')->nullable();
+        $t->boolean('is_required')->default(true);
+        $t->timestamps();
+        $t->softDeletes();
+    });
+
+    Schema::create('enrollment_requirement_instances', function (Blueprint $t) {
+        $t->uuid('id')->primary();
+        $t->uuid('enrollment_id');
+        $t->uuid('definition_id');
+        $t->string('status')->default('pending');
+        $t->timestamps();
+    });
+
 
     Schema::create('student_session_placements', function (Blueprint $t) {
         $t->uuid('id')->primary();

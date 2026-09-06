@@ -68,6 +68,41 @@ class LifecycleNotificationService
      * When $recipient is provided, the check is scoped to that recipient so one
      * guardian's success cannot suppress another guardian's retry.
      */
+
+    /**
+     * Match NotificationLog.recipient against route identity and bare address forms.
+     */
+    protected function applyRecipientFilter($query, ?object $recipient)
+    {
+        if ($recipient === null) {
+            return $query;
+        }
+
+        if ($recipient instanceof \Illuminate\Database\Eloquent\Model && $recipient->getKey()) {
+            return $query
+                ->where('notifiable_type', $recipient->getMorphClass())
+                ->where('notifiable_id', $recipient->getKey());
+        }
+
+        $identity = $this->recipientIdentity($recipient);
+        $email = $this->recipientEmail($recipient);
+        $phone = $this->normalizePhone($this->recipientPhone($recipient));
+
+        return $query->where(function ($q) use ($identity, $email, $phone) {
+            if ($identity !== '') {
+                $q->orWhere('recipient', $identity);
+            }
+            if ($email !== '') {
+                $q->orWhere('recipient', $email)
+                    ->orWhere('recipient', 'mail:'.strtolower(trim($email)));
+            }
+            if ($phone !== '') {
+                $q->orWhere('recipient', $phone)
+                    ->orWhere('recipient', 'sms:'.$phone);
+            }
+        });
+    }
+
     public function alreadyDeliveredSuccessfully(
         School $school,
         Model $context,
@@ -83,15 +118,7 @@ class LifecycleNotificationService
             ->where('metadata->lifecycle_type', $context->getMorphClass())
             ->where('metadata->lifecycle_id', (string) $context->getKey());
 
-        if ($recipient instanceof Model && $recipient->getKey()) {
-            $q->where('notifiable_type', $recipient->getMorphClass())
-                ->where('notifiable_id', $recipient->getKey());
-        } elseif ($recipient !== null) {
-            $identity = $this->recipientIdentity($recipient);
-            if ($identity !== '') {
-                $q->where('recipient', $identity);
-            }
-        }
+        $q = $this->applyRecipientFilter($q, $recipient);
 
         return $q->exists();
     }
@@ -117,15 +144,7 @@ class LifecycleNotificationService
             ->where('metadata->lifecycle_id', (string) $context->getKey())
             ->where('metadata->phase', 'dispatched');
 
-        if ($recipient instanceof Model && $recipient->getKey()) {
-            $q->where('notifiable_type', $recipient->getMorphClass())
-                ->where('notifiable_id', $recipient->getKey());
-        } elseif ($recipient !== null) {
-            $identity = $this->recipientIdentity($recipient);
-            if ($identity !== '') {
-                $q->where('recipient', $identity);
-            }
-        }
+        $q = $this->applyRecipientFilter($q, $recipient);
 
         return $q->exists();
     }
