@@ -32,11 +32,6 @@ class LifecycleNotificationService
         protected SmsService $sms
     ) {}
 
-    /**
-     * Whether the school enabled this lifecycle preference for a specific audience.
-     *
-     * Settings shape: ['admin' => bool, 'parent' => bool, ...].
-     */
     public function isEnabled(School $school, string $preferenceKey, ?string $audience = 'parent'): bool
     {
         $settings = getMergedSettings('general.notifications', $school) ?? [];
@@ -59,6 +54,27 @@ class LifecycleNotificationService
         }
 
         return (bool) $pref;
+    }
+
+    /**
+     * Match reminder_key exactly or with an audience suffix / stripped audience.
+     * processIncompleteReminders stores base keys; notifyAudience logs "{base}:{audience}".
+     * markDelivered tests may query either form — both must resolve consistently.
+     */
+    protected function applyReminderKeyFilter($query, string $reminderKey)
+    {
+        return $query->where(function ($q) use ($reminderKey) {
+            $q->where('metadata->reminder_key', $reminderKey);
+            foreach (['parent', 'admin'] as $audience) {
+                $q->orWhere('metadata->reminder_key', $reminderKey.':'.$audience);
+            }
+            if (str_ends_with($reminderKey, ':parent') || str_ends_with($reminderKey, ':admin')) {
+                $base = preg_replace('/:(parent|admin)$/', '', $reminderKey);
+                if (is_string($base) && $base !== '' && $base !== $reminderKey) {
+                    $q->orWhere('metadata->reminder_key', $base);
+                }
+            }
+        });
     }
 
     /**
@@ -95,9 +111,6 @@ class LifecycleNotificationService
         });
     }
 
-    /**
-     * True when a successful delivery was logged for this reminder (+ optional channel).
-     */
     public function alreadyDeliveredSuccessfully(
         School $school,
         Model $context,
@@ -110,9 +123,9 @@ class LifecycleNotificationService
             ->where('school_id', $school->id)
             ->where('notification_type', $notificationClass)
             ->where('success', true)
-            ->where('metadata->reminder_key', $reminderKey)
             ->where('metadata->lifecycle_type', $context->getMorphClass())
             ->where('metadata->lifecycle_id', (string) $context->getKey());
+        $q = $this->applyReminderKeyFilter($q, $reminderKey);
 
         if ($channel !== null) {
             $q->where(function ($inner) use ($channel) {
@@ -126,10 +139,6 @@ class LifecycleNotificationService
         return $q->exists();
     }
 
-    /**
-     * True when a non-terminal in-flight dispatch exists (queued, not yet delivered/failed).
-     * Failed and released phases are NOT pending — retries remain allowed.
-     */
     public function hasPendingDispatch(
         School $school,
         Model $context,
@@ -142,10 +151,10 @@ class LifecycleNotificationService
             ->where('school_id', $school->id)
             ->where('notification_type', $notificationClass)
             ->where('success', false)
-            ->where('metadata->reminder_key', $reminderKey)
             ->where('metadata->lifecycle_type', $context->getMorphClass())
             ->where('metadata->lifecycle_id', (string) $context->getKey())
             ->where('metadata->phase', 'dispatched');
+        $q = $this->applyReminderKeyFilter($q, $reminderKey);
 
         if ($channel !== null) {
             $q->where(function ($inner) use ($channel) {
@@ -174,9 +183,6 @@ class LifecycleNotificationService
         );
     }
 
-    /**
-     * Deterministic lock key for one reminder slot (school + context + class + key + recipient + channel).
-     */
     public function reminderLockKey(
         School $school,
         Model $context,
@@ -199,11 +205,6 @@ class LifecycleNotificationService
         ]));
     }
 
-    /**
-     * Dispatch a lifecycle notification to resolved recipients.
-     *
-     * @return int number of channel dispatches that reported success
-     */
     public function notify(
         School $school,
         string $preferenceKey,
@@ -240,13 +241,6 @@ class LifecycleNotificationService
         return $sent;
     }
 
-    /**
-     * Deliver to one audience (parent/candidate or admin/staff).
-     *
-     * Reminder path: per-recipient per-channel Cache lock + suppress checks.
-     * No permanent phase=claimed rows — failed attempts leave phase=failed/dispatch_failed
-     * and remain retryable. In-flight only while phase=dispatched.
-     */
     protected function notifyAudience(
         School $school,
         string $preferenceKey,
@@ -303,7 +297,6 @@ class LifecycleNotificationService
                     );
 
                     if (! $lock->get()) {
-                        // Another worker holds the lock for this exact slot.
                         continue;
                     }
 
@@ -333,7 +326,6 @@ class LifecycleNotificationService
                         optional($lock)->release();
                     }
                 } else {
-                    // Non-reminder: no claim / no lock — fire and log.
                     $sent += $this->dispatchChannel(
                         $channel,
                         $school,
@@ -387,11 +379,6 @@ class LifecycleNotificationService
         return false;
     }
 
-    /**
-     * Supported channels for a recipient under current school infrastructure.
-     *
-     * @return list<string>
-     */
     public function channelsFor(object $recipient, School $school): array
     {
         $channels = [];
