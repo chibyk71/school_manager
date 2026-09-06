@@ -83,7 +83,7 @@ function buildPhase7ReportsSchema(): void
         $t->softDeletes();
     });
 
-    
+
     Schema::create('students', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->uuid('school_id');
@@ -136,8 +136,9 @@ function buildPhase7ReportsSchema(): void
 
     Schema::create('student_session_placements', function (Blueprint $t) {
         $t->uuid('id')->primary();
+        $t->uuid('school_id')->nullable();
         $t->uuid('student_id')->nullable();
-        $t->uuid('class_section_id');
+        $t->uuid('class_section_id')->nullable();
         $t->uuid('class_level_id')->nullable();
         $t->uuid('academic_session_id')->nullable();
         $t->boolean('is_current')->default(true);
