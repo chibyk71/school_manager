@@ -260,8 +260,6 @@ function buildPhase4Schema(): void
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-}
-
 
     // Phase 5 tables required by EnrollmentService::finalize → ensureAdmissionNumber / PAS
     Schema::create('id_sequences', function (Blueprint $table) {
@@ -350,6 +348,8 @@ function buildPhase4Schema(): void
         $table->timestamps();
         $table->softDeletes();
     });
+
+}
 
 function dropPhase4Schema(): void
 {
