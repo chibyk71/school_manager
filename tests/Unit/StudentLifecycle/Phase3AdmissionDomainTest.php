@@ -50,6 +50,34 @@ function buildPhase3Schema(): void
         $table->softDeletes();
     });
 
+    // Phase 7 notification path (AdmissionService → LifecycleNotificationService → getMergedSettings)
+    Schema::create('settings', function (Blueprint $table) {
+        $table->id();
+        $table->string('key');
+        $table->json('value')->nullable();
+        $table->nullableUuidMorphs('model');
+        $table->timestamps();
+    });
+
+    Schema::create('notification_logs', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_id')->nullable();
+        $table->string('notifiable_type');
+        $table->uuid('notifiable_id');
+        $table->string('notification_type');
+        $table->unsignedBigInteger('notification_id')->default(0);
+        $table->string('channel');
+        $table->string('provider')->nullable();
+        $table->string('recipient');
+        $table->text('message')->nullable();
+        $table->boolean('success')->default(false);
+        $table->text('error')->nullable();
+        $table->unsignedInteger('segments')->default(1);
+        $table->json('metadata')->nullable();
+        $table->timestamp('delivered_at')->nullable();
+        $table->timestamps();
+    });
+
     Schema::create('users', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->string('name')->nullable();
@@ -156,6 +184,7 @@ function buildPhase3Schema(): void
 
 function dropPhase3Schema(): void
 {
+    Schema::dropIfExists('notification_logs');
     Schema::dropIfExists('admissions');
     Schema::dropIfExists('student_applications');
     Schema::dropIfExists('dynamic_enums');
@@ -163,6 +192,7 @@ function dropPhase3Schema(): void
     Schema::dropIfExists('class_levels');
     Schema::dropIfExists('school_sections');
     Schema::dropIfExists('users');
+    Schema::dropIfExists('settings');
     Schema::dropIfExists('schools');
 }
 

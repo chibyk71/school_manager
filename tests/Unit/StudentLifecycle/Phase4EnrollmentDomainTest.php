@@ -62,6 +62,16 @@ function buildPhase4Schema(): void
         $table->softDeletes();
     });
 
+    // IdGenerator / notification prefs (website.id_formats, general.notifications)
+    Schema::create('settings', function (Blueprint $table) {
+        $table->id();
+        $table->string('key');
+        $table->json('value')->nullable();
+        $table->nullableUuidMorphs('model');
+        $table->timestamps();
+    });
+
+
     Schema::create('users', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->string('name')->nullable();
@@ -269,6 +279,7 @@ function dropPhase4Schema(): void
         'academic_sessions',
         'profiles',
         'users',
+        'settings',
         'schools',
     ] as $table) {
         Schema::dropIfExists($table);

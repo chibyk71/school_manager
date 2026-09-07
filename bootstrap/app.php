@@ -45,6 +45,13 @@ return Application::configure(basePath: dirname(__DIR__))
             ->onOneServer()
             ->appendOutputTo(storage_path('logs/admissions-lifecycle.log'));
 
+        // Phase 7: incomplete enrollment + outstanding requirement reminders
+        $schedule->command('enrollments:process-reminders --requirements')
+            ->dailyAt('08:30')
+            ->withoutOverlapping()
+            ->onOneServer()
+            ->appendOutputTo(storage_path('logs/enrollment-reminders.log'));
+
         // $schedule->job(new App\Jobs\GenerateMonthlyStudentStatement)
         //  ->monthlyOn(1, '09:00') // 1st of every month at 9 AM
         //  ->name('Generate Monthly Statements')
