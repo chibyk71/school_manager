@@ -12,6 +12,10 @@ uses(Tests\TestCase::class);
  * - double finalize is rejected after first success (or consistent non-success)
  * - PlacementAllocationService rejects cross-school student / section operations
  * - closeCurrentPlacement is the canonical close path and is school-scoped
+ *
+ * Schema mirrors production contracts used by EnrollmentService / PAS:
+ * - academic_sessions uses SoftDeletes (AcademicSession model)
+ * - student_session_placements includes Phase 5 placed_by column
  */
 
 use App\Models\Profile;
@@ -105,12 +109,15 @@ function p8BuildSchema(): void
         $t->timestamps();
         $t->softDeletes();
     });
+    // Align with AcademicSession SoftDeletes + migration create_academic_sessions_table
     Schema::create('academic_sessions', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->uuid('school_id');
         $t->string('name');
+        $t->date('start_date')->nullable();
         $t->boolean('is_current')->default(false);
         $t->timestamps();
+        $t->softDeletes();
     });
     Schema::create('school_sections', function (Blueprint $t) {
         $t->uuid('id')->primary();
@@ -174,6 +181,7 @@ function p8BuildSchema(): void
         $t->softDeletes();
         $t->unique(['school_id', 'profile_id']);
     });
+    // Align with Phase 5 migration: placed_by written by PAS placeManually
     Schema::create('student_session_placements', function (Blueprint $t) {
         $t->id();
         $t->uuid('student_id');
@@ -190,6 +198,7 @@ function p8BuildSchema(): void
         $t->string('promotion_outcome', 50)->nullable();
         $t->text('notes')->nullable();
         $t->boolean('capacity_override_used')->default(false);
+        $t->uuid('placed_by')->nullable();
         $t->json('meta')->nullable();
         $t->timestamps();
     });
