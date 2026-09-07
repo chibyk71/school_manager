@@ -7,6 +7,9 @@ uses(Tests\TestCase::class);
  *
  * Exercises the real notify()/lock/suppress path where practical, not only
  * pre-seeded NotificationLog rows.
+ *
+ * Helpers are phase-claim-prefixed (p7c*) so the full StudentLifecycle suite
+ * can load without global function redeclaration collisions.
  */
 
 use App\Models\NotificationLog;
@@ -94,7 +97,7 @@ function buildReminderClaimSchema(): void
     });
 }
 
-function makeSchool(string $name = 'Claim Test School'): School
+function p7cSchool(string $name = 'Claim Test School'): School
 {
     return School::query()->create([
         'id' => (string) Str::uuid(),
@@ -102,7 +105,7 @@ function makeSchool(string $name = 'Claim Test School'): School
     ]);
 }
 
-function makeEnrollment(School $school, array $biodata = []): Enrollment
+function p7cEnrollment(School $school, array $biodata = []): Enrollment
 {
     return Enrollment::query()->create([
         'id' => (string) Str::uuid(),
@@ -143,14 +146,14 @@ function smsRecipient(string $phone = '08012345678'): AnonymousNotifiable
 }
 
 it('creates school with slug via model boot when fixture has slug column', function () {
-    $school = makeSchool('Alpha Secondary');
+    $school = p7cSchool('Alpha Secondary');
     expect($school->slug)->not->toBeEmpty()
         ->and($school->exists)->toBeTrue();
 });
 
 it('does not create claim-phase rows for non-reminder notifications', function () {
-    $school = makeSchool();
-    $enrollment = makeEnrollment($school);
+    $school = p7cSchool();
+    $enrollment = p7cEnrollment($school);
 
     $svc = app(LifecycleNotificationService::class);
     $svc->notify(
@@ -165,8 +168,8 @@ it('does not create claim-phase rows for non-reminder notifications', function (
 });
 
 it('suppresses same channel after successful delivery via notify path', function () {
-    $school = makeSchool();
-    $enrollment = makeEnrollment($school, ['email' => 'ok@example.com', 'phone' => null]);
+    $school = p7cSchool();
+    $enrollment = p7cEnrollment($school, ['email' => 'ok@example.com', 'phone' => null]);
 
     $svc = app(LifecycleNotificationService::class);
     $key = 'enrollment_incomplete:'.$enrollment->id;
@@ -208,9 +211,9 @@ it('suppresses same channel after successful delivery via notify path', function
 });
 
 it('allows retry after a real failed SMS dispatch through notify', function () {
-    $school = makeSchool();
+    $school = p7cSchool();
     seedSmsEnabled($school);
-    $enrollment = makeEnrollment($school, [
+    $enrollment = p7cEnrollment($school, [
         'email' => null,
         'phone' => '08099998888',
     ]);
@@ -286,8 +289,8 @@ it('allows retry after a real failed SMS dispatch through notify', function () {
 });
 
 it('treats only phase=dispatched as in-flight; legacy claimed does not suppress', function () {
-    $school = makeSchool();
-    $enrollment = makeEnrollment($school);
+    $school = p7cSchool();
+    $enrollment = p7cEnrollment($school);
     $svc = app(LifecycleNotificationService::class);
     $key = 'enrollment_incomplete:'.$enrollment->id.':parent';
     $recipient = mailRecipient();
@@ -341,8 +344,8 @@ it('treats only phase=dispatched as in-flight; legacy claimed does not suppress'
 });
 
 it('keeps parent and admin reminder keys independent after notify', function () {
-    $school = makeSchool();
-    $enrollment = makeEnrollment($school, ['email' => 'p@example.com', 'phone' => null]);
+    $school = p7cSchool();
+    $enrollment = p7cEnrollment($school, ['email' => 'p@example.com', 'phone' => null]);
     $svc = app(LifecycleNotificationService::class);
     $base = 'enrollment_incomplete:'.$enrollment->id;
 
@@ -365,8 +368,8 @@ it('keeps parent and admin reminder keys independent after notify', function () 
 });
 
 it('uses distinct lock keys per channel and audience', function () {
-    $school = makeSchool();
-    $enrollment = makeEnrollment($school);
+    $school = p7cSchool();
+    $enrollment = p7cEnrollment($school);
     $svc = app(LifecycleNotificationService::class);
     $parentKey = 'enrollment_incomplete:'.$enrollment->id.':parent';
     $adminKey = 'enrollment_incomplete:'.$enrollment->id.':admin';
@@ -381,8 +384,8 @@ it('uses distinct lock keys per channel and audience', function () {
 });
 
 it('rejects a second concurrent lock acquisition for the same reminder slot', function () {
-    $school = makeSchool();
-    $enrollment = makeEnrollment($school);
+    $school = p7cSchool();
+    $enrollment = p7cEnrollment($school);
     $svc = app(LifecycleNotificationService::class);
     $key = 'enrollment_incomplete:'.$enrollment->id.':parent';
     $recipient = mailRecipient();
