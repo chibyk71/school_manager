@@ -1,44 +1,42 @@
-# Phase 8A — Student Lifecycle Architecture & Stale-Code Audit
+# Phase 8 — Consolidation, Hardening & Finalization
 
-**Base:** `master` @ `1bf7f823` (Phase 7 merged via PR #10)  
-**Branch:** `feature/student-lifecycle-phase8`  
-**Date:** 2026-09-07
+**PR:** https://github.com/chibyk71/school_manager/pull/11
 
-## Canonical lifecycle pathway
+## Canonical pathway
 
-Application → Approval → Admission → Acceptance → Enrollment → Finalization → Student Identity → Placement → Registration Number → Admission Number → Ongoing lifecycle → Promotion
+Application → Approval → Admission → Acceptance → **EnrollmentService** → Finalization → Student → **PlacementAllocationService** → Numbers → Promotion
 
-## Canonical implementations
+## Removed
 
-| Responsibility | Implementation |
-|---|---|
-| Application | StudentApplicationService |
-| Admission | AdmissionService |
-| Enrollment / finalization | EnrollmentService |
-| Placement | PlacementAllocationService |
-| Registration numbers | RegistrationNumberService |
-| Notifications | LifecycleNotificationService |
-| Promotion | PromotionService + jobs |
-| Ops/dashboard/export | LifecycleOperationalService |
+- `App\Services\Student\StudentEnrollmentService`
+- `App\Services\UserManagement\StudentEnrollmentService`
 
-## Removed in Phase 8
+## HTTP adapters
 
-- App\Services\Student\StudentEnrollmentService (legacy wizard/application enroll)
-- App\Services\UserManagement\StudentEnrollmentService (referenced non-existent Academic\Student create path)
+| Controller | Service |
+|------------|---------|
+| StudentController | EnrollmentService |
+| StudentPlacementController | placeManually + closeCurrentPlacement |
 
-## Compatibility
+## Tests (Phase8ConsolidationDomainTest)
 
-- App\Models\Academic\Student extends App\Models\Student\Student (same table)
-- StudentPolicy registered for both FQCNs
+- Obsolete SES classes gone
+- StudentController has no SES import / broken call
+- Placement destroy uses closeCurrentPlacement
+- Academic\Student shim: table, BelongsToSchool, relations, query
+- Foreign-school admission / session rejected
+- placeManually / closeCurrentPlacement cross-school rejected
+- closeCurrentPlacement closes school placements
+- Double finalize rejected
+- Capacity-1 sequential placeManually rejects second student
 
-## School isolation
+## Prior-phase concurrency retained
 
-- StudentController show/update/destroy abort 404 on cross-school
-- EnrollmentService rejects foreign admission_id / session
-- PlacementAllocationService asserts school bounds
+Phase5: concurrent capacity slot, concurrent admission/registration numbers  
+Phase6: capacity override authorization
 
-## Remaining limitations
+## Artifacts if needed
 
-- Non-lifecycle modules still type-hint Academic\Student in places; shim covers class existence
-- Full concurrent pest suite not runnable in agent sandbox (no vendor/php-dom/sqlite)
-- StudentPlacementService retained as lower-level helper used by PAS/Status/Transfer
+- artifacts/phase8/PlacementAllocationService.phase8.php (includes closeCurrentPlacement)
+- artifacts/phase8/Phase8ConsolidationDomainTest.php
+- artifacts/phase8/StudentController.phase8.php
