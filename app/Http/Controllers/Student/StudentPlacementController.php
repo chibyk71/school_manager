@@ -13,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 /**
  * StudentPlacementController – HTTP adapter for placement on existing students.
  *
- * Phase 8: delegates entirely to PlacementAllocationService (canonical).
+ * Phase 8: all placement mutations go through PlacementAllocationService.
  */
 class StudentPlacementController
 {
@@ -26,7 +26,7 @@ class StudentPlacementController
         Gate::authorize('place', $student);
 
         $school = GetSchoolModel();
-        if (!$school || $student->school_id !== $school->id) {
+        if (!$school || (string) $student->school_id !== (string) $school->id) {
             abort(404);
         }
 
@@ -79,27 +79,29 @@ class StudentPlacementController
         Gate::authorize('place', $student);
 
         $school = GetSchoolModel();
-        if (!$school || $student->school_id !== $school->id) {
+        if (!$school || (string) $student->school_id !== (string) $school->id) {
             abort(404);
         }
 
         try {
-            $updated = \App\Models\Student\StudentSessionPlacement::query()
-                ->where('student_id', $student->id)
-                ->where('school_id', $school->id)
-                ->where('is_current', true)
-                ->whereNull('left_at')
-                ->update([
-                    'is_current' => false,
-                    'left_at' => now(),
-                    'notes' => \DB::raw("CONCAT(COALESCE(notes,''), '\nRemoved via StudentPlacementController')"),
-                ]);
+            $closed = $this->allocation->closeCurrentPlacement(
+                $student,
+                $school,
+                $request->user(),
+                [
+                    'academic_session_id' => $request->input('academic_session_id'),
+                    'notes' => $request->input('notes', 'Placement closed via StudentPlacementController'),
+                    'reason' => 'manual_close',
+                ]
+            );
 
             if ($request->wantsJson()) {
-                return response()->json(['message' => 'Placement removed.', 'closed' => $updated]);
+                return response()->json(['message' => 'Placement removed.', 'closed' => $closed]);
             }
 
             return back()->with('success', 'Student removed from class section.');
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors());
         } catch (\Exception $e) {
             Log::error('Failed to remove student placement', [
                 'student_id' => $student->id,
