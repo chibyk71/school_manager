@@ -57,28 +57,30 @@ class LifecycleNotificationService
     }
 
     /**
-     * Match reminder_key exactly or with an audience suffix / stripped audience / base key.
+     * Match NotificationLog rows for a reminder key without crossing audiences.
+     *
+     * - Audience-scoped query (…:parent / …:admin): exact reminder_key only.
+     * - Base (unscoped) query: exact key, either audience suffix, or reminder_base_key.
      */
     protected function applyReminderKeyFilter($query, string $reminderKey)
     {
-        return $query->where(function ($q) use ($reminderKey) {
+        $isAudienceScoped = str_ends_with($reminderKey, ':parent')
+            || str_ends_with($reminderKey, ':admin');
+
+        return $query->where(function ($q) use ($reminderKey, $isAudienceScoped) {
+            // Always allow exact match on the primary key written at dispatch time.
             $q->where('metadata->reminder_key', $reminderKey);
-            foreach (['parent', 'admin'] as $audience) {
-                $q->orWhere('metadata->reminder_key', $reminderKey.':'.$audience);
+
+            if ($isAudienceScoped) {
+                // Do NOT expand to reminder_base_key or the other audience — parent
+                // delivery must not suppress admin (and vice versa).
+                return;
             }
-            if (str_ends_with($reminderKey, ':parent') || str_ends_with($reminderKey, ':admin')) {
-                $base = preg_replace('/:(parent|admin)$/', '', $reminderKey);
-                if (is_string($base) && $base !== '' && $base !== $reminderKey) {
-                    $q->orWhere('metadata->reminder_key', $base);
-                }
-            }
-            $q->orWhere('metadata->reminder_base_key', $reminderKey);
-            if (str_ends_with($reminderKey, ':parent') || str_ends_with($reminderKey, ':admin')) {
-                $base = preg_replace('/:(parent|admin)$/', '', $reminderKey);
-                if (is_string($base) && $base !== '') {
-                    $q->orWhere('metadata->reminder_base_key', $base);
-                }
-            }
+
+            // Unscoped/base key: accept audience-scoped writes and dual-written base.
+            $q->orWhere('metadata->reminder_key', $reminderKey.':parent')
+                ->orWhere('metadata->reminder_key', $reminderKey.':admin')
+                ->orWhere('metadata->reminder_base_key', $reminderKey);
         });
     }
 
