@@ -17,6 +17,9 @@ use Illuminate\Validation\ValidationException;
 
 class PlacementAllocationService
 {
+    use Concerns\ClosesCurrentPlacement;
+
+
     public function __construct(
         protected RegistrationNumberService $registrationNumbers,
         protected StudentPlacementService $placements
