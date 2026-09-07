@@ -262,6 +262,95 @@ function buildPhase4Schema(): void
     ]);
 }
 
+
+    // Phase 5 tables required by EnrollmentService::finalize → ensureAdmissionNumber / PAS
+    Schema::create('id_sequences', function (Blueprint $table) {
+        $table->id();
+        $table->string('type', 64);
+        $table->uuid('school_id')->nullable();
+        $table->string('scope_key', 191)->default('');
+        $table->unsignedInteger('year')->default(0);
+        $table->unsignedBigInteger('last_value')->default(0);
+        $table->timestamps();
+        $table->unique(['type', 'school_id', 'scope_key', 'year'], 'uq_p4_id_sequences_scope');
+    });
+    Schema::create('student_session_placements', function (Blueprint $table) {
+        $table->id();
+        $table->uuid('student_id');
+        $table->uuid('school_id')->nullable();
+        $table->uuid('enrollment_id')->nullable();
+        $table->uuid('academic_session_id');
+        $table->uuid('class_level_id')->nullable();
+        $table->uuid('class_section_id')->nullable();
+        $table->string('registration_number', 64)->nullable();
+        $table->timestamp('joined_at')->nullable();
+        $table->date('enrolled_at')->nullable();
+        $table->date('left_at')->nullable();
+        $table->boolean('is_current')->default(false);
+        $table->string('promotion_outcome', 50)->nullable();
+        $table->text('notes')->nullable();
+        $table->boolean('capacity_override_used')->default(false);
+        $table->uuid('placed_by')->nullable();
+        $table->json('meta')->nullable();
+        $table->timestamps();
+    });
+    Schema::create('registration_number_histories', function (Blueprint $table) {
+        $table->id();
+        $table->uuid('student_id');
+        $table->uuid('school_id');
+        $table->uuid('enrollment_id')->nullable();
+        $table->unsignedBigInteger('placement_id')->nullable();
+        $table->string('registration_number', 64);
+        $table->string('scope_key', 191)->nullable();
+        $table->uuid('academic_session_id')->nullable();
+        $table->uuid('class_level_id')->nullable();
+        $table->uuid('class_section_id')->nullable();
+        $table->string('reason', 64)->nullable();
+        $table->timestamp('effective_from')->nullable();
+        $table->timestamp('effective_to')->nullable();
+        $table->uuid('assigned_by')->nullable();
+        $table->json('meta')->nullable();
+        $table->timestamps();
+    });
+    Schema::create('registration_number_assignments', function (Blueprint $table) {
+        $table->id();
+        $table->uuid('school_id');
+        $table->string('scope_key', 191);
+        $table->string('registration_number', 64);
+        $table->uuid('student_id');
+        $table->unsignedBigInteger('history_id')->nullable();
+        $table->timestamps();
+        $table->unique(['school_id', 'scope_key', 'registration_number'], 'uq_p4_regnum_assignment_active');
+        $table->unique(['school_id', 'student_id'], 'uq_p4_regnum_assignment_student');
+    });
+    Schema::create('class_levels', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_section_id')->nullable();
+        $table->uuid('school_id')->nullable();
+        $table->string('name');
+        $table->integer('sort_order')->default(0);
+        $table->integer('sequence')->default(0);
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    Schema::create('class_sections', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_id')->nullable();
+        $table->uuid('class_level_id')->nullable();
+        $table->string('name');
+        $table->string('display_name')->nullable();
+        $table->integer('capacity')->default(0);
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    Schema::create('school_sections', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_id');
+        $table->string('name');
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
 function dropPhase4Schema(): void
 {
     foreach ([
@@ -271,6 +360,13 @@ function dropPhase4Schema(): void
         'states',
         'countries',
         'addresses',
+        'registration_number_assignments',
+        'registration_number_histories',
+        'student_session_placements',
+        'id_sequences',
+        'class_sections',
+        'class_levels',
+        'school_sections',
         'enrollment_requirement_instances',
         'enrollment_requirement_definitions',
         'enrollments',

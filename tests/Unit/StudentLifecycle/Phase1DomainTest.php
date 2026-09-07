@@ -188,6 +188,18 @@ function buildPhase1Schema(): void
         $table->timestamps();
         $table->softDeletes();
     });
+
+    // HasDynamicEnum on StudentApplication queries this table on create/validate
+    Schema::create('dynamic_enums', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->string('name');
+        $table->string('label')->nullable();
+        $table->string('applies_to');
+        $table->json('options')->nullable();
+        $table->uuid('school_id')->nullable();
+        $table->timestamps();
+        $table->unique(['name', 'applies_to', 'school_id']);
+    });
 }
 
 function dropPhase1Schema(): void
@@ -200,6 +212,7 @@ function dropPhase1Schema(): void
     Schema::dropIfExists('class_levels');
     Schema::dropIfExists('school_sections');
     Schema::dropIfExists('profiles');
+    Schema::dropIfExists('dynamic_enums');
     Schema::dropIfExists('schools');
 }
 
