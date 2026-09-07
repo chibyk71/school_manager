@@ -14,6 +14,15 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Notifications\Events\NotificationSent::class,
+            [\App\Listeners\Student\LogLifecycleNotificationDelivery::class, 'handleSent']
+        );
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Notifications\Events\NotificationFailed::class,
+            [\App\Listeners\Student\LogLifecycleNotificationDelivery::class, 'handleFailed']
+        );
+
         \Illuminate\Support\Facades\Gate::policy(
             \App\Models\Promotion\PromotionBatch::class,
             \App\Policies\Promotion\PromotionPolicy::class
