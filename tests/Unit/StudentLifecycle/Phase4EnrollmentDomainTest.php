@@ -122,6 +122,8 @@ function buildPhase4Schema(): void
         $table->uuid('school_id');
         $table->uuid('profile_id');
         $table->string('status', 50)->default('active');
+        $table->string('admission_number', 64)->nullable();
+        $table->date('admission_date')->nullable();
         $table->timestamps();
         $table->softDeletes();
         $table->unique(['school_id', 'profile_id'], 'uq_students_school_profile');
