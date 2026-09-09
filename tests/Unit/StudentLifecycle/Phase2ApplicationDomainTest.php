@@ -21,6 +21,7 @@ beforeEach(function () {
     Schema::dropIfExists('student_applications');
     Schema::dropIfExists('academic_sessions');
     Schema::dropIfExists('school_sections');
+    Schema::dropIfExists('custom_field_responses');
     Schema::dropIfExists('activity_log');
     Schema::dropIfExists('settings');
     Schema::dropIfExists('dynamic_enums');
@@ -128,7 +129,6 @@ beforeEach(function () {
         'updated_at' => now(),
     ]);
 
-
     Schema::create('settings', function (Blueprint $table) {
         $table->id();
         $table->string('key');
@@ -149,6 +149,13 @@ beforeEach(function () {
         $table->timestamps();
     });
 
+    Schema::create('custom_field_responses', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('custom_field_id')->nullable();
+        $table->uuidMorphs('model');
+        $table->text('value')->nullable();
+        $table->timestamps();
+    });
 });
 
 function makeSchool(string $name = 'School A'): School
@@ -230,7 +237,7 @@ it('rejects cross-school school_section_id even if legacy column is set', functi
     $schoolB = makeSchool('Beta');
 
     $sectionBId = (string) Str::uuid();
-    \DB::table('school_sections')->insert([
+    DB::table('school_sections')->insert([
         'id' => $sectionBId,
         'school_id' => $schoolB->id,
         'name' => 'Foreign Section',
