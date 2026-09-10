@@ -82,8 +82,8 @@ return new class extends Migration {
 
             $table->timestamps();
 
-            // Performance: speed up lookups for a particular entity
-            $table->index(['model_type', 'model_id']);
+            // uuidMorphs() already creates model_type+model_id index; do not add a second
+            // identical index (SQLite fails migrations with "index already exists").
         });
     }
 

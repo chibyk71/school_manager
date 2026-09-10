@@ -122,6 +122,8 @@ function buildPhase4Schema(): void
         $table->uuid('school_id');
         $table->uuid('profile_id');
         $table->string('status', 50)->default('active');
+        $table->string('admission_number', 64)->nullable();
+        $table->date('admission_date')->nullable();
         $table->timestamps();
         $table->softDeletes();
         $table->unique(['school_id', 'profile_id'], 'uq_students_school_profile');
@@ -260,6 +262,95 @@ function buildPhase4Schema(): void
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+
+    // Phase 5 tables required by EnrollmentService::finalize → ensureAdmissionNumber / PAS
+    Schema::create('id_sequences', function (Blueprint $table) {
+        $table->id();
+        $table->string('type', 64);
+        $table->uuid('school_id')->nullable();
+        $table->string('scope_key', 191)->default('');
+        $table->unsignedInteger('year')->default(0);
+        $table->unsignedBigInteger('last_value')->default(0);
+        $table->timestamps();
+        $table->unique(['type', 'school_id', 'scope_key', 'year'], 'uq_p4_id_sequences_scope');
+    });
+    Schema::create('student_session_placements', function (Blueprint $table) {
+        $table->id();
+        $table->uuid('student_id');
+        $table->uuid('school_id')->nullable();
+        $table->uuid('enrollment_id')->nullable();
+        $table->uuid('academic_session_id');
+        $table->uuid('class_level_id')->nullable();
+        $table->uuid('class_section_id')->nullable();
+        $table->string('registration_number', 64)->nullable();
+        $table->timestamp('joined_at')->nullable();
+        $table->date('enrolled_at')->nullable();
+        $table->date('left_at')->nullable();
+        $table->boolean('is_current')->default(false);
+        $table->string('promotion_outcome', 50)->nullable();
+        $table->text('notes')->nullable();
+        $table->boolean('capacity_override_used')->default(false);
+        $table->uuid('placed_by')->nullable();
+        $table->json('meta')->nullable();
+        $table->timestamps();
+    });
+    Schema::create('registration_number_histories', function (Blueprint $table) {
+        $table->id();
+        $table->uuid('student_id');
+        $table->uuid('school_id');
+        $table->uuid('enrollment_id')->nullable();
+        $table->unsignedBigInteger('placement_id')->nullable();
+        $table->string('registration_number', 64);
+        $table->string('scope_key', 191)->nullable();
+        $table->uuid('academic_session_id')->nullable();
+        $table->uuid('class_level_id')->nullable();
+        $table->uuid('class_section_id')->nullable();
+        $table->string('reason', 64)->nullable();
+        $table->timestamp('effective_from')->nullable();
+        $table->timestamp('effective_to')->nullable();
+        $table->uuid('assigned_by')->nullable();
+        $table->json('meta')->nullable();
+        $table->timestamps();
+    });
+    Schema::create('registration_number_assignments', function (Blueprint $table) {
+        $table->id();
+        $table->uuid('school_id');
+        $table->string('scope_key', 191);
+        $table->string('registration_number', 64);
+        $table->uuid('student_id');
+        $table->unsignedBigInteger('history_id')->nullable();
+        $table->timestamps();
+        $table->unique(['school_id', 'scope_key', 'registration_number'], 'uq_p4_regnum_assignment_active');
+        $table->unique(['school_id', 'student_id'], 'uq_p4_regnum_assignment_student');
+    });
+    Schema::create('class_levels', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_section_id')->nullable();
+        $table->uuid('school_id')->nullable();
+        $table->string('name');
+        $table->integer('sort_order')->default(0);
+        $table->integer('sequence')->default(0);
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    Schema::create('class_sections', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_id')->nullable();
+        $table->uuid('class_level_id')->nullable();
+        $table->string('name');
+        $table->string('display_name')->nullable();
+        $table->integer('capacity')->default(0);
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    Schema::create('school_sections', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('school_id');
+        $table->string('name');
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
 }
 
 function dropPhase4Schema(): void
@@ -271,6 +362,13 @@ function dropPhase4Schema(): void
         'states',
         'countries',
         'addresses',
+        'registration_number_assignments',
+        'registration_number_histories',
+        'student_session_placements',
+        'id_sequences',
+        'class_sections',
+        'class_levels',
+        'school_sections',
         'enrollment_requirement_instances',
         'enrollment_requirement_definitions',
         'enrollments',
@@ -337,8 +435,42 @@ function phase4Profile(array $attrs = []): Profile
     return $profile->fresh();
 }
 
+
+function phase4EnsureClassLevel(School $school): string
+{
+    $levelId = (string) Str::uuid();
+    $sectionId = (string) Str::uuid();
+    DB::table('class_levels')->insert([
+        'id' => $levelId,
+        'school_id' => $school->id,
+        'school_section_id' => null,
+        'name' => 'JSS 1',
+        'sort_order' => 1,
+        'sequence' => 1,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('class_sections')->insert([
+        'id' => $sectionId,
+        'school_id' => $school->id,
+        'class_level_id' => $levelId,
+        'name' => 'A',
+        'display_name' => 'JSS 1A',
+        'capacity' => 0, // unlimited
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    return $levelId;
+}
+
 function phase4MakeReadyEnrollment(EnrollmentService $service, School $school, User $actor, $session, array $biodata = [], ?string $profileId = null): Enrollment
 {
+    // Finalize allocates placement (Phase 5+); class level is required.
+    if (empty($biodata['class_level_id'])) {
+        $biodata['class_level_id'] = phase4EnsureClassLevel($school);
+    }
+
     $data = [
         'academic_session_id' => $session->id,
         'biodata' => array_merge([
@@ -353,6 +485,12 @@ function phase4MakeReadyEnrollment(EnrollmentService $service, School $school, U
 
     $enrollment = $service->start($school, $actor, $data);
 
+    // Ensure class_level_id is on meta for finalize placement options (not only nested biodata).
+    $meta = $enrollment->meta ?? [];
+    $meta['class_level_id'] = $biodata['class_level_id'];
+    $meta['biodata'] = array_merge($meta['biodata'] ?? [], ['class_level_id' => $biodata['class_level_id']]);
+    $enrollment->forceFill(['meta' => $meta])->save();
+
     $enrollment->load('requirementInstances.definition');
     foreach ($enrollment->requirementInstances as $instance) {
         if (($instance->definition?->is_required ?? true) && $instance->isPending()) {
@@ -365,6 +503,10 @@ function phase4MakeReadyEnrollment(EnrollmentService $service, School $school, U
 
 function phase4Admission(School $school, object $session, array $overrides = []): Admission
 {
+    if (empty($overrides['class_level_id'])) {
+        $overrides['class_level_id'] = phase4EnsureClassLevel($school);
+    }
+
     $admission = new Admission();
     $admission->forceFill(array_merge([
         'id' => (string) Str::uuid(),

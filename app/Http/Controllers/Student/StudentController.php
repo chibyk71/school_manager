@@ -5,62 +5,29 @@ namespace App\Http\Controllers\Student;
 use App\Http\Requests\Student\EnrollStudentRequest;
 use App\Http\Requests\Student\UpdateStudentRequest;
 use App\Http\Resources\Student\StudentResource;
-use App\Models\Academic\ClassSection;
-use App\Models\Academic\Student;
-use App\Models\Guardian;
-use App\Models\SchoolSection;
-use App\Services\Student\StudentEnrollmentService;
+use App\Models\Student\Student;
+use App\Services\Student\EnrollmentService;
 use App\Services\UserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 /**
- * StudentController – Full CRUD for Enrolled Students
+ * StudentController – CRUD for enrolled Student capacity records.
  *
- * Manages the student record lifecycle after enrollment: viewing, editing,
- * creating new direct-enrollment students, and soft-deletion.
- *
- * ── Authorization ─────────────────────────────────────────────────────────────
- * Every action is gated through StudentPolicy:
- *   - viewAny     → students.view
- *   - view        → students.view  (also allows student self-view)
- *   - create      → students.create
- *   - store       → students.create
- *   - update      → students.update
- *   - destroy     → students.delete
- *
- * ── Architecture Notes ───────────────────────────────────────────────────────
- * Direct enrollment (bypassing the application pipeline) goes through
- * StudentEnrollmentService. Update operations delegate to UserService
- * for the User + Profile layer and handle Student-specific fields inline.
- *
- * Custom fields, guardian links, and class section assignments are synced
- * inside DB transactions to ensure atomicity.
- *
- * ── Multi-Tenant Safety ──────────────────────────────────────────────────────
- * BelongsToSchool global scope on Student means all queries are automatically
- * scoped. The policy provides a second layer of defense for individual records.
- *
- * ── Fits into the Student Management Module ──────────────────────────────────
- * - Route prefix: /students
- * - Frontend pages: Students/Index.vue, Students/Create.vue,
- *   Students/Show.vue, Students/Edit.vue
- * - Policy: App\Policies\Student\StudentPolicy
+ * Phase 8: student creation goes through the canonical EnrollmentService
+ * (start → biodata → finalize). There is no parallel StudentEnrollmentService path.
  */
 class StudentController
 {
     public function __construct(
-        protected UserService             $userService,
-        protected StudentEnrollmentService $enrollmentService,
+        protected UserService $userService,
+        protected EnrollmentService $enrollmentService,
     ) {}
 
-    /**
-     * List all enrolled students with DataTable support.
-     * GET /students
-     */
     public function index(Request $request)
     {
         Gate::authorize('viewAny', Student::class);
@@ -69,71 +36,167 @@ class StudentController
             $result = Student::query()
                 ->with([
                     'profile:id,user_id,first_name,last_name,gender,date_of_birth,phone',
-                    'profile.user:id,enrollment_id,is_active',
-                    'currentClassSection.classLevel:id,name',
+                    'profile.user:id,email,is_active',
                 ])
                 ->tableQuery($request);
 
-            return Inertia::render('Students/Index', [
-                'students'         => $result['data'],
-                'totalRecords'     => $result['totalRecords'],
-                'columns'          => $result['columns'],
-                'globalFilterables'=> $result['globalFilterables'],
-                'filters'          => $request->only(['search', 'status', 'section']),
+            return Inertia::render('UserManagement/Students/Index', [
+                'students' => $result['data'],
+                'totalRecords' => $result['totalRecords'],
+                'columns' => $result['columns'],
+                'globalFilterables' => $result['globalFilterables'],
+                'filters' => $request->only(['search', 'status', 'section']),
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to list students', ['error' => $e->getMessage()]);
             return back()->withErrors(['error' => 'Unable to load students.']);
         }
     }
 
-    /**
-     * Show the direct-enrollment creation form.
-     * GET /students/create
-     */
     public function create(Request $request)
     {
         Gate::authorize('create', Student::class);
 
-        try {
-            $school = GetSchoolModel();
+        return redirect()
+            ->route('enrollments.index')
+            ->with('info', 'Create students through the Enrollment workflow (start enrollment, complete requirements, then finalize).');
+    }
 
-            return Inertia::render('Students/Create', [
-                'schoolSections' => SchoolSection::select('id', 'name')->get(),
-                'classSections'  => ClassSection::with('classLevel:id,name')
-                    ->select('id', 'name', 'class_level_id')
-                    ->get(),
-                'guardians'      => Guardian::with('profile:id,first_name,last_name')
-                    ->select('id', 'profile_id')
-                    ->get(),
+    public function store(EnrollStudentRequest $request)
+    {
+        Gate::authorize('create', Student::class);
+
+        $school = GetSchoolModel();
+        if (!$school) {
+            return back()->withErrors(['error' => 'No active school context.']);
+        }
+
+        try {
+            $validated = $request->validated();
+            $biodata = array_filter([
+                'first_name' => $validated['first_name'] ?? null,
+                'middle_name' => $validated['middle_name'] ?? null,
+                'last_name' => $validated['last_name'] ?? null,
+                'gender' => $validated['gender'] ?? null,
+                'date_of_birth' => $validated['date_of_birth'] ?? null,
+                'phone' => $validated['phone'] ?? null,
+                'email' => $validated['email'] ?? null,
+                'class_level_id' => $validated['class_level_id'] ?? null,
+                'class_section_id' => $validated['class_section_id'] ?? ($validated['section_id'] ?? null),
+            ], fn ($v) => $v !== null && $v !== '');
+
+            $sessionId = $validated['academic_session_id']
+                ?? $school->current_academic_session_id
+                ?? null;
+
+            if (!$sessionId) {
+                throw ValidationException::withMessages([
+                    'academic_session_id' => 'Academic session is required for enrollment.',
+                ]);
+            }
+
+            $enrollment = $this->enrollmentService->start($school, $request->user(), [
+                'academic_session_id' => $sessionId,
+                'biodata' => $biodata,
+                'source' => 'direct',
+                'notes' => $validated['notes'] ?? null,
             ]);
 
+            if (!empty($biodata)) {
+                $enrollment = $this->enrollmentService->updateBiodata(
+                    $enrollment,
+                    $request->user(),
+                    $biodata
+                );
+            }
+
+            $readiness = $this->enrollmentService->evaluateReadiness($enrollment);
+            if (!empty($readiness['blockers'])) {
+                return redirect()
+                    ->route('enrollments.show', $enrollment)
+                    ->with('warning', 'Enrollment started. Complete remaining requirements before finalization.')
+                    ->with('readiness', $readiness);
+            }
+
+            $enrollment = $this->enrollmentService->finalize($enrollment, $request->user());
+
+            return redirect()
+                ->route('students.show', $enrollment->student_id)
+                ->with('success', 'Student enrolled and finalized successfully.');
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
         } catch (\Exception $e) {
-            Log::error('Failed to load student create form', ['error' => $e->getMessage()]);
-            return back()->withErrors(['error' => 'Unable to load the form.']);
+            Log::error('Failed to enroll student via canonical path', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
     }
 
-    /**
-     * Directly enroll a new student (bypass the application pipeline).
-     * POST /students
-     *
-     * Uses StudentEnrollmentService which creates Profile + Student atomically.
-     * Optional login account creation if create_login is true.
-     */
-    public function store(EnrollStudentRequest $request)
+    public function show(Student $student)
     {
-        Gate::authorize('store', Student::class);
+        Gate::authorize('view', $student);
+
+        $school = GetSchoolModel();
+        if ($school && (string) $student->school_id !== (string) $school->id) {
+            abort(404);
+        }
+
+        $student->load([
+            'profile.user:id,email,is_active,last_login_at',
+            'profile.addresses',
+            'guardians.profile:id,first_name,last_name,phone,email',
+            'sessionPlacements.academicSession',
+            'sessionPlacements.classSection.classLevel',
+        ]);
+
+        return Inertia::render('UserManagement/Students/Show', [
+            'student' => new StudentResource($student),
+        ]);
+    }
+
+    public function edit(Student $student)
+    {
+        Gate::authorize('update', $student);
+
+        $school = GetSchoolModel();
+        if ($school && (string) $student->school_id !== (string) $school->id) {
+            abort(404);
+        }
+
+        $student->load(['profile', 'guardians']);
+
+        return Inertia::render('UserManagement/Students/Show', [
+            'student' => new StudentResource($student),
+        ]);
+    }
+
+    public function update(UpdateStudentRequest $request, Student $student)
+    {
+        Gate::authorize('update', $student);
+
+        $school = GetSchoolModel();
+        if ($school && (string) $student->school_id !== (string) $school->id) {
+            abort(404);
+        }
 
         try {
-            $student = $this->enrollmentService->(
-                data:          $request->validated(),
-                createLogin:   $request->boolean('create_login', false),
-            );
-
-            // Custom fields and guardian sync after enrollment
             DB::transaction(function () use ($request, $student) {
+                $data = $request->validated();
+                $student->fill(collect($data)->only([
+                    'admission_type', 'notes', 'status', 'status_reason',
+                ])->filter()->all());
+                $student->save();
+
+                if ($student->profile && $request->filled('first_name')) {
+                    $student->profile->fill(collect($data)->only([
+                        'first_name', 'middle_name', 'last_name', 'gender',
+                        'date_of_birth', 'phone', 'email',
+                    ])->filter()->all());
+                    $student->profile->save();
+                }
+
                 if ($request->filled('custom_fields')) {
                     $student->saveCustomFieldResponses($request->validated('custom_fields'));
                 }
@@ -145,119 +208,24 @@ class StudentController
 
             return redirect()
                 ->route('students.show', $student)
-                ->with('success', 'Student enrolled successfully.');
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return back()->withErrors($e->errors())->withInput();
-
-        } catch (\Exception $e) {
-            Log::error('Failed to enroll student', [
-                'user_id' => auth()->id(),
-                'error'   => $e->getMessage(),
-            ]);
-            return back()->withErrors(['error' => $e->getMessage()])->withInput();
-        }
-    }
-
-    /**
-     * Display a student's full profile.
-     * GET /students/{student}
-     */
-    public function show(Student $student)
-    {
-        Gate::authorize('view', $student);
-
-        $student->load([
-            'profile.user:id,enrollment_id,email,is_active,last_login_at',
-            'profile.addresses',
-            'currentClassSection.classLevel',
-            'guardians.profile:id,first_name,last_name,phone,email',
-            'sessionPlacements.academicSession',
-            'sessionPlacements.classSection.classLevel',
-        ]);
-
-        return Inertia::render('Students/Show', [
-            'student' => new StudentResource($student),
-        ]);
-    }
-
-    /**
-     * Show the student edit form.
-     * GET /students/{student}/edit
-     */
-    public function edit(Student $student)
-    {
-        Gate::authorize('update', $student);
-
-        $student->load([
-            'profile:id,user_id,first_name,middle_name,last_name,gender,date_of_birth,phone,email',
-            'guardians:id,profile_id',
-            'currentClassSection:id,name,class_level_id',
-        ]);
-
-        return Inertia::render('Students/Edit', [
-            'student'        => new StudentResource($student),
-            'schoolSections' => SchoolSection::select('id', 'name')->get(),
-            'classSections'  => ClassSection::with('classLevel:id,name')
-                ->select('id', 'name', 'class_level_id')
-                ->get(),
-            'guardians'      => Guardian::with('profile:id,first_name,last_name')
-                ->select('id', 'profile_id')
-                ->get(),
-        ]);
-    }
-
-    /**
-     * Update a student's profile and enrollment details.
-     * PUT/PATCH /students/{student}
-     */
-    public function update(UpdateStudentRequest $request, Student $student)
-    {
-        Gate::authorize('update', $student);
-
-        try {
-            DB::transaction(function () use ($request, $student) {
-                // Update User + Profile layer via UserService
-                $this->userService->update($student->profile->user, $request->validated());
-
-                // Update student-specific fields
-                $student->update(
-                    $request->only(['status', 'admission_type', 'section_id', 'notes'])
-                );
-
-                if ($request->filled('custom_fields')) {
-                    $student->saveCustomFieldResponses($request->validated('custom_fields'));
-                }
-
-                if ($request->has('guardian_ids')) {
-                    $student->guardians()->sync($request->validated('guardian_ids', []));
-                }
-            });
-
-            return redirect()
-                ->route('students.show', $student)
-                ->with('success', 'Student profile updated successfully.');
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return back()->withErrors($e->errors())->withInput();
-
+                ->with('success', 'Student updated successfully.');
         } catch (\Exception $e) {
             Log::error('Failed to update student', [
                 'student_id' => $student->id,
-                'user_id'    => auth()->id(),
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
             return back()->withErrors(['error' => 'Unable to update student.'])->withInput();
         }
     }
 
-    /**
-     * Soft-delete a student record.
-     * DELETE /students/{student}
-     */
     public function destroy(Request $request, Student $student)
     {
         Gate::authorize('delete', $student);
+
+        $school = GetSchoolModel();
+        if ($school && (string) $student->school_id !== (string) $school->id) {
+            abort(404);
+        }
 
         try {
             $student->delete();
@@ -269,12 +237,10 @@ class StudentController
             return redirect()
                 ->route('students.index')
                 ->with('success', 'Student moved to trash.');
-
         } catch (\Exception $e) {
             Log::error('Failed to delete student', [
                 'student_id' => $student->id,
-                'user_id'    => auth()->id(),
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
             return back()->withErrors(['error' => 'Unable to delete student.']);
         }

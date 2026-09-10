@@ -1,5 +1,7 @@
 <?php
 
+uses(Tests\TestCase::class);
+
 use App\Models\Academic\AcademicSession;
 use App\Models\School;
 use App\Models\Student\StudentApplication;
@@ -7,16 +9,22 @@ use App\Models\User;
 use App\Services\Student\StudentApplicationService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
+    config(['activitylog.enabled' => false]);
     Model::unguard();
 
     Schema::dropIfExists('student_applications');
     Schema::dropIfExists('academic_sessions');
     Schema::dropIfExists('school_sections');
+    Schema::dropIfExists('custom_field_responses');
+    Schema::dropIfExists('activity_log');
+    Schema::dropIfExists('settings');
+    Schema::dropIfExists('dynamic_enums');
     Schema::dropIfExists('schools');
     Schema::dropIfExists('users');
 
@@ -24,11 +32,14 @@ beforeEach(function () {
         $table->uuid('id')->primary();
         $table->string('name');
         $table->string('code')->nullable();
+        $table->string('slug')->nullable();
+        $table->json('data')->nullable();
         $table->timestamps();
+        $table->softDeletes();
     });
 
     Schema::create('users', function (Blueprint $table) {
-        $table->id();
+        $table->uuid('id')->primary();
         $table->string('name')->nullable();
         $table->string('email')->nullable();
         $table->timestamps();
@@ -39,6 +50,7 @@ beforeEach(function () {
         $table->uuid('school_id');
         $table->string('name');
         $table->timestamps();
+        $table->softDeletes();
     });
 
     Schema::create('school_sections', function (Blueprint $table) {
@@ -87,6 +99,62 @@ beforeEach(function () {
         $table->timestamps();
         $table->softDeletes();
         $table->unique(['school_id', 'application_number']);
+    });
+
+    Schema::create('dynamic_enums', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->string('name');
+        $table->string('label')->nullable();
+        $table->string('applies_to');
+        $table->json('options')->nullable();
+        $table->uuid('school_id')->nullable();
+        $table->timestamps();
+    });
+
+    DB::table('dynamic_enums')->insert([
+        'id' => (string) Str::uuid(),
+        'school_id' => null,
+        'name' => 'status',
+        'label' => 'Application Status',
+        'applies_to' => StudentApplication::class,
+        'options' => json_encode([
+            ['value' => 'draft', 'label' => 'Draft'],
+            ['value' => 'submitted', 'label' => 'Submitted'],
+            ['value' => 'under_review', 'label' => 'Under Review'],
+            ['value' => 'approved', 'label' => 'Approved'],
+            ['value' => 'rejected', 'label' => 'Rejected'],
+            ['value' => 'withdrawn', 'label' => 'Withdrawn'],
+        ]),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    Schema::create('settings', function (Blueprint $table) {
+        $table->id();
+        $table->string('key');
+        $table->json('value')->nullable();
+        $table->nullableUuidMorphs('model');
+        $table->timestamps();
+    });
+
+    Schema::create('activity_log', function (Blueprint $table) {
+        $table->bigIncrements('id');
+        $table->string('log_name')->nullable();
+        $table->text('description')->nullable();
+        $table->nullableUuidMorphs('subject');
+        $table->nullableUuidMorphs('causer');
+        $table->uuid('batch_uuid')->nullable();
+        $table->string('event')->nullable();
+        $table->json('properties')->nullable();
+        $table->timestamps();
+    });
+
+    Schema::create('custom_field_responses', function (Blueprint $table) {
+        $table->id();
+        $table->unsignedBigInteger('custom_field_id')->nullable();
+        $table->uuidMorphs('model');
+        $table->text('value')->nullable();
+        $table->timestamps();
     });
 });
 
@@ -169,7 +237,7 @@ it('rejects cross-school school_section_id even if legacy column is set', functi
     $schoolB = makeSchool('Beta');
 
     $sectionBId = (string) Str::uuid();
-    \DB::table('school_sections')->insert([
+    DB::table('school_sections')->insert([
         'id' => $sectionBId,
         'school_id' => $schoolB->id,
         'name' => 'Foreign Section',
