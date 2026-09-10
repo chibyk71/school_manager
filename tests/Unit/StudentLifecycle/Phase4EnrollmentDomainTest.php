@@ -435,8 +435,42 @@ function phase4Profile(array $attrs = []): Profile
     return $profile->fresh();
 }
 
+
+function phase4EnsureClassLevel(School $school): string
+{
+    $levelId = (string) Str::uuid();
+    $sectionId = (string) Str::uuid();
+    DB::table('class_levels')->insert([
+        'id' => $levelId,
+        'school_id' => $school->id,
+        'school_section_id' => null,
+        'name' => 'JSS 1',
+        'sort_order' => 1,
+        'sequence' => 1,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('class_sections')->insert([
+        'id' => $sectionId,
+        'school_id' => $school->id,
+        'class_level_id' => $levelId,
+        'name' => 'A',
+        'display_name' => 'JSS 1A',
+        'capacity' => 0, // unlimited
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    return $levelId;
+}
+
 function phase4MakeReadyEnrollment(EnrollmentService $service, School $school, User $actor, $session, array $biodata = [], ?string $profileId = null): Enrollment
 {
+    // Finalize allocates placement (Phase 5+); class level is required.
+    if (empty($biodata['class_level_id'])) {
+        $biodata['class_level_id'] = phase4EnsureClassLevel($school);
+    }
+
     $data = [
         'academic_session_id' => $session->id,
         'biodata' => array_merge([
@@ -451,6 +485,12 @@ function phase4MakeReadyEnrollment(EnrollmentService $service, School $school, U
 
     $enrollment = $service->start($school, $actor, $data);
 
+    // Ensure class_level_id is on meta for finalize placement options (not only nested biodata).
+    $meta = $enrollment->meta ?? [];
+    $meta['class_level_id'] = $biodata['class_level_id'];
+    $meta['biodata'] = array_merge($meta['biodata'] ?? [], ['class_level_id' => $biodata['class_level_id']]);
+    $enrollment->forceFill(['meta' => $meta])->save();
+
     $enrollment->load('requirementInstances.definition');
     foreach ($enrollment->requirementInstances as $instance) {
         if (($instance->definition?->is_required ?? true) && $instance->isPending()) {
@@ -463,6 +503,10 @@ function phase4MakeReadyEnrollment(EnrollmentService $service, School $school, U
 
 function phase4Admission(School $school, object $session, array $overrides = []): Admission
 {
+    if (empty($overrides['class_level_id'])) {
+        $overrides['class_level_id'] = phase4EnsureClassLevel($school);
+    }
+
     $admission = new Admission();
     $admission->forceFill(array_merge([
         'id' => (string) Str::uuid(),
