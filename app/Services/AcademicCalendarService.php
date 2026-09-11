@@ -15,22 +15,18 @@ use App\States\Academic\Term\Active as TermActive;
 use App\States\Academic\Term\Closed as TermClosed;
 use App\States\Academic\Term\Planned as TermPlanned;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 
 /**
- * AcademicCalendarService v1.0 – Core Business Logic for Academic Sessions & Terms
+ * AcademicCalendarService – Core Business Logic for Academic Sessions & Terms
  *
- * Phase 1 compatibility: lifecycle authority is the state machine (not is_current / is_active / status).
- * Larger activation/reopening workflows remain for later phases; behaviour preserved where safe.
+ * Phase 1: lifecycle authority is the state machine (not is_current / is_active / status).
  */
 class AcademicCalendarService
 {
-    /** Cache TTL for current session/term (short for frequent changes) */
     private const CACHE_TTL_MINUTES = 15;
 
     private const CACHE_KEY_SESSION = 'current_academic_session_';
@@ -74,7 +70,12 @@ class AcademicCalendarService
     }
 
     /**
-     * @return list<array{id: string, name: string, is_current: bool}>
+     * List academic sessions for a school (filter / report options).
+     *
+     * Ordered: ACTIVE first, then most recently created.
+     * Returns authoritative state (not legacy is_current).
+     *
+     * @return list<array{id: string, name: string, state: string}>
      */
     public function sessionsForSchool(School|string $school): array
     {
@@ -88,8 +89,10 @@ class AcademicCalendarService
             ->map(fn (AcademicSession $row) => [
                 'id' => (string) $row->id,
                 'name' => (string) $row->name,
-                'is_current' => $row->state instanceof SessionActive
-                    || (string) $row->state === SessionActive::$name,
+                'state' => $row->state instanceof SessionActive
+                    || (is_object($row->state) && method_exists($row->state, 'getValue'))
+                    ? (is_object($row->state) && method_exists($row->state, 'getValue') ? $row->state->getValue() : (string) $row->state)
+                    : (string) $row->state,
             ])
             ->all();
     }
@@ -116,6 +119,7 @@ class AcademicCalendarService
         }
 
         DB::transaction(function () use ($session) {
+            // Legacy parity: ensure at most one ACTIVE session per school
             AcademicSession::where('school_id', $session->school_id)
                 ->where('state', SessionActive::$name)
                 ->where('id', '!=', $session->id)
@@ -191,6 +195,10 @@ class AcademicCalendarService
         event(new TermClosed($term));
     }
 
+    /**
+     * Phase 1 compatibility reopen. Term has no Closed→Active transition;
+     * Phase 3 owns the full reopen workflow. Uses direct state assignment.
+     */
     public function reopenTerm(Term $term): void
     {
         if (! ($term->state instanceof TermClosed)) {
