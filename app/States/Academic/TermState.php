@@ -11,8 +11,8 @@ use Spatie\ModelStates\StateConfig;
 /**
  * Term lifecycle states (authoritative).
  *
- * Stored as short names in terms.state (planned, active, closed).
- * There is no PAUSED Term state. Full activation/closing workflows belong to later phases.
+ * Concrete classes live under Term/ (not same directory as this base).
+ * Spatie only auto-discovers siblings of the abstract class, so they are registered explicitly.
  */
 abstract class TermState extends State
 {
@@ -22,6 +22,11 @@ abstract class TermState extends State
     {
         return parent::config()
             ->default(Planned::class)
+            ->registerState([
+                Planned::class,
+                Active::class,
+                Closed::class,
+            ])
             ->allowTransition(Planned::class, Active::class)
             ->allowTransition(Active::class, Closed::class);
     }
