@@ -13,8 +13,8 @@ use Spatie\ModelStates\StateConfig;
 /**
  * Academic Session lifecycle states (authoritative).
  *
- * Stored as short names in academic_sessions.state (draft, planned, active, paused, closed).
- * Transitions are enforced by Spatie Model States; domain workflows live in later phases.
+ * Concrete classes live under AcademicSession/ (not same directory as this base).
+ * Spatie only auto-discovers siblings of the abstract class, so they are registered explicitly.
  */
 abstract class AcademicSessionState extends State
 {
@@ -24,7 +24,13 @@ abstract class AcademicSessionState extends State
     {
         return parent::config()
             ->default(Draft::class)
-            // Structural transitions (Phase 1)
+            ->registerState([
+                Draft::class,
+                Planned::class,
+                Active::class,
+                Paused::class,
+                Closed::class,
+            ])
             ->allowTransition(Draft::class, Planned::class)
             ->allowTransition(Draft::class, Active::class)
             ->allowTransition(Planned::class, Active::class)
@@ -32,7 +38,6 @@ abstract class AcademicSessionState extends State
             ->allowTransition(Paused::class, Active::class)
             ->allowTransition(Active::class, Closed::class)
             ->allowTransition(Paused::class, Closed::class)
-            // Controlled reopening is part of the eventual domain model (structural only in Phase 1)
             ->allowTransition(Closed::class, Active::class);
     }
 
