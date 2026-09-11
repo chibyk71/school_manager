@@ -138,7 +138,7 @@ function buildPhase5Schema(): void
         $t->uuid('school_id');
         $t->string('name');
         $t->date('start_date')->nullable();
-        $t->boolean('is_current')->default(false);
+        $t->string('state', 20)->default('draft');
         $t->timestamps();
         $t->softDeletes();
     });
@@ -287,7 +287,7 @@ function p5Student(School $school, ?Profile $profile = null): Student
 function p5Session(School $school, string $name = '2026/2027'): object
 {
     $id = (string) Str::uuid();
-    DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $school->id, 'name' => $name, 'start_date' => '2026-09-01', 'is_current' => true, 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $school->id, 'name' => $name, 'start_date' => '2026-09-01', 'state' => 'active', 'created_at' => now(), 'updated_at' => now()]);
     return (object) ['id' => $id, 'name' => $name];
 }
 function p5SchoolSection(School $school): object

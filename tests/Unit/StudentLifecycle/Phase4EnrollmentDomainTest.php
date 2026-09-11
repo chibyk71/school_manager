@@ -99,7 +99,7 @@ function buildPhase4Schema(): void
         $table->uuid('id')->primary();
         $table->uuid('school_id');
         $table->string('name');
-        $table->boolean('is_current')->default(false);
+        $table->string('state', 20)->default('draft');
         $table->timestamps();
         $table->softDeletes();
     });
@@ -414,7 +414,7 @@ function phase4Session(School $school, array $overrides = []): object
         'id' => $id,
         'school_id' => $school->id,
         'name' => '2026/2027',
-        'is_current' => true,
+        'state' => 'active',
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides));
@@ -691,7 +691,7 @@ it('reuses existing Student capacity within the same school (no duplicate Studen
         'id' => $session2Id,
         'school_id' => $school->id,
         'name' => 'Year 2',
-        'is_current' => false,
+        'state' => 'draft',
         'created_at' => now(),
         'updated_at' => now(),
     ]);

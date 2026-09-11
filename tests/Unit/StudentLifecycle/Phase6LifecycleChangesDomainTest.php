@@ -126,7 +126,7 @@ function buildPhase6Schema(): void
         $t->uuid('school_id');
         $t->string('name');
         $t->date('start_date')->nullable();
-        $t->boolean('is_current')->default(false);
+        $t->string('state', 20)->default('draft');
         $t->timestamps();
         $t->softDeletes();
     });
@@ -289,7 +289,7 @@ function p6Student(School $school, ?Profile $profile = null): Student
 function p6Session(School $school, string $name = '2026/2027'): object
 {
     $id = (string) Str::uuid();
-    DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $school->id, 'name' => $name, 'start_date' => '2026-09-01', 'is_current' => true, 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $school->id, 'name' => $name, 'start_date' => '2026-09-01', 'state' => 'active', 'created_at' => now(), 'updated_at' => now()]);
     return (object) ['id' => $id, 'name' => $name];
 }
 function p6SchoolSection(School $school): object
@@ -479,7 +479,7 @@ it('placeForPromotionOutcome creates next-session placement and keeps admission 
     $id2 = (string) Str::uuid();
     DB::table('academic_sessions')->insert([
         'id' => $id2, 'school_id' => $school->id, 'name' => '2026/2027',
-        'start_date' => '2026-09-01', 'is_current' => false,
+        'start_date' => '2026-09-01', 'state' => 'draft',
         'created_at' => now(), 'updated_at' => now(),
     ]);
     $ss = p6SchoolSection($school);
@@ -609,7 +609,7 @@ it('terminal withdraw closes all current session-scoped placements and keeps his
     $id2 = (string) Str::uuid();
     DB::table('academic_sessions')->insert([
         'id' => $id2, 'school_id' => $school->id, 'name' => '2026/2027',
-        'start_date' => '2026-09-01', 'is_current' => false,
+        'start_date' => '2026-09-01', 'state' => 'draft',
         'created_at' => now(), 'updated_at' => now(),
     ]);
     $level = p6Level($school);
@@ -707,7 +707,7 @@ it('placeForPromotionOutcome rejects enrollment_id from another school or studen
     $nextSessionId = (string) Str::uuid();
     DB::table('academic_sessions')->insert([
         'id' => $nextSessionId, 'school_id' => $a->id, 'name' => '2027/2028',
-        'start_date' => '2027-09-01', 'is_current' => false,
+        'start_date' => '2027-09-01', 'state' => 'draft',
         'created_at' => now(), 'updated_at' => now(),
     ]);
 

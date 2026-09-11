@@ -8,7 +8,7 @@ use App\Models\Academic\Term;
 use App\Notifications\TermClosedNotification;
 use App\Notifications\TermReopenedNotification;
 use App\States\Academic\Term\Active as TermActive;
-use App\States\Academic\Term\Closed as TermClosed;
+use App\States\Academic\Term\Closed as TermClosedState;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -30,7 +30,7 @@ class TermClosureService
         }
 
         DB::transaction(function () use ($term) {
-            $term->state->transitionTo(TermClosed::class);
+            $term->state->transitionTo(TermClosedState::class);
             $term->forceFill(['closed_at' => now()])->save();
         });
 
@@ -58,7 +58,7 @@ class TermClosureService
 
     public function reopenTerm(Term $term, string $reason, string $newEndDate): void
     {
-        if (! ($term->state instanceof TermClosed)) {
+        if (! ($term->state instanceof TermClosedState)) {
             throw ValidationException::withMessages([
                 'state' => 'This term is not closed and cannot be reopened.',
             ]);
@@ -91,7 +91,7 @@ class TermClosureService
         }
 
         $lastClosed = Term::where('academic_session_id', $session->id)
-            ->where('state', TermClosed::$name)
+            ->where('state', TermClosedState::$name)
             ->orderByDesc('closed_at')
             ->first();
 

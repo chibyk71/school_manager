@@ -10,9 +10,9 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\Models\School;
 use App\States\Academic\AcademicSession\Active as SessionActive;
-use App\States\Academic\AcademicSession\Closed as SessionClosed;
+use App\States\Academic\AcademicSession\Closed as SessionClosedState;
 use App\States\Academic\Term\Active as TermActive;
-use App\States\Academic\Term\Closed as TermClosed;
+use App\States\Academic\Term\Closed as TermClosedState;
 use App\States\Academic\Term\Planned as TermPlanned;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -123,7 +123,7 @@ class AcademicCalendarService
             AcademicSession::where('school_id', $session->school_id)
                 ->where('state', SessionActive::$name)
                 ->where('id', '!=', $session->id)
-                ->update(['state' => SessionClosed::$name]);
+                ->update(['state' => SessionClosedState::$name]);
 
             $session->state->transitionTo(SessionActive::class);
             $session->forceFill(['activated_at' => now()])->save();
@@ -163,7 +163,7 @@ class AcademicCalendarService
             Term::where('academic_session_id', $term->academic_session_id)
                 ->where('state', TermActive::$name)
                 ->where('id', '!=', $term->id)
-                ->update(['state' => TermClosed::$name]);
+                ->update(['state' => TermClosedState::$name]);
 
             if ($term->state instanceof TermPlanned) {
                 $term->state->transitionTo(TermActive::class);
@@ -186,7 +186,7 @@ class AcademicCalendarService
         }
 
         DB::transaction(function () use ($term) {
-            $term->state->transitionTo(TermClosed::class);
+            $term->state->transitionTo(TermClosedState::class);
             $term->forceFill(['closed_at' => now()])->save();
 
             Cache::forget(self::CACHE_KEY_TERM . $term->school_id);
@@ -208,7 +208,7 @@ class AcademicCalendarService
         $session = $term->academicSession;
 
         $lastClosed = Term::where('academic_session_id', $session->id)
-            ->where('state', TermClosed::$name)
+            ->where('state', TermClosedState::$name)
             ->orderByDesc('closed_at')
             ->first();
 
