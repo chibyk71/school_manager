@@ -1,7 +1,7 @@
 /**
  * Academic Calendar Type Definitions
  *
- * Phase 1: lifecycle authority is Spatie state machine values, not is_current / status enums.
+ * Phase 1: authoritative lifecycle is state (Spatie). No is_current / is_active / is_closed.
  */
 
 export type AcademicSessionState = 'draft' | 'planned' | 'active' | 'paused' | 'closed';
@@ -17,11 +17,8 @@ export interface AcademicSession {
     start_date: string;
     end_date: string;
 
-    /** Authoritative lifecycle state */
     state: AcademicSessionState;
     state_label?: string;
-    /** Derived convenience: true when state === 'active' */
-    is_active?: boolean;
 
     created_at: string;
     updated_at: string;
@@ -45,11 +42,8 @@ export interface Term {
     start_date: string;
     end_date: string;
 
-    /** Authoritative lifecycle state */
     state: TermState;
     state_label?: string;
-    is_active?: boolean;
-    is_closed?: boolean;
 
     color?: string;
     ordinal_number?: number;
@@ -67,7 +61,6 @@ export interface AcademicSessionFormData {
     name: string;
     start_date: string | null;
     end_date: string | null;
-    state?: AcademicSessionState;
 }
 
 export interface TermFormData {
@@ -77,7 +70,6 @@ export interface TermFormData {
     end_date: string | null;
     color?: string;
     ordinal_number?: number;
-    state?: TermState;
 }
 
 export interface SessionOption {
@@ -86,7 +78,6 @@ export interface SessionOption {
     start_date: string;
     end_date: string;
     state: AcademicSessionState;
-    is_current?: boolean;
 }
 
 export interface TermOption {
@@ -128,5 +119,4 @@ export interface CurrentSessionInfo {
     start_date: string;
     end_date: string;
     state: AcademicSessionState;
-    is_active?: boolean;
 }
