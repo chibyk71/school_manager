@@ -8,17 +8,19 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Phase 1: Academic Session & Term authoritative lifecycle states.
  *
- * - Adds `state` columns (Spatie Model States short names)
- * - Deterministically reconciles legacy status / is_current / is_active / is_closed
- * - Fails loudly on contradictory legacy combinations
- * - Removes obsolete lifecycle columns and indexes
- * - Preserves closed_at (audit) and activated_at
+ * Two-stage safety:
+ * 1. Validate ALL legacy rows and collect mappings (no writes on contradiction).
+ * 2. Only after validation succeeds: add state, populate, then drop obsolete columns.
  */
 return new class extends Migration
 {
     public function up(): void
     {
-        // ── Academic Sessions ──────────────────────────────────────────
+        // Stage 1: pure validation (no schema/data mutation)
+        $sessionUpdates = $this->validateAcademicSessions();
+        $termUpdates = $this->validateTerms();
+
+        // Stage 2: schema + populate + drop (only if validation passed)
         Schema::table('academic_sessions', function (Blueprint $table) {
             $table->string('state', 20)
                 ->nullable()
@@ -26,7 +28,9 @@ return new class extends Migration
                 ->comment('Authoritative lifecycle: draft, planned, active, paused, closed');
         });
 
-        $this->reconcileAcademicSessions();
+        foreach ($sessionUpdates as $id => $state) {
+            DB::table('academic_sessions')->where('id', $id)->update(['state' => $state]);
+        }
 
         Schema::table('academic_sessions', function (Blueprint $table) {
             $table->string('state', 20)->nullable(false)->default('draft')->change();
@@ -46,7 +50,6 @@ return new class extends Migration
             $table->index(['school_id', 'state'], 'academic_sessions_school_state_idx');
         });
 
-        // ── Terms ──────────────────────────────────────────────────────
         Schema::table('terms', function (Blueprint $table) {
             $table->string('state', 20)
                 ->nullable()
@@ -54,7 +57,9 @@ return new class extends Migration
                 ->comment('Authoritative lifecycle: planned, active, closed');
         });
 
-        $this->reconcileTerms();
+        foreach ($termUpdates as $id => $state) {
+            DB::table('terms')->where('id', $id)->update(['state' => $state]);
+        }
 
         Schema::table('terms', function (Blueprint $table) {
             $table->string('state', 20)->nullable(false)->default('planned')->change();
@@ -137,10 +142,13 @@ return new class extends Migration
         });
     }
 
-    private function reconcileAcademicSessions(): void
+    /**
+     * @return array<string, string> id => state
+     */
+    private function validateAcademicSessions(): array
     {
         $rows = DB::table('academic_sessions')->select('id', 'school_id', 'name', 'status', 'is_current')->get();
-
+        $updates = [];
         $contradictions = [];
 
         foreach ($rows as $row) {
@@ -168,7 +176,7 @@ return new class extends Migration
                 continue;
             }
 
-            DB::table('academic_sessions')->where('id', $row->id)->update(['state' => $state]);
+            $updates[$row->id] = $state;
         }
 
         if ($contradictions !== []) {
@@ -177,12 +185,17 @@ return new class extends Migration
                 implode("\n", $contradictions)
             );
         }
+
+        return $updates;
     }
 
-    private function reconcileTerms(): void
+    /**
+     * @return array<string, string> id => state
+     */
+    private function validateTerms(): array
     {
         $rows = DB::table('terms')->select('id', 'academic_session_id', 'name', 'status', 'is_active', 'is_closed')->get();
-
+        $updates = [];
         $contradictions = [];
 
         foreach ($rows as $row) {
@@ -210,7 +223,7 @@ return new class extends Migration
                 continue;
             }
 
-            DB::table('terms')->where('id', $row->id)->update(['state' => $state]);
+            $updates[$row->id] = $state;
         }
 
         if ($contradictions !== []) {
@@ -219,5 +232,7 @@ return new class extends Migration
                 implode("\n", $contradictions)
             );
         }
+
+        return $updates;
     }
 };
