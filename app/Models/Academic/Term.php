@@ -25,6 +25,7 @@ use Spatie\ModelStates\HasStates;
  *
  * Lifecycle state is authoritative via Spatie Model States (planned → active → closed).
  * closed_at remains an audit field. DynamicEnum retains only name / short_name.
+ * No is_active / is_closed lifecycle accessors — use state / state_label.
  */
 class Term extends Model
 {
@@ -56,11 +57,6 @@ class Term extends Model
         'state'        => TermState::class,
     ];
 
-    /**
-     * DynamicEnum properties – naming only (lifecycle is architectural state).
-     *
-     * @return array<string>
-     */
     public function getDynamicEnumProperties(): array
     {
         return [
@@ -101,9 +97,6 @@ class Term extends Model
         return $query->where('academic_session_id', $sessionId);
     }
 
-    /**
-     * Scope: Only terms in the ACTIVE lifecycle state.
-     */
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('state', TermActive::$name);
@@ -114,22 +107,9 @@ class Term extends Model
         return $query->orderBy('ordinal_number');
     }
 
-    /**
-     * Scope: terms that are not closed.
-     */
     public function scopeNotClosed(Builder $query): Builder
     {
         return $query->where('state', '!=', TermClosed::$name);
-    }
-
-    public function getIsActiveAttribute(): bool
-    {
-        return $this->state instanceof TermActive;
-    }
-
-    public function getIsClosedAttribute(): bool
-    {
-        return $this->state instanceof TermClosed;
     }
 
     public function getStateLabelAttribute(): string
@@ -176,6 +156,6 @@ class Term extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->dontLogIfAttributesChangedOnly(['updated_at'])
-            ->setDescriptionForEvent(fn(string $eventName) => "Term \"{$this->display_name}\" ({$this->academicSession?->name}) was {$eventName}");
+            ->setDescriptionForEvent(fn (string $eventName) => "Term \"{$this->display_name}\" ({$this->academicSession?->name}) was {$eventName}");
     }
 }
