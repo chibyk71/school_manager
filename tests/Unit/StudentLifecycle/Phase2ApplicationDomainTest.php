@@ -49,6 +49,7 @@ beforeEach(function () {
         $table->uuid('id')->primary();
         $table->uuid('school_id');
         $table->string('name');
+        $table->string('state', 20)->default('draft');
         $table->timestamps();
         $table->softDeletes();
     });
@@ -178,6 +179,7 @@ function makeSession(School $school, string $name = '2026/2027'): AcademicSessio
         'id' => (string) Str::uuid(),
         'school_id' => $school->id,
         'name' => $name,
+        'state' => 'active',
     ]);
     $session->save();
 
