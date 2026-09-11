@@ -3,20 +3,23 @@
 namespace App\Models\Academic;
 
 use App\Models\Model;
+use App\States\Academic\AcademicSession\Active;
+use App\States\Academic\AcademicSession\Closed;
+use App\States\Academic\AcademicSessionState;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Carbon;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\ModelStates\HasStates;
 
 class AcademicSession extends Model
 {
     /** @use HasFactory<\Database\Factories\Academic\AcademicSessionFactory> */
-    use HasFactory, HasUuids, SoftDeletes, BelongsToSchool, HasTableQuery, LogsActivity;
+    use HasFactory, HasUuids, SoftDeletes, BelongsToSchool, HasTableQuery, LogsActivity, HasStates;
 
     protected $table = 'academic_sessions';
 
@@ -25,8 +28,7 @@ class AcademicSession extends Model
         'name',
         'start_date',
         'end_date',
-        'is_current',
-        'status',
+        'state',
         'activated_at',
         'closed_at',
     ];
@@ -34,10 +36,9 @@ class AcademicSession extends Model
     protected $casts = [
         'start_date'    => 'date:Y-m-d',
         'end_date'      => 'date:Y-m-d',
-        'is_current'    => 'boolean',
         'activated_at'  => 'datetime',
         'closed_at'     => 'datetime',
-        'status'        => 'string',
+        'state'         => AcademicSessionState::class,
     ];
 
     protected $hidden = [
@@ -59,49 +60,43 @@ class AcademicSession extends Model
         'name',
     ];
 
-    public const STATUS_DRAFT     = 'draft';
-    public const STATUS_UPCOMING  = 'upcoming';
-    public const STATUS_ACTIVE    = 'active';
-    public const STATUS_CLOSED    = 'closed';
-    public const STATUS_ARCHIVED  = 'archived';
-
-    public const STATUSES = [
-        self::STATUS_DRAFT,
-        self::STATUS_UPCOMING,
-        self::STATUS_ACTIVE,
-        self::STATUS_CLOSED,
-        self::STATUS_ARCHIVED,
-    ];
-
     public function terms(): HasMany
     {
         return $this->hasMany(Term::class, 'academic_session_id')
             ->orderBy('ordinal_number');
     }
 
-    public function scopeCurrent($query)
-    {
-        return $query->where('is_current', true);
-    }
-
+    /**
+     * Scope: sessions in the ACTIVE lifecycle state.
+     */
     public function scopeActive($query)
     {
-        return $query->where('status', self::STATUS_ACTIVE);
+        return $query->where('state', Active::$name);
     }
 
-    public function scopeNotArchived($query)
+    /**
+     * Scope: sessions that are not closed.
+     */
+    public function scopeNotClosed($query)
     {
-        return $query->where('status', '!=', self::STATUS_ARCHIVED);
+        return $query->where('state', '!=', Closed::$name);
     }
 
     public function getIsActiveAttribute(): bool
     {
-        return $this->status === self::STATUS_ACTIVE;
+        return $this->state instanceof Active;
+    }
+
+    public function getStateLabelAttribute(): string
+    {
+        return $this->state instanceof AcademicSessionState
+            ? $this->state->label()
+            : ucfirst((string) $this->state);
     }
 
     public function canModifyStartDate(): bool
     {
-        return ! $this->isActive && $this->status !== self::STATUS_CLOSED;
+        return ! ($this->state instanceof Active) && ! ($this->state instanceof Closed);
     }
 
     public function getDurationAttribute(): ?string
