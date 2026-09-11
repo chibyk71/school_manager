@@ -9,7 +9,7 @@ use Spatie\ModelStates\State;
 /**
  * TermResource – API Resource for Term Model
  *
- * Phase 1: lifecycle authority is `state` (Spatie Model States).
+ * Authoritative lifecycle representation: state / state_label only.
  */
 class TermResource extends JsonResource
 {
@@ -33,8 +33,6 @@ class TermResource extends JsonResource
             'display_name'          => $this->display_name,
             'state'                 => $this->state instanceof State ? $this->state->getValue() : (string) $this->state,
             'state_label'           => $this->state_label,
-            'is_active'             => $this->is_active,
-            'is_closed'             => $this->is_closed,
             'color'                 => $this->color,
             'ordinal_number'        => $this->ordinal_number,
 
