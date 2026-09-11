@@ -66,25 +66,14 @@ class AcademicSession extends Model
             ->orderBy('ordinal_number');
     }
 
-    /**
-     * Scope: sessions in the ACTIVE lifecycle state.
-     */
     public function scopeActive($query)
     {
         return $query->where('state', Active::$name);
     }
 
-    /**
-     * Scope: sessions that are not closed.
-     */
     public function scopeNotClosed($query)
     {
         return $query->where('state', '!=', Closed::$name);
-    }
-
-    public function getIsActiveAttribute(): bool
-    {
-        return $this->state instanceof Active;
     }
 
     public function getStateLabelAttribute(): string
@@ -119,6 +108,6 @@ class AcademicSession extends Model
             ->logFillable()
             ->logOnlyDirty()
             ->dontLogIfAttributesChangedOnly(['updated_at'])
-            ->setDescriptionForEvent(fn(string $eventName) => "Academic session \"{$this->name}\" has been {$eventName}");
+            ->setDescriptionForEvent(fn (string $eventName) => "Academic session \"{$this->name}\" has been {$eventName}");
     }
 }
