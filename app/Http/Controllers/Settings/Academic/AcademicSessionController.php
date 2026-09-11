@@ -15,10 +15,10 @@ use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 /**
- * AcademicSessionController – Handles CRUD & Activation for Academic Sessions
+ * AcademicSessionController – Handles CRUD for Academic Sessions
  *
- * Phase 1: lifecycle authority is the state machine. Activation uses setCurrent /
- * AcademicCalendarService::activateSession — not request-body is_current.
+ * Phase 2: lifecycle authority is AcademicSessionLifecycleService.
+ * setCurrent has been removed; use plan/activate/pause/resume/close/reopen.
  */
 class AcademicSessionController extends Controller
 {
@@ -77,25 +77,32 @@ class AcademicSessionController extends Controller
 
         try {
             $validated = $request->validated();
-
-            // New sessions default to draft via AcademicSessionState::config()
+            $validated['school_id'] = GetSchoolModel()->id;
             $session = AcademicSession::create($validated);
 
-            return redirect()
-                ->route('academic-sessions.index')
-                ->with('success', "Academic session '{$session->name}' created successfully.");
+            return back()->with('success', "Academic session '{$session->name}' created successfully.");
         } catch (\Exception $e) {
             Log::error('Failed to create academic session', [
                 'error' => $e->getMessage(),
-                'data' => $request->all(),
                 'user_id' => auth()->id(),
             ]);
 
             return redirect()
                 ->back()
                 ->withInput()
-                ->with('error', 'Failed to create academic session. Please try again.');
+                ->with('error', 'Failed to create academic session.');
         }
+    }
+
+    public function show(AcademicSession $academicSession)
+    {
+        Gate::authorize('view', $academicSession);
+
+        $academicSession->load('terms');
+
+        return Inertia::render('Settings/Academic/AcademicSessionShow', [
+            'session' => new AcademicSessionResource($academicSession),
+        ]);
     }
 
     public function update(UpdateAcademicSessionRequest $request, AcademicSession $academicSession)
@@ -103,16 +110,13 @@ class AcademicSessionController extends Controller
         Gate::authorize('update', $academicSession);
 
         try {
-            $validated = $request->validated();
-            $academicSession->update($validated);
+            $academicSession->update($request->validated());
 
-            return redirect()
-                ->route('academic-sessions.index')
-                ->with('success', "Academic session '{$academicSession->name}' updated successfully.");
+            return back()->with('success', "Academic session '{$academicSession->name}' updated successfully.");
         } catch (\Exception $e) {
             Log::error('Failed to update academic session', [
                 'error' => $e->getMessage(),
-                'session' => $academicSession->id,
+                'session_id' => $academicSession->id,
                 'user_id' => auth()->id(),
             ]);
 
@@ -120,27 +124,6 @@ class AcademicSessionController extends Controller
                 ->back()
                 ->withInput()
                 ->with('error', 'Failed to update academic session.');
-        }
-    }
-
-    /**
-     * Explicit activation endpoint — lifecycle transition via service, not request flag.
-     */
-    public function setCurrent(AcademicSession $academicSession)
-    {
-        Gate::authorize('update', $academicSession);
-
-        try {
-            $this->service->activateSession($academicSession);
-
-            return back()->with('success', "Current session switched to '{$academicSession->name}'.");
-        } catch (\Exception $e) {
-            Log::error('Failed to set current session', [
-                'error' => $e->getMessage(),
-                'session' => $academicSession->id,
-            ]);
-
-            return back()->with('error', 'Failed to switch current session.');
         }
     }
 
@@ -156,20 +139,24 @@ class AcademicSessionController extends Controller
         try {
             $schoolId = GetSchoolModel()->id;
 
+            // Phase 2: protect current operational sessions (ACTIVE or PAUSED)
             $deleted = AcademicSession::query()->whereIn('id', $validated['ids'])
                 ->where('school_id', $schoolId)
-                ->where('state', '!=', SessionActive::$name)
+                ->whereNotIn('state', [
+                    SessionActive::$name,
+                    \App\States\Academic\AcademicSession\Paused::$name,
+                ])
                 ->delete();
 
             if ($deleted === 0) {
-                return back()->with('error', 'No eligible academic sessions were deleted (active session cannot be deleted).');
+                return back()->with('error', 'No eligible academic sessions were deleted (current operational sessions cannot be deleted).');
             }
 
             return back()->with('success', "{$deleted} academic session(s) deleted successfully.");
         } catch (\Exception $e) {
             Log::error('Failed to delete academic sessions', [
                 'error' => $e->getMessage(),
-                'ids' => $validated['ids'] ?? [],
+                'user_id' => auth()->id(),
             ]);
 
             return back()->with('error', 'Failed to delete academic sessions.');
@@ -181,15 +168,11 @@ class AcademicSessionController extends Controller
         Gate::authorize('restore', $academicSession);
 
         try {
-            $newerSession = AcademicSession::where('school_id', GetSchoolModel()->id)
-                ->where('start_date', '>', $academicSession->start_date)
-                ->exists();
-
-            if ($newerSession) {
-                return back()->with('error', 'Cannot restore: newer sessions already exist.');
-            }
-
+            // Phase 2: restore only un-soft-deletes. It does not reopen/activate.
             $academicSession->restore();
+
+            app(\App\Services\Academic\AcademicSessionLifecycleService::class)
+                ->invalidateCaches($academicSession->school_id);
 
             return back()->with('success', "Academic session '{$academicSession->name}' restored successfully.");
         } catch (\Exception $e) {
@@ -208,9 +191,8 @@ class AcademicSessionController extends Controller
         Gate::authorize('forceDelete', $academicSession);
 
         try {
-            if ($academicSession->state instanceof SessionActive
-                || (string) $academicSession->state === SessionActive::$name) {
-                return back()->with('error', 'Cannot permanently delete an active session.');
+            if ($academicSession->isCurrentOperational()) {
+                return back()->with('error', 'Cannot permanently delete a current operational session (ACTIVE or PAUSED).');
             }
 
             if ($academicSession->terms()->exists()) {
