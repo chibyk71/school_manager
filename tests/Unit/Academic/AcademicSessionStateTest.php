@@ -8,6 +8,8 @@ use App\States\Academic\AcademicSession\Paused;
 use App\States\Academic\AcademicSession\Planned;
 use Spatie\ModelStates\Exceptions\TransitionNotFound;
 
+uses(Tests\TestCase::class);
+
 it('registers five academic session states', function () {
     $states = AcademicSession::getStatesFor('state');
 
@@ -19,7 +21,8 @@ it('registers five academic session states', function () {
 });
 
 it('defaults new sessions to draft via model API', function () {
-    expect(AcademicSession::getDefaultStateFor('state'))->toBe(Draft::class);
+    // Package returns the serialized morph name, not the FQCN.
+    expect(AcademicSession::getDefaultStateFor('state'))->toBe(Draft::$name);
 });
 
 it('allows legal session transitions including CLOSED to ACTIVE', function () {

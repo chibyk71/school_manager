@@ -9,8 +9,8 @@ use App\Events\Academic\TermClosed;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\Models\School;
-use App\States\Academic\AcademicSession\Active as SessionActive;
-use App\States\Academic\AcademicSession\Closed as SessionClosedState;
+use App\States\Academic\AcademicSession\Active as AcademicSessionActive;
+use App\States\Academic\AcademicSession\Closed as AcademicSessionClosed;
 use App\States\Academic\Term\Active as TermActive;
 use App\States\Academic\Term\Closed as TermClosedState;
 use App\States\Academic\Term\Planned as TermPlanned;
@@ -43,7 +43,7 @@ class AcademicCalendarService
 
         return Cache::remember($key, now()->addMinutes(self::CACHE_TTL_MINUTES), function () use ($school) {
             return AcademicSession::where('school_id', $school->id)
-                ->where('state', SessionActive::$name)
+                ->where('state', AcademicSessionActive::$name)
                 ->first();
         });
     }
@@ -83,17 +83,21 @@ class AcademicCalendarService
 
         return AcademicSession::query()
             ->where('school_id', $schoolId)
-            ->orderByRaw('CASE WHEN state = ? THEN 0 ELSE 1 END', [SessionActive::$name])
+            ->orderByRaw('CASE WHEN state = ? THEN 0 ELSE 1 END', [AcademicSessionActive::$name])
             ->orderByDesc('created_at')
             ->get(['id', 'name', 'state'])
-            ->map(fn (AcademicSession $row) => [
-                'id' => (string) $row->id,
-                'name' => (string) $row->name,
-                'state' => $row->state instanceof SessionActive
-                    || (is_object($row->state) && method_exists($row->state, 'getValue'))
-                    ? (is_object($row->state) && method_exists($row->state, 'getValue') ? $row->state->getValue() : (string) $row->state)
-                    : (string) $row->state,
-            ])
+            ->map(function (AcademicSession $row) {
+                $state = $row->state;
+                $value = is_object($state) && method_exists($state, 'getValue')
+                    ? $state->getValue()
+                    : (string) $state;
+
+                return [
+                    'id' => (string) $row->id,
+                    'name' => (string) $row->name,
+                    'state' => $value,
+                ];
+            })
             ->all();
     }
 
@@ -114,18 +118,18 @@ class AcademicCalendarService
             throw ValidationException::withMessages(['session' => 'Session does not belong to current school.']);
         }
 
-        if ($session->state instanceof SessionActive) {
+        if ($session->state instanceof AcademicSessionActive) {
             return;
         }
 
         DB::transaction(function () use ($session) {
             // Legacy parity: ensure at most one ACTIVE session per school
             AcademicSession::where('school_id', $session->school_id)
-                ->where('state', SessionActive::$name)
+                ->where('state', AcademicSessionActive::$name)
                 ->where('id', '!=', $session->id)
-                ->update(['state' => SessionClosedState::$name]);
+                ->update(['state' => AcademicSessionClosed::$name]);
 
-            $session->state->transitionTo(SessionActive::class);
+            $session->state->transitionTo(AcademicSessionActive::class);
             $session->forceFill(['activated_at' => now()])->save();
 
             Cache::forget(self::CACHE_KEY_SESSION . $session->school_id);
@@ -136,12 +140,12 @@ class AcademicCalendarService
 
     public function closeSession(AcademicSession $session): void
     {
-        if (! ($session->state instanceof SessionActive)) {
+        if (! ($session->state instanceof AcademicSessionActive)) {
             throw ValidationException::withMessages(['state' => 'Only active sessions can be closed.']);
         }
 
         DB::transaction(function () use ($session) {
-            $session->state->transitionTo(SessionClosed::class);
+            $session->state->transitionTo(AcademicSessionClosed::class);
             $session->forceFill(['closed_at' => now()])->save();
 
             Cache::forget(self::CACHE_KEY_SESSION . $session->school_id);
@@ -153,7 +157,7 @@ class AcademicCalendarService
     public function activateTerm(Term $term): void
     {
         $session = $term->academicSession;
-        if (! ($session->state instanceof SessionActive)) {
+        if (! ($session->state instanceof AcademicSessionActive)) {
             throw ValidationException::withMessages(['session' => 'Parent session must be active first.']);
         }
 
@@ -201,7 +205,7 @@ class AcademicCalendarService
      */
     public function reopenTerm(Term $term): void
     {
-        if (! ($term->state instanceof TermClosed)) {
+        if (! ($term->state instanceof TermClosedState)) {
             throw ValidationException::withMessages(['state' => 'Term is not closed.']);
         }
 
@@ -220,7 +224,7 @@ class AcademicCalendarService
             ->where('ordinal_number', $term->ordinal_number + 1)
             ->first();
 
-        if ($nextTerm && (($nextTerm->state instanceof TermActive) || ($nextTerm->state instanceof TermClosed))) {
+        if ($nextTerm && (($nextTerm->state instanceof TermActive) || ($nextTerm->state instanceof TermClosedState))) {
             throw ValidationException::withMessages(['next_term' => 'Cannot reopen: next term has already started or closed.']);
         }
 

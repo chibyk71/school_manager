@@ -6,6 +6,8 @@ use App\States\Academic\Term\Closed;
 use App\States\Academic\Term\Planned;
 use Spatie\ModelStates\Exceptions\TransitionNotFound;
 
+uses(Tests\TestCase::class);
+
 it('registers three term states and no paused', function () {
     $states = Term::getStatesFor('state');
 
@@ -16,7 +18,8 @@ it('registers three term states and no paused', function () {
 });
 
 it('defaults terms to planned via model API', function () {
-    expect(Term::getDefaultStateFor('state'))->toBe(Planned::class);
+    // Package returns the serialized morph name, not the FQCN.
+    expect(Term::getDefaultStateFor('state'))->toBe(Planned::$name);
 });
 
 it('allows legal term transitions', function () {
