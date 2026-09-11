@@ -4,19 +4,19 @@ use App\Models\Academic\Term;
 use App\States\Academic\Term\Active;
 use App\States\Academic\Term\Closed;
 use App\States\Academic\Term\Planned;
-use App\States\Academic\TermState;
 use Spatie\ModelStates\Exceptions\TransitionNotFound;
 
-it('defines three term states and no paused', function () {
-    expect(Planned::$name)->toBe('planned')
-        ->and(Active::$name)->toBe('active')
-        ->and(Closed::$name)->toBe('closed');
+it('registers three term states and no paused', function () {
+    $states = Term::getStatesFor('state');
 
-    expect(class_exists(\App\States\Academic\Term\Paused::class))->toBeFalse();
+    expect($states->all())->toContain(Planned::$name)
+        ->and($states->all())->toContain(Active::$name)
+        ->and($states->all())->toContain(Closed::$name)
+        ->and(class_exists(\App\States\Academic\Term\Paused::class))->toBeFalse();
 });
 
-it('defaults terms to planned', function () {
-    expect(TermState::config()->defaultStateClass())->toBe(Planned::class);
+it('defaults terms to planned via model API', function () {
+    expect(Term::getDefaultStateFor('state'))->toBe(Planned::class);
 });
 
 it('allows legal term transitions', function () {
