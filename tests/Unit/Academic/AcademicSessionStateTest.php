@@ -6,19 +6,20 @@ use App\States\Academic\AcademicSession\Closed;
 use App\States\Academic\AcademicSession\Draft;
 use App\States\Academic\AcademicSession\Paused;
 use App\States\Academic\AcademicSession\Planned;
-use App\States\Academic\AcademicSessionState;
 use Spatie\ModelStates\Exceptions\TransitionNotFound;
 
-it('defines five academic session states', function () {
-    expect(Draft::$name)->toBe('draft')
-        ->and(Planned::$name)->toBe('planned')
-        ->and(Active::$name)->toBe('active')
-        ->and(Paused::$name)->toBe('paused')
-        ->and(Closed::$name)->toBe('closed');
+it('registers five academic session states', function () {
+    $states = AcademicSession::getStatesFor('state');
+
+    expect($states->all())->toContain(Draft::$name)
+        ->and($states->all())->toContain(Planned::$name)
+        ->and($states->all())->toContain(Active::$name)
+        ->and($states->all())->toContain(Paused::$name)
+        ->and($states->all())->toContain(Closed::$name);
 });
 
-it('defaults new sessions to draft', function () {
-    expect(AcademicSessionState::config()->defaultStateClass())->toBe(Draft::class);
+it('defaults new sessions to draft via model API', function () {
+    expect(AcademicSession::getDefaultStateFor('state'))->toBe(Draft::class);
 });
 
 it('allows legal session transitions including CLOSED to ACTIVE', function () {
