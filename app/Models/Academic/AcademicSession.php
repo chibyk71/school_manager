@@ -83,9 +83,25 @@ class AcademicSession extends Model
             : ucfirst((string) $this->state);
     }
 
+    /**
+     * Whether start_date may be mutated.
+     * Governed by the operational-data boundary (Phase 2 placeholder returns false
+     * for hasOperationalData, so dates remain editable until Phase 4 activates the registry).
+     * Do not hard-code against ACTIVE/CLOSED alone.
+     */
     public function canModifyStartDate(): bool
     {
-        return ! ($this->state instanceof Active) && ! ($this->state instanceof Closed);
+        return ! app(\App\Contracts\Academic\AcademicSessionOperationalDataBoundary::class)
+            ->hasOperationalData($this);
+    }
+
+    /**
+     * Whether the session is currently operational (ACTIVE or PAUSED).
+     */
+    public function isCurrentOperational(): bool
+    {
+        return $this->state instanceof Active
+            || $this->state instanceof \App\States\Academic\AcademicSession\Paused;
     }
 
     public function getDurationAttribute(): ?string
