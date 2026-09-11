@@ -107,7 +107,7 @@ function p8BuildSchema(): void
         $t->uuid('school_id');
         $t->string('name');
         $t->date('start_date')->nullable();
-        $t->boolean('is_current')->default(false);
+        $t->string('state', 20)->default('draft');
         $t->timestamps();
         $t->softDeletes();
     });
@@ -280,7 +280,7 @@ function p8Session(School $school): object
         'id' => $id,
         'school_id' => $school->id,
         'name' => '2026/2027',
-        'is_current' => true,
+        'state' => 'active',
         'created_at' => now(),
         'updated_at' => now(),
     ]);

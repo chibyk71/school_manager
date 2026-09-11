@@ -97,14 +97,13 @@ class LifecycleReportsController extends Controller
             'deadline_to' => $request->string('deadline_to')->toString() ?: null,
         ], fn ($v) => $v !== null && $v !== '');
 
-        // Inclusive day bounds applied once in the domain service.
         return $this->ops->normalizeReportFilters($raw);
     }
 
     /**
      * Session filter options — owned by Academic Calendar (not Lifecycle).
      *
-     * @return list<array{id: string, name: string, is_current: bool}>
+     * @return list<array{id: string, name: string, state: string}>
      */
     protected function sessionOptions(School $school): array
     {

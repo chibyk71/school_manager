@@ -62,12 +62,11 @@ function buildDashSchema(): void
         $t->uuid('id')->primary();
         $t->uuid('school_id');
         $t->string('name');
-        $t->boolean('is_current')->default(false);
+        $t->string('state', 20)->default('draft');
         $t->timestamps();
         $t->softDeletes();
     });
 
-    
     Schema::create('student_applications', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->uuid('school_id');
@@ -133,7 +132,6 @@ function buildDashSchema(): void
         $t->timestamps();
     });
 
-
     Schema::create('student_session_placements', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->uuid('school_id')->nullable();
@@ -166,7 +164,7 @@ function dashSession(School $school, string $name, bool $current = false): Acade
         'id' => (string) Str::uuid(),
         'school_id' => $school->id,
         'name' => $name,
-        'is_current' => $current,
+        'state' => $current ? 'active' : 'draft',
     ])->save();
 
     return $s->fresh();
@@ -220,7 +218,6 @@ it('does not count prior-session placement toward current-session section capaci
         'capacity' => 10,
     ]);
 
-    // Fill 9/10 with prior-session current placements — would look near capacity if not session-scoped
     for ($i = 0; $i < 9; $i++) {
         $st = new Student;
         $st->forceFill([

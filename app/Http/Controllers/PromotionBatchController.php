@@ -37,7 +37,7 @@ class PromotionBatchController extends Controller
 
         $academicSessions = AcademicSession::query()
             ->orderByDesc('start_date')
-            ->get(['id', 'name', 'is_current']);
+            ->get(['id', 'name', 'state']);
 
         return Inertia::render('Promotion/Index', [
             'batches' => PromotionBatchResource::collection($batches->get())->resolve(),

@@ -9,43 +9,29 @@ use App\Events\Academic\TermClosed;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\Models\School;
+use App\States\Academic\AcademicSession\Active as AcademicSessionActive;
+use App\States\Academic\AcademicSession\Closed as AcademicSessionClosed;
+use App\States\Academic\Term\Active as TermActive;
+use App\States\Academic\Term\Closed as TermClosedState;
+use App\States\Academic\Term\Planned as TermPlanned;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 
 /**
- * AcademicCalendarService v1.0 – Core Business Logic for Academic Sessions & Terms
+ * AcademicCalendarService – Core Business Logic for Academic Sessions & Terms
  *
- * This is the **single source of truth** for all calendar-related operations in the system.
- * All controllers, jobs, commands, etc., MUST use this service instead of direct model queries.
- *
- * Usage Guidelines:
- *   $service = app(AcademicCalendarService::class);
- *   $service->activateSession($session);
- *   $service->closeTerm($term);
- *   $service->currentSession(); // cached & safe
- *   $service->sessionsForSchool($school); // filter/report options
- *   $service->sessionBelongsToSchool($school, $sessionId); // membership checks
+ * Phase 1: lifecycle authority is the state machine (not is_current / is_active / status).
  */
 class AcademicCalendarService
 {
-    /** Cache TTL for current session/term (short for frequent changes) */
     private const CACHE_TTL_MINUTES = 15;
 
     private const CACHE_KEY_SESSION = 'current_academic_session_';
     private const CACHE_KEY_TERM    = 'current_academic_term_';
 
-    // ────────────────────────────────────────────────────────────────
-    // Current Session / Term Retrieval (cached)
-    // ────────────────────────────────────────────────────────────────
-
-    /**
-     * Get the currently active academic session for the current school.
-     */
     public function currentSession(): ?AcademicSession
     {
         $school = GetSchoolModel();
@@ -57,14 +43,11 @@ class AcademicCalendarService
 
         return Cache::remember($key, now()->addMinutes(self::CACHE_TTL_MINUTES), function () use ($school) {
             return AcademicSession::where('school_id', $school->id)
-                ->where('is_current', true)
+                ->where('state', AcademicSessionActive::$name)
                 ->first();
         });
     }
 
-    /**
-     * Get the currently active term for the current school.
-     */
     public function currentTerm(): ?Term
     {
         $school = GetSchoolModel();
@@ -81,7 +64,7 @@ class AcademicCalendarService
             }
 
             return Term::where('academic_session_id', $session->id)
-                ->where('is_active', true)
+                ->where('state', TermActive::$name)
                 ->first();
         });
     }
@@ -89,10 +72,10 @@ class AcademicCalendarService
     /**
      * List academic sessions for a school (filter / report options).
      *
-     * Ordered: current session first, then most recently created.
-     * Does not implement operational-session policy (see currentSession()).
+     * Ordered: ACTIVE first, then most recently created.
+     * Returns authoritative state (not legacy is_current).
      *
-     * @return list<array{id: string, name: string, is_current: bool}>
+     * @return list<array{id: string, name: string, state: string}>
      */
     public function sessionsForSchool(School|string $school): array
     {
@@ -100,21 +83,24 @@ class AcademicCalendarService
 
         return AcademicSession::query()
             ->where('school_id', $schoolId)
-            ->orderByDesc('is_current')
+            ->orderByRaw('CASE WHEN state = ? THEN 0 ELSE 1 END', [AcademicSessionActive::$name])
             ->orderByDesc('created_at')
-            ->get(['id', 'name', 'is_current'])
-            ->map(fn (AcademicSession $row) => [
-                'id' => (string) $row->id,
-                'name' => (string) $row->name,
-                'is_current' => (bool) $row->is_current,
-            ])
+            ->get(['id', 'name', 'state'])
+            ->map(function (AcademicSession $row) {
+                $state = $row->state;
+                $value = is_object($state) && method_exists($state, 'getValue')
+                    ? $state->getValue()
+                    : (string) $state;
+
+                return [
+                    'id' => (string) $row->id,
+                    'name' => (string) $row->name,
+                    'state' => $value,
+                ];
+            })
             ->all();
     }
 
-    /**
-     * Whether the given session id belongs to the school.
-     * Prefer this over ad-hoc AcademicSession queries in other modules.
-     */
     public function sessionBelongsToSchool(School|string $school, string $sessionId): bool
     {
         $schoolId = is_object($school) ? $school->id : $school;
@@ -125,15 +111,6 @@ class AcademicCalendarService
             ->exists();
     }
 
-    // ────────────────────────────────────────────────────────────────
-    // Activation & Closure – Session
-    // ────────────────────────────────────────────────────────────────
-
-    /**
-     * Activate a session – enforces single active session + immutability.
-     *
-     * @throws ValidationException
-     */
     public function activateSession(AcademicSession $session): void
     {
         $school = GetSchoolModel();
@@ -141,21 +118,19 @@ class AcademicCalendarService
             throw ValidationException::withMessages(['session' => 'Session does not belong to current school.']);
         }
 
-        if ($session->status === AcademicSession::STATUS_ACTIVE) {
-            return; // Already active
+        if ($session->state instanceof AcademicSessionActive) {
+            return;
         }
 
         DB::transaction(function () use ($session) {
-            // Deactivate any other current session
+            // Legacy parity: ensure at most one ACTIVE session per school
             AcademicSession::where('school_id', $session->school_id)
-                ->where('is_current', true)
-                ->update(['is_current' => false]);
+                ->where('state', AcademicSessionActive::$name)
+                ->where('id', '!=', $session->id)
+                ->update(['state' => AcademicSessionClosed::$name]);
 
-            $session->update([
-                'is_current'   => true,
-                'status'       => AcademicSession::STATUS_ACTIVE,
-                'activated_at' => now(),
-            ]);
+            $session->state->transitionTo(AcademicSessionActive::class);
+            $session->forceFill(['activated_at' => now()])->save();
 
             Cache::forget(self::CACHE_KEY_SESSION . $session->school_id);
         });
@@ -163,22 +138,15 @@ class AcademicCalendarService
         event(new SessionActivated($session));
     }
 
-    /**
-     * Close a session (soft close – can be reopened until archived).
-     *
-     * @throws ValidationException
-     */
     public function closeSession(AcademicSession $session): void
     {
-        if ($session->status !== AcademicSession::STATUS_ACTIVE) {
-            throw ValidationException::withMessages(['status' => 'Only active sessions can be closed.']);
+        if (! ($session->state instanceof AcademicSessionActive)) {
+            throw ValidationException::withMessages(['state' => 'Only active sessions can be closed.']);
         }
 
         DB::transaction(function () use ($session) {
-            $session->update([
-                'status'    => AcademicSession::STATUS_CLOSED,
-                'closed_at' => now(),
-            ]);
+            $session->state->transitionTo(AcademicSessionClosed::class);
+            $session->forceFill(['closed_at' => now()])->save();
 
             Cache::forget(self::CACHE_KEY_SESSION . $session->school_id);
         });
@@ -186,35 +154,28 @@ class AcademicCalendarService
         event(new SessionClosed($session));
     }
 
-    // ────────────────────────────────────────────────────────────────
-    // Activation & Closure – Term
-    // ────────────────────────────────────────────────────────────────
-
-    /**
-     * Activate a term – enforces single active term + date validation.
-     *
-     * @throws ValidationException
-     */
     public function activateTerm(Term $term): void
     {
         $session = $term->academicSession;
-        if (! $session->isActive) {
+        if (! ($session->state instanceof AcademicSessionActive)) {
             throw ValidationException::withMessages(['session' => 'Parent session must be active first.']);
         }
 
         $this->validateTermDates($term, $session);
 
         DB::transaction(function () use ($term) {
-            // Deactivate any other active term in this session
             Term::where('academic_session_id', $term->academic_session_id)
-                ->where('is_active', true)
-                ->update(['is_active' => false]);
+                ->where('state', TermActive::$name)
+                ->where('id', '!=', $term->id)
+                ->update(['state' => TermClosedState::$name]);
 
-            $term->update([
-                'is_active'    => true,
-                'status'       => 'active', // or use DynamicEnum lookup if needed
-                'activated_at' => now(),
-            ]);
+            if ($term->state instanceof TermPlanned) {
+                $term->state->transitionTo(TermActive::class);
+            } elseif (! ($term->state instanceof TermActive)) {
+                $term->forceFill(['state' => TermActive::$name])->save();
+            } else {
+                return;
+            }
 
             Cache::forget(self::CACHE_KEY_TERM . $term->school_id);
         });
@@ -222,24 +183,15 @@ class AcademicCalendarService
         event(new TermActivated($term));
     }
 
-    /**
-     * Close a term – locks it for editing (can be reopened under restrictions).
-     *
-     * @throws ValidationException
-     */
     public function closeTerm(Term $term): void
     {
-        if (! $term->is_active) {
-            throw ValidationException::withMessages(['status' => 'Only active terms can be closed.']);
+        if (! ($term->state instanceof TermActive)) {
+            throw ValidationException::withMessages(['state' => 'Only active terms can be closed.']);
         }
 
         DB::transaction(function () use ($term) {
-            $term->update([
-                'is_active' => false,
-                'is_closed' => true,
-                'status'    => 'closed',
-                'closed_at' => now(),
-            ]);
+            $term->state->transitionTo(TermClosedState::class);
+            $term->forceFill(['closed_at' => now()])->save();
 
             Cache::forget(self::CACHE_KEY_TERM . $term->school_id);
         });
@@ -248,25 +200,19 @@ class AcademicCalendarService
     }
 
     /**
-     * Attempt to reopen the most recently closed term (restricted).
-     *
-     * Allowed only if:
-     * - This is the LAST closed term in the session
-     * - The next term is still pending (not active/closed)
-     *
-     * @throws ValidationException
+     * Phase 1 compatibility reopen. Term has no Closed→Active transition;
+     * Phase 3 owns the full reopen workflow. Uses direct state assignment.
      */
     public function reopenTerm(Term $term): void
     {
-        if (! $term->is_closed) {
-            throw ValidationException::withMessages(['status' => 'Term is not closed.']);
+        if (! ($term->state instanceof TermClosedState)) {
+            throw ValidationException::withMessages(['state' => 'Term is not closed.']);
         }
 
         $session = $term->academicSession;
 
-        // Check if this is the most recently closed term
         $lastClosed = Term::where('academic_session_id', $session->id)
-            ->where('is_closed', true)
+            ->where('state', TermClosedState::$name)
             ->orderByDesc('closed_at')
             ->first();
 
@@ -274,22 +220,19 @@ class AcademicCalendarService
             throw ValidationException::withMessages(['term' => 'Only the most recently closed term can be reopened.']);
         }
 
-        // Check if next term is still pending
         $nextTerm = Term::where('academic_session_id', $session->id)
             ->where('ordinal_number', $term->ordinal_number + 1)
             ->first();
 
-        if ($nextTerm && $nextTerm->is_active || $nextTerm?->is_closed) {
+        if ($nextTerm && (($nextTerm->state instanceof TermActive) || ($nextTerm->state instanceof TermClosedState))) {
             throw ValidationException::withMessages(['next_term' => 'Cannot reopen: next term has already started or closed.']);
         }
 
         DB::transaction(function () use ($term) {
-            $term->update([
-                'is_closed' => false,
-                'is_active' => true, // Re-activate immediately
-                'status'    => 'active',
+            $term->forceFill([
+                'state' => TermActive::$name,
                 'closed_at' => null,
-            ]);
+            ])->save();
 
             Cache::forget(self::CACHE_KEY_TERM . $term->school_id);
         });
@@ -300,15 +243,6 @@ class AcademicCalendarService
         ]);
     }
 
-    // ────────────────────────────────────────────────────────────────
-    // Validation Helpers
-    // ────────────────────────────────────────────────────────────────
-
-    /**
-     * Validate term dates against parent session.
-     *
-     * @throws ValidationException
-     */
     public function validateTermDates(Term $term, AcademicSession $session): void
     {
         $errors = [];
@@ -330,9 +264,6 @@ class AcademicCalendarService
         }
     }
 
-    /**
-     * Check if a given date falls within the current active term.
-     */
     public function isDateInCurrentTerm(Carbon|string $date): bool
     {
         $term = $this->currentTerm();

@@ -114,7 +114,7 @@ function buildPhase3Schema(): void
         $table->uuid('id')->primary();
         $table->uuid('school_id');
         $table->string('name');
-        $table->boolean('is_current')->default(false);
+        $table->string('state', 20)->default('draft');
         $table->timestamps();
         $table->softDeletes();
     });
@@ -253,7 +253,7 @@ function p3Session(School $school, string $name = '2026/2027'): AcademicSession
         'id' => p3Uuid(),
         'school_id' => $school->id,
         'name' => $name,
-        'is_current' => true,
+        'state' => 'active',
     ]);
     $session->save();
 

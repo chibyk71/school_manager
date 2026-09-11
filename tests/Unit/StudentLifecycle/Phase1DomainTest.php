@@ -104,8 +104,7 @@ function buildPhase1Schema(): void
         $table->string('name', 25);
         $table->date('start_date');
         $table->date('end_date');
-        $table->boolean('is_current')->default(false);
-        $table->string('status', 20)->default('draft');
+        $table->string('state', 20)->default('draft');
         $table->timestamp('activated_at')->nullable();
         $table->timestamp('closed_at')->nullable();
         $table->timestamps();
@@ -189,7 +188,6 @@ function buildPhase1Schema(): void
         $table->softDeletes();
     });
 
-    // HasDynamicEnum on StudentApplication queries this table on create/validate
     Schema::create('dynamic_enums', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->string('name');
@@ -201,7 +199,6 @@ function buildPhase1Schema(): void
         $table->unique(['name', 'applies_to', 'school_id']);
     });
 
-    // HasDynamicEnum on StudentApplication requires status options
     \Illuminate\Support\Facades\DB::table('dynamic_enums')->insert([
         'id' => (string) \Illuminate\Support\Str::uuid(),
         'school_id' => null,
@@ -219,7 +216,6 @@ function buildPhase1Schema(): void
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-
 }
 
 function dropPhase1Schema(): void
@@ -259,8 +255,7 @@ function seedSchoolGraph(): array
         'name' => '2025/2026',
         'start_date' => '2025-09-01',
         'end_date' => '2026-07-31',
-        'is_current' => true,
-        'status' => 'active',
+        'state' => 'active',
     ]);
 
     $sectionId = uuid();
@@ -520,8 +515,7 @@ test('enrollment status distinguishes incomplete from active', function () {
         'name' => '2026/2027',
         'start_date' => '2026-09-01',
         'end_date' => '2027-07-31',
-        'is_current' => false,
-        'status' => 'upcoming',
+        'state' => 'planned',
     ]);
 
     $active = Enrollment::query()->create([

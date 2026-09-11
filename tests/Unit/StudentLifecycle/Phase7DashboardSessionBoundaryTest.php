@@ -68,7 +68,7 @@ function buildBoundarySchema(): void
         $t->uuid('id')->primary();
         $t->uuid('school_id');
         $t->string('name');
-        $t->boolean('is_current')->default(false);
+        $t->string('state', 20)->default('draft');
         $t->timestamps();
         $t->softDeletes();
     });
@@ -138,7 +138,6 @@ function buildBoundarySchema(): void
         $t->timestamps();
     });
 
-
     Schema::create('student_session_placements', function (Blueprint $t) {
         $t->uuid('id')->primary();
         $t->uuid('school_id')->nullable();
@@ -170,7 +169,7 @@ function bSession(School $school, string $name, bool $current = false): Academic
         'id' => (string) Str::uuid(),
         'school_id' => $school->id,
         'name' => $name,
-        'is_current' => $current,
+        'state' => $current ? 'active' : 'draft',
     ])->save();
 
     return $s->fresh();

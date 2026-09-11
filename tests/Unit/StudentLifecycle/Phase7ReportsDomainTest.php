@@ -61,6 +61,7 @@ function buildPhase7ReportsSchema(): void
         $t->uuid('id')->primary();
         $t->uuid('school_id');
         $t->string('name');
+        $t->string('state', 20)->default('draft');
         $t->timestamps();
         $t->softDeletes();
     });
@@ -82,7 +83,6 @@ function buildPhase7ReportsSchema(): void
         $t->timestamps();
         $t->softDeletes();
     });
-
 
     Schema::create('students', function (Blueprint $t) {
         $t->uuid('id')->primary();
@@ -165,6 +165,7 @@ function p7rSession(School $school): object
         'id' => $id,
         'school_id' => $school->id,
         'name' => '2026/2027',
+        'state' => 'active',
         'created_at' => now(),
         'updated_at' => now(),
     ]);

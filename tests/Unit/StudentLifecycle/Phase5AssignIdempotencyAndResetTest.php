@@ -4,6 +4,7 @@ uses(Tests\TestCase::class);
 
 /**
  * Phase 5 focused regressions: assign idempotency + IdGenerator resetCounter year alignment.
+ * Academic sessions use authoritative `state` (Phase 1 calendar). Placement is_current unchanged.
  */
 
 use App\Helpers\IdGenerator;
@@ -74,7 +75,7 @@ function p5iBuild(): void
         $t->uuid('id')->primary(); $t->string('first_name')->nullable(); $t->string('last_name')->nullable(); $t->string('email')->nullable(); $t->timestamps(); $t->softDeletes();
     });
     Schema::create('academic_sessions', function (Blueprint $t) {
-        $t->uuid('id')->primary(); $t->uuid('school_id'); $t->string('name'); $t->date('start_date')->nullable(); $t->boolean('is_current')->default(false); $t->timestamps(); $t->softDeletes();
+        $t->uuid('id')->primary(); $t->uuid('school_id'); $t->string('name'); $t->date('start_date')->nullable(); $t->string('state', 20)->default('draft'); $t->timestamps(); $t->softDeletes();
     });
     Schema::create('school_sections', function (Blueprint $t) {
         $t->uuid('id')->primary(); $t->uuid('school_id'); $t->string('name'); $t->timestamps(); $t->softDeletes();
@@ -122,7 +123,7 @@ function p5iStudent(School $school): Student
 function p5iSession(School $school, string $name = '2026/2027'): object
 {
     $id = (string) Str::uuid();
-    DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $school->id, 'name' => $name, 'start_date' => '2026-09-01', 'is_current' => true, 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $school->id, 'name' => $name, 'start_date' => '2026-09-01', 'state' => 'active', 'created_at' => now(), 'updated_at' => now()]);
     return (object) ['id' => $id];
 }
 function p5iLevel(School $school): ClassLevel
@@ -172,9 +173,6 @@ it('does not create duplicate history when re-assigning the same logical context
 });
 
 it('releases and reassigns when the registration context (scope) changes', function () {
-    // Default scope is school_session_section — each section has its own sequence, so the
-    // formatted number may legitimately restart at "01". What must change is the active
-    // assignment's scope_key and history (previous closed, new current).
     $school = p5iSchool(); $user = p5iUser(); $session = p5iSession($school); $level = p5iLevel($school);
     $secA = p5iSection($school, $level, 'A'); $secB = p5iSection($school, $level, 'B');
     $student = p5iStudent($school); $reg = p5iReg();

@@ -76,7 +76,7 @@ function p5bBuild(): void
         $t->uuid('id')->primary(); $t->string('first_name')->nullable(); $t->string('last_name')->nullable(); $t->string('email')->nullable(); $t->timestamps(); $t->softDeletes();
     });
     Schema::create('academic_sessions', function (Blueprint $t) {
-        $t->uuid('id')->primary(); $t->uuid('school_id'); $t->string('name'); $t->date('start_date')->nullable(); $t->boolean('is_current')->default(false); $t->timestamps(); $t->softDeletes();
+        $t->uuid('id')->primary(); $t->uuid('school_id'); $t->string('name'); $t->date('start_date')->nullable(); $t->string('state', 20)->default('draft'); $t->timestamps(); $t->softDeletes();
     });
     Schema::create('school_sections', function (Blueprint $t) {
         $t->uuid('id')->primary(); $t->uuid('school_id'); $t->string('name'); $t->timestamps(); $t->softDeletes();
@@ -128,7 +128,7 @@ function p5bStudent(School $s)
 function p5bSession(School $s, string $n = '2026/2027')
 {
     $id = (string) Str::uuid();
-    DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $s->id, 'name' => $n, 'start_date' => '2026-09-01', 'is_current' => true, 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('academic_sessions')->insert(['id' => $id, 'school_id' => $s->id, 'name' => $n, 'start_date' => '2026-09-01', 'state' => 'active', 'created_at' => now(), 'updated_at' => now()]);
     return (object) ['id' => $id];
 }
 function p5bLevel(School $s)
