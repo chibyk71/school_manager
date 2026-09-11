@@ -8,6 +8,8 @@ use Spatie\ModelStates\State;
 
 /**
  * AcademicSessionResource – API Resource for AcademicSession model
+ *
+ * Authoritative lifecycle representation: state / state_label only.
  */
 class AcademicSessionResource extends JsonResource
 {
@@ -26,10 +28,9 @@ class AcademicSessionResource extends JsonResource
                 : null,
             'state'        => $this->state instanceof State ? $this->state->getValue() : (string) $this->state,
             'state_label'  => $this->state_label,
-            'is_active'    => $this->is_active,
             'activated_at' => $this->activated_at?->format('Y-m-d H:i'),
             'closed_at'    => $this->closed_at?->format('Y-m-d H:i'),
-            'term_count'   => $this->whenLoaded('terms', fn() => $this->terms->count()),
+            'term_count'   => $this->whenLoaded('terms', fn () => $this->terms->count()),
             'terms'        => TermResource::collection($this->whenLoaded('terms')),
             'created_at'   => $this->when($request->user()?->hasRole('super-admin'), $this->created_at?->toDateTimeString()),
         ];
