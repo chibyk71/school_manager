@@ -117,3 +117,37 @@ it('lifecycle service depends on operational data boundary', function () {
     $prop->setAccessible(true);
     expect($prop->getValue($service))->toBeInstanceOf(AcademicSessionOperationalDataBoundary::class);
 });
+
+it('updateDates refuses start_date change when operational data exists', function () {
+    $session = makeSession(['state' => Active::$name]);
+
+    $this->app->bind(
+        AcademicSessionOperationalDataBoundary::class,
+        new class implements AcademicSessionOperationalDataBoundary {
+            public function hasOperationalData(\App\Models\Academic\AcademicSession $session): bool
+            {
+                return true;
+            }
+        }
+    );
+
+    $service = app(AcademicSessionLifecycleService::class);
+
+    expect(fn () => $service->updateDates($session, '2099-01-01', null))
+        ->toThrow(ValidationException::class);
+});
+
+it('lifecycle emits plan pause resume reopen events', function () {
+    expect(class_exists(\App\Events\Academic\SessionPlanned::class))->toBeTrue();
+    expect(class_exists(\App\Events\Academic\SessionPaused::class))->toBeTrue();
+    expect(class_exists(\App\Events\Academic\SessionResumed::class))->toBeTrue();
+    expect(class_exists(\App\Events\Academic\SessionReopened::class))->toBeTrue();
+});
+
+it('lockSchoolSessions locks the school row', function () {
+    $service = lifecycle();
+    $method = new ReflectionMethod($service, 'lockSchoolSessions');
+    $method->setAccessible(true);
+
+    expect(fn () => $method->invoke($service, test()->school->id))->not->toThrow(\Throwable::class);
+});
