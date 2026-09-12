@@ -30,7 +30,9 @@ use Spatie\ModelStates\Exceptions\TransitionNotAllowed;
  * Activation/resume never silently close or modify another session.
  *
  * Temporal integrity (overlap, current-session uniqueness) is enforced under a
- * school-level lock inside DB transactions. Lifecycle events implement
+ * school-level lock inside DB transactions. Every state-changing operation
+ * re-reads the session with lockForUpdate() after acquiring the school lock and
+ * re-validates authoritative state before transitioning. Lifecycle events implement
  * ShouldDispatchAfterCommit so listeners only observe committed transitions.
  */
 class AcademicSessionLifecycleService
@@ -55,8 +57,6 @@ class AcademicSessionLifecycleService
 
         $this->assertPlanningRequirements($session);
 
-        // Temporal integrity: lock school + re-check overlap inside the transaction
-        // so concurrent plan() calls cannot both pass an unlocked overlap check.
         return DB::transaction(function () use ($session) {
             $this->lockSchoolSessions($session->school_id);
             $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
@@ -143,6 +143,15 @@ class AcademicSessionLifecycleService
 
         return DB::transaction(function () use ($session) {
             $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+
+            // Re-validate against authoritative locked state (may have changed while waiting)
+            if (! ($session->state instanceof Active)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Only an ACTIVE session can be paused.',
+                ]);
+            }
+
             $session->state->transitionTo(Paused::class);
             $session->save();
             $this->invalidateCaches($session->school_id);
@@ -165,6 +174,14 @@ class AcademicSessionLifecycleService
 
         return DB::transaction(function () use ($session) {
             $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+
+            if (! ($session->state instanceof Paused)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Only a PAUSED session can be resumed.',
+                ]);
+            }
+
             $this->assertNoCurrentOperationalSession($session->school_id, $session->id);
             $session->state->transitionTo(Active::class);
             $session->save();
@@ -187,10 +204,17 @@ class AcademicSessionLifecycleService
             ]);
         }
 
-        $previous = $session->state instanceof Active ? Active::$name : Paused::$name;
-
-        return DB::transaction(function () use ($session, $previous) {
+        return DB::transaction(function () use ($session) {
             $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+
+            if (! ($session->state instanceof Active) && ! ($session->state instanceof Paused)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Only an ACTIVE or PAUSED session can be closed.',
+                ]);
+            }
+
+            $previous = $session->state instanceof Active ? Active::$name : Paused::$name;
             $session->state->transitionTo(Closed::class);
             $session->forceFill(['closed_at' => now()])->save();
             $this->invalidateCaches($session->school_id);
@@ -245,13 +269,10 @@ class AcademicSessionLifecycleService
     {
         $this->assertSchoolOwnership($session);
 
-        // Temporal integrity: same school-level serialization as activation/plan.
-        // Prevents concurrent date mutations from both passing an unlocked overlap check.
         return DB::transaction(function () use ($session, $startDate, $endDate) {
             $this->lockSchoolSessions($session->school_id);
             $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
 
-            // Re-assert ownership after lock (tenant context must still match)
             $this->assertSchoolOwnership($session);
 
             $hasOps = $this->operationalData->hasOperationalData($session);
