@@ -184,3 +184,54 @@ it('plan validates overlap inside transaction under school lock', function () {
     $overlapPos = strpos($chunk, 'assertNoDateOverlap');
     expect($lockPos)->toBeLessThan($overlapPos);
 });
+
+it('pause rejects when locked session is no longer ACTIVE', function () {
+    $session = makeSession([
+        'state' => Closed::$name,
+        'start_date' => '2025-01-01',
+        'end_date' => '2025-12-31',
+    ]);
+
+    expect(fn () => lifecycle()->pause($session))->toThrow(ValidationException::class);
+    $session->refresh();
+    expect($session->state)->toBeInstanceOf(Closed::class);
+});
+
+it('resume rejects when locked session is no longer PAUSED', function () {
+    $session = makeSession([
+        'state' => Closed::$name,
+        'start_date' => '2025-01-01',
+        'end_date' => '2025-12-31',
+    ]);
+
+    expect(fn () => lifecycle()->resume($session))->toThrow(ValidationException::class);
+    $session->refresh();
+    expect($session->state)->toBeInstanceOf(Closed::class);
+});
+
+it('close rejects when locked session is neither ACTIVE nor PAUSED', function () {
+    $session = makeSession([
+        'state' => Draft::$name,
+        'start_date' => '2025-01-01',
+        'end_date' => '2025-12-31',
+    ]);
+
+    expect(fn () => lifecycle()->close($session))->toThrow(ValidationException::class);
+    $session->refresh();
+    expect($session->state)->toBeInstanceOf(Draft::class);
+});
+
+it('pause resume and close re-read session under lock after school serialization', function () {
+    $source = file_get_contents((new ReflectionClass(lifecycle()))->getFileName());
+
+    foreach (['function pause(', 'function resume(', 'function close('] as $sig) {
+        $start = strpos($source, $sig);
+        expect($start)->not->toBeFalse();
+        $chunk = substr($source, $start, 1600);
+        expect($chunk)->toContain('lockSchoolSessions')
+            ->and($chunk)->toContain('lockForUpdate()->firstOrFail()');
+        $lockPos = strpos($chunk, 'lockSchoolSessions');
+        $rereadPos = strpos($chunk, 'lockForUpdate()->firstOrFail()');
+        expect($lockPos)->toBeLessThan($rereadPos);
+    }
+});
