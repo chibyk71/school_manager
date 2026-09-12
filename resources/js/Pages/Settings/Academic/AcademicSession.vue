@@ -1,28 +1,39 @@
+<!--
+resources/js/Pages/Settings/Academic/AcademicSession/Index.vue
+================================================================================
+Main listing & management screen for Academic Sessions.
+Phase 2: lifecycle actions (plan/activate/pause/resume/close/reopen); no Set Current.
+Preserves AdvancedDataTable, bulk delete/restore, columns, filtering.
+-->
+
 <script setup lang="ts">
 import { computed, markRaw } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
-import { usePermissions } from '@/composables/usePermissions'
 import { useModal } from '@/composables/useModal'
+import { usePermissions } from '@/composables/usePermissions'
+import { useDeleteResource } from '@/composables/useDelete'
+import { useRestoreResource } from '@/composables/useRestoreResource'
+import type { AcademicSession } from '@/types/academic'
+import type { BulkAction, ColumnDefinition, TableAction } from '@/types/datatables'
+import AdvancedDataTable from '@/Components/datatable/AdvancedDataTable.vue'
 import SessionStatusBadge from '@/Components/Academic/Session/SessionStatusBadge.vue'
 import CurrentSessionBanner from '@/Components/Academic/Session/CurrentSessionBanner.vue'
-import type { AcademicSession } from '@/types/academic'
-import type { TableAction, BulkAction } from '@/types/datatables'
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 
 const props = defineProps<{
-    sessions: any
+    sessions: AcademicSession[]
     totalRecords: number
     currentPage: number
     lastPage: number
     perPage: number
-    columns: any[]
-    globalFilterables: any[]
-    filters: Record<string, any>
-    error?: string
+    columns: ColumnDefinition<any>[]
+    globalFilterables: string[]
 }>()
 
-const { hasPermission } = usePermissions()
 const modal = useModal()
+const { hasPermission } = usePermissions()
+const { deleteResource } = useDeleteResource()
+const { restoreResource } = useRestoreResource()
 
 const sessions = computed(() => props.sessions || [])
 const columns = computed(() => props.columns || [])
@@ -47,18 +58,34 @@ const lifecycleAction = (action: string, row: AcademicSession) => {
     })
 }
 
-const activateSession = (row: AcademicSession) => lifecycleAction('activate', row)
+const activateSession = (row: AcademicSession) => {
+    try {
+        const modalInstance = modal.open('activate-session', { session: row }, { async: true })
+        modalInstance.on('confirmed', () => lifecycleAction('activate', row))
+    } catch {
+        lifecycleAction('activate', row)
+    }
+}
+
 const planSession = (row: AcademicSession) => lifecycleAction('plan', row)
 const pauseSession = (row: AcademicSession) => lifecycleAction('pause', row)
 const resumeSession = (row: AcademicSession) => lifecycleAction('resume', row)
-const closeSession = (row: AcademicSession) => lifecycleAction('close', row)
 const reopenSession = (row: AcademicSession) => lifecycleAction('reopen', row)
+
+const closeSession = (row: AcademicSession) => {
+    try {
+        const modalInstance = modal.open('close-session', { session: row }, { async: true })
+        modalInstance.on('confirmed', () => lifecycleAction('close', row))
+    } catch {
+        lifecycleAction('close', row)
+    }
+}
 
 const isCurrentOperational = (row: AcademicSession) =>
     row.state === 'active' || row.state === 'paused'
 
 const deleteSession = async (row: AcademicSession) => {
-    const canForce = !row.terms_count && !isCurrentOperational(row)
+    const canForce = !row.terms_count && !isCurrentOperational(row) && row.state !== 'closed'
     const result = modal.open('delete-session', {
         session: row,
         canForceDelete: canForce
@@ -72,8 +99,60 @@ const viewTerms = (row: AcademicSession) => {
 
 const handleBulkDelete = (selectedRows: AcademicSession[]) => {
     const ids = selectedRows.map(row => row.id)
-    // deleteResource handled by parent table patterns
+    deleteResource('academic-sessions', ids, {
+        onSuccess: () => router.reload({ only: ['sessions'] })
+    })
 }
+
+const handleBulkRestore = (selectedRows: any[]) => {
+    const ids = selectedRows.map(row => row.id)
+    restoreResource('academic-sessions', ids, {
+        onSuccess: () => router.reload({ only: ['sessions'] })
+    })
+}
+
+const bulkActions = computed<BulkAction<AcademicSession>[]>(() => [
+    {
+        label: 'Delete Selected',
+        icon: 'pi pi-trash',
+        severity: 'danger',
+        show: () => hasPermission('academic-sessions.delete'),
+        handler: handleBulkDelete,
+    },
+    {
+        label: 'Restore Selected',
+        icon: 'pi pi-refresh',
+        severity: 'info',
+        show: () => hasPermission('academic-sessions.restore'),
+        handler: handleBulkRestore,
+    },
+])
+
+const enhancedColumns = computed(() => {
+    const cols = [...(columns.value || [])]
+    const upsert = (field: string, def: any) => {
+        const idx = cols.findIndex((c: any) => c.field === field || c.key === field)
+        if (idx >= 0) cols[idx] = { ...cols[idx], ...def }
+        else cols.push({ field, ...def })
+    }
+    upsert('state', {
+        header: 'Status',
+        sortable: true,
+        render: (row: any) => ({
+            component: markRaw(SessionStatusBadge) as any,
+            props: { status: row.state ?? row.status, isCurrent: row.state === 'active' || row.state === 'paused' },
+        }),
+    })
+    upsert('terms_count', {
+        header: 'Terms',
+        sortable: true,
+        align: 'center',
+        render: (row: any) => ({
+            template: `<span>${row.terms_count > 0 ? row.terms_count : '—'}</span>`
+        })
+    })
+    return cols
+})
 
 const tableActions = computed<TableAction<AcademicSession>[]>(() => [
     {
@@ -135,7 +214,7 @@ const tableActions = computed<TableAction<AcademicSession>[]>(() => [
         label: 'Delete Session',
         icon: 'pi pi-trash',
         severity: 'danger',
-        show: (row) => hasPermission('academic-sessions.delete') && !isCurrentOperational(row),
+        show: (row) => hasPermission('academic-sessions.delete') && !isCurrentOperational(row) && row.state !== 'closed',
         handler: (row) => deleteSession(row),
     }
 ])
@@ -153,8 +232,18 @@ const tableActions = computed<TableAction<AcademicSession>[]>(() => [
             :showLink="hasPermission('academic-sessions.index')" />
 
         <div class="mt-4">
-            <!-- Data table consumes sessions, columns, tableActions via existing AdvancedDataTable patterns -->
-            <p v-if="error" class="text-red-600">{{ error }}</p>
+            <AdvancedDataTable
+                :data="sessions"
+                :columns="enhancedColumns"
+                :actions="tableActions"
+                :bulk-actions="bulkActions"
+                :total-records="totalRecords"
+                :current-page="currentPage"
+                :last-page="lastPage"
+                :per-page="perPage"
+                :global-filterables="globalFilterables"
+                resource-name="academic-sessions"
+            />
         </div>
     </AuthenticatedLayout>
 </template>
