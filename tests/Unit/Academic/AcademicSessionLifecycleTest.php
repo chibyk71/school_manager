@@ -28,7 +28,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\DB;
 
 uses(Tests\TestCase::class);
 
@@ -82,7 +81,7 @@ beforeEach(function () {
     ]);
     $this->school->exists = true;
 
-    DB::table('schools')->insert([
+    \DB::table('schools')->insert([
         'id' => $schoolId,
         'name' => 'Test School',
         'created_at' => now(),
@@ -126,7 +125,7 @@ function makeSession(array $attrs = []): AcademicSession
         'updated_at' => now(),
     ], $attrs);
 
-    DB::table('academic_sessions')->insert($data);
+    \DB::table('academic_sessions')->insert($data);
 
     return AcademicSession::query()->findOrFail($data['id']);
 }
@@ -237,6 +236,9 @@ it('rejects overlapping dates and allows adjacent ranges', function () {
     ]);
     expect(fn () => $method->invoke($service, $overlap))->toThrow(ValidationException::class);
 
+    // Remove the overlapping peer so the adjacent case is isolated against A only
+    \DB::table('academic_sessions')->where('id', $overlap->id)->delete();
+
     $adjacent = makeSession([
         'start_date' => '2025-07-01',
         'end_date' => '2025-12-31',
@@ -249,7 +251,7 @@ it('rejects overlapping dates and allows adjacent ranges', function () {
 it('updateDates refuses start_date change when operational data exists', function () {
     $session = makeSession(['state' => Active::$name]);
 
-    $this->app->bind(
+    $this->app->instance(
         AcademicSessionOperationalDataBoundary::class,
         new class implements AcademicSessionOperationalDataBoundary
         {
