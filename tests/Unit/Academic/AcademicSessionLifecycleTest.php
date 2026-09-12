@@ -151,3 +151,36 @@ it('lockSchoolSessions locks the school row', function () {
 
     expect(fn () => $method->invoke($service, test()->school->id))->not->toThrow(\Throwable::class);
 });
+
+it('lifecycle events implement ShouldDispatchAfterCommit', function () {
+    $iface = Illuminate\Contracts\Events\ShouldDispatchAfterCommit::class;
+    expect(is_subclass_of(App\Events\Academic\SessionActivated::class, $iface))->toBeTrue();
+    expect(is_subclass_of(App\Events\Academic\SessionClosed::class, $iface))->toBeTrue();
+    expect(is_subclass_of(App\Events\Academic\SessionPlanned::class, $iface))->toBeTrue();
+    expect(is_subclass_of(App\Events\Academic\SessionPaused::class, $iface))->toBeTrue();
+    expect(is_subclass_of(App\Events\Academic\SessionResumed::class, $iface))->toBeTrue();
+    expect(is_subclass_of(App\Events\Academic\SessionReopened::class, $iface))->toBeTrue();
+});
+
+it('updateDates runs under school serialization (method structure)', function () {
+    $service = lifecycle();
+    $source = file_get_contents((new ReflectionClass($service))->getFileName());
+    expect($source)->toContain('function updateDates');
+    $start = strpos($source, 'function updateDates');
+    $chunk = substr($source, $start, 1200);
+    expect($chunk)->toContain('DB::transaction')
+        ->and($chunk)->toContain('lockSchoolSessions')
+        ->and($chunk)->toContain('lockForUpdate');
+});
+
+it('plan validates overlap inside transaction under school lock', function () {
+    $source = file_get_contents((new ReflectionClass(lifecycle()))->getFileName());
+    $start = strpos($source, 'function plan(');
+    $chunk = substr($source, $start, 1500);
+    expect($chunk)->toContain('DB::transaction')
+        ->and($chunk)->toContain('lockSchoolSessions')
+        ->and($chunk)->toContain('assertNoDateOverlap');
+    $lockPos = strpos($chunk, 'lockSchoolSessions');
+    $overlapPos = strpos($chunk, 'assertNoDateOverlap');
+    expect($lockPos)->toBeLessThan($overlapPos);
+});
