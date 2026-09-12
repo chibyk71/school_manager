@@ -3,16 +3,16 @@
 namespace App\Http\Requests;
 
 use App\Models\Academic\AcademicSession;
-use App\States\Academic\AcademicSession\Active as SessionActive;
-use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * UpdateAcademicSessionRequest – Validation for Updating an Existing Academic Session
+ * UpdateAcademicSessionRequest – Syntactic validation only (Phase 2).
  *
- * Phase 1: is_current is not accepted. Start-date immutability uses authoritative ACTIVE state.
+ * Domain date rules (ordering, overlap, operational-data start-date immutability)
+ * live in AcademicSessionLifecycleService::updateDates(). This request does not
+ * hard-code ACTIVE-state immutability.
  */
 class UpdateAcademicSessionRequest extends FormRequest
 {
@@ -48,27 +48,23 @@ class UpdateAcademicSessionRequest extends FormRequest
                     ->where('school_id', $school->id)
                     ->ignore($session->id),
             ],
+            // Syntactic only — domain rules enforced in lifecycle service
             'start_date' => [
                 'sometimes',
-                'required',
+                'nullable',
                 'date',
                 'date_format:Y-m-d',
-                'before_or_equal:end_date',
-                function ($attribute, $value, $fail) use ($session) {
-                    $isActive = $session->state instanceof SessionActive
-                        || (string) $session->state === SessionActive::$name;
-                    if ($isActive && Carbon::parse($value)->notEqualTo($session->start_date)) {
-                        $fail('The start date of an active or previously activated session cannot be changed.');
-                    }
-                },
             ],
             'end_date' => [
                 'sometimes',
-                'required',
+                'nullable',
                 'date',
                 'date_format:Y-m-d',
-                'after_or_equal:start_date',
             ],
+            'state' => ['prohibited'],
+            'is_current' => ['prohibited'],
+            'activated_at' => ['prohibited'],
+            'closed_at' => ['prohibited'],
         ];
     }
 
@@ -77,21 +73,16 @@ class UpdateAcademicSessionRequest extends FormRequest
         $school = GetSchoolModel();
 
         if ($school && ! $this->has('school_id')) {
-            $this->merge([
-                'school_id' => $school->id,
-            ]);
+            $this->merge(['school_id' => $school->id]);
         }
     }
 
     public function messages(): array
     {
         return [
-            'name.required' => 'The session name is required (e.g., 2025/2026).',
-            'name.unique' => 'A session with this name already exists for your school.',
-            'start_date.required' => 'The start date is required.',
-            'end_date.required' => 'The end date is required.',
-            'start_date.before_or_equal' => 'The start date must be on or before the end date.',
-            'end_date.after_or_equal' => 'The end date must be on or after the start date.',
+            'name.required' => 'The session name is required.',
+            'name.unique'   => 'A session with this name already exists for your school.',
+            'state.prohibited' => 'Lifecycle state cannot be set via this endpoint.',
         ];
     }
 }
