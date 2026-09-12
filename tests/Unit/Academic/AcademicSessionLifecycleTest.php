@@ -28,6 +28,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 
 uses(Tests\TestCase::class);
 
@@ -81,7 +82,7 @@ beforeEach(function () {
     ]);
     $this->school->exists = true;
 
-    \DB::table('schools')->insert([
+    DB::table('schools')->insert([
         'id' => $schoolId,
         'name' => 'Test School',
         'created_at' => now(),
@@ -125,7 +126,7 @@ function makeSession(array $attrs = []): AcademicSession
         'updated_at' => now(),
     ], $attrs);
 
-    \DB::table('academic_sessions')->insert($data);
+    DB::table('academic_sessions')->insert($data);
 
     return AcademicSession::query()->findOrFail($data['id']);
 }
