@@ -28,6 +28,10 @@ use Spatie\ModelStates\Exceptions\TransitionNotAllowed;
  * Controllers remain thin: authorize → validate input → invoke these operations.
  * Current operational session = ACTIVE or PAUSED (at most one per school).
  * Activation/resume never silently close or modify another session.
+ *
+ * Temporal integrity (overlap, current-session uniqueness) is enforced under a
+ * school-level lock inside DB transactions. Lifecycle events implement
+ * ShouldDispatchAfterCommit so listeners only observe committed transitions.
  */
 class AcademicSessionLifecycleService
 {
@@ -50,9 +54,22 @@ class AcademicSessionLifecycleService
         }
 
         $this->assertPlanningRequirements($session);
-        $this->assertNoDateOverlap($session);
 
+        // Temporal integrity: lock school + re-check overlap inside the transaction
+        // so concurrent plan() calls cannot both pass an unlocked overlap check.
         return DB::transaction(function () use ($session) {
+            $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+
+            if (! ($session->state instanceof Draft)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Only a DRAFT session can be planned.',
+                ]);
+            }
+
+            $this->assertPlanningRequirements($session);
+            $this->assertNoDateOverlap($session);
+
             $session->state->transitionTo(Planned::class);
             $session->save();
             $this->logLifecycle($session, 'planned', Draft::$name, Planned::$name);
@@ -77,13 +94,27 @@ class AcademicSessionLifecycleService
         }
 
         $this->assertPlanningRequirements($session);
-        $this->assertNoDateOverlap($session);
 
         return DB::transaction(function () use ($session) {
             $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+
+            if ($session->state instanceof Active) {
+                return $session;
+            }
+
+            if (! ($session->state instanceof Draft) && ! ($session->state instanceof Planned)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Session must be DRAFT or PLANNED to activate.',
+                ]);
+            }
+
+            $this->assertPlanningRequirements($session);
+            $this->assertNoDateOverlap($session);
             $this->assertNoCurrentOperationalSession($session->school_id, $session->id);
 
             try {
+                $from = (string) $session->state;
                 $session->state->transitionTo(Active::class);
             } catch (TransitionNotAllowed $e) {
                 throw ValidationException::withMessages([
@@ -93,7 +124,7 @@ class AcademicSessionLifecycleService
 
             $session->forceFill(['activated_at' => now(), 'closed_at' => null])->save();
             $this->invalidateCaches($session->school_id);
-            $this->logLifecycle($session, 'activated', (string) ($session->getOriginal('state') ?? 'unknown'), Active::$name);
+            $this->logLifecycle($session, 'activated', $from, Active::$name);
             event(new SessionActivated($session));
 
             return $session->fresh();
@@ -181,10 +212,19 @@ class AcademicSessionLifecycleService
         }
 
         $this->assertPlanningRequirements($session);
-        $this->assertNoDateOverlap($session);
 
         return DB::transaction(function () use ($session) {
             $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+
+            if (! ($session->state instanceof Closed)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Only a CLOSED session can be reopened.',
+                ]);
+            }
+
+            $this->assertPlanningRequirements($session);
+            $this->assertNoDateOverlap($session);
             $this->assertNoCurrentOperationalSession($session->school_id, $session->id);
             $this->assertReopenNotBlockedByLaterSessions($session);
             $session->state->transitionTo(Active::class);
@@ -204,38 +244,49 @@ class AcademicSessionLifecycleService
     public function updateDates(AcademicSession $session, ?string $startDate, ?string $endDate): AcademicSession
     {
         $this->assertSchoolOwnership($session);
-        $hasOps = $this->operationalData->hasOperationalData($session);
 
-        if ($hasOps && $startDate !== null && (string) $session->start_date?->format('Y-m-d') !== $startDate) {
-            throw ValidationException::withMessages([
-                'start_date' => 'Start date cannot be changed after operational data exists for this session.',
-            ]);
-        }
+        // Temporal integrity: same school-level serialization as activation/plan.
+        // Prevents concurrent date mutations from both passing an unlocked overlap check.
+        return DB::transaction(function () use ($session, $startDate, $endDate) {
+            $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
 
-        $newStart = $startDate !== null ? $startDate : $session->start_date?->format('Y-m-d');
-        $newEnd = $endDate !== null ? $endDate : $session->end_date?->format('Y-m-d');
+            // Re-assert ownership after lock (tenant context must still match)
+            $this->assertSchoolOwnership($session);
 
-        if ($newStart && $newEnd && $newStart >= $newEnd) {
-            throw ValidationException::withMessages([
-                'dates' => 'Session start date must be before end date.',
-            ]);
-        }
+            $hasOps = $this->operationalData->hasOperationalData($session);
 
-        $originalStart = $session->start_date;
-        $originalEnd = $session->end_date;
-        $session->start_date = $newStart;
-        $session->end_date = $newEnd;
+            if ($hasOps && $startDate !== null && (string) $session->start_date?->format('Y-m-d') !== $startDate) {
+                throw ValidationException::withMessages([
+                    'start_date' => 'Start date cannot be changed after operational data exists for this session.',
+                ]);
+            }
 
-        try {
-            $this->assertNoDateOverlap($session);
-        } finally {
-            $session->start_date = $originalStart;
-            $session->end_date = $originalEnd;
-        }
+            $newStart = $startDate !== null ? $startDate : $session->start_date?->format('Y-m-d');
+            $newEnd = $endDate !== null ? $endDate : $session->end_date?->format('Y-m-d');
 
-        $session->forceFill(['start_date' => $newStart, 'end_date' => $newEnd])->save();
+            if ($newStart && $newEnd && $newStart >= $newEnd) {
+                throw ValidationException::withMessages([
+                    'dates' => 'Session start date must be before end date.',
+                ]);
+            }
 
-        return $session->fresh();
+            $originalStart = $session->start_date;
+            $originalEnd = $session->end_date;
+            $session->start_date = $newStart;
+            $session->end_date = $newEnd;
+
+            try {
+                $this->assertNoDateOverlap($session);
+            } finally {
+                $session->start_date = $originalStart;
+                $session->end_date = $originalEnd;
+            }
+
+            $session->forceFill(['start_date' => $newStart, 'end_date' => $newEnd])->save();
+
+            return $session->fresh();
+        });
     }
 
     public function isCurrentOperational(AcademicSession $session): bool
