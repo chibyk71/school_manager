@@ -45,6 +45,10 @@ class AppServiceProvider extends ServiceProvider
             \App\Models\Student\Student::class,
             \App\Policies\Student\StudentPolicy::class
         );
+        \Illuminate\Support\Facades\Gate::policy(
+            \App\Models\Academic\Student::class,
+            \App\Policies\Student\StudentPolicy::class
+        );
 
         Vite::prefetch(concurrency: 3);
     }
