@@ -19,6 +19,7 @@ use Inertia\Inertia;
  *
  * Phase 2: lifecycle authority is AcademicSessionLifecycleService.
  * setCurrent has been removed; use plan/activate/pause/resume/close/reopen.
+ * Date mutations go through updateDates(); deletion is conservative.
  */
 class AcademicSessionController extends Controller
 {
@@ -110,9 +111,29 @@ class AcademicSessionController extends Controller
         Gate::authorize('update', $academicSession);
 
         try {
-            $academicSession->update($request->validated());
+            $validated = $request->validated();
+            $lifecycle = app(\App\Services\Academic\AcademicSessionLifecycleService::class);
+
+            // Name may update directly; date mutations go through the domain service
+            // so operational-data boundary and overlap rules cannot be bypassed.
+            if (array_key_exists('name', $validated) && $validated['name'] !== $academicSession->name) {
+                $academicSession->forceFill(['name' => $validated['name']])->save();
+            }
+
+            $hasDateChange = array_key_exists('start_date', $validated)
+                || array_key_exists('end_date', $validated);
+
+            if ($hasDateChange) {
+                $lifecycle->updateDates(
+                    $academicSession,
+                    $validated['start_date'] ?? null,
+                    $validated['end_date'] ?? null,
+                );
+            }
 
             return back()->with('success', "Academic session '{$academicSession->name}' updated successfully.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return redirect()->back()->withErrors($e->errors())->withInput();
         } catch (\Exception $e) {
             Log::error('Failed to update academic session', [
                 'error' => $e->getMessage(),
@@ -139,17 +160,21 @@ class AcademicSessionController extends Controller
         try {
             $schoolId = GetSchoolModel()->id;
 
-            // Phase 2: protect current operational sessions (ACTIVE or PAUSED)
+            // Phase 2: conservative deletion.
+            // Protect ACTIVE/PAUSED (current) and CLOSED (historical) until Phase 4
+            // usage registry can distinguish sessions with operational data.
+            // Only DRAFT / PLANNED without terms are eligible for soft-delete here.
             $deleted = AcademicSession::query()->whereIn('id', $validated['ids'])
                 ->where('school_id', $schoolId)
-                ->whereNotIn('state', [
-                    SessionActive::$name,
-                    \App\States\Academic\AcademicSession\Paused::$name,
+                ->whereIn('state', [
+                    \App\States\Academic\AcademicSession\Draft::$name,
+                    \App\States\Academic\AcademicSession\Planned::$name,
                 ])
+                ->whereDoesntHave('terms')
                 ->delete();
 
             if ($deleted === 0) {
-                return back()->with('error', 'No eligible academic sessions were deleted (current operational sessions cannot be deleted).');
+                return back()->with('error', 'No eligible academic sessions were deleted. Current, closed, or term-linked sessions cannot be deleted.');
             }
 
             return back()->with('success', "{$deleted} academic session(s) deleted successfully.");
@@ -191,8 +216,14 @@ class AcademicSessionController extends Controller
         Gate::authorize('forceDelete', $academicSession);
 
         try {
+            // Phase 2: only DRAFT/PLANNED without terms may be force-deleted.
+            // CLOSED historical sessions are protected until Phase 4 usage registry.
             if ($academicSession->isCurrentOperational()) {
                 return back()->with('error', 'Cannot permanently delete a current operational session (ACTIVE or PAUSED).');
+            }
+
+            if ($academicSession->state instanceof \App\States\Academic\AcademicSession\Closed) {
+                return back()->with('error', 'Cannot permanently delete a closed historical session until operational-data registry is available.');
             }
 
             if ($academicSession->terms()->exists()) {
