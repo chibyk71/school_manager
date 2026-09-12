@@ -13,6 +13,11 @@ class AppServiceProvider extends ServiceProvider
             \App\Contracts\Academic\AcademicSessionOperationalDataBoundary::class,
             \App\Services\Academic\NullAcademicSessionOperationalData::class
         );
+
+        $this->app->bind(
+            \App\Contracts\Academic\TermOperationalDataBoundary::class,
+            \App\Services\Academic\NullTermOperationalData::class
+        );
     }
 
     public function boot(): void

@@ -25,6 +25,7 @@ use Illuminate\Validation\ValidationException;
  *
  * Phase 2: current session is ACTIVE or PAUSED. Lifecycle mutation delegates to
  * AcademicSessionLifecycleService (no silent switch of another session).
+ * Phase 3: Term activate/close delegate to TermLifecycleService; reopen removed.
  */
 class AcademicCalendarService
 {
@@ -43,7 +44,6 @@ class AcademicCalendarService
         $key = self::CACHE_KEY_SESSION . $school->id;
 
         return Cache::remember($key, now()->addMinutes(self::CACHE_TTL_MINUTES), function () use ($school) {
-            // Phase 2: current operational session is ACTIVE or PAUSED
             return AcademicSession::where('school_id', $school->id)
                 ->whereIn('state', [
                     AcademicSessionActive::$name,
@@ -113,7 +113,6 @@ class AcademicCalendarService
 
     /**
      * @deprecated Use AcademicSessionLifecycleService::activate() instead.
-     * Kept as a thin delegator; no silent switch of another session.
      */
     public function activateSession(AcademicSession $session): void
     {
@@ -128,88 +127,30 @@ class AcademicCalendarService
         app(\App\Services\Academic\AcademicSessionLifecycleService::class)->close($session);
     }
 
+    /**
+     * @deprecated Use TermLifecycleService::activate() instead.
+     */
     public function activateTerm(Term $term): void
     {
-        $session = $term->academicSession;
-        if (! ($session->state instanceof AcademicSessionActive)) {
-            throw ValidationException::withMessages(['session' => 'Parent session must be active first.']);
-        }
-
-        $this->validateTermDates($term, $session);
-
-        DB::transaction(function () use ($term) {
-            Term::where('academic_session_id', $term->academic_session_id)
-                ->where('state', TermActive::$name)
-                ->where('id', '!=', $term->id)
-                ->update(['state' => TermClosedState::$name]);
-
-            if ($term->state instanceof TermPlanned) {
-                $term->state->transitionTo(TermActive::class);
-            } elseif (! ($term->state instanceof TermActive)) {
-                $term->forceFill(['state' => TermActive::$name])->save();
-            } else {
-                return;
-            }
-
-            Cache::forget(self::CACHE_KEY_TERM . $term->school_id);
-        });
-
-        event(new TermActivated($term));
+        app(\App\Services\Academic\TermLifecycleService::class)->activate($term);
     }
 
+    /**
+     * @deprecated Use TermLifecycleService::close() instead.
+     */
     public function closeTerm(Term $term): void
     {
-        if (! ($term->state instanceof TermActive)) {
-            throw ValidationException::withMessages(['state' => 'Only active terms can be closed.']);
-        }
-
-        DB::transaction(function () use ($term) {
-            $term->state->transitionTo(TermClosedState::class);
-            $term->forceFill(['closed_at' => now()])->save();
-
-            Cache::forget(self::CACHE_KEY_TERM . $term->school_id);
-        });
-
-        event(new TermClosed($term));
+        app(\App\Services\Academic\TermLifecycleService::class)->close($term);
     }
 
+    /**
+     * @deprecated Phase 3 removes reopen. CLOSED → ACTIVE is not a valid transition.
+     * @throws ValidationException always
+     */
     public function reopenTerm(Term $term): void
     {
-        if (! ($term->state instanceof TermClosedState)) {
-            throw ValidationException::withMessages(['state' => 'Term is not closed.']);
-        }
-
-        $session = $term->academicSession;
-
-        $lastClosed = Term::where('academic_session_id', $session->id)
-            ->where('state', TermClosedState::$name)
-            ->orderByDesc('closed_at')
-            ->first();
-
-        if ($lastClosed?->id !== $term->id) {
-            throw ValidationException::withMessages(['term' => 'Only the most recently closed term can be reopened.']);
-        }
-
-        $nextTerm = Term::where('academic_session_id', $session->id)
-            ->where('ordinal_number', $term->ordinal_number + 1)
-            ->first();
-
-        if ($nextTerm && (($nextTerm->state instanceof TermActive) || ($nextTerm->state instanceof TermClosedState))) {
-            throw ValidationException::withMessages(['next_term' => 'Cannot reopen: next term has already started or closed.']);
-        }
-
-        DB::transaction(function () use ($term) {
-            $term->forceFill([
-                'state' => TermActive::$name,
-                'closed_at' => null,
-            ])->save();
-
-            Cache::forget(self::CACHE_KEY_TERM . $term->school_id);
-        });
-
-        Log::info("Term {$term->name} reopened in session {$term->academicSession->name}", [
-            'term_id' => $term->id,
-            'user'    => auth()->id(),
+        throw ValidationException::withMessages([
+            'state' => 'Term reopen is not supported. CLOSED terms cannot become ACTIVE.',
         ]);
     }
 

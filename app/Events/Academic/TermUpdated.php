@@ -8,9 +8,9 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Dispatched after a Term is successfully closed (ACTIVE → CLOSED) and committed.
+ * Dispatched after a Term is successfully updated and committed.
  */
-class TermClosed implements ShouldDispatchAfterCommit
+class TermUpdated implements ShouldDispatchAfterCommit
 {
     use Dispatchable, SerializesModels;
 

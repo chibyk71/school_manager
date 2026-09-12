@@ -7,7 +7,6 @@ use App\States\Academic\Term\Active as TermActive;
 use App\States\Academic\Term\Closed as TermClosed;
 use App\States\Academic\Term\Planned as TermPlanned;
 use App\States\Academic\TermState;
-use App\Traits\BelongsToSchool;
 use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,19 +22,19 @@ use Spatie\ModelStates\HasStates;
 /**
  * Term Model – Academic Term within a Session
  *
+ * Phase 3: ownership is exclusively via AcademicSession (no school_id).
  * Lifecycle state is authoritative via Spatie Model States (planned → active → closed).
- * closed_at remains an audit field. DynamicEnum retains only name / short_name.
- * No is_active / is_closed lifecycle accessors — use state / state_label.
+ * Sequence is persisted as ordinal_number (domain term: sequence).
+ * Start-date immutability is governed by TermOperationalDataBoundary, not state alone.
  */
 class Term extends Model
 {
     /** @use HasFactory<\Database\Factories\Academic\TermFactory> */
-    use HasFactory, HasUuids, SoftDeletes, BelongsToSchool, HasTableQuery, LogsActivity, HasDynamicEnum, HasStates;
+    use HasFactory, HasUuids, SoftDeletes, HasTableQuery, LogsActivity, HasDynamicEnum, HasStates;
 
     protected $table = 'terms';
 
     protected $fillable = [
-        'school_id',
         'academic_session_id',
         'name',
         'short_name',
@@ -55,6 +54,7 @@ class Term extends Model
         'closed_at'    => 'datetime',
         'options'      => 'array',
         'state'        => TermState::class,
+        'ordinal_number' => 'integer',
     ];
 
     public function getDynamicEnumProperties(): array
@@ -66,7 +66,6 @@ class Term extends Model
     }
 
     protected array $hiddenTableColumns = [
-        'school_id',
         'academic_session_id',
         'options',
         'created_at',
@@ -90,6 +89,14 @@ class Term extends Model
     public function academicSession(): BelongsTo
     {
         return $this->belongsTo(AcademicSession::class, 'academic_session_id');
+    }
+
+    /**
+     * School is derived through the parent session (no direct school_id).
+     */
+    public function getSchoolIdAttribute(): ?string
+    {
+        return $this->academicSession?->school_id;
     }
 
     public function scopeForSession(Builder $query, string $sessionId): Builder
@@ -119,9 +126,23 @@ class Term extends Model
             : ucfirst((string) $this->state);
     }
 
+    /**
+     * Domain alias for ordinal_number (sequence).
+     */
+    public function getSequenceAttribute(): ?int
+    {
+        return $this->ordinal_number !== null ? (int) $this->ordinal_number : null;
+    }
+
+    /**
+     * Whether start_date may be mutated.
+     * Governed by the operational-data boundary (Phase 3 placeholder returns false
+     * for hasOperationalData, so dates remain editable until Phase 4 activates the registry).
+     */
     public function canModifyStartDate(): bool
     {
-        return $this->state instanceof TermPlanned;
+        return ! app(\App\Contracts\Academic\TermOperationalDataBoundary::class)
+            ->hasOperationalData($this);
     }
 
     public function isWithinSessionDates(AcademicSession $session): bool
