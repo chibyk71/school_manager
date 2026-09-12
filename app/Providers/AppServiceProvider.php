@@ -13,6 +13,11 @@ class AppServiceProvider extends ServiceProvider
             \App\Contracts\Academic\AcademicSessionOperationalDataBoundary::class,
             \App\Services\Academic\NullAcademicSessionOperationalData::class
         );
+
+        $this->app->bind(
+            \App\Contracts\Academic\TermOperationalDataBoundary::class,
+            \App\Services\Academic\NullTermOperationalData::class
+        );
     }
 
     public function boot(): void
@@ -38,10 +43,6 @@ class AppServiceProvider extends ServiceProvider
 
         \Illuminate\Support\Facades\Gate::policy(
             \App\Models\Student\Student::class,
-            \App\Policies\Student\StudentPolicy::class
-        );
-        \Illuminate\Support\Facades\Gate::policy(
-            \App\Models\Academic\Student::class,
             \App\Policies\Student\StudentPolicy::class
         );
 
