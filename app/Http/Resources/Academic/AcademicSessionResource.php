@@ -28,6 +28,8 @@ class AcademicSessionResource extends JsonResource
                 : null,
             'state'        => $this->state instanceof State ? $this->state->getValue() : (string) $this->state,
             'state_label'  => $this->state_label,
+            // Phase 2: current operational = ACTIVE or PAUSED (not a stored flag)
+            'is_current_operational' => $this->resource->isCurrentOperational(),
             'activated_at' => $this->activated_at?->format('Y-m-d H:i'),
             'closed_at'    => $this->closed_at?->format('Y-m-d H:i'),
             'term_count'   => $this->whenLoaded('terms', fn () => $this->terms->count()),

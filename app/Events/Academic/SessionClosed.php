@@ -3,6 +3,7 @@
 namespace App\Events\Academic;
 
 use App\Models\Academic\AcademicSession;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
@@ -10,13 +11,12 @@ use Illuminate\Queue\SerializesModels;
  * Event: SessionClosed
  *
  * Dispatched when an academic session is successfully closed.
- * Primary integration point for:
- * - Promotion & repetition engine
- * - Annual report generation
- * - Transcript finalization
- * - Analytics & historical archiving
+ * Primary integration point for promotion, reports, transcripts, and archival.
+ *
+ * Implements ShouldDispatchAfterCommit so listeners only observe transitions
+ * that have actually been committed (Phase 2 lifecycle integrity).
  */
-class SessionClosed
+class SessionClosed implements ShouldDispatchAfterCommit
 {
     use Dispatchable, SerializesModels;
 

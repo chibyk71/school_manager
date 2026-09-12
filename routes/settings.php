@@ -150,34 +150,24 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
         Route::post('/{academicSession}', [AcademicSessionController::class, 'update'])->name('update');
         Route::delete('/', [AcademicSessionController::class, 'destroy'])->name('destroy'); // Bulk delete
 
-        // Quick state actions (single active session enforcement)
-        Route::patch('/{academicSession}/current', [AcademicSessionController::class, 'setCurrent'])->name('set-current');
-
-        // Specialized lifecycle actions (activation & closure)
+        // Phase 2 lifecycle operations (no setCurrent / silent switch)
+        Route::patch('/{academicSession}/plan', [SessionActivationController::class, 'plan'])->name('plan');
         Route::patch('/{academicSession}/activate', [SessionActivationController::class, 'activate'])->name('activate');
+        Route::patch('/{academicSession}/pause', [SessionActivationController::class, 'pause'])->name('pause');
+        Route::patch('/{academicSession}/resume', [SessionActivationController::class, 'resume'])->name('resume');
         Route::patch('/{academicSession}/close', [SessionActivationController::class, 'close'])->name('close');
+        Route::patch('/{academicSession}/reopen', [SessionActivationController::class, 'reopen'])->name('reopen');
     });
 
-    // ────────────────────────────────────────────────────────────────
     // Terms (CRUD + Quick Actions)
-    // ────────────────────────────────────────────────────────────────
     Route::prefix('terms')->name('terms.')->group(function () {
-        // Main listing (can filter by session via query param ?academicSession=id)
         Route::get('/', [TermController::class, 'index'])->name('index');
-
-        // CRUD operations
         Route::post('/', [TermController::class, 'store'])->name('store');
         Route::get('/{term}', [TermController::class, 'show'])->name('show');
         Route::patch('/{term}', [TermController::class, 'update'])->name('update');
-        Route::delete('/', [TermController::class, 'destroy'])->name('destroy'); // Bulk delete
-
-        // Quick state action (set active in its session)
+        Route::delete('/', [TermController::class, 'destroy'])->name('destroy');
         Route::patch('/{term}/active', [TermController::class, 'setActive'])->name('set-active');
-
-        // Restore soft-deleted term
         Route::post('/{id}/restore', [TermController::class, 'restore'])->name('restore');
-
-        // Sensitive lifecycle actions (close & reopen)
         Route::patch('/{term}/close', [TermClosureController::class, 'close'])->name('close');
         Route::patch('/{term}/reopen', [TermClosureController::class, 'reopen'])->name('reopen');
     });
@@ -189,78 +179,30 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
     Route::post('subjects/delete', [SubjectController::class, 'destroy'])->name('subjects.destroy');
     Route::post('subjects/restore/{id}', [SubjectController::class, 'restore'])->name('subjects.restore');
 
-    // ─── Main grades resource routes ──────────────────────────────────────────────
     Route::resource('grades', GradeController::class)->names('grades');
+    Route::post('grades/destroy', [GradeController::class, 'destroy'])->name('grades.destroy.bulk');
+    Route::post('grades/{id}/restore', [GradeController::class, 'restore'])->name('grades.restore')->whereNumber('id');
 
-    // ─── Custom actions ─────────────────────────────────────────────────────────────
-    // Bulk delete (soft or force) – used from DataTable bulk actions
-    Route::post('grades/destroy', [GradeController::class, 'destroy'])
-        ->name('grades.destroy.bulk');
-
-    // Restore soft-deleted grade – used from trashed view or modal
-    Route::post('grades/{id}/restore', [GradeController::class, 'restore'])
-        ->name('grades.restore')
-        ->whereNumber('id');
-
-    Route::get('class-levels', [ClassLevelController::class, 'globalIndex'])
-        ->name('class-levels.index');
-
-    // ─── Inside: Route::prefix('settings/academic')->name('settings.academic.')->group(function () {
+    Route::get('class-levels', [ClassLevelController::class, 'globalIndex'])->name('class-levels.index');
 
     Route::prefix('class-sections')->name('class-sections.')->group(function () {
-
-        // ── Utility routes — MUST come before {classSection} wildcard ─────────
-        Route::get('presets', [ClassSectionController::class, 'presets'])
-            ->name('presets');
-
-        Route::get('options', [ClassSectionController::class, 'options'])
-            ->name('options');
-
-        Route::post('restore', [ClassSectionController::class, 'restore'])
-            ->name('restore');
-
-        Route::delete('force', [ClassSectionController::class, 'forceDestroy'])
-            ->name('force-delete');
-
-        Route::post('toggle', [ClassSectionController::class, 'bulkToggle'])
-            ->name('bulk-toggle');
-
-        Route::post('reorder', [ClassSectionController::class, 'reorder'])
-            ->name('reorder');
-
-        Route::post('bulk-generate', [ClassSectionController::class, 'bulkGenerate'])
-            ->name('bulk-generate');
-
-        // ── Standard collection routes ─────────────────────────────────────────
-        Route::get('/', [ClassSectionController::class, 'index'])
-            ->name('index');
-
-        Route::post('/', [ClassSectionController::class, 'store'])
-            ->name('store');
-
-        Route::delete('/', [ClassSectionController::class, 'destroy'])
-            ->name('destroy');
-
-        // ── Single section routes ─────────────────────────────────────────────
-        Route::match(['put', 'patch'], '{classSection}', [ClassSectionController::class, 'update'])
-            ->name('update');
-
-        // ── Form teacher assignment ───────────────────────────────────────────
-        Route::patch('{classSection}/teacher', [ClassSectionController::class, 'assignFormTeacher'])
-            ->name('assign-teacher');
-
-        // ── Subject-teacher assignments ───────────────────────────────────────
-        Route::post('{classSection}/subjects', [ClassSectionController::class, 'assignSubject'])
-            ->name('subjects.assign');
-
-        Route::patch('{classSection}/subjects/{assignment}', [ClassSectionController::class, 'updateSubjectRole'])
-            ->name('subjects.update-role');
-
-        Route::delete('{classSection}/subjects/{assignment}', [ClassSectionController::class, 'removeSubject'])
-            ->name('subjects.remove');
+        Route::get('presets', [ClassSectionController::class, 'presets'])->name('presets');
+        Route::get('options', [ClassSectionController::class, 'options'])->name('options');
+        Route::post('restore', [ClassSectionController::class, 'restore'])->name('restore');
+        Route::delete('force', [ClassSectionController::class, 'forceDestroy'])->name('force-delete');
+        Route::post('toggle', [ClassSectionController::class, 'bulkToggle'])->name('bulk-toggle');
+        Route::post('reorder', [ClassSectionController::class, 'reorder'])->name('reorder');
+        Route::post('bulk-generate', [ClassSectionController::class, 'bulkGenerate'])->name('bulk-generate');
+        Route::get('/', [ClassSectionController::class, 'index'])->name('index');
+        Route::post('/', [ClassSectionController::class, 'store'])->name('store');
+        Route::delete('/', [ClassSectionController::class, 'destroy'])->name('destroy');
+        Route::match(['put', 'patch'], '{classSection}', [ClassSectionController::class, 'update'])->name('update');
+        Route::patch('{classSection}/teacher', [ClassSectionController::class, 'assignFormTeacher'])->name('assign-teacher');
+        Route::post('{classSection}/subjects', [ClassSectionController::class, 'assignSubject'])->name('subjects.assign');
+        Route::patch('{classSection}/subjects/{assignment}', [ClassSectionController::class, 'updateSubjectRole'])->name('subjects.update-role');
+        Route::delete('{classSection}/subjects/{assignment}', [ClassSectionController::class, 'removeSubject'])->name('subjects.remove');
     });
 
-    // ─── Assessment Templates (Settings area) ────────────────────────────────────
     Route::prefix('settings/academic/assessment-templates')
         ->name('assessment-templates.')
         ->group(function () {
@@ -270,7 +212,6 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
             Route::patch('/{assessmentTemplate}', [AssessmentTemplateController::class, 'update'])->name('update');
             Route::delete('/', [AssessmentTemplateController::class, 'destroy'])->name('destroy');
         });
-
 });
 
 // ===================================================================
@@ -284,19 +225,11 @@ Route::prefix('settings/system')->name('settings.system.')->group(function () {
     Route::post('gdpr', [GdprSettingsController::class, 'store'])->name('gdpr.store');
 
     Route::prefix('custom-fields')->name('custom-fields.')->group(function () {
-
-        // Full resourceful routes (index, create, store, show, edit, update, destroy)
         Route::resource('/', CustomFieldsController::class)->parameters(['' => 'customField']);
         Route::delete('/', [CustomFieldsController::class, 'destroy'])->name('destroy');
-
-        // Extra / custom actions (outside standard REST)
         Route::patch('order', [CustomFieldsController::class, 'reorder'])->name('reorder');
-
-        // Bulk / trash actions
         Route::post('restore', [CustomFieldsController::class, 'restore'])->name('restore');
         Route::delete('force', [CustomFieldsController::class, 'forceDestroy'])->name('force-destroy');
-
-        // Export schema (API-style)
         Route::get('export', [CustomFieldsController::class, 'exportSchema'])->name('export-schema');
     });
 
@@ -306,82 +239,43 @@ Route::prefix('settings/system')->name('settings.system.')->group(function () {
     Route::get('user-management', [UserManagementController::class, 'index'])->name('user-management');
     Route::post('user-management', [UserManagementController::class, 'store'])->name('user-management.store');
 
-    // ── School Sections ───────────────────────────────────────────
     Route::prefix('sections')->name('sections.')->group(function () {
-
-        // Utility endpoints — must come BEFORE {schoolSection} wildcard
-        // to prevent "templates" and "options" being swallowed as IDs
-        Route::get('templates', [SchoolSectionController::class, 'templates'])
-            ->name('templates');
-
-        Route::get('options', [SchoolSectionController::class, 'options'])
-            ->name('options');
-
-        Route::post('restore', [SchoolSectionController::class, 'restore'])
-            ->name('restore');
-
-        Route::delete('force', [SchoolSectionController::class, 'forceDestroy'])
-            ->name('force-delete');
-
-        Route::post('toggle', [SchoolSectionController::class, 'bulkToggle'])
-            ->name('bulk-toggle');
-
-        Route::post('reorder', [SchoolSectionController::class, 'reorder'])
-            ->name('reorder');
-
-        // Standard resource routes
-        Route::get('/', [SchoolSectionController::class, 'index'])
-            ->name('index');
-
-        Route::post('/', [SchoolSectionController::class, 'store'])
-            ->name('store');
-
-        Route::get('{schoolSection}', [SchoolSectionController::class, 'show'])
-            ->name('show');
-
-        Route::match(['put', 'patch'], '{schoolSection}', [SchoolSectionController::class, 'update'])
-            ->name('update');
-
-        Route::delete('/', [SchoolSectionController::class, 'destroy'])
-            ->name('destroy');
+        Route::get('templates', [SchoolSectionController::class, 'templates'])->name('templates');
+        Route::get('options', [SchoolSectionController::class, 'options'])->name('options');
+        Route::post('restore', [SchoolSectionController::class, 'restore'])->name('restore');
+        Route::delete('force', [SchoolSectionController::class, 'forceDestroy'])->name('force-delete');
+        Route::post('toggle', [SchoolSectionController::class, 'bulkToggle'])->name('bulk-toggle');
+        Route::get('/', [SchoolSectionController::class, 'index'])->name('index');
+        Route::post('/', [SchoolSectionController::class, 'store'])->name('store');
+        Route::delete('/', [SchoolSectionController::class, 'destroy'])->name('destroy');
+        Route::match(['put', 'patch'], '{schoolSection}', [SchoolSectionController::class, 'update'])->name('update');
     });
 });
 
 // ===================================================================
-// Settings → System & Communication
+// Settings → Communication
 // ===================================================================
 Route::prefix('settings/communication')->name('settings.communication.')->group(function () {
     Route::get('email', [EmailSettingsController::class, 'index'])->name('email');
     Route::post('email', [EmailSettingsController::class, 'store'])->name('email.store');
-    Route::post('email/test', [EmailSettingsController::class, 'test'])->name('email.test');
-
-    Route::get('templates', [EmailTemplatesController::class, 'index'])->name('templates');
-    Route::post('templates', [EmailTemplatesController::class, 'store'])->name('templates.store');
-
+    Route::get('email-templates', [EmailTemplatesController::class, 'index'])->name('email_templates');
+    Route::post('email-templates', [EmailTemplatesController::class, 'store'])->name('email_templates.store');
     Route::get('sms', [SmsGatewaysController::class, 'index'])->name('sms');
     Route::post('sms', [SmsGatewaysController::class, 'store'])->name('sms.store');
-
     Route::get('otp', [OtpSettingsController::class, 'index'])->name('otp');
     Route::post('otp', [OtpSettingsController::class, 'store'])->name('otp.store');
-    Route::post('otp/test', [OtpSettingsController::class, 'test'])->name('otp.test');
 });
 
 // ===================================================================
-// Settings → Advanced / Other
+// Settings → Advanced
 // ===================================================================
 Route::prefix('settings/advanced')->name('settings.advanced.')->group(function () {
     Route::get('storage', [StorageSettingsController::class, 'index'])->name('storage');
     Route::post('storage', [StorageSettingsController::class, 'store'])->name('storage.store');
-
-    Route::get('backup', [BackupRestoreController::class, 'index'])->name('backup');
-    Route::post('backup/create', [BackupRestoreController::class, 'create'])->name('backup.create');
-    Route::get('backup/download/{filename}', [BackupRestoreController::class, 'download'])->name('backup.download');
-    Route::delete('backup/{filename}', [BackupRestoreController::class, 'destroy'])->name('backup.destroy');
-
-    Route::get('ip', [IpBanController::class, 'index'])->name('ip');
-    Route::post('ip', [IpBanController::class, 'store'])->name('ip.store');
-    Route::post('ip/delete', [IpBanController::class, 'destroy'])->name('ip.destroy');
-
     Route::get('maintenance', [MaintenanceSettingsController::class, 'index'])->name('maintenance');
     Route::post('maintenance', [MaintenanceSettingsController::class, 'store'])->name('maintenance.store');
+    Route::get('backup', [BackupRestoreController::class, 'index'])->name('backup');
+    Route::post('backup', [BackupRestoreController::class, 'store'])->name('backup.store');
+    Route::get('ip-ban', [IpBanController::class, 'index'])->name('ip_ban');
+    Route::post('ip-ban', [IpBanController::class, 'store'])->name('ip_ban.store');
 });

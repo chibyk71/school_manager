@@ -4,113 +4,160 @@ namespace App\Http\Controllers\Settings\Academic;
 
 use App\Http\Controllers\Controller;
 use App\Models\Academic\AcademicSession;
-use App\Services\AcademicCalendarService;
+use App\Services\Academic\AcademicSessionLifecycleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
+use Illuminate\Validation\ValidationException;
 
 /**
- * SessionActivationController – Handles Activation & Closure of Academic Sessions
+ * SessionActivationController – Phase 2 explicit lifecycle operations.
  *
- * Specialized controller for the sensitive state-changing actions of activating
- * and closing academic sessions. These operations have significant downstream
- * effects (e.g. marking the session as current, triggering notifications,
- * preparing for promotion/reporting in future modules) and are highly restricted.
- *
- * Why this controller is still needed (even after AcademicSessionController):
- * ────────────────────────────────────────────────────────────────
- * • Activation/closure are **special lifecycle events**, not regular CRUD
- * • They require strict single-active-session enforcement (handled by service)
- * • They trigger domain events & notifications (SessionActivated, SessionClosed)
- * • They often need extra confirmation (e.g. dialogs with warnings)
- * • Keeps AcademicSessionController focused on basic CRUD (create/update/delete)
- * • Cleaner separation of concerns → easier testing & maintenance
- * • Aligns with frontend UX: separate dialogs for "Activate Session" & "Close Session"
- * • Production-ready: policy checks, logging, flash messages, Inertia support
- *
- * Fits into the Academic Calendar Module:
- * ────────────────────────────────────────────────────────────────
- * • Called from frontend dialogs: SessionActivationDialog.vue & SessionClosureConfirmation.vue
- * • Integrates tightly with AcademicCalendarService (business rules & invariants)
- * • Complements AcademicSessionController (regular CRUD) by focusing on state transitions
- * • Triggers notifications (SessionActivatedNotification, SessionClosedNotification)
- * • Dispatches events for loose coupling (e.g. future Promotion module listens to SessionClosed)
- * • Aligns with frontend stack: Inertia redirects + flash messages
- *
- * Routes (suggested – add to routes/web.php):
- *   PATCH  /academic-sessions/{session}/activate    → activate
- *   PATCH  /academic-sessions/{session}/close       → close
- *
- * Security Notes:
- * • 'update' permission used (or create separate 'activate-session', 'close-session' perms later)
- * • All actions logged with full context (session, user)
- * • Cannot activate closed/archived sessions (service enforces)
+ * Controllers stay thin: authorize → invoke domain operation → respond.
+ * Business rules live in AcademicSessionLifecycleService.
  */
 class SessionActivationController extends Controller
 {
-    public function __construct(protected AcademicCalendarService $service)
-    {
-        // Optional: Apply middleware for sensitive operations
-        // $this->middleware('permission:academic-sessions.activate')->only('activate');
-        // $this->middleware('permission:academic-sessions.close')->only('close');
+    public function __construct(
+        protected AcademicSessionLifecycleService $lifecycle
+    ) {
     }
 
-    /**
-     * Activate the specified academic session (make it current/active).
-     *
-     * PATCH /academic-sessions/{session}/activate
-     */
-    public function activate(Request $request, AcademicSession $academicSession)
+    public function plan(Request $request, AcademicSession $academicSession)
     {
-        Gate::authorize('update', $academicSession); // or custom 'activate-session' perm
+        Gate::authorize('update', $academicSession);
 
         try {
-            // Service enforces single active session + immutability rules
-            $this->service->activateSession($academicSession);
+            $this->lifecycle->plan($academicSession);
+
+            return redirect()
+                ->route('academic-sessions.index')
+                ->with('success', "Academic session '{$academicSession->name}' has been planned.");
+        } catch (ValidationException $e) {
+            return redirect()->back()->withErrors($e->errors())->with('error', collect($e->errors())->flatten()->first());
+        } catch (\Exception $e) {
+            Log::error('Failed to plan academic session', [
+                'error' => $e->getMessage(),
+                'session_id' => $academicSession->id,
+                'user_id' => auth()->id(),
+            ]);
+
+            return redirect()->back()->with('error', 'Failed to plan academic session.');
+        }
+    }
+
+    public function activate(Request $request, AcademicSession $academicSession)
+    {
+        Gate::authorize('update', $academicSession);
+
+        try {
+            $this->lifecycle->activate($academicSession);
 
             return redirect()
                 ->route('academic-sessions.index')
                 ->with('success', "Academic session '{$academicSession->name}' has been activated and is now current.");
+        } catch (ValidationException $e) {
+            return redirect()->back()->withErrors($e->errors())->with('error', collect($e->errors())->flatten()->first());
         } catch (\Exception $e) {
             Log::error('Failed to activate academic session', [
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
                 'session_id' => $academicSession->id,
-                'user_id'   => auth()->id(),
+                'user_id' => auth()->id(),
             ]);
 
-            return redirect()
-                ->back()
-                ->with('error', 'Failed to activate academic session. ' . ($e->getMessage() ?? 'Please try again.'));
+            return redirect()->back()->with('error', 'Failed to activate academic session. ' . $e->getMessage());
         }
     }
 
-    /**
-     * Close the specified academic session.
-     *
-     * PATCH /academic-sessions/{session}/close
-     */
-    public function close(Request $request, AcademicSession $academicSession)
+    public function pause(Request $request, AcademicSession $academicSession)
     {
-        Gate::authorize('update', $academicSession); // or custom 'close-session' perm
+        Gate::authorize('update', $academicSession);
 
         try {
-            // Service handles closure logic, event, notifications
-            $this->service->closeSession($academicSession);
+            $this->lifecycle->pause($academicSession);
 
             return redirect()
                 ->route('academic-sessions.index')
-                ->with('success', "Academic session '{$academicSession->name}' has been closed successfully.");
+                ->with('success', "Academic session '{$academicSession->name}' has been paused (still current).");
+        } catch (ValidationException $e) {
+            return redirect()->back()->withErrors($e->errors())->with('error', collect($e->errors())->flatten()->first());
         } catch (\Exception $e) {
-            Log::error('Failed to close academic session', [
-                'error'     => $e->getMessage(),
+            Log::error('Failed to pause academic session', [
+                'error' => $e->getMessage(),
                 'session_id' => $academicSession->id,
-                'user_id'   => auth()->id(),
+                'user_id' => auth()->id(),
             ]);
 
+            return redirect()->back()->with('error', 'Failed to pause academic session.');
+        }
+    }
+
+    public function resume(Request $request, AcademicSession $academicSession)
+    {
+        Gate::authorize('update', $academicSession);
+
+        try {
+            $this->lifecycle->resume($academicSession);
+
             return redirect()
-                ->back()
-                ->with('error', 'Failed to close academic session. ' . ($e->getMessage() ?? 'Please try again.'));
+                ->route('academic-sessions.index')
+                ->with('success', "Academic session '{$academicSession->name}' has been resumed.");
+        } catch (ValidationException $e) {
+            return redirect()->back()->withErrors($e->errors())->with('error', collect($e->errors())->flatten()->first());
+        } catch (\Exception $e) {
+            Log::error('Failed to resume academic session', [
+                'error' => $e->getMessage(),
+                'session_id' => $academicSession->id,
+                'user_id' => auth()->id(),
+            ]);
+
+            return redirect()->back()->with('error', 'Failed to resume academic session.');
+        }
+    }
+
+    public function close(Request $request, AcademicSession $academicSession)
+    {
+        Gate::authorize('update', $academicSession);
+
+        try {
+            $this->lifecycle->close($academicSession);
+
+            return redirect()
+                ->route('academic-sessions.index')
+                ->with('success', "Academic session '{$academicSession->name}' has been closed.");
+        } catch (ValidationException $e) {
+            return redirect()->back()->withErrors($e->errors())->with('error', collect($e->errors())->flatten()->first());
+        } catch (\Exception $e) {
+            Log::error('Failed to close academic session', [
+                'error' => $e->getMessage(),
+                'session_id' => $academicSession->id,
+                'user_id' => auth()->id(),
+            ]);
+
+            return redirect()->back()->with('error', 'Failed to close academic session.');
+        }
+    }
+
+    public function reopen(Request $request, AcademicSession $academicSession)
+    {
+        Gate::authorize('update', $academicSession);
+
+        try {
+            $this->lifecycle->reopen($academicSession);
+
+            return redirect()
+                ->route('academic-sessions.index')
+                ->with('success', "Academic session '{$academicSession->name}' has been reopened.");
+        } catch (ValidationException $e) {
+            return redirect()->back()->withErrors($e->errors())->with('error', collect($e->errors())->flatten()->first());
+        } catch (\Exception $e) {
+            Log::error('Failed to reopen academic session', [
+                'error' => $e->getMessage(),
+                'session_id' => $academicSession->id,
+                'user_id' => auth()->id(),
+            ]);
+
+            return redirect()->back()->with('error', 'Failed to reopen academic session.');
         }
     }
 }

@@ -3,59 +3,36 @@
 namespace App\Observers;
 
 use App\Models\Academic\AcademicSession;
-use App\Models\Academic\Term;
 
+/**
+ * AcademicSessionObserver
+ *
+ * Phase 2: automatic term creation on session create has been removed.
+ * Term creation and lifecycle belong to Phase 3. A DRAFT session may be
+ * incomplete and must not fabricate First/Second/Third Term records.
+ */
 class AcademicSessionObserver
 {
-    /**
-     * Handle the AcademicSession "created" event.
-     */
     public function created(AcademicSession $academicSession): void
     {
-        $names = ['First Term', 'Second Term', 'Third Term'];
-        $start = $academicSession->start_date;
-        $interval = $academicSession->end_date->diffInMonths($academicSession->start_date) / 3;
-
-        foreach ($names as $i => $name) {
-            Term::create([
-                'academic_session_id' => $academicSession->id,
-                'name' => $name,
-                'start_date' => $start->copy(),
-                'end_date' => $start->copy()->addMonths($interval),
-                'status' => 'pending',
-                'school_id' => $academicSession->school_id,
-            ]);
-            $start = $start->copy()->addMonths($interval);
-        }
+        // Intentionally empty — no automatic term creation (Phase 2).
     }
 
-    /**
-     * Handle the AcademicSession "updated" event.
-     */
     public function updated(AcademicSession $academicSession): void
     {
         //
     }
 
-    /**
-     * Handle the AcademicSession "deleted" event.
-     */
     public function deleted(AcademicSession $academicSession): void
     {
         //
     }
 
-    /**
-     * Handle the AcademicSession "restored" event.
-     */
     public function restored(AcademicSession $academicSession): void
     {
         //
     }
 
-    /**
-     * Handle the AcademicSession "force deleted" event.
-     */
     public function forceDeleted(AcademicSession $academicSession): void
     {
         //

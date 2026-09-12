@@ -8,15 +8,14 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Event: SessionActivated
+ * Event: SessionReopened
  *
- * Dispatched when an academic session is successfully activated.
- * Useful for triggering downstream actions (notifications, audit, integrations).
+ * Dispatched when an academic session successfully transitions CLOSED → ACTIVE.
  *
  * Implements ShouldDispatchAfterCommit so listeners only observe transitions
  * that have actually been committed (Phase 2 lifecycle integrity).
  */
-class SessionActivated implements ShouldDispatchAfterCommit
+class SessionReopened implements ShouldDispatchAfterCommit
 {
     use Dispatchable, SerializesModels;
 

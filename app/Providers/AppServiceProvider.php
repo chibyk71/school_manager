@@ -9,7 +9,10 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->bind(
+            \App\Contracts\Academic\AcademicSessionOperationalDataBoundary::class,
+            \App\Services\Academic\NullAcademicSessionOperationalData::class
+        );
     }
 
     public function boot(): void

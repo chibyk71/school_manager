@@ -23,7 +23,8 @@ use Illuminate\Validation\ValidationException;
 /**
  * AcademicCalendarService – Core Business Logic for Academic Sessions & Terms
  *
- * Phase 1: lifecycle authority is the state machine (not is_current / is_active / status).
+ * Phase 2: current session is ACTIVE or PAUSED. Lifecycle mutation delegates to
+ * AcademicSessionLifecycleService (no silent switch of another session).
  */
 class AcademicCalendarService
 {
@@ -42,8 +43,12 @@ class AcademicCalendarService
         $key = self::CACHE_KEY_SESSION . $school->id;
 
         return Cache::remember($key, now()->addMinutes(self::CACHE_TTL_MINUTES), function () use ($school) {
+            // Phase 2: current operational session is ACTIVE or PAUSED
             return AcademicSession::where('school_id', $school->id)
-                ->where('state', AcademicSessionActive::$name)
+                ->whereIn('state', [
+                    AcademicSessionActive::$name,
+                    \App\States\Academic\AcademicSession\Paused::$name,
+                ])
                 ->first();
         });
     }
@@ -70,11 +75,6 @@ class AcademicCalendarService
     }
 
     /**
-     * List academic sessions for a school (filter / report options).
-     *
-     * Ordered: ACTIVE first, then most recently created.
-     * Returns authoritative state (not legacy is_current).
-     *
      * @return list<array{id: string, name: string, state: string}>
      */
     public function sessionsForSchool(School|string $school): array
@@ -83,7 +83,7 @@ class AcademicCalendarService
 
         return AcademicSession::query()
             ->where('school_id', $schoolId)
-            ->orderByRaw('CASE WHEN state = ? THEN 0 ELSE 1 END', [AcademicSessionActive::$name])
+            ->orderByRaw('CASE WHEN state IN (?, ?) THEN 0 ELSE 1 END', [AcademicSessionActive::$name, \App\States\Academic\AcademicSession\Paused::$name])
             ->orderByDesc('created_at')
             ->get(['id', 'name', 'state'])
             ->map(function (AcademicSession $row) {
@@ -111,47 +111,21 @@ class AcademicCalendarService
             ->exists();
     }
 
+    /**
+     * @deprecated Use AcademicSessionLifecycleService::activate() instead.
+     * Kept as a thin delegator; no silent switch of another session.
+     */
     public function activateSession(AcademicSession $session): void
     {
-        $school = GetSchoolModel();
-        if ($session->school_id !== $school->id) {
-            throw ValidationException::withMessages(['session' => 'Session does not belong to current school.']);
-        }
-
-        if ($session->state instanceof AcademicSessionActive) {
-            return;
-        }
-
-        DB::transaction(function () use ($session) {
-            // Legacy parity: ensure at most one ACTIVE session per school
-            AcademicSession::where('school_id', $session->school_id)
-                ->where('state', AcademicSessionActive::$name)
-                ->where('id', '!=', $session->id)
-                ->update(['state' => AcademicSessionClosed::$name]);
-
-            $session->state->transitionTo(AcademicSessionActive::class);
-            $session->forceFill(['activated_at' => now()])->save();
-
-            Cache::forget(self::CACHE_KEY_SESSION . $session->school_id);
-        });
-
-        event(new SessionActivated($session));
+        app(\App\Services\Academic\AcademicSessionLifecycleService::class)->activate($session);
     }
 
+    /**
+     * @deprecated Use AcademicSessionLifecycleService::close() instead.
+     */
     public function closeSession(AcademicSession $session): void
     {
-        if (! ($session->state instanceof AcademicSessionActive)) {
-            throw ValidationException::withMessages(['state' => 'Only active sessions can be closed.']);
-        }
-
-        DB::transaction(function () use ($session) {
-            $session->state->transitionTo(AcademicSessionClosed::class);
-            $session->forceFill(['closed_at' => now()])->save();
-
-            Cache::forget(self::CACHE_KEY_SESSION . $session->school_id);
-        });
-
-        event(new SessionClosed($session));
+        app(\App\Services\Academic\AcademicSessionLifecycleService::class)->close($session);
     }
 
     public function activateTerm(Term $term): void
@@ -199,10 +173,6 @@ class AcademicCalendarService
         event(new TermClosed($term));
     }
 
-    /**
-     * Phase 1 compatibility reopen. Term has no Closed→Active transition;
-     * Phase 3 owns the full reopen workflow. Uses direct state assignment.
-     */
     public function reopenTerm(Term $term): void
     {
         if (! ($term->state instanceof TermClosedState)) {

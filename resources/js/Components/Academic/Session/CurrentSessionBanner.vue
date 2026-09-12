@@ -1,49 +1,3 @@
-<!--
-resources/js/Components/Banners/CurrentSessionBanner.vue
-================================================================================
-
-Small, prominent banner displaying the currently active academic session.
-
-Main Purpose:
-────────────────────────────────────────────────────────────────────────────────
-• Provide immediate visibility of which academic session is currently active
-• Serve as a constant reminder across dashboard, sidebar, or header
-• Quick reference for admins/teachers when working in the system
-• Visual distinction when no session is active or when viewing historical data
-
-Features Implemented:
-────────────────────────────────────────────────────────────────────────────────
-• Compact, non-intrusive design (fits in headers, sidebars, dashboards)
-• Shows session name + date range
-• Clear visual indicator (green accent when active, neutral when none)
-• Handles "no active session" state gracefully with actionable message
-• Responsive: collapses nicely on mobile
-• Uses centralized status configuration & formatting
-• Accessibility: proper contrast, semantic HTML, screen-reader friendly
-• Optional link to session management (when permitted)
-
-Integration Points:
-────────────────────────────────────────────────────────────────────────────────
-• Typically placed in:
-  - App layout header
-  - Dashboard welcome section
-  - Academic module sidebar
-• Uses Inertia page props (expects current_session in props.auth or props)
-• Can fetch fresh data via Inertia.reload() on demand
-
-Recommended placement example (in App.vue or Layout):
-────────────────────────────────────────────────────────────────────────────────
-<div v-if="$page.props.currentSession" class="mb-4">
-  <CurrentSessionBanner :session="$page.props.currentSession" />
-</div>
-
-Props:
-────────────────────────────────────────────────────────────────────────────────
-- session      CurrentSessionInfo | null    required (can be null)
-- compact      boolean                     default: false
-- showLink     boolean                     default: true (shows "Manage Sessions" link)
--->
-
 <script setup lang="ts">
 import { computed } from 'vue'
 import { format, parseISO } from 'date-fns'
@@ -62,7 +16,7 @@ const props = withDefaults(defineProps<{
 
 const { hasPermission } = usePermissions()
 
-const hasActiveSession = computed(() => !!props.session && props.session.is_current)
+const hasActiveSession = computed(() => !!props.session && (props.session.state === 'active' || props.session.state === 'paused'))
 
 const dateRange = computed(() => {
     if (!props.session) return ''
