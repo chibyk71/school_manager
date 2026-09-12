@@ -5,6 +5,11 @@ namespace App\Services\Academic;
 use App\Contracts\Academic\AcademicSessionOperationalDataBoundary;
 use App\Events\Academic\SessionActivated;
 use App\Events\Academic\SessionClosed;
+use App\Events\Academic\SessionPaused;
+use App\Events\Academic\SessionPlanned;
+use App\Events\Academic\SessionReopened;
+use App\Events\Academic\SessionResumed;
+use App\Models\School;
 use App\Models\Academic\AcademicSession;
 use App\States\Academic\AcademicSession\Active;
 use App\States\Academic\AcademicSession\Closed;
@@ -21,9 +26,6 @@ use Spatie\ModelStates\Exceptions\TransitionNotAllowed;
  * Authoritative domain service for AcademicSession lifecycle operations (Phase 2).
  *
  * Controllers remain thin: authorize → validate input → invoke these operations.
- * Business rules (ownership, uniqueness of current session, overlap, operational-data
- * boundaries, concurrency) live here, not only in form requests.
- *
  * Current operational session = ACTIVE or PAUSED (at most one per school).
  * Activation/resume never silently close or modify another session.
  */
@@ -54,6 +56,7 @@ class AcademicSessionLifecycleService
             $session->state->transitionTo(Planned::class);
             $session->save();
             $this->logLifecycle($session, 'planned', Draft::$name, Planned::$name);
+            event(new SessionPlanned($session));
 
             return $session->fresh();
         });
@@ -113,6 +116,7 @@ class AcademicSessionLifecycleService
             $session->save();
             $this->invalidateCaches($session->school_id);
             $this->logLifecycle($session, 'paused', Active::$name, Paused::$name);
+            event(new SessionPaused($session));
 
             return $session->fresh();
         });
@@ -135,6 +139,7 @@ class AcademicSessionLifecycleService
             $session->save();
             $this->invalidateCaches($session->school_id);
             $this->logLifecycle($session, 'resumed', Paused::$name, Active::$name);
+            event(new SessionResumed($session));
             event(new SessionActivated($session));
 
             return $session->fresh();
@@ -189,6 +194,7 @@ class AcademicSessionLifecycleService
             ])->save();
             $this->invalidateCaches($session->school_id);
             $this->logLifecycle($session, 'reopened', Closed::$name, Active::$name);
+            event(new SessionReopened($session));
             event(new SessionActivated($session));
 
             return $session->fresh();
@@ -349,8 +355,20 @@ class AcademicSessionLifecycleService
         }
     }
 
+    /**
+     * School-level serialization for concurrency-sensitive lifecycle ops.
+     *
+     * Locking only academic_sessions rows fails when the school has zero sessions:
+     * two concurrent activates both see an empty lock set and both proceed.
+     * Lock the stable schools row (always present) inside the transaction first.
+     */
     protected function lockSchoolSessions(string $schoolId): void
     {
+        School::query()
+            ->whereKey($schoolId)
+            ->lockForUpdate()
+            ->first(['id']);
+
         AcademicSession::query()
             ->where('school_id', $schoolId)
             ->lockForUpdate()
