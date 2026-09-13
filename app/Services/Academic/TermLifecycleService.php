@@ -13,7 +13,7 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use App\States\Academic\Term\Active as TermActive;
-use App\States\Academic\Term\Closed as TermClosedState;
+use App\States\Academic\Term\Closed as TermClosed;
 use App\States\Academic\Term\Planned as TermPlanned;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -27,12 +27,16 @@ use Illuminate\Validation\ValidationException;
  * Term ownership is derived through AcademicSession → School (no school_id on Term).
  *
  * Lifecycle: PLANNED → ACTIVE → CLOSED (no pause, no reopen).
- * Sequence (ordinal_number) is contiguous 1..N per session; service-owned.
+ * Sequence (ordinal_number) is contiguous 1..N per session for live terms; service-owned.
+ * Soft-deleted terms park ordinals at ORDINAL_TOMBSTONE_BASE+ so UNIQUE(session, ordinal) holds.
  * Activation uses session-level locking to enforce single ACTIVE term.
  */
 class TermLifecycleService
 {
     private const CACHE_KEY_TERM = 'current_academic_term_';
+
+    /** Soft-deleted terms park ordinals at or above this base so live terms keep unique 1..N. */
+    private const ORDINAL_TOMBSTONE_BASE = 1_000_000;
 
     public function __construct(
         protected TermOperationalDataBoundary $operationalData
@@ -53,8 +57,20 @@ class TermLifecycleService
 
             $nextSequence = (int) Term::query()
                 ->where('academic_session_id', $session->id)
+                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
                 ->max('ordinal_number');
             $nextSequence = $nextSequence > 0 ? $nextSequence + 1 : 1;
+
+            $start = $attributes['start_date'] ?? null;
+            $end = $attributes['end_date'] ?? null;
+            if (($start && ! $end) || ($end && ! $start)) {
+                throw ValidationException::withMessages([
+                    'dates' => 'Provide both start and end dates, or leave both empty until activation.',
+                ]);
+            }
+            if ($start && $end) {
+                $this->assertValidTermDates($session, $start, $end);
+            }
 
             $term = new Term([
                 'academic_session_id' => $session->id,
@@ -62,8 +78,8 @@ class TermLifecycleService
                 'short_name' => $attributes['short_name'] ?? null,
                 'ordinal_number' => $nextSequence,
                 'description' => $attributes['description'] ?? null,
-                'start_date' => $attributes['start_date'] ?? null,
-                'end_date' => $attributes['end_date'] ?? null,
+                'start_date' => $start,
+                'end_date' => $end,
                 'color' => $attributes['color'] ?? null,
                 'options' => $attributes['options'] ?? null,
             ]);
@@ -141,6 +157,7 @@ class TermLifecycleService
 
             $terms = Term::query()
                 ->where('academic_session_id', $session->id)
+                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
                 ->orderBy('ordinal_number')
                 ->lockForUpdate()
                 ->get()
@@ -279,12 +296,12 @@ class TermLifecycleService
                 ]);
             }
 
-            $term->state->transitionTo(TermClosedState::class);
+            $term->state->transitionTo(TermClosed::class);
             $term->forceFill(['closed_at' => now()])->save();
 
             $this->invalidateCaches($session->school_id);
             event(new TermClosed($term));
-            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosedState::$name);
+            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosed::$name);
 
             return $term->fresh();
         });
@@ -309,10 +326,18 @@ class TermLifecycleService
 
             $this->assertNoDependentRecords($term);
 
+            // Park ordinal in tombstone range so UNIQUE(session, ordinal) allows live renumber.
+            $maxTomb = (int) Term::withTrashed()
+                ->where('academic_session_id', $session->id)
+                ->where('ordinal_number', '>=', self::ORDINAL_TOMBSTONE_BASE)
+                ->max('ordinal_number');
+            $tombstone = max(self::ORDINAL_TOMBSTONE_BASE, $maxTomb + 1);
+            $term->forceFill(['ordinal_number' => $tombstone])->save();
             $term->delete();
 
             $remaining = Term::query()
                 ->where('academic_session_id', $session->id)
+                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
                 ->orderBy('ordinal_number')
                 ->lockForUpdate()
                 ->get();
@@ -354,15 +379,12 @@ class TermLifecycleService
             $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
             $this->assertSessionBelongsToCurrentSchool($session);
 
-            $conflict = Term::query()
+            // Restored terms append to the live sequence; never reopen/activate.
+            $maxLive = (int) Term::query()
                 ->where('academic_session_id', $session->id)
-                ->where('ordinal_number', $term->ordinal_number)
-                ->exists();
-
-            if ($conflict) {
-                $max = (int) Term::query()->where('academic_session_id', $session->id)->max('ordinal_number');
-                $term->forceFill(['ordinal_number' => $max + 1]);
-            }
+                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
+                ->max('ordinal_number');
+            $term->forceFill(['ordinal_number' => $maxLive > 0 ? $maxLive + 1 : 1]);
 
             $term->restore();
 
