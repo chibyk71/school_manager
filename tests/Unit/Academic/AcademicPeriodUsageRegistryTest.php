@@ -45,6 +45,7 @@ beforeEach(function () {
         'terms',
         'academic_sessions',
         'schools',
+        'activity_log',
     ] as $table) {
         Schema::dropIfExists($table);
     }
@@ -56,6 +57,19 @@ beforeEach(function () {
         $table->json('data')->nullable();
         $table->timestamps();
         $table->softDeletes();
+    });
+
+    // School uses Spatie LogsActivity — required when makeSchool() saves.
+    Schema::create('activity_log', function (Blueprint $table) {
+        $table->bigIncrements('id');
+        $table->string('log_name')->nullable();
+        $table->text('description');
+        $table->nullableUuidMorphs('subject', 'subject');
+        $table->nullableUuidMorphs('causer', 'causer');
+        $table->json('properties')->nullable();
+        $table->uuid('batch_uuid')->nullable();
+        $table->string('event')->nullable();
+        $table->timestamps();
     });
 
     Schema::create('academic_sessions', function (Blueprint $table) {
