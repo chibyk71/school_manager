@@ -334,7 +334,7 @@ it('updates through the lifecycle service and protects start date after operatio
     $updated = $this->terms->update($term, ['name' => 'Ops Renamed']);
     expect($updated->name)->toBe('Ops Renamed');
 
-    $this->app->bind(TermOperationalDataBoundary::class, new class implements TermOperationalDataBoundary {
+    $this->app->instance(TermOperationalDataBoundary::class, new class implements TermOperationalDataBoundary {
         public function hasOperationalData(Term $term): bool
         {
             return true;
@@ -401,7 +401,7 @@ it('rejects clearing start_date when operational data exists', function () {
         'end_date' => '2026-12-15',
     ]);
 
-    $this->app->bind(TermOperationalDataBoundary::class, new class implements TermOperationalDataBoundary {
+    $this->app->instance(TermOperationalDataBoundary::class, new class implements TermOperationalDataBoundary {
         public function hasOperationalData(Term $term): bool
         {
             return true;
