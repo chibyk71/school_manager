@@ -146,7 +146,7 @@ it('appends subsequent terms with contiguous sequence', function () {
     expect($t2->ordinal_number)->toBe(2)->and($t3->ordinal_number)->toBe(3);
 });
 
-it('activates PLANNED → ACTIVE when session is ACTIVE and dates valid', function () {
+it('activates PLANNED \u2192 ACTIVE when session is ACTIVE and dates valid', function () {
     Event::fake([TermActivated::class]);
     $term = makeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $activated = $this->terms->activate($term);
@@ -193,7 +193,7 @@ it('rejects second ACTIVE term in the same session', function () {
     expect(fn () => $this->terms->activate($t2))->toThrow(ValidationException::class);
 });
 
-it('closes ACTIVE → CLOSED without activating another term', function () {
+it('closes ACTIVE \u2192 CLOSED without activating another term', function () {
     Event::fake([TermClosed::class]);
     $t1 = makeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $this->terms->activate($t1);
@@ -234,7 +234,7 @@ it('normalizes sequence after deleting a middle term', function () {
         ->and(Term::where('academic_session_id', $this->session->id)->count())->toBe(2);
 });
 
-it('does not allow CLOSED → ACTIVE via reopen path', function () {
+it('does not allow CLOSED \u2192 ACTIVE via reopen path', function () {
     $term = makeTerm([
         'name' => 'Closed',
         'start_date' => '2026-09-01',
@@ -245,4 +245,114 @@ it('does not allow CLOSED → ACTIVE via reopen path', function () {
     expect(fn () => app(\App\Services\AcademicCalendarService::class)->reopenTerm($term))
         ->toThrow(ValidationException::class);
     expect($term->fresh()->state)->toBeInstanceOf(TermClosedState::class);
+});
+
+it('creates a term with valid supplied dates', function () {
+    $term = $this->terms->create($this->session, [
+        'name' => 'Dated',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+    expect($term->start_date->format('Y-m-d'))->toBe('2026-09-01')
+        ->and($term->end_date->format('Y-m-d'))->toBe('2026-12-15')
+        ->and($term->state)->toBeInstanceOf(TermPlanned::class);
+});
+
+it('rejects creation with dates outside the session', function () {
+    expect(fn () => $this->terms->create($this->session, [
+        'name' => 'Outside',
+        'start_date' => '2026-01-01',
+        'end_date' => '2026-02-01',
+    ]))->toThrow(ValidationException::class);
+});
+
+it('rejects creation overlapping an existing sibling', function () {
+    $this->terms->create($this->session, [
+        'name' => 'Existing',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+    expect(fn () => $this->terms->create($this->session, [
+        'name' => 'Overlap',
+        'start_date' => '2026-11-01',
+        'end_date' => '2027-03-01',
+    ]))->toThrow(ValidationException::class);
+});
+
+it('allows creation with adjacent sibling dates', function () {
+    $this->terms->create($this->session, [
+        'name' => 'T1',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+    $t2 = $this->terms->create($this->session, [
+        'name' => 'T2',
+        'start_date' => '2026-12-15',
+        'end_date' => '2027-03-31',
+    ]);
+    expect($t2->ordinal_number)->toBe(2);
+});
+
+it('updates through the lifecycle service and protects start date after operational usage', function () {
+    $term = $this->terms->create($this->session, [
+        'name' => 'Ops',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+
+    $updated = $this->terms->update($term, ['name' => 'Ops Renamed']);
+    expect($updated->name)->toBe('Ops Renamed');
+
+    $this->app->bind(TermOperationalDataBoundary::class, new class implements TermOperationalDataBoundary {
+        public function hasOperationalData(Term $term): bool
+        {
+            return true;
+        }
+    });
+    $this->terms = app(TermLifecycleService::class);
+
+    expect(fn () => $this->terms->update($term->fresh(), ['start_date' => '2026-09-15']))
+        ->toThrow(ValidationException::class);
+
+    $endUpdated = $this->terms->update($term->fresh(), ['end_date' => '2026-12-20']);
+    expect($endUpdated->end_date->format('Y-m-d'))->toBe('2026-12-20');
+});
+
+it('delete then create then restore yields contiguous live sequence without unique collisions', function () {
+    $t1 = $this->terms->create($this->session, ['name' => 'First']);
+    $t2 = $this->terms->create($this->session, ['name' => 'Second']);
+    $t3 = $this->terms->create($this->session, ['name' => 'Third']);
+
+    $this->terms->delete($t2);
+    expect($t1->fresh()->ordinal_number)->toBe(1)
+        ->and($t3->fresh()->ordinal_number)->toBe(2);
+
+    $t4 = $this->terms->create($this->session, ['name' => 'Fourth']);
+    expect($t4->ordinal_number)->toBe(3);
+
+    $restored = $this->terms->restore($t2->fresh());
+    expect($restored->trashed())->toBeFalse()
+        ->and($restored->state)->toBeInstanceOf(TermPlanned::class)
+        ->and($restored->ordinal_number)->toBe(4);
+
+    $live = Term::query()
+        ->where('academic_session_id', $this->session->id)
+        ->orderBy('ordinal_number')
+        ->pluck('ordinal_number')
+        ->all();
+    expect($live)->toBe([1, 2, 3, 4]);
+});
+
+it('restore never reopens a CLOSED term', function () {
+    $closed = $this->terms->create($this->session, [
+        'name' => 'ClosedViaService',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+    $closed->forceFill(['state' => TermClosedState::$name, 'closed_at' => now()])->save();
+    $this->terms->delete($closed->fresh());
+
+    $restored = $this->terms->restore(Term::withTrashed()->findOrFail($closed->id));
+    expect($restored->state)->toBeInstanceOf(TermClosedState::class)
+        ->and($restored->closed_at)->not->toBeNull();
 });
