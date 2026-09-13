@@ -22,7 +22,7 @@ use App\States\Academic\AcademicSession\Draft as SessionDraft;
 use App\States\Academic\AcademicSession\Paused as SessionPaused;
 use App\States\Academic\AcademicSession\Planned as SessionPlanned;
 use App\States\Academic\Term\Active as TermActive;
-use App\States\Academic\Term\Closed as TermClosed;
+use App\States\Academic\Term\Closed as TermClosedState;
 use App\States\Academic\Term\Planned as TermPlanned;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Event;
@@ -174,13 +174,13 @@ it('rejects activation without dates', function () {
 });
 
 it('rejects overlapping term activation', function () {
-    makeTerm(['name' => 'Existing', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15', 'state' => TermClosed::$name]);
+    makeTerm(['name' => 'Existing', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15', 'state' => TermClosedState::$name]);
     $overlap = makeTerm(['name' => 'Overlap', 'start_date' => '2026-11-01', 'end_date' => '2027-03-01']);
     expect(fn () => $this->terms->activate($overlap))->toThrow(ValidationException::class);
 });
 
 it('allows adjacent term dates', function () {
-    makeTerm(['name' => 'T1', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15', 'state' => TermClosed::$name]);
+    makeTerm(['name' => 'T1', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15', 'state' => TermClosedState::$name]);
     $adjacent = makeTerm(['name' => 'T2', 'start_date' => '2026-12-15', 'end_date' => '2027-03-31']);
     $result = $this->terms->activate($adjacent);
     expect($result->state)->toBeInstanceOf(TermActive::class);
@@ -199,7 +199,7 @@ it('closes ACTIVE → CLOSED without activating another term', function () {
     $this->terms->activate($t1);
     $t2 = makeTerm(['name' => 'Second', 'start_date' => '2026-12-15', 'end_date' => '2027-03-31']);
     $closed = $this->terms->close($t1->fresh());
-    expect($closed->state)->toBeInstanceOf(TermClosed::class)
+    expect($closed->state)->toBeInstanceOf(TermClosedState::class)
         ->and($closed->closed_at)->not->toBeNull()
         ->and($t2->fresh()->state)->toBeInstanceOf(TermPlanned::class);
     Event::assertDispatched(TermClosed::class);
@@ -239,10 +239,10 @@ it('does not allow CLOSED → ACTIVE via reopen path', function () {
         'name' => 'Closed',
         'start_date' => '2026-09-01',
         'end_date' => '2026-12-15',
-        'state' => TermClosed::$name,
+        'state' => TermClosedState::$name,
         'closed_at' => now(),
     ]);
     expect(fn () => app(\App\Services\AcademicCalendarService::class)->reopenTerm($term))
         ->toThrow(ValidationException::class);
-    expect($term->fresh()->state)->toBeInstanceOf(TermClosed::class);
+    expect($term->fresh()->state)->toBeInstanceOf(TermClosedState::class);
 });

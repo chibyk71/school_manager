@@ -102,41 +102,26 @@ class StoreTermRequest extends FormRequest
                 'string',
                 'max:10',
             ],
-            'ordinal_number' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:255',
-            ],
+            'ordinal_number' => ['prohibited'],
             'description' => [
                 'nullable',
                 'string',
                 'max:1000',
             ],
             'start_date' => [
-                'required',
+                'nullable',
                 'date',
                 'date_format:Y-m-d',
-                'before_or_equal:end_date',
-                function ($attribute, $value, $fail) {
-                    $this->validateTermDateBounds($attribute, $value, $fail);
-                },
+                'before:end_date',
             ],
             'end_date' => [
-                'required',
+                'nullable',
                 'date',
                 'date_format:Y-m-d',
-                'after_or_equal:start_date',
-                function ($attribute, $value, $fail) {
-                    $this->validateTermDateBounds($attribute, $value, $fail);
-                },
+                'after:start_date',
             ],
-            'status' => [
-                'required',
-                'string',
-                'max:20',
-                new InDynamicEnum("status", Term::class),
-            ],
+            'state' => ['prohibited'],
+            'status' => ['prohibited'],
             'color' => [
                 'nullable',
                 'string',
@@ -147,11 +132,6 @@ class StoreTermRequest extends FormRequest
                 'nullable',
                 'array',
             ],
-            'school_id' => [
-                'required',
-                'uuid',
-                'exists:schools,id',
-            ],
         ];
     }
 
@@ -160,14 +140,10 @@ class StoreTermRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $school = GetSchoolModel();
-
-        if ($school && ! $this->has('school_id')) {
-            $this->merge([
-                'school_id' => $school->id,
-            ]);
-        }
+        // Phase 3: school ownership is derived via academic_session_id only.
+        // Sequence and lifecycle state are owned by TermLifecycleService.
     }
+
 
     /**
      * Validate that term dates are fully contained within the parent session.

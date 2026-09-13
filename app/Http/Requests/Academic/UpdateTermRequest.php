@@ -115,13 +115,7 @@ class UpdateTermRequest extends FormRequest
                 'string',
                 'max:10',
             ],
-            'ordinal_number' => [
-                'sometimes',
-                'nullable',
-                'integer',
-                'min:1',
-                'max:255',
-            ],
+            'ordinal_number' => ['prohibited'],
             'description' => [
                 'sometimes',
                 'nullable',
@@ -151,12 +145,8 @@ class UpdateTermRequest extends FormRequest
                     $this->validateTermDateBounds($attribute, $value, $fail);
                 },
             ],
-            'status' => [
-                'sometimes',
-                'string',
-                'max:20',
-                new InDynamicEnum('status', Term::class),
-            ],
+            'state' => ['prohibited'],
+            'status' => ['prohibited'],
             'color' => [
                 'sometimes',
                 'nullable',
@@ -169,11 +159,6 @@ class UpdateTermRequest extends FormRequest
                 'nullable',
                 'array',
             ],
-            'school_id' => [
-                'sometimes',
-                'uuid',
-                'exists:schools,id',
-            ],
         ];
     }
 
@@ -182,14 +167,9 @@ class UpdateTermRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $school = GetSchoolModel();
-
-        if ($school && ! $this->has('school_id')) {
-            $this->merge([
-                'school_id' => $school->id,
-            ]);
-        }
+        // Phase 3: school ownership via session; sequence/state owned by service.
     }
+
 
     /**
      * Validate that term dates are fully contained within the parent session.

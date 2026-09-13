@@ -129,22 +129,26 @@ class TermController extends Controller
         try {
             $validated = $request->validated();
 
-            // Auto-set ordinal_number if not provided
-            if (!isset($validated['ordinal_number'])) {
-                $validated['ordinal_number'] = Term::where('academic_session_id', $validated['academic_session_id'])
-                    ->max('ordinal_number') + 1 ?? 1;
-            }
+            $session = AcademicSession::query()->findOrFail($validated['academic_session_id']);
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
 
-            $term = Term::create($validated);
-
-            // Optional: Auto-activate if status is 'active' (service will enforce single active)
-            if ($validated['status'] === 'active') {
-                $this->service->activateTerm($term);
-            }
+            // Service owns sequence assignment and PLANNED initial state.
+            // Callers must not supply ordinal_number or state.
+            $term = $lifecycle->create($session, [
+                'name' => $validated['name'],
+                'short_name' => $validated['short_name'] ?? null,
+                'description' => $validated['description'] ?? null,
+                'start_date' => $validated['start_date'] ?? null,
+                'end_date' => $validated['end_date'] ?? null,
+                'color' => $validated['color'] ?? null,
+                'options' => $validated['options'] ?? null,
+            ]);
 
             return redirect()
                 ->route('terms.index', ['academicSession' => $term->academic_session_id])
                 ->with('success', "Term '{$term->name}' created successfully.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to create term', [
                 'error' => $e->getMessage(),
@@ -253,15 +257,24 @@ class TermController extends Controller
 
         try {
             $schoolId = GetSchoolModel()->id;
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
 
-            $deleted = Term::whereIn('id', $validated['ids'])
-                ->where('school_id', $schoolId)
-                ->where('is_active', false) // Safety: never delete active term
-                ->where('is_closed', false) // Optional: prevent deleting closed terms
-                ->delete();
+            $terms = Term::whereIn('id', $validated['ids'])
+                ->whereHas('academicSession', fn ($q) => $q->where('school_id', $schoolId))
+                ->get();
+
+            $deleted = 0;
+            foreach ($terms as $term) {
+                try {
+                    $lifecycle->delete($term);
+                    $deleted++;
+                } catch (\Illuminate\Validation\ValidationException $e) {
+                    // skip blocked terms
+                }
+            }
 
             if ($deleted === 0) {
-                return back()->with('error', 'No eligible terms were deleted (active/closed terms cannot be deleted).');
+                return back()->with('error', 'No eligible terms were deleted (operational or protected terms cannot be deleted).');
             }
 
             return back()->with('success', "{$deleted} term(s) deleted successfully.");
