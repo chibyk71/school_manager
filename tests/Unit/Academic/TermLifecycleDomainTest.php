@@ -25,6 +25,7 @@ use App\States\Academic\Term\Active as TermActive;
 use App\States\Academic\Term\Closed as TermClosedState;
 use App\States\Academic\Term\Planned as TermPlanned;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -43,6 +44,8 @@ beforeEach(function () {
     Schema::create('schools', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->string('name')->nullable();
+        $table->string('slug')->nullable();
+        $table->json('data')->nullable();
         $table->timestamps();
         $table->softDeletes();
     });
@@ -90,19 +93,47 @@ beforeEach(function () {
         $table->timestamps();
     });
 
+    // Avoid School::save() boot (slug generation / data merge) — match AcademicSessionLifecycleTest pattern
     $schoolId = (string) Str::uuid();
     $this->school = new School();
-    $this->school->forceFill(['id' => $schoolId, 'name' => 'Test School'])->save();
+    $this->school->forceFill([
+        'id' => $schoolId,
+        'name' => 'Test School',
+        'slug' => 'test-school',
+    ]);
+    $this->school->exists = true;
 
-    $this->session = new AcademicSession();
-    $this->session->forceFill([
-        'id' => (string) Str::uuid(),
+    DB::table('schools')->insert([
+        'id' => $schoolId,
+        'name' => 'Test School',
+        'slug' => 'test-school',
+        'data' => json_encode(['id' => $schoolId]),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $this->app->instance('schoolManager', new class($this->school)
+    {
+        public function __construct(private School $school) {}
+
+        public function getActiveSchool(): School
+        {
+            return $this->school;
+        }
+    });
+
+    $sessionId = (string) Str::uuid();
+    DB::table('academic_sessions')->insert([
+        'id' => $sessionId,
         'school_id' => $schoolId,
         'name' => '2026/2027',
         'start_date' => '2026-09-01',
         'end_date' => '2027-07-31',
         'state' => SessionActive::$name,
-    ])->save();
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $this->session = AcademicSession::query()->findOrFail($sessionId);
 
     $this->terms = app(TermLifecycleService::class);
     $this->sessions = app(AcademicSessionLifecycleService::class);
