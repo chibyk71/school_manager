@@ -13,7 +13,7 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use App\States\Academic\Term\Active as TermActive;
-use App\States\Academic\Term\Closed as TermClosed;
+use App\States\Academic\Term\Closed as TermClosedState;
 use App\States\Academic\Term\Planned as TermPlanned;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -296,12 +296,12 @@ class TermLifecycleService
                 ]);
             }
 
-            $term->state->transitionTo(TermClosed::class);
+            $term->state->transitionTo(TermClosedState::class);
             $term->forceFill(['closed_at' => now()])->save();
 
             $this->invalidateCaches($session->school_id);
             event(new TermClosed($term));
-            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosed::$name);
+            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosedState::$name);
 
             return $term->fresh();
         });

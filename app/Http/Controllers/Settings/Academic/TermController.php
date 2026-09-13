@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Settings\Academic;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\StoreTermRequest;
-use App\Http\Requests\UpdateTermRequest;
+use App\Http\Requests\Academic\StoreTermRequest;
+use App\Http\Requests\Academic\UpdateTermRequest;
 use App\Http\Resources\Academic\TermResource;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
@@ -171,6 +171,11 @@ class TermController extends Controller
 
         $term->load(['academicSession:id,name']);
 
+        $state = $term->state;
+        $stateValue = is_object($state) && method_exists($state, 'getValue')
+            ? $state->getValue()
+            : (string) $state;
+
         return Inertia::render('Academic/Terms/Show', [
             'term' => [
                 'id' => $term->id,
@@ -179,9 +184,9 @@ class TermController extends Controller
                 'description' => $term->description,
                 'start_date' => $term->start_date?->format('Y-m-d'),
                 'end_date' => $term->end_date?->format('Y-m-d'),
-                'status' => $term->status,
-                'is_active' => $term->is_active,
-                'is_closed' => $term->is_closed,
+                'state' => $stateValue,
+                'state_label' => $term->state_label,
+                'ordinal_number' => $term->ordinal_number,
                 'color' => $term->color,
                 'academic_session' => $term->academicSession,
             ],
@@ -197,18 +202,22 @@ class TermController extends Controller
 
         try {
             $validated = $request->validated();
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
 
-            // Handle status change to active (service enforces single active)
-            if (isset($validated['status']) && $validated['status'] === 'active') {
-                $this->service->activateTerm($term);
-                unset($validated['status']); // Avoid double update
+            $attrs = [];
+            foreach (['name', 'short_name', 'description', 'start_date', 'end_date', 'color', 'options'] as $key) {
+                if (array_key_exists($key, $validated)) {
+                    $attrs[$key] = $validated[$key];
+                }
             }
 
-            $term->update($validated);
+            $term = $lifecycle->update($term, $attrs);
 
             return redirect()
                 ->route('terms.show', $term)
                 ->with('success', "Term '{$term->name}' updated successfully.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to update term', [
                 'error' => $e->getMessage(),
@@ -227,12 +236,15 @@ class TermController extends Controller
      */
     public function setActive(Term $term)
     {
-        Gate::authorize('update', $term);
+        Gate::authorize('activate', $term);
 
         try {
-            $this->service->activateTerm($term);
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
+            $lifecycle->activate($term);
 
             return back()->with('success', "Active term switched to '{$term->name}'.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to set active term', [
                 'error' => $e->getMessage(),
@@ -298,14 +310,12 @@ class TermController extends Controller
         Gate::authorize('restore', $term);
 
         try {
-            // Optional safety: prevent restore if session is closed/archived
-            if ($term->academicSession->status === 'closed' || $term->academicSession->status === 'archived') {
-                return back()->with('error', 'Cannot restore term: parent session is closed or archived.');
-            }
-
-            $term->restore();
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
+            $term = $lifecycle->restore($term);
 
             return back()->with('success', "Term '{$term->name}' restored successfully.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to restore term', [
                 'error' => $e->getMessage(),
