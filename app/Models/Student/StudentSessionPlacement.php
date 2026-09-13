@@ -5,7 +5,9 @@ namespace App\Models\Student;
 use App\Models\Academic\ClassLevel;
 use App\Models\Academic\ClassSection;
 use App\Models\Academic\AcademicSession;
+use App\Contracts\Academic\TracksAcademicUsage as TracksAcademicUsageContract;
 use App\Traits\HasDynamicEnum;
+use App\Traits\TracksAcademicUsage;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,12 +22,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Mid-session section moves end the current row and create a new one (history preserved).
  */
 
-class StudentSessionPlacement extends Model
+class StudentSessionPlacement extends Model implements TracksAcademicUsageContract
 {
     // Integer auto-increment PK (matches migration; NOT UUID).
     // registration_number_histories.placement_id is unsignedBigInteger referencing this id.
     use HasFactory,
-        HasDynamicEnum;
+        HasDynamicEnum,
+        TracksAcademicUsage;
 
     protected $fillable = [
         'student_id',
@@ -123,5 +126,24 @@ class StudentSessionPlacement extends Model
         $section = $this->classSection?->name ? " ({$this->classSection->name})" : '';
 
         return $level . $section;
+    }
+
+    /**
+     * Placement has no school_id column; school is inherited from the Student.
+     */
+    public function academicUsageSchoolId(): ?string
+    {
+        if ($this->relationLoaded('student') && $this->student) {
+            return $this->student->school_id !== null ? (string) $this->student->school_id : null;
+        }
+
+        $studentId = $this->getAttribute('student_id');
+        if ($studentId === null) {
+            return null;
+        }
+
+        $schoolId = Student::query()->whereKey($studentId)->value('school_id');
+
+        return $schoolId !== null ? (string) $schoolId : null;
     }
 }

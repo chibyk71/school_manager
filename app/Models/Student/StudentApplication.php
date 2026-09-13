@@ -8,8 +8,10 @@ use App\Models\Academic\ClassLevel;
 use App\Models\School;
 use App\Models\SchoolSection;
 use App\Models\User;
+use App\Contracts\Academic\TracksAcademicUsage as TracksAcademicUsageContract;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasCustomFields;
+use App\Traits\TracksAcademicUsage;
 use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
 use Database\Factories\Student\StudentApplicationFactory;
@@ -33,7 +35,7 @@ use Illuminate\Validation\ValidationException;
  * school_section_id column is retained for legacy compatibility but is not part of
  * the Phase 2 Application submission/placement workflow.
  */
-class StudentApplication extends Model
+class StudentApplication extends Model implements TracksAcademicUsageContract
 {
     use HasFactory,
         HasUuids,
@@ -41,7 +43,8 @@ class StudentApplication extends Model
         BelongsToSchool,
         HasCustomFields,
         HasDynamicEnum,
-        HasTableQuery;
+        HasTableQuery,
+        TracksAcademicUsage;
 
     public const STATUS_DRAFT = 'draft';
     public const STATUS_SUBMITTED = 'submitted';

@@ -352,8 +352,6 @@ class TermLifecycleService
                 ]);
             }
 
-            $this->assertNoDependentRecords($term);
-
             // Park ordinal in tombstone range so UNIQUE(session, ordinal) allows live renumber.
             $maxTomb = (int) Term::withTrashed()
                 ->where('academic_session_id', $session->id)
@@ -468,26 +466,6 @@ class TermLifecycleService
         }
     }
 
-    protected function assertNoDependentRecords(Term $term): void
-    {
-        if (DB::getSchemaBuilder()->hasTable('timetables')) {
-            $count = DB::table('timetables')->where('term_id', $term->id)->count();
-            if ($count > 0) {
-                throw ValidationException::withMessages([
-                    'term' => 'Cannot delete term: dependent timetable records exist.',
-                ]);
-            }
-        }
-
-        if (DB::getSchemaBuilder()->hasTable('exams')) {
-            $count = DB::table('exams')->where('term_id', $term->id)->count();
-            if ($count > 0) {
-                throw ValidationException::withMessages([
-                    'term' => 'Cannot delete term: dependent exam records exist.',
-                ]);
-            }
-        }
-    }
 
     protected function assertSessionBelongsToCurrentSchool(AcademicSession $session): void
     {

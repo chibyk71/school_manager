@@ -55,3 +55,4 @@ class AcademicPeriodUsage extends Model
         return 'id';
     }
 }
+

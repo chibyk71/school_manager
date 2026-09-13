@@ -159,22 +159,25 @@ class AcademicSessionController extends Controller
 
         try {
             $schoolId = GetSchoolModel()->id;
+            $lifecycle = app(\App\Services\Academic\AcademicSessionLifecycleService::class);
+            $deleted = 0;
 
-            // Phase 2: conservative deletion.
-            // Protect ACTIVE/PAUSED (current) and CLOSED (historical) until Phase 4
-            // usage registry can distinguish sessions with operational data.
-            // Only DRAFT / PLANNED without terms are eligible for soft-delete here.
-            $deleted = AcademicSession::query()->whereIn('id', $validated['ids'])
+            $sessions = AcademicSession::query()
+                ->whereIn('id', $validated['ids'])
                 ->where('school_id', $schoolId)
-                ->whereIn('state', [
-                    \App\States\Academic\AcademicSession\Draft::$name,
-                    \App\States\Academic\AcademicSession\Planned::$name,
-                ])
-                ->whereDoesntHave('terms')
-                ->delete();
+                ->get();
+
+            foreach ($sessions as $session) {
+                try {
+                    $lifecycle->delete($session);
+                    $deleted++;
+                } catch (\Illuminate\Validation\ValidationException $e) {
+                    // Skip ineligible; aggregate result below.
+                }
+            }
 
             if ($deleted === 0) {
-                return back()->with('error', 'No eligible academic sessions were deleted. Current, closed, or term-linked sessions cannot be deleted.');
+                return back()->with('error', 'No eligible academic sessions were deleted. Current, closed, term-linked, or usage-protected sessions cannot be deleted.');
             }
 
             return back()->with('success', "{$deleted} academic session(s) deleted successfully.");
@@ -216,23 +219,14 @@ class AcademicSessionController extends Controller
         Gate::authorize('forceDelete', $academicSession);
 
         try {
-            // Phase 2: only DRAFT/PLANNED without terms may be force-deleted.
-            // CLOSED historical sessions are protected until Phase 4 usage registry.
-            if ($academicSession->isCurrentOperational()) {
-                return back()->with('error', 'Cannot permanently delete a current operational session (ACTIVE or PAUSED).');
-            }
-
-            if ($academicSession->state instanceof \App\States\Academic\AcademicSession\Closed) {
-                return back()->with('error', 'Cannot permanently delete a closed historical session until operational-data registry is available.');
-            }
-
-            if ($academicSession->terms()->exists()) {
-                return back()->with('error', 'Cannot permanently delete a session with associated terms.');
-            }
-
-            $academicSession->forceDelete();
+            app(\App\Services\Academic\AcademicSessionLifecycleService::class)
+                ->forceDelete($academicSession);
 
             return back()->with('success', "Academic session '{$academicSession->name}' permanently deleted.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $message = collect($e->errors())->flatten()->first() ?: 'Session cannot be permanently deleted.';
+
+            return back()->with('error', $message);
         } catch (\Exception $e) {
             Log::error('Failed to force delete academic session', [
                 'error' => $e->getMessage(),
