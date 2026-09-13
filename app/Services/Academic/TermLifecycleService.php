@@ -13,7 +13,7 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use App\States\Academic\Term\Active as TermActive;
-use App\States\Academic\Term\Closed as TermClosedState;
+use App\States\Academic\Term\Closed as TermClosed;
 use App\States\Academic\Term\Planned as TermPlanned;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -111,9 +111,10 @@ class TermLifecycleService
             $hasOps = $this->operationalData->hasOperationalData($term);
 
             if (array_key_exists('start_date', $attributes)) {
-                $newStart = $attributes['start_date'];
+                $newStart = $attributes['start_date']; // may be null
                 $currentStart = $term->start_date?->format('Y-m-d');
-                if ($hasOps && $newStart !== null && $newStart !== $currentStart) {
+                // null is a mutation; once operational data exists, start_date is fully immutable
+                if ($hasOps && $newStart !== $currentStart) {
                     throw ValidationException::withMessages([
                         'start_date' => 'Start date cannot be changed after operational data exists for this term.',
                     ]);
@@ -124,9 +125,13 @@ class TermLifecycleService
                 'name', 'short_name', 'description', 'start_date', 'end_date', 'color', 'options',
             ])->filter(fn ($v, $k) => array_key_exists($k, $attributes))->all();
 
-            if (isset($fill['start_date']) || isset($fill['end_date'])) {
-                $start = $fill['start_date'] ?? $term->start_date?->format('Y-m-d');
-                $end = $fill['end_date'] ?? $term->end_date?->format('Y-m-d');
+            if (array_key_exists('start_date', $fill) || array_key_exists('end_date', $fill)) {
+                $start = array_key_exists('start_date', $fill)
+                    ? $fill['start_date']
+                    : $term->start_date?->format('Y-m-d');
+                $end = array_key_exists('end_date', $fill)
+                    ? $fill['end_date']
+                    : $term->end_date?->format('Y-m-d');
                 if ($start && $end) {
                     $this->assertValidTermDates($session, $start, $end, $term->id);
                 }
@@ -177,7 +182,12 @@ class TermLifecycleService
                 }
             }
 
-            $tempBase = 10000;
+            $maxLive = (int) Term::query()
+                ->where('academic_session_id', $session->id)
+                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
+                ->max('ordinal_number');
+            // Temporary ordinals sit above live max, below tombstone base
+            $tempBase = $maxLive + count($orderedTermIds) + 1;
             foreach ($orderedTermIds as $i => $id) {
                 $term = $terms->get($id);
                 $newSeq = $i + 1;
@@ -296,12 +306,12 @@ class TermLifecycleService
                 ]);
             }
 
-            $term->state->transitionTo(TermClosedState::class);
+            $term->state->transitionTo(TermClosed::class);
             $term->forceFill(['closed_at' => now()])->save();
 
             $this->invalidateCaches($session->school_id);
             event(new TermClosed($term));
-            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosedState::$name);
+            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosed::$name);
 
             return $term->fresh();
         });
