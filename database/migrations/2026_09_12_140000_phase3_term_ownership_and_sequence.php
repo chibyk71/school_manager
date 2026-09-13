@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Phase 3: Term ownership via AcademicSession only; enforce sequence uniqueness.
  *
- * - Verify no contradictory school_id vs session.school_id rows before drop
+ * - Verify no contradictory school_id vs session.school_id (including soft-deleted)
  * - Drop terms.school_id
- * - UNIQUE(academic_session_id, ordinal_number)
+ * - UNIQUE(academic_session_id, ordinal_number) — fail loudly if it cannot be created
  */
 return new class extends Migration
 {
@@ -24,12 +24,11 @@ return new class extends Migration
             $mismatches = DB::table('terms')
                 ->join('academic_sessions', 'terms.academic_session_id', '=', 'academic_sessions.id')
                 ->whereColumn('terms.school_id', '!=', 'academic_sessions.school_id')
-                ->whereNull('terms.deleted_at')
                 ->count();
 
             if ($mismatches > 0) {
                 throw new RuntimeException(
-                    "Phase 3 migration aborted: {$mismatches} term row(s) have school_id that does not match parent academic_session.school_id."
+                    "Phase 3 migration aborted: {$mismatches} term row(s) (including soft-deleted) have school_id that does not match parent academic_session.school_id."
                 );
             }
         }
@@ -42,7 +41,8 @@ return new class extends Migration
                     Schema::table('terms', function (Blueprint $table) {
                         $table->dropForeign(['school_id']);
                     });
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
+                    // FK may already be absent
                 }
             }
 
@@ -51,26 +51,22 @@ return new class extends Migration
             });
         }
 
-        $indexExists = false;
         try {
-            if ($driver === 'sqlite') {
-                $indexes = Schema::getConnection()->select("PRAGMA index_list('terms')");
-                foreach ($indexes as $idx) {
-                    if (str_contains(strtolower($idx->name ?? ''), 'ordinal')) {
-                        $indexExists = true;
-                        break;
-                    }
-                }
-            }
-        } catch (\Throwable) {
-        }
+            Schema::table('terms', function (Blueprint $table) {
+                $table->unique(['academic_session_id', 'ordinal_number'], 'terms_session_ordinal_unique');
+            });
+        } catch (\Throwable $e) {
+            $msg = strtolower($e->getMessage());
+            $already = str_contains($msg, 'already exists')
+                || str_contains($msg, 'duplicate')
+                || str_contains($msg, 'exists');
 
-        if (! $indexExists) {
-            try {
-                Schema::table('terms', function (Blueprint $table) {
-                    $table->unique(['academic_session_id', 'ordinal_number'], 'terms_session_ordinal_unique');
-                });
-            } catch (\Throwable) {
+            if (! $already) {
+                throw new RuntimeException(
+                    'Phase 3 migration aborted: failed to create UNIQUE(academic_session_id, ordinal_number): '.$e->getMessage(),
+                    0,
+                    $e
+                );
             }
         }
     }
