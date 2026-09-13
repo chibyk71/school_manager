@@ -13,7 +13,7 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use App\States\Academic\Term\Active as TermActive;
-use App\States\Academic\Term\Closed as TermClosed;
+use App\States\Academic\Term\Closed as TermClosedState;
 use App\States\Academic\Term\Planned as TermPlanned;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +30,7 @@ use Illuminate\Validation\ValidationException;
  * Sequence (ordinal_number) is contiguous 1..N per session for live terms; service-owned.
  * Soft-deleted terms park ordinals at ORDINAL_TOMBSTONE_BASE+ so UNIQUE(session, ordinal) holds.
  * Activation uses session-level locking to enforce single ACTIVE term.
+ * Deletion is restricted to PLANNED terms only.
  */
 class TermLifecycleService
 {
@@ -186,7 +187,6 @@ class TermLifecycleService
                 ->where('academic_session_id', $session->id)
                 ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
                 ->max('ordinal_number');
-            // Temporary ordinals sit above live max, below tombstone base
             $tempBase = $maxLive + count($orderedTermIds) + 1;
             foreach ($orderedTermIds as $i => $id) {
                 $term = $terms->get($id);
@@ -306,12 +306,12 @@ class TermLifecycleService
                 ]);
             }
 
-            $term->state->transitionTo(TermClosed::class);
+            $term->state->transitionTo(TermClosedState::class);
             $term->forceFill(['closed_at' => now()])->save();
 
             $this->invalidateCaches($session->school_id);
             event(new TermClosed($term));
-            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosed::$name);
+            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosedState::$name);
 
             return $term->fresh();
         });
@@ -327,6 +327,24 @@ class TermLifecycleService
             $term = Term::query()->whereKey($term->id)->lockForUpdate()->firstOrFail();
             $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
             $this->assertSessionBelongsToCurrentSchool($session);
+
+            // Lifecycle invariant: only PLANNED terms may be deleted.
+            // ACTIVE is the current operational period; CLOSED is historical state.
+            if ($term->state instanceof TermActive) {
+                throw ValidationException::withMessages([
+                    'state' => 'Cannot delete an ACTIVE term. Close it first, or leave it as historical state after closure.',
+                ]);
+            }
+            if ($term->state instanceof TermClosedState) {
+                throw ValidationException::withMessages([
+                    'state' => 'Cannot delete a CLOSED term. Closed terms preserve historical academic state.',
+                ]);
+            }
+            if (! ($term->state instanceof TermPlanned)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Only a PLANNED term can be deleted.',
+                ]);
+            }
 
             if ($this->operationalData->hasOperationalData($term)) {
                 throw ValidationException::withMessages([
@@ -389,7 +407,6 @@ class TermLifecycleService
             $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
             $this->assertSessionBelongsToCurrentSchool($session);
 
-            // Restored terms append to the live sequence; never reopen/activate.
             $maxLive = (int) Term::query()
                 ->where('academic_session_id', $session->id)
                 ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
