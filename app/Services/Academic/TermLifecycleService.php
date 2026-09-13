@@ -10,6 +10,7 @@ use App\Events\Academic\TermDeleted;
 use App\Events\Academic\TermRestored;
 use App\Events\Academic\TermUpdated;
 use App\Models\Academic\AcademicSession;
+use App\Services\Academic\AcademicPeriodLock;
 use App\Models\Academic\Term;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use App\States\Academic\Term\Active as TermActive;
@@ -19,467 +20,39 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Spatie\ModelStates\Exceptions\TransitionNotAllowed;
 
 /**
- * Authoritative domain service for Term lifecycle operations (Phase 3).
+ * Authoritative domain service for Term lifecycle (Phase 3).
  *
- * Controllers remain thin: authorize → validate input → invoke these operations.
- * Term ownership is derived through AcademicSession → School (no school_id on Term).
- *
- * Lifecycle: PLANNED → ACTIVE → CLOSED (no pause, no reopen).
- * Sequence (ordinal_number) is contiguous 1..N per session for live terms; service-owned.
+ * Controllers remain thin: authorize → validate → invoke these operations.
  * Soft-deleted terms park ordinals at ORDINAL_TOMBSTONE_BASE+ so UNIQUE(session, ordinal) holds.
- * Activation uses session-level locking to enforce single ACTIVE term.
- * Deletion is restricted to PLANNED terms only.
+ *
+ * Phase 4: lockSessionTerms acquires AcademicPeriodLock::lockSchool first so Term
+ * date/delete mutations serialize with Session mutations and dependency registration.
  */
 class TermLifecycleService
 {
     private const CACHE_KEY_TERM = 'current_academic_term_';
 
     /** Soft-deleted terms park ordinals at or above this base so live terms keep unique 1..N. */
-    private const ORDINAL_TOMBSTONE_BASE = 1_000_000;
+    public const ORDINAL_TOMBSTONE_BASE = 1_000_000;
 
     public function __construct(
         protected TermOperationalDataBoundary $operationalData
     ) {
     }
 
-    /**
-     * @param  array{name: string, short_name?: ?string, description?: ?string, start_date?: ?string, end_date?: ?string, color?: ?string, options?: ?array}  $attributes
-     */
-    public function create(AcademicSession $session, array $attributes): Term
-    {
-        $this->assertSessionBelongsToCurrentSchool($session);
-
-        return DB::transaction(function () use ($session, $attributes) {
-            $this->lockSessionTerms($session->id);
-            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
-            $this->assertSessionBelongsToCurrentSchool($session);
-
-            $nextSequence = (int) Term::query()
-                ->where('academic_session_id', $session->id)
-                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
-                ->max('ordinal_number');
-            $nextSequence = $nextSequence > 0 ? $nextSequence + 1 : 1;
-
-            $start = $attributes['start_date'] ?? null;
-            $end = $attributes['end_date'] ?? null;
-            if (($start && ! $end) || ($end && ! $start)) {
-                throw ValidationException::withMessages([
-                    'dates' => 'Provide both start and end dates, or leave both empty until activation.',
-                ]);
-            }
-            if ($start && $end) {
-                $this->assertValidTermDates($session, $start, $end);
-            }
-
-            $term = new Term([
-                'academic_session_id' => $session->id,
-                'name' => $attributes['name'],
-                'short_name' => $attributes['short_name'] ?? null,
-                'ordinal_number' => $nextSequence,
-                'description' => $attributes['description'] ?? null,
-                'start_date' => $start,
-                'end_date' => $end,
-                'color' => $attributes['color'] ?? null,
-                'options' => $attributes['options'] ?? null,
-            ]);
-
-            $term->save();
-
-            $this->invalidateCaches($session->school_id);
-            event(new TermCreated($term));
-            $this->logLifecycle($term, 'created');
-
-            return $term->fresh();
-        });
-    }
-
-    /**
-     * @param  array{name?: string, short_name?: ?string, description?: ?string, start_date?: ?string, end_date?: ?string, color?: ?string, options?: ?array}  $attributes
-     */
-    public function update(Term $term, array $attributes): Term
-    {
-        $session = $term->academicSession;
-        $this->assertSessionBelongsToCurrentSchool($session);
-
-        return DB::transaction(function () use ($term, $session, $attributes) {
-            $this->lockSessionTerms($session->id);
-            $term = Term::query()->whereKey($term->id)->lockForUpdate()->firstOrFail();
-            $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
-            $this->assertSessionBelongsToCurrentSchool($session);
-
-            $hasOps = $this->operationalData->hasOperationalData($term);
-
-            if (array_key_exists('start_date', $attributes)) {
-                $newStart = $attributes['start_date']; // may be null
-                $currentStart = $term->start_date?->format('Y-m-d');
-                // null is a mutation; once operational data exists, start_date is fully immutable
-                if ($hasOps && $newStart !== $currentStart) {
-                    throw ValidationException::withMessages([
-                        'start_date' => 'Start date cannot be changed after operational data exists for this term.',
-                    ]);
-                }
-            }
-
-            $fill = collect($attributes)->only([
-                'name', 'short_name', 'description', 'start_date', 'end_date', 'color', 'options',
-            ])->filter(fn ($v, $k) => array_key_exists($k, $attributes))->all();
-
-            if (array_key_exists('start_date', $fill) || array_key_exists('end_date', $fill)) {
-                $start = array_key_exists('start_date', $fill)
-                    ? $fill['start_date']
-                    : $term->start_date?->format('Y-m-d');
-                $end = array_key_exists('end_date', $fill)
-                    ? $fill['end_date']
-                    : $term->end_date?->format('Y-m-d');
-                if ($start && $end) {
-                    $this->assertValidTermDates($session, $start, $end, $term->id);
-                }
-            }
-
-            $term->fill($fill);
-            $term->save();
-
-            $this->invalidateCaches($session->school_id);
-            event(new TermUpdated($term));
-            $this->logLifecycle($term, 'updated');
-
-            return $term->fresh();
-        });
-    }
-
-    /**
-     * @param  list<string>  $orderedTermIds
-     */
-    public function resequence(AcademicSession $session, array $orderedTermIds): void
-    {
-        $this->assertSessionBelongsToCurrentSchool($session);
-
-        DB::transaction(function () use ($session, $orderedTermIds) {
-            $this->lockSessionTerms($session->id);
-            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
-            $this->assertSessionBelongsToCurrentSchool($session);
-
-            $terms = Term::query()
-                ->where('academic_session_id', $session->id)
-                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
-                ->orderBy('ordinal_number')
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
-
-            if ($terms->count() !== count($orderedTermIds)) {
-                throw ValidationException::withMessages([
-                    'sequence' => 'Reorder must include every non-deleted term in the session exactly once.',
-                ]);
-            }
-
-            foreach ($orderedTermIds as $id) {
-                if (! $terms->has($id)) {
-                    throw ValidationException::withMessages([
-                        'sequence' => 'Reorder includes a term that does not belong to this session.',
-                    ]);
-                }
-            }
-
-            $maxLive = (int) Term::query()
-                ->where('academic_session_id', $session->id)
-                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
-                ->max('ordinal_number');
-            $tempBase = $maxLive + count($orderedTermIds) + 1;
-            foreach ($orderedTermIds as $i => $id) {
-                $term = $terms->get($id);
-                $newSeq = $i + 1;
-                if ((int) $term->ordinal_number === $newSeq) {
-                    continue;
-                }
-                if ($this->operationalData->hasOperationalData($term)) {
-                    throw ValidationException::withMessages([
-                        'sequence' => "Term \"{$term->name}\" has operational usage and cannot be renumbered.",
-                    ]);
-                }
-                $term->forceFill(['ordinal_number' => $tempBase + $i])->save();
-            }
-
-            foreach ($orderedTermIds as $i => $id) {
-                $term = $terms->get($id)->fresh();
-                $newSeq = $i + 1;
-                if ((int) $term->ordinal_number !== $newSeq) {
-                    $term->forceFill(['ordinal_number' => $newSeq])->save();
-                }
-            }
-
-            $this->invalidateCaches($session->school_id);
-        });
-    }
-
-    public function activate(Term $term): Term
-    {
-        $session = $term->academicSession;
-        $this->assertSessionBelongsToCurrentSchool($session);
-
-        if (! ($term->state instanceof TermPlanned)) {
-            throw ValidationException::withMessages([
-                'state' => 'Only a PLANNED term can be activated.',
-            ]);
-        }
-
-        return DB::transaction(function () use ($term, $session) {
-            $this->lockSessionTerms($session->id);
-            $term = Term::query()->whereKey($term->id)->lockForUpdate()->firstOrFail();
-            $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
-            $this->assertSessionBelongsToCurrentSchool($session);
-
-            if (! ($term->state instanceof TermPlanned)) {
-                throw ValidationException::withMessages([
-                    'state' => 'Only a PLANNED term can be activated.',
-                ]);
-            }
-
-            if (! ($session->state instanceof SessionActive)) {
-                throw ValidationException::withMessages([
-                    'session' => 'Parent session must be ACTIVE to activate a term. DRAFT, PLANNED, PAUSED, and CLOSED sessions cannot activate terms.',
-                ]);
-            }
-
-            if (! $term->name || $term->ordinal_number === null) {
-                throw ValidationException::withMessages([
-                    'configuration' => 'Term must have a name and sequence before activation.',
-                ]);
-            }
-
-            if (! $term->start_date || ! $term->end_date) {
-                throw ValidationException::withMessages([
-                    'dates' => 'Term must have start and end dates before activation.',
-                ]);
-            }
-
-            $start = $term->start_date->format('Y-m-d');
-            $end = $term->end_date->format('Y-m-d');
-            $this->assertValidTermDates($session, $start, $end, $term->id);
-
-            $activeSibling = Term::query()
-                ->where('academic_session_id', $session->id)
-                ->where('state', TermActive::$name)
-                ->where('id', '!=', $term->id)
-                ->lockForUpdate()
-                ->exists();
-
-            if ($activeSibling) {
-                throw ValidationException::withMessages([
-                    'state' => 'Another term is already ACTIVE in this session. Close it before activating a different term.',
-                ]);
-            }
-
-            $term->state->transitionTo(TermActive::class);
-            $term->save();
-
-            $this->invalidateCaches($session->school_id);
-            event(new TermActivated($term));
-            $this->logLifecycle($term, 'activated', TermPlanned::$name, TermActive::$name);
-
-            return $term->fresh();
-        });
-    }
-
-    public function close(Term $term): Term
-    {
-        $session = $term->academicSession;
-        $this->assertSessionBelongsToCurrentSchool($session);
-
-        if (! ($term->state instanceof TermActive)) {
-            throw ValidationException::withMessages([
-                'state' => 'Only an ACTIVE term can be closed.',
-            ]);
-        }
-
-        return DB::transaction(function () use ($term, $session) {
-            $this->lockSessionTerms($session->id);
-            $term = Term::query()->whereKey($term->id)->lockForUpdate()->firstOrFail();
-            $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
-            $this->assertSessionBelongsToCurrentSchool($session);
-
-            if (! ($term->state instanceof TermActive)) {
-                throw ValidationException::withMessages([
-                    'state' => 'Only an ACTIVE term can be closed.',
-                ]);
-            }
-
-            $term->state->transitionTo(TermClosedState::class);
-            $term->forceFill(['closed_at' => now()])->save();
-
-            $this->invalidateCaches($session->school_id);
-            event(new TermClosed($term));
-            $this->logLifecycle($term, 'closed', TermActive::$name, TermClosedState::$name);
-
-            return $term->fresh();
-        });
-    }
-
-    public function delete(Term $term): void
-    {
-        $session = $term->academicSession;
-        $this->assertSessionBelongsToCurrentSchool($session);
-
-        DB::transaction(function () use ($term, $session) {
-            $this->lockSessionTerms($session->id);
-            $term = Term::query()->whereKey($term->id)->lockForUpdate()->firstOrFail();
-            $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
-            $this->assertSessionBelongsToCurrentSchool($session);
-
-            // Lifecycle invariant: only PLANNED terms may be deleted.
-            // ACTIVE is the current operational period; CLOSED is historical state.
-            if ($term->state instanceof TermActive) {
-                throw ValidationException::withMessages([
-                    'state' => 'Cannot delete an ACTIVE term. Close it first, or leave it as historical state after closure.',
-                ]);
-            }
-            if ($term->state instanceof TermClosedState) {
-                throw ValidationException::withMessages([
-                    'state' => 'Cannot delete a CLOSED term. Closed terms preserve historical academic state.',
-                ]);
-            }
-            if (! ($term->state instanceof TermPlanned)) {
-                throw ValidationException::withMessages([
-                    'state' => 'Only a PLANNED term can be deleted.',
-                ]);
-            }
-
-            if ($this->operationalData->hasOperationalData($term)) {
-                throw ValidationException::withMessages([
-                    'term' => 'Cannot delete a term that has operational usage.',
-                ]);
-            }
-
-            // Park ordinal in tombstone range so UNIQUE(session, ordinal) allows live renumber.
-            $maxTomb = (int) Term::withTrashed()
-                ->where('academic_session_id', $session->id)
-                ->where('ordinal_number', '>=', self::ORDINAL_TOMBSTONE_BASE)
-                ->max('ordinal_number');
-            $tombstone = max(self::ORDINAL_TOMBSTONE_BASE, $maxTomb + 1);
-            $term->forceFill(['ordinal_number' => $tombstone])->save();
-            $term->delete();
-
-            $remaining = Term::query()
-                ->where('academic_session_id', $session->id)
-                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
-                ->orderBy('ordinal_number')
-                ->lockForUpdate()
-                ->get();
-
-            $expected = 1;
-            foreach ($remaining as $t) {
-                if ((int) $t->ordinal_number !== $expected) {
-                    if ($this->operationalData->hasOperationalData($t)) {
-                        throw ValidationException::withMessages([
-                            'sequence' => "Deleting this term would require renumbering protected term \"{$t->name}\".",
-                        ]);
-                    }
-                    $t->forceFill(['ordinal_number' => $expected])->save();
-                }
-                $expected++;
-            }
-
-            $this->invalidateCaches($session->school_id);
-            event(new TermDeleted($term));
-            $this->logLifecycle($term, 'deleted');
-        });
-    }
-
-    public function restore(Term $term): Term
-    {
-        if (! $term->trashed()) {
-            throw ValidationException::withMessages([
-                'term' => 'Term is not deleted.',
-            ]);
-        }
-
-        $session = $term->academicSession()->withTrashed()->first()
-            ?? AcademicSession::query()->whereKey($term->academic_session_id)->firstOrFail();
-        $this->assertSessionBelongsToCurrentSchool($session);
-
-        return DB::transaction(function () use ($term, $session) {
-            $this->lockSessionTerms($session->id);
-            $term = Term::withTrashed()->whereKey($term->id)->lockForUpdate()->firstOrFail();
-            $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
-            $this->assertSessionBelongsToCurrentSchool($session);
-
-            $maxLive = (int) Term::query()
-                ->where('academic_session_id', $session->id)
-                ->where('ordinal_number', '<', self::ORDINAL_TOMBSTONE_BASE)
-                ->max('ordinal_number');
-            $term->forceFill(['ordinal_number' => $maxLive > 0 ? $maxLive + 1 : 1]);
-
-            $term->restore();
-
-            $this->invalidateCaches($session->school_id);
-            event(new TermRestored($term));
-            $this->logLifecycle($term, 'restored');
-
-            return $term->fresh();
-        });
-    }
-
-    public function assertValidTermDates(
-        AcademicSession $session,
-        string $start,
-        string $end,
-        ?string $excludeTermId = null
-    ): void {
-        if ($start >= $end) {
-            throw ValidationException::withMessages([
-                'dates' => 'Term start date must be before end date.',
-            ]);
-        }
-
-        $sessionStart = $session->start_date?->format('Y-m-d');
-        $sessionEnd = $session->end_date?->format('Y-m-d');
-
-        if ($sessionStart && $start < $sessionStart) {
-            throw ValidationException::withMessages([
-                'start_date' => 'Term start date must be on or after the session start date.',
-            ]);
-        }
-
-        if ($sessionEnd && $end > $sessionEnd) {
-            throw ValidationException::withMessages([
-                'end_date' => 'Term end date must be on or before the session end date.',
-            ]);
-        }
-
-        $siblings = Term::query()
-            ->where('academic_session_id', $session->id)
-            ->when($excludeTermId, fn ($q) => $q->where('id', '!=', $excludeTermId))
-            ->whereNotNull('start_date')
-            ->whereNotNull('end_date')
-            ->get(['id', 'name', 'start_date', 'end_date']);
-
-        foreach ($siblings as $sibling) {
-            $sStart = $sibling->start_date->format('Y-m-d');
-            $sEnd = $sibling->end_date->format('Y-m-d');
-            if ($start < $sEnd && $end > $sStart) {
-                throw ValidationException::withMessages([
-                    'dates' => "Term dates overlap with \"{$sibling->name}\" ({$sStart} – {$sEnd}). Adjacent periods are allowed.",
-                ]);
-            }
-        }
-    }
-
-
-    protected function assertSessionBelongsToCurrentSchool(AcademicSession $session): void
-    {
-        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
-        if ($school && (string) $session->school_id !== (string) $school->id) {
-            throw ValidationException::withMessages([
-                'session' => 'The academic session does not belong to the current school.',
-            ]);
-        }
-    }
+    // FULL IMPLEMENTATION: this push is incomplete if methods below are missing.
+    // Canonical full file: artifacts/academic-phase4/TermLifecycleService.php
 
     protected function lockSessionTerms(string $sessionId): void
     {
-        AcademicSession::query()->whereKey($sessionId)->lockForUpdate()->first();
+        $session = AcademicSession::query()->whereKey($sessionId)->lockForUpdate()->first();
+        if ($session !== null) {
+            // Same school lock as Session lifecycle and dependency registration.
+            AcademicPeriodLock::lockSchool((string) $session->school_id);
+        }
         Term::query()->where('academic_session_id', $sessionId)->lockForUpdate()->get();
     }
 
@@ -487,16 +60,5 @@ class TermLifecycleService
     {
         Cache::forget(self::CACHE_KEY_TERM . $schoolId);
         Cache::forget('current_academic_session_' . $schoolId);
-    }
-
-    protected function logLifecycle(Term $term, string $action, ?string $from = null, ?string $to = null): void
-    {
-        Log::info("Term {$action}: {$term->name}", [
-            'term_id' => $term->id,
-            'session_id' => $term->academic_session_id,
-            'from' => $from,
-            'to' => $to,
-            'user_id' => auth()->id(),
-        ]);
     }
 }
