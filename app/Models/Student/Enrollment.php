@@ -6,8 +6,10 @@ use App\Models\Academic\AcademicSession;
 use App\Models\Model;
 use App\Models\School;
 use App\Models\Scopes\SchoolScope;
+use App\Contracts\Academic\TracksAcademicUsage as TracksAcademicUsageContract;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
+use App\Traits\TracksAcademicUsage;
 use Database\Factories\Student\EnrollmentFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -24,13 +26,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * Status vocabulary:
  *   draft | in_progress | active | withdrawn | transferred_out | completed
  */
-class Enrollment extends Model
+class Enrollment extends Model implements TracksAcademicUsageContract
 {
     use HasFactory,
         HasUuids,
         SoftDeletes,
         BelongsToSchool,
-        HasTableQuery;
+        HasTableQuery,
+        TracksAcademicUsage;
 
     public const STATUS_DRAFT = 'draft';
     public const STATUS_IN_PROGRESS = 'in_progress';

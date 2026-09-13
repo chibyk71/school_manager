@@ -11,6 +11,7 @@ use App\Events\Academic\SessionReopened;
 use App\Events\Academic\SessionResumed;
 use App\Models\School;
 use App\Models\Academic\AcademicSession;
+use App\Services\Academic\AcademicPeriodLock;
 use App\States\Academic\AcademicSession\Active;
 use App\States\Academic\AcademicSession\Closed;
 use App\States\Academic\AcademicSession\Draft;
@@ -440,6 +441,111 @@ class AcademicSessionLifecycleService
         }
     }
 
+
+    /**
+     * Soft-delete a session when domain rules allow it.
+     * Hierarchy (terms) and registry dependencies are enforced under the school lock.
+     */
+    public function delete(AcademicSession $session): void
+    {
+        $this->assertSchoolOwnership($session);
+
+        DB::transaction(function () use ($session) {
+            $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::query()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+            $this->assertSchoolOwnership($session);
+
+            if ($session->state instanceof Active || $session->state instanceof Paused) {
+                throw ValidationException::withMessages([
+                    'state' => 'Cannot delete a current operational session (ACTIVE or PAUSED).',
+                ]);
+            }
+
+            if ($session->state instanceof Closed && $this->operationalData->hasOperationalData($session)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Cannot delete a closed session that has operational usage.',
+                ]);
+            }
+
+            if ($session->terms()->exists()) {
+                throw ValidationException::withMessages([
+                    'session' => 'Cannot delete a session that still owns terms. Delete or reassign terms first.',
+                ]);
+            }
+
+            if ($this->operationalData->hasOperationalData($session)) {
+                throw ValidationException::withMessages([
+                    'session' => 'Cannot delete a session that has operational usage.',
+                ]);
+            }
+
+            $session->delete();
+            $this->invalidateCaches($session->school_id);
+            $this->logLifecycle($session, 'deleted', (string) $session->state, 'deleted');
+        });
+    }
+
+    /**
+     * Permanently delete a soft-deleted (or eligible live) session.
+     */
+    public function forceDelete(AcademicSession $session): void
+    {
+        $this->assertSchoolOwnership($session);
+
+        DB::transaction(function () use ($session) {
+            $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::withTrashed()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+            $this->assertSchoolOwnership($session);
+
+            if ($session->state instanceof Active || $session->state instanceof Paused) {
+                throw ValidationException::withMessages([
+                    'state' => 'Cannot permanently delete a current operational session (ACTIVE or PAUSED).',
+                ]);
+            }
+
+            if ($session->state instanceof Closed && $this->operationalData->hasOperationalData($session)) {
+                throw ValidationException::withMessages([
+                    'state' => 'Cannot permanently delete a closed session that has operational usage.',
+                ]);
+            }
+
+            if ($session->terms()->withTrashed()->exists()) {
+                throw ValidationException::withMessages([
+                    'session' => 'Cannot permanently delete a session with associated terms.',
+                ]);
+            }
+
+            if ($this->operationalData->hasOperationalData($session)) {
+                throw ValidationException::withMessages([
+                    'session' => 'Cannot permanently delete a session that has operational usage.',
+                ]);
+            }
+
+            $session->forceDelete();
+            $this->invalidateCaches($session->school_id);
+        });
+    }
+
+    public function restoreSession(AcademicSession $session): AcademicSession
+    {
+        $this->assertSchoolOwnership($session);
+
+        return DB::transaction(function () use ($session) {
+            $this->lockSchoolSessions($session->school_id);
+            $session = AcademicSession::withTrashed()->whereKey($session->id)->lockForUpdate()->firstOrFail();
+            $this->assertSchoolOwnership($session);
+
+            if (! $session->trashed()) {
+                return $session;
+            }
+
+            $session->restore();
+            $this->invalidateCaches($session->school_id);
+
+            return $session->fresh();
+        });
+    }
+
     /**
      * School-level serialization for concurrency-sensitive lifecycle ops.
      *
@@ -449,10 +555,8 @@ class AcademicSessionLifecycleService
      */
     protected function lockSchoolSessions(string $schoolId): void
     {
-        School::query()
-            ->whereKey($schoolId)
-            ->lockForUpdate()
-            ->first(['id']);
+        // Shared school-level lock also used by AcademicPeriodUsageRegistry registration.
+        AcademicPeriodLock::lockSchool($schoolId);
 
         AcademicSession::query()
             ->where('school_id', $schoolId)

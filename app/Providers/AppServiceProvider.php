@@ -11,12 +11,16 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(
             \App\Contracts\Academic\AcademicSessionOperationalDataBoundary::class,
-            \App\Services\Academic\NullAcademicSessionOperationalData::class
+            \App\Services\Academic\RegistryAcademicSessionOperationalData::class
         );
 
         $this->app->bind(
             \App\Contracts\Academic\TermOperationalDataBoundary::class,
-            \App\Services\Academic\NullTermOperationalData::class
+            \App\Services\Academic\RegistryTermOperationalData::class
+        );
+
+        $this->app->singleton(
+            \App\Services\Academic\AcademicPeriodUsageRegistry::class
         );
     }
 

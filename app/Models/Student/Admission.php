@@ -7,8 +7,10 @@ use App\Models\Academic\ClassLevel;
 use App\Models\Model;
 use App\Models\School;
 use App\Models\SchoolSection;
+use App\Contracts\Academic\TracksAcademicUsage as TracksAcademicUsageContract;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasCustomFields;
+use App\Traits\TracksAcademicUsage;
 use App\Traits\HasTableQuery;
 use Database\Factories\Student\AdmissionFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -32,7 +34,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *   - Explicit status transitions: OFFERED → ACCEPTED | DECLINED | EXPIRED | CANCELLED
  *   - PENDING retained only for legacy rows; new offers start as OFFERED
  */
-class Admission extends Model
+class Admission extends Model implements TracksAcademicUsageContract
 {
     use BelongsToSchool,
         HasFactory,
@@ -40,7 +42,8 @@ class Admission extends Model
         LogsActivity,
         SoftDeletes,
         HasCustomFields,
-        HasUuids;
+        HasUuids,
+        TracksAcademicUsage;
 
     public const STATUS_OFFERED = 'offered';
     public const STATUS_ACCEPTED = 'accepted';

@@ -10,6 +10,7 @@ use App\Events\Academic\TermDeleted;
 use App\Events\Academic\TermRestored;
 use App\Events\Academic\TermUpdated;
 use App\Models\Academic\AcademicSession;
+use App\Services\Academic\AcademicPeriodLock;
 use App\Models\Academic\Term;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use App\States\Academic\Term\Active as TermActive;
@@ -112,9 +113,8 @@ class TermLifecycleService
             $hasOps = $this->operationalData->hasOperationalData($term);
 
             if (array_key_exists('start_date', $attributes)) {
-                $newStart = $attributes['start_date']; // may be null
+                $newStart = $attributes['start_date'];
                 $currentStart = $term->start_date?->format('Y-m-d');
-                // null is a mutation; once operational data exists, start_date is fully immutable
                 if ($hasOps && $newStart !== $currentStart) {
                     throw ValidationException::withMessages([
                         'start_date' => 'Start date cannot be changed after operational data exists for this term.',
@@ -328,8 +328,6 @@ class TermLifecycleService
             $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
             $this->assertSessionBelongsToCurrentSchool($session);
 
-            // Lifecycle invariant: only PLANNED terms may be deleted.
-            // ACTIVE is the current operational period; CLOSED is historical state.
             if ($term->state instanceof TermActive) {
                 throw ValidationException::withMessages([
                     'state' => 'Cannot delete an ACTIVE term. Close it first, or leave it as historical state after closure.',
@@ -352,9 +350,6 @@ class TermLifecycleService
                 ]);
             }
 
-            $this->assertNoDependentRecords($term);
-
-            // Park ordinal in tombstone range so UNIQUE(session, ordinal) allows live renumber.
             $maxTomb = (int) Term::withTrashed()
                 ->where('academic_session_id', $session->id)
                 ->where('ordinal_number', '>=', self::ORDINAL_TOMBSTONE_BASE)
@@ -468,27 +463,6 @@ class TermLifecycleService
         }
     }
 
-    protected function assertNoDependentRecords(Term $term): void
-    {
-        if (DB::getSchemaBuilder()->hasTable('timetables')) {
-            $count = DB::table('timetables')->where('term_id', $term->id)->count();
-            if ($count > 0) {
-                throw ValidationException::withMessages([
-                    'term' => 'Cannot delete term: dependent timetable records exist.',
-                ]);
-            }
-        }
-
-        if (DB::getSchemaBuilder()->hasTable('exams')) {
-            $count = DB::table('exams')->where('term_id', $term->id)->count();
-            if ($count > 0) {
-                throw ValidationException::withMessages([
-                    'term' => 'Cannot delete term: dependent exam records exist.',
-                ]);
-            }
-        }
-    }
-
     protected function assertSessionBelongsToCurrentSchool(AcademicSession $session): void
     {
         $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
@@ -499,9 +473,24 @@ class TermLifecycleService
         }
     }
 
+    /**
+     * Global lock order (must match Session lifecycle + registry registration):
+     *   SCHOOL → SESSION → TERM
+     *
+     * Never lock the session row before the school row — that can deadlock against
+     * AcademicSessionLifecycleService / AcademicPeriodUsageRegistry which take SCHOOL first.
+     */
     protected function lockSessionTerms(string $sessionId): void
     {
+        // Resolve school without locking session yet (avoids SESSION → SCHOOL inversion).
+        $session = AcademicSession::query()->whereKey($sessionId)->first(['id', 'school_id']);
+
+        if ($session !== null) {
+            AcademicPeriodLock::lockSchool((string) $session->school_id);
+        }
+
         AcademicSession::query()->whereKey($sessionId)->lockForUpdate()->first();
+
         Term::query()->where('academic_session_id', $sessionId)->lockForUpdate()->get();
     }
 
