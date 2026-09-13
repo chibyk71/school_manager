@@ -3,38 +3,18 @@
 namespace App\Events\Academic;
 
 use App\Models\Academic\Term;
-use Illuminate\Broadcasting\Channel;
-use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class TermActivated
+/**
+ * Dispatched after a Term is successfully activated (PLANNED → ACTIVE) and committed.
+ */
+class TermActivated implements ShouldDispatchAfterCommit
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, SerializesModels;
 
-
-    public Term $term;
-
-    /**
-     * Create a new event instance.
-     */
-    public function __construct(Term $term)
+    public function __construct(public Term $term)
     {
-        $this->term = $term;
-    }
-
-    /**
-     * Get the channels the event should broadcast on.
-     *
-     * @return array<int, \Illuminate\Broadcasting\Channel>
-     */
-    public function broadcastOn(): array
-    {
-        return [
-            new PrivateChannel('channel-name'),
-        ];
     }
 }

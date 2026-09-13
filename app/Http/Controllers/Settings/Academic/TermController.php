@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Settings\Academic;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\StoreTermRequest;
-use App\Http\Requests\UpdateTermRequest;
+use App\Http\Requests\Academic\StoreTermRequest;
+use App\Http\Requests\Academic\UpdateTermRequest;
 use App\Http\Resources\Academic\TermResource;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
@@ -20,43 +20,18 @@ use Inertia\Inertia;
  * Manages all operations related to academic terms within sessions in a multi-tenant environment.
  * All actions are strictly scoped to the current school via GetSchoolModel().
  *
- * Features / Problems Solved:
- * ────────────────────────────────────────────────────────────────
- * • Full CRUD with policy-based authorization (Gate)
- * • Single active term per session enforcement via AcademicCalendarService
- * • Multi-tenant isolation: every query filters by school_id
- * • Inertia.js rendering for SPA experience with PrimeVue components
- * • Dynamic DataTable support via HasTableQuery trait on model
- * • Bulk soft-delete + individual restore
- * • Quick "set active" action for common admin workflow
- * • Comprehensive error handling + structured logging
- * • Clean separation: business rules delegated to AcademicCalendarService
- * • Responsive, accessible UI-ready (Inertia props are simple & typed)
- *
- * Fits into the Academic Calendar Module:
- * ────────────────────────────────────────────────────────────────
- * • Primary controller for term management UI
- * • Works tightly with AcademicSessionController (terms nested under sessions)
- * • Integrates with AcademicCalendarService (activation, closure, date validation)
- * • Supports PrimeVue DataTable (index), Dialog/Forms (create/update)
- * • Prepares for TermClosureController (close/reopen actions)
- * • Aligns with frontend stack: props match Vue 3 + PrimeVue expectations
- *
- * Routes (suggested):
- *   GET    /terms                              → index (all terms or filtered by session)
- *   POST   /terms                              → store
- *   GET    /terms/{term}                       → show
- *   PATCH  /terms/{term}                       → update
- *   DELETE /terms                              → destroy (bulk)
- *   PATCH  /terms/{term}/active                → setActive
- *   POST   /terms/{term}/restore               → restore
+ * Features:
+ * - Full CRUD with policy-based authorization (Gate)
+ * - Domain mutations exclusively via TermLifecycleService
+ * - Multi-tenant isolation: every query filters by school_id
+ * - Inertia.js rendering for SPA experience with PrimeVue components
+ * - Bulk soft-delete + individual restore
+ * - Quick set-active action
  */
 class TermController extends Controller
 {
     public function __construct(protected AcademicCalendarService $service)
     {
-        // Optional: Apply middleware for bulk actions or specific permissions
-        // $this->middleware('permission:terms.manage')->except(['index', 'show']);
     }
 
     /**
@@ -67,10 +42,8 @@ class TermController extends Controller
         Gate::authorize('viewAny', Term::class);
 
         try {
-            // Default to current session if none provided
             $academicSession ??= $this->service->currentSession();
 
-            // Extra fields for DataTable column generation
             $extra = [
                 [
                     'field' => 'academic_session_name',
@@ -82,28 +55,39 @@ class TermController extends Controller
                 ],
             ];
 
-            // Build query with proper scoping
-            $query = Term::with(['academicSession:id,name'])
-                ->when($academicSession, fn($q) => $q->forSession($academicSession->id))
-                ->when($request->boolean('with_trashed'), fn($q) => $q->withTrashed());
+            $school = GetSchoolModel();
+            if (! $school) {
+                abort(403, 'No active school context.');
+            }
 
-            // Get the full DataTable-ready result from trait
+            // Tenant boundary: session must belong to current school when supplied
+            if ($academicSession && (string) $academicSession->school_id !== (string) $school->id) {
+                abort(404);
+            }
+
+            // Terms always scoped through session → school
+            $query = Term::with(['academicSession:id,name,school_id'])
+                ->whereHas('academicSession', fn ($q) => $q->where('school_id', $school->id))
+                ->when($academicSession, fn ($q) => $q->forSession($academicSession->id))
+                ->when($request->boolean('with_trashed'), fn ($q) => $q->withTrashed());
+
             $result = $query->tableQuery($request, $extra);
-
-            // Transform only the data rows using the resource
-            // (keeps computed fields, formatting, etc. in one place)
             $terms = TermResource::collection($result['data']);
 
             return Inertia::render('Academic/Terms/Index', [
                 'academicSession' => $academicSession ? $academicSession->only('id', 'name') : null,
-                'terms' => $terms,                    // Resource collection (array of formatted objects)
+                'terms' => $terms,
                 'totalRecords' => $result['totalRecords'],
                 'currentPage' => $result['currentPage'],
                 'lastPage' => $result['lastPage'],
                 'perPage' => $result['perPage'],
-                'columns' => $result['columns'],        // ← Auto-generated PrimeVue columns!
+                'columns' => $result['columns'],
                 'globalFilterables' => $result['globalFilterables'],
-                'academicSessions' => AcademicSession::select('id', 'name')->get(),
+                'academicSessions' => AcademicSession::query()
+                    ->where('school_id', $school->id)
+                    ->select('id', 'name')
+                    ->orderBy('name')
+                    ->get(),
                 'filters' => $request->only(['search', 'sort', 'order', 'perPage', 'with_trashed']),
             ]);
         } catch (\Exception $e) {
@@ -129,22 +113,24 @@ class TermController extends Controller
         try {
             $validated = $request->validated();
 
-            // Auto-set ordinal_number if not provided
-            if (!isset($validated['ordinal_number'])) {
-                $validated['ordinal_number'] = Term::where('academic_session_id', $validated['academic_session_id'])
-                    ->max('ordinal_number') + 1 ?? 1;
-            }
+            $session = AcademicSession::query()->findOrFail($validated['academic_session_id']);
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
 
-            $term = Term::create($validated);
-
-            // Optional: Auto-activate if status is 'active' (service will enforce single active)
-            if ($validated['status'] === 'active') {
-                $this->service->activateTerm($term);
-            }
+            $term = $lifecycle->create($session, [
+                'name' => $validated['name'],
+                'short_name' => $validated['short_name'] ?? null,
+                'description' => $validated['description'] ?? null,
+                'start_date' => $validated['start_date'] ?? null,
+                'end_date' => $validated['end_date'] ?? null,
+                'color' => $validated['color'] ?? null,
+                'options' => $validated['options'] ?? null,
+            ]);
 
             return redirect()
                 ->route('terms.index', ['academicSession' => $term->academic_session_id])
                 ->with('success', "Term '{$term->name}' created successfully.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to create term', [
                 'error' => $e->getMessage(),
@@ -167,6 +153,11 @@ class TermController extends Controller
 
         $term->load(['academicSession:id,name']);
 
+        $state = $term->state;
+        $stateValue = is_object($state) && method_exists($state, 'getValue')
+            ? $state->getValue()
+            : (string) $state;
+
         return Inertia::render('Academic/Terms/Show', [
             'term' => [
                 'id' => $term->id,
@@ -175,9 +166,9 @@ class TermController extends Controller
                 'description' => $term->description,
                 'start_date' => $term->start_date?->format('Y-m-d'),
                 'end_date' => $term->end_date?->format('Y-m-d'),
-                'status' => $term->status,
-                'is_active' => $term->is_active,
-                'is_closed' => $term->is_closed,
+                'state' => $stateValue,
+                'state_label' => $term->state_label,
+                'ordinal_number' => $term->ordinal_number,
                 'color' => $term->color,
                 'academic_session' => $term->academicSession,
             ],
@@ -193,18 +184,22 @@ class TermController extends Controller
 
         try {
             $validated = $request->validated();
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
 
-            // Handle status change to active (service enforces single active)
-            if (isset($validated['status']) && $validated['status'] === 'active') {
-                $this->service->activateTerm($term);
-                unset($validated['status']); // Avoid double update
+            $attrs = [];
+            foreach (['name', 'short_name', 'description', 'start_date', 'end_date', 'color', 'options'] as $key) {
+                if (array_key_exists($key, $validated)) {
+                    $attrs[$key] = $validated[$key];
+                }
             }
 
-            $term->update($validated);
+            $term = $lifecycle->update($term, $attrs);
 
             return redirect()
                 ->route('terms.show', $term)
                 ->with('success', "Term '{$term->name}' updated successfully.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to update term', [
                 'error' => $e->getMessage(),
@@ -223,12 +218,15 @@ class TermController extends Controller
      */
     public function setActive(Term $term)
     {
-        Gate::authorize('update', $term);
+        Gate::authorize('activate', $term);
 
         try {
-            $this->service->activateTerm($term);
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
+            $lifecycle->activate($term);
 
             return back()->with('success', "Active term switched to '{$term->name}'.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to set active term', [
                 'error' => $e->getMessage(),
@@ -253,15 +251,27 @@ class TermController extends Controller
 
         try {
             $schoolId = GetSchoolModel()->id;
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
 
-            $deleted = Term::whereIn('id', $validated['ids'])
-                ->where('school_id', $schoolId)
-                ->where('is_active', false) // Safety: never delete active term
-                ->where('is_closed', false) // Optional: prevent deleting closed terms
-                ->delete();
+            $terms = Term::whereIn('id', $validated['ids'])
+                ->whereHas('academicSession', fn ($q) => $q->where('school_id', $schoolId))
+                ->get();
+
+            $deleted = 0;
+            foreach ($terms as $term) {
+                try {
+                    Gate::authorize('delete', $term);
+                    $lifecycle->delete($term);
+                    $deleted++;
+                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                    // skip unauthorized terms
+                } catch (\Illuminate\Validation\ValidationException $e) {
+                    // skip blocked terms
+                }
+            }
 
             if ($deleted === 0) {
-                return back()->with('error', 'No eligible terms were deleted (active/closed terms cannot be deleted).');
+                return back()->with('error', 'No eligible terms were deleted (operational or protected terms cannot be deleted).');
             }
 
             return back()->with('success', "{$deleted} term(s) deleted successfully.");
@@ -285,14 +295,12 @@ class TermController extends Controller
         Gate::authorize('restore', $term);
 
         try {
-            // Optional safety: prevent restore if session is closed/archived
-            if ($term->academicSession->status === 'closed' || $term->academicSession->status === 'archived') {
-                return back()->with('error', 'Cannot restore term: parent session is closed or archived.');
-            }
-
-            $term->restore();
+            $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
+            $term = $lifecycle->restore($term);
 
             return back()->with('success', "Term '{$term->name}' restored successfully.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Failed to restore term', [
                 'error' => $e->getMessage(),

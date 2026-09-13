@@ -169,7 +169,6 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
         Route::patch('/{term}/active', [TermController::class, 'setActive'])->name('set-active');
         Route::post('/{id}/restore', [TermController::class, 'restore'])->name('restore');
         Route::patch('/{term}/close', [TermClosureController::class, 'close'])->name('close');
-        Route::patch('/{term}/reopen', [TermClosureController::class, 'reopen'])->name('reopen');
     });
 
     Route::get('attendance', [AttendanceRulesController::class, 'index'])->name('attendance');

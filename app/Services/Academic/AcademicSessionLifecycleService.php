@@ -214,6 +214,19 @@ class AcademicSessionLifecycleService
                 ]);
             }
 
+            // Phase 3 hierarchy invariant: CLOSED Session ⇒ no ACTIVE Term
+            $hasActiveTerm = \App\Models\Academic\Term::query()
+                ->where('academic_session_id', $session->id)
+                ->where('state', \App\States\Academic\Term\Active::$name)
+                ->lockForUpdate()
+                ->exists();
+
+            if ($hasActiveTerm) {
+                throw ValidationException::withMessages([
+                    'state' => 'Cannot close session while it contains an ACTIVE term. Close all active terms first.',
+                ]);
+            }
+
             $previous = $session->state instanceof Active ? Active::$name : Paused::$name;
             $session->state->transitionTo(Closed::class);
             $session->forceFill(['closed_at' => now()])->save();
