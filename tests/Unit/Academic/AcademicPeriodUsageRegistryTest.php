@@ -230,7 +230,6 @@ it('rejects cross-school session registration', function () {
         'status' => 'draft',
     ]);
 
-    // Bypass model create event path: call registry directly
     expect(fn () => app(AcademicPeriodUsageRegistry::class)->register($app))
         ->toThrow(ValidationException::class);
 });
@@ -241,7 +240,6 @@ it('session dependency query includes term-level rows', function () {
     $term = makeTerm($session);
     $registry = app(AcademicPeriodUsageRegistry::class);
 
-    // Synthetic term-level resource via anonymous model implementing contract
     $resource = new class extends Model implements TracksAcademicUsageContract
     {
         use SoftDeletes;
@@ -274,7 +272,6 @@ it('session dependency query includes term-level rows', function () {
         'academic_session_id' => $session->id,
         'status' => 'draft',
     ]);
-    // Persist without triggering wrong term column on applications table
     DB::table('student_applications')->insert([
         'id' => $resource->id,
         'school_id' => $school->id,
@@ -331,7 +328,6 @@ it('term delete is blocked when registry has term usage', function () {
 
     expect($registry->hasTermDependencies($term))->toBeTrue();
 
-    // TermLifecycleService::delete requires school context helper; assert boundary only here
     $boundary = app(TermOperationalDataBoundary::class);
     expect($boundary->hasOperationalData($term))->toBeTrue();
 });
@@ -423,4 +419,37 @@ it('cross-school isolation: school B session does not see school A usage', funct
     $registry = app(AcademicPeriodUsageRegistry::class);
     expect($registry->hasSessionDependencies($sessionA))->toBeTrue();
     expect($registry->hasSessionDependencies($sessionB))->toBeFalse();
+});
+
+it('TermLifecycleService lockSessionTerms acquires school before session (source protocol)', function () {
+    $path = base_path('app/Services/Academic/TermLifecycleService.php');
+    $src = file_get_contents($path);
+    $methodStart = strpos($src, 'function lockSessionTerms');
+    expect($methodStart)->not->toBeFalse();
+    $method = substr($src, $methodStart, 900);
+
+    $schoolLock = strpos($method, 'AcademicPeriodLock::lockSchool');
+    $sessionLock = strpos($method, 'lockForUpdate');
+    expect($schoolLock)->not->toBeFalse();
+    expect($sessionLock)->not->toBeFalse();
+    expect($schoolLock < $sessionLock)->toBeTrue();
+
+    $firstSessionQuery = strpos($method, 'AcademicSession::query()');
+    expect($firstSessionQuery)->not->toBeFalse();
+    $between = substr($method, $firstSessionQuery, $schoolLock - $firstSessionQuery);
+    expect($between)->not->toContain('lockForUpdate');
+});
+
+it('AcademicSessionLifecycleService lockSchoolSessions acquires school before sessions (source protocol)', function () {
+    $path = base_path('app/Services/Academic/AcademicSessionLifecycleService.php');
+    $src = file_get_contents($path);
+    $methodStart = strpos($src, 'function lockSchoolSessions');
+    expect($methodStart)->not->toBeFalse();
+    $method = substr($src, $methodStart, 600);
+
+    $schoolLock = strpos($method, 'AcademicPeriodLock::lockSchool');
+    $sessionLock = strpos($method, 'AcademicSession::query()');
+    expect($schoolLock)->not->toBeFalse();
+    expect($sessionLock)->not->toBeFalse();
+    expect($schoolLock < $sessionLock)->toBeTrue();
 });
