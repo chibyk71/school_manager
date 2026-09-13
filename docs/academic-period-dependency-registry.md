@@ -72,7 +72,28 @@ php artisan academic:backfill-period-usages --dry-run
 php artisan academic:backfill-period-usages --school=<uuid>
 ```
 
-Idempotent. Fails loudly on cross-school or invalid session relationships.
+Idempotent. Fails loudly on cross-school or invalid session relationships. Write mode runs in one DB transaction and exits non-zero on contradiction.
+
+## Concurrency protocol (lock order)
+
+Global lock hierarchy — **must not be inverted**:
+
+```
+SCHOOL
+  ↓
+SESSION
+  ↓
+TERM
+```
+
+| Path | Order |
+|------|--------|
+| `AcademicSessionLifecycleService` | `AcademicPeriodLock::lockSchool` → lock session rows |
+| `TermLifecycleService::lockSessionTerms` | resolve school (no row lock) → `lockSchool` → lock session → lock terms |
+| `AcademicPeriodUsageRegistry` register/unregister | `lockSchool` then registry write |
+| Tracked resource create (in txn) | trait `creating` → `lockSchool` when already in transaction |
+
+Never lock SESSION before SCHOOL. Term mutations resolve the session's `school_id` **without** `lockForUpdate` first, acquire the school lock, then lock session and term rows.
 
 ## Future modules
 
