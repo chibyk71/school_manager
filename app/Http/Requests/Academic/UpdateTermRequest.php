@@ -49,7 +49,7 @@ class UpdateTermRequest extends FormRequest
             'short_name' => ['sometimes', 'nullable', 'string', 'max:10'],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'start_date' => ['sometimes', 'nullable', 'date', 'date_format:Y-m-d'],
-            'end_date' => ['sometimes', 'nullable', 'date', 'date_format:Y-m-d', 'after:start_date'],
+            'end_date' => ['sometimes', 'nullable', 'date', 'date_format:Y-m-d'],
             'color' => ['sometimes', 'nullable', 'string', 'max:9', 'regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/'],
             'options' => ['sometimes', 'nullable', 'array'],
             'academic_session_id' => ['prohibited'],
@@ -65,7 +65,6 @@ class UpdateTermRequest extends FormRequest
         return [
             'name.required' => 'Term name is required.',
             'name.unique' => 'A term with this name already exists in this session.',
-            'end_date.after' => 'End date must be after start date.',
             'ordinal_number.prohibited' => 'Sequence is managed by the system.',
             'state.prohibited' => 'Lifecycle state cannot be set by the client.',
             'status.prohibited' => 'Lifecycle state cannot be set by the client.',
