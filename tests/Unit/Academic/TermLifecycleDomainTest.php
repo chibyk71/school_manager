@@ -344,13 +344,19 @@ it('delete then create then restore yields contiguous live sequence without uniq
 });
 
 it('restore never reopens a CLOSED term', function () {
+    // CLOSED terms cannot be deleted via the lifecycle service; soft-delete directly
+    // to exercise restore while preserving CLOSED state.
     $closed = $this->terms->create($this->session, [
         'name' => 'ClosedViaService',
         'start_date' => '2026-09-01',
         'end_date' => '2026-12-15',
     ]);
-    $closed->forceFill(['state' => TermClosedState::$name, 'closed_at' => now()])->save();
-    $this->terms->delete($closed->fresh());
+    $closed->forceFill([
+        'state' => TermClosedState::$name,
+        'closed_at' => now(),
+        'ordinal_number' => 1_000_000,
+    ])->save();
+    $closed->delete();
 
     $restored = $this->terms->restore(Term::withTrashed()->findOrFail($closed->id));
     expect($restored->state)->toBeInstanceOf(TermClosedState::class)
@@ -399,4 +405,36 @@ it('rejects partial end_date that falls outside session bounds', function () {
 
     expect(fn () => $this->terms->update($term, ['end_date' => '2028-01-01']))
         ->toThrow(ValidationException::class);
+});
+
+it('rejects deleting an ACTIVE term', function () {
+    $term = $this->terms->create($this->session, [
+        'name' => 'ActiveDelete',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+    $this->terms->activate($term);
+    expect(fn () => $this->terms->delete($term->fresh()))->toThrow(ValidationException::class);
+    expect($term->fresh()->trashed())->toBeFalse()
+        ->and($term->fresh()->state)->toBeInstanceOf(TermActive::class);
+});
+
+it('rejects deleting a CLOSED term', function () {
+    $term = $this->terms->create($this->session, [
+        'name' => 'ClosedDelete',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+    $this->terms->activate($term);
+    $this->terms->close($term->fresh());
+    expect(fn () => $this->terms->delete($term->fresh()))->toThrow(ValidationException::class);
+    expect($term->fresh()->trashed())->toBeFalse()
+        ->and($term->fresh()->state)->toBeInstanceOf(TermClosedState::class);
+});
+
+it('allows deleting a PLANNED term when otherwise eligible', function () {
+    $term = $this->terms->create($this->session, ['name' => 'PlannedDelete']);
+    $this->terms->delete($term);
+    expect(Term::withTrashed()->find($term->id)->trashed())->toBeTrue()
+        ->and(Term::where('academic_session_id', $this->session->id)->count())->toBe(0);
 });
