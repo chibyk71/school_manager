@@ -20,43 +20,18 @@ use Inertia\Inertia;
  * Manages all operations related to academic terms within sessions in a multi-tenant environment.
  * All actions are strictly scoped to the current school via GetSchoolModel().
  *
- * Features / Problems Solved:
- * ────────────────────────────────────────────────────────────────
- * • Full CRUD with policy-based authorization (Gate)
- * • Single active term per session enforcement via AcademicCalendarService
- * • Multi-tenant isolation: every query filters by school_id
- * • Inertia.js rendering for SPA experience with PrimeVue components
- * • Dynamic DataTable support via HasTableQuery trait on model
- * • Bulk soft-delete + individual restore
- * • Quick "set active" action for common admin workflow
- * • Comprehensive error handling + structured logging
- * • Clean separation: business rules delegated to AcademicCalendarService
- * • Responsive, accessible UI-ready (Inertia props are simple & typed)
- *
- * Fits into the Academic Calendar Module:
- * ────────────────────────────────────────────────────────────────
- * • Primary controller for term management UI
- * • Works tightly with AcademicSessionController (terms nested under sessions)
- * • Integrates with AcademicCalendarService (activation, closure, date validation)
- * • Supports PrimeVue DataTable (index), Dialog/Forms (create/update)
- * • Prepares for TermClosureController (close/reopen actions)
- * • Aligns with frontend stack: props match Vue 3 + PrimeVue expectations
- *
- * Routes (suggested):
- *   GET    /terms                              → index (all terms or filtered by session)
- *   POST   /terms                              → store
- *   GET    /terms/{term}                       → show
- *   PATCH  /terms/{term}                       → update
- *   DELETE /terms                              → destroy (bulk)
- *   PATCH  /terms/{term}/active                → setActive
- *   POST   /terms/{term}/restore               → restore
+ * Features:
+ * - Full CRUD with policy-based authorization (Gate)
+ * - Domain mutations exclusively via TermLifecycleService
+ * - Multi-tenant isolation: every query filters by school_id
+ * - Inertia.js rendering for SPA experience with PrimeVue components
+ * - Bulk soft-delete + individual restore
+ * - Quick set-active action
  */
 class TermController extends Controller
 {
     public function __construct(protected AcademicCalendarService $service)
     {
-        // Optional: Apply middleware for bulk actions or specific permissions
-        // $this->middleware('permission:terms.manage')->except(['index', 'show']);
     }
 
     /**
@@ -67,10 +42,8 @@ class TermController extends Controller
         Gate::authorize('viewAny', Term::class);
 
         try {
-            // Default to current session if none provided
             $academicSession ??= $this->service->currentSession();
 
-            // Extra fields for DataTable column generation
             $extra = [
                 [
                     'field' => 'academic_session_name',
@@ -82,28 +55,39 @@ class TermController extends Controller
                 ],
             ];
 
-            // Build query with proper scoping
-            $query = Term::with(['academicSession:id,name'])
-                ->when($academicSession, fn($q) => $q->forSession($academicSession->id))
-                ->when($request->boolean('with_trashed'), fn($q) => $q->withTrashed());
+            $school = GetSchoolModel();
+            if (! $school) {
+                abort(403, 'No active school context.');
+            }
 
-            // Get the full DataTable-ready result from trait
+            // Tenant boundary: session must belong to current school when supplied
+            if ($academicSession && (string) $academicSession->school_id !== (string) $school->id) {
+                abort(404);
+            }
+
+            // Terms always scoped through session → school
+            $query = Term::with(['academicSession:id,name,school_id'])
+                ->whereHas('academicSession', fn ($q) => $q->where('school_id', $school->id))
+                ->when($academicSession, fn ($q) => $q->forSession($academicSession->id))
+                ->when($request->boolean('with_trashed'), fn ($q) => $q->withTrashed());
+
             $result = $query->tableQuery($request, $extra);
-
-            // Transform only the data rows using the resource
-            // (keeps computed fields, formatting, etc. in one place)
             $terms = TermResource::collection($result['data']);
 
             return Inertia::render('Academic/Terms/Index', [
                 'academicSession' => $academicSession ? $academicSession->only('id', 'name') : null,
-                'terms' => $terms,                    // Resource collection (array of formatted objects)
+                'terms' => $terms,
                 'totalRecords' => $result['totalRecords'],
                 'currentPage' => $result['currentPage'],
                 'lastPage' => $result['lastPage'],
                 'perPage' => $result['perPage'],
-                'columns' => $result['columns'],        // ← Auto-generated PrimeVue columns!
+                'columns' => $result['columns'],
                 'globalFilterables' => $result['globalFilterables'],
-                'academicSessions' => AcademicSession::select('id', 'name')->get(),
+                'academicSessions' => AcademicSession::query()
+                    ->where('school_id', $school->id)
+                    ->select('id', 'name')
+                    ->orderBy('name')
+                    ->get(),
                 'filters' => $request->only(['search', 'sort', 'order', 'perPage', 'with_trashed']),
             ]);
         } catch (\Exception $e) {
@@ -132,8 +116,6 @@ class TermController extends Controller
             $session = AcademicSession::query()->findOrFail($validated['academic_session_id']);
             $lifecycle = app(\App\Services\Academic\TermLifecycleService::class);
 
-            // Service owns sequence assignment and PLANNED initial state.
-            // Callers must not supply ordinal_number or state.
             $term = $lifecycle->create($session, [
                 'name' => $validated['name'],
                 'short_name' => $validated['short_name'] ?? null,
@@ -278,8 +260,11 @@ class TermController extends Controller
             $deleted = 0;
             foreach ($terms as $term) {
                 try {
+                    Gate::authorize('delete', $term);
                     $lifecycle->delete($term);
                     $deleted++;
+                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                    // skip unauthorized terms
                 } catch (\Illuminate\Validation\ValidationException $e) {
                     // skip blocked terms
                 }
