@@ -146,7 +146,7 @@ it('appends subsequent terms with contiguous sequence', function () {
     expect($t2->ordinal_number)->toBe(2)->and($t3->ordinal_number)->toBe(3);
 });
 
-it('activates PLANNED \u2192 ACTIVE when session is ACTIVE and dates valid', function () {
+it('activates PLANNED to ACTIVE when session is ACTIVE and dates valid', function () {
     Event::fake([TermActivated::class]);
     $term = makeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $activated = $this->terms->activate($term);
@@ -193,7 +193,7 @@ it('rejects second ACTIVE term in the same session', function () {
     expect(fn () => $this->terms->activate($t2))->toThrow(ValidationException::class);
 });
 
-it('closes ACTIVE \u2192 CLOSED without activating another term', function () {
+it('closes ACTIVE to CLOSED without activating another term', function () {
     Event::fake([TermClosed::class]);
     $t1 = makeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $this->terms->activate($t1);
@@ -234,7 +234,7 @@ it('normalizes sequence after deleting a middle term', function () {
         ->and(Term::where('academic_session_id', $this->session->id)->count())->toBe(2);
 });
 
-it('does not allow CLOSED \u2192 ACTIVE via reopen path', function () {
+it('does not allow CLOSED to ACTIVE via reopen path', function () {
     $term = makeTerm([
         'name' => 'Closed',
         'start_date' => '2026-09-01',
@@ -355,4 +355,48 @@ it('restore never reopens a CLOSED term', function () {
     $restored = $this->terms->restore(Term::withTrashed()->findOrFail($closed->id));
     expect($restored->state)->toBeInstanceOf(TermClosedState::class)
         ->and($restored->closed_at)->not->toBeNull();
+});
+
+it('rejects clearing start_date when operational data exists', function () {
+    $term = $this->terms->create($this->session, [
+        'name' => 'OpsStart',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+
+    $this->app->bind(TermOperationalDataBoundary::class, new class implements TermOperationalDataBoundary {
+        public function hasOperationalData(Term $term): bool
+        {
+            return true;
+        }
+    });
+    $this->terms = app(TermLifecycleService::class);
+
+    expect(fn () => $this->terms->update($term->fresh(), ['start_date' => null]))
+        ->toThrow(ValidationException::class);
+
+    expect($term->fresh()->start_date->format('Y-m-d'))->toBe('2026-09-01');
+});
+
+it('allows partial end_date update without client-supplied start_date', function () {
+    $term = $this->terms->create($this->session, [
+        'name' => 'PartialEnd',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+
+    $updated = $this->terms->update($term, ['end_date' => '2026-12-20']);
+    expect($updated->start_date->format('Y-m-d'))->toBe('2026-09-01')
+        ->and($updated->end_date->format('Y-m-d'))->toBe('2026-12-20');
+});
+
+it('rejects partial end_date that falls outside session bounds', function () {
+    $term = $this->terms->create($this->session, [
+        'name' => 'PartialEndOutside',
+        'start_date' => '2026-09-01',
+        'end_date' => '2026-12-15',
+    ]);
+
+    expect(fn () => $this->terms->update($term, ['end_date' => '2028-01-01']))
+        ->toThrow(ValidationException::class);
 });
