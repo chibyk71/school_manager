@@ -113,9 +113,8 @@ class TermLifecycleService
             $hasOps = $this->operationalData->hasOperationalData($term);
 
             if (array_key_exists('start_date', $attributes)) {
-                $newStart = $attributes['start_date']; // may be null
+                $newStart = $attributes['start_date'];
                 $currentStart = $term->start_date?->format('Y-m-d');
-                // null is a mutation; once operational data exists, start_date is fully immutable
                 if ($hasOps && $newStart !== $currentStart) {
                     throw ValidationException::withMessages([
                         'start_date' => 'Start date cannot be changed after operational data exists for this term.',
@@ -329,8 +328,6 @@ class TermLifecycleService
             $session = AcademicSession::query()->whereKey($term->academic_session_id)->lockForUpdate()->firstOrFail();
             $this->assertSessionBelongsToCurrentSchool($session);
 
-            // Lifecycle invariant: only PLANNED terms may be deleted.
-            // ACTIVE is the current operational period; CLOSED is historical state.
             if ($term->state instanceof TermActive) {
                 throw ValidationException::withMessages([
                     'state' => 'Cannot delete an ACTIVE term. Close it first, or leave it as historical state after closure.',
@@ -353,7 +350,6 @@ class TermLifecycleService
                 ]);
             }
 
-            // Park ordinal in tombstone range so UNIQUE(session, ordinal) allows live renumber.
             $maxTomb = (int) Term::withTrashed()
                 ->where('academic_session_id', $session->id)
                 ->where('ordinal_number', '>=', self::ORDINAL_TOMBSTONE_BASE)
@@ -467,7 +463,6 @@ class TermLifecycleService
         }
     }
 
-
     protected function assertSessionBelongsToCurrentSchool(AcademicSession $session): void
     {
         $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
@@ -478,13 +473,24 @@ class TermLifecycleService
         }
     }
 
+    /**
+     * Global lock order (must match Session lifecycle + registry registration):
+     *   SCHOOL → SESSION → TERM
+     *
+     * Never lock the session row before the school row — that can deadlock against
+     * AcademicSessionLifecycleService / AcademicPeriodUsageRegistry which take SCHOOL first.
+     */
     protected function lockSessionTerms(string $sessionId): void
     {
-        $session = AcademicSession::query()->whereKey($sessionId)->lockForUpdate()->first();
+        // Resolve school without locking session yet (avoids SESSION → SCHOOL inversion).
+        $session = AcademicSession::query()->whereKey($sessionId)->first(['id', 'school_id']);
+
         if ($session !== null) {
-            // Same school lock as Session lifecycle and dependency registration.
             AcademicPeriodLock::lockSchool((string) $session->school_id);
         }
+
+        AcademicSession::query()->whereKey($sessionId)->lockForUpdate()->first();
+
         Term::query()->where('academic_session_id', $sessionId)->lockForUpdate()->get();
     }
 
