@@ -62,6 +62,16 @@ class TermPolicy
             return Response::deny('This term does not belong to your school.');
         }
 
+        // Domain lifecycle invariant (authoritative enforcement is TermLifecycleService):
+        // only PLANNED terms may be deleted.
+        $state = $term->state;
+        if (is_object($state)) {
+            $value = method_exists($state, 'getValue') ? $state->getValue() : (string) $state;
+            if (in_array($value, ['active', 'closed'], true)) {
+                return Response::deny('Only planned terms can be deleted.');
+            }
+        }
+
         return $user->hasPermission('term.delete') || $user->hasPermission('terms.delete')
             ? Response::allow()
             : Response::deny('You do not have permission to delete this term.');
