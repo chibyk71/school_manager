@@ -2,111 +2,106 @@
 
 namespace App\Metrics;
 
-use App\Models\Exam\TermResult;
-use App\Models\Resource\Assignment;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
+use App\Models\Academic\Assignment;
+use App\Models\Academic\TermResult;
+use Illuminate\Support\Facades\Cache;
 
-class AcademicPerformanceMetric extends AbstractMetric
+final class AcademicPerformanceMetric extends AbstractMetric
 {
-    protected string $model = Result::class;   // primary model
+    private const CACHE_TTL = 300; // 5 minutes
 
-    /* ------------------------------------------------------------------ */
-    /* PUBLIC API – custom because we join multiple tables                */
-    /* ------------------------------------------------------------------ */
-
-    /** Average grade for the current term */
-    public function averageGrade(): array
+    // Average Score Across All Subjects (Current Term)
+    public function averageScore(): array
     {
-        $avg = TermResult::where('term_id', currentTerm()?->id)->avg('score');
+        $cacheKey = 'academic.avg_score.' . GetSchoolModel()?->id;
+
+        $avg = Cache::remember($cacheKey, self::CACHE_TTL, function () {
+            return TermResult::where('term_id', \App\Facades\Academic::currentTerm()?->id)->avg('score');
+        });
 
         return [
-            'value' => round($avg, 1),
-            'title' => 'Average Grade',
-            'image' => '/assets/img/icons/grade.svg',
+            'value'    => $avg ? number_format($avg, 1) . '%' : '—',
+            'title'    => 'Average Score',
+            'icon'     => 'chart-line',
+            'color'    => $avg >= 70 ? 'text-green-600' : ($avg >= 50 ? 'text-yellow-600' : 'text-red-600'),
+            'bg'       => $avg >= 70 ? 'bg-green-100' : ($avg >= 50 ? 'bg-yellow-100' : 'bg-red-100'),
+            'severity' => $avg < 50 ? 'warning' : 'info',
         ];
     }
 
-    /** Students below 50% (at-risk) */
-    public function atRisk(): array
+    // Number of Students Below 40% (At Risk)
+    public function studentsAtRisk(): array
     {
-        $count = TermResult::where('term_id', currentTerm()?->id)
-            ->where('score', '<', 50)
-            ->distinct('student_id')
-            ->count('student_id');
+        $cacheKey = 'academic.at_risk.' . GetSchoolModel()?->id;
+
+        $count = Cache::remember($cacheKey, self::CACHE_TTL, function () {
+            return TermResult::where('term_id', \App\Facades\Academic::currentTerm()?->id)
+                ->where('score', '<', 40)
+                ->distinct('student_id')
+                ->count('student_id');
+        });
 
         return [
-            'value' => $count,
-            'title' => 'Students Below 50%',
-            'severity' => $count > 0 ? 'bg-red-200/50' : 'bg-green-200/50',
+            'value'    => $count,
+            'title'    => 'Students At Risk',
+            'icon'     => 'exclamation-triangle',
+            'color'    => $count > 0 ? 'text-red-600' : 'text-green-600',
+            'bg'       => $count > 0 ? 'bg-red-100' : 'bg-green-100',
+            'severity' => $count > 10 ? 'critical' : ($count > 0 ? 'warning' : 'info'),
         ];
     }
 
-    /** Assignment / CA submission rate */
-    public function submissionRate(): array
+    // Assignment Completion Rate
+    public function assignmentCompletionRate(): array
     {
-        $assigned = Assignment::where('term_id', currentTerm()?->id)->count();
-        $submitted = Assignment::where('term_id', currentTerm()?->id)
-            ->whereNotNull('submitted_at')
-            ->count();
+        $cacheKey = 'academic.assignment_rate.' . GetSchoolModel()?->id;
 
-        $rate = $assigned > 0 ? round(($submitted / $assigned) * 100, 1) : 0;
+        $rate = Cache::remember($cacheKey, self::CACHE_TTL, function () {
+            $assigned = Assignment::where('term_id', \App\Facades\Academic::currentTerm()?->id)->count();
+            $submitted = Assignment::where('term_id', \App\Facades\Academic::currentTerm()?->id)
+                ->whereHas('submissions')
+                ->count();
+
+            return $assigned > 0 ? round(($submitted / $assigned) * 100, 1) : 0;
+        });
 
         return [
-            'value' => "{$rate}%",
-            'title' => 'CA Submission Rate',
+            'value'    => $rate . '%',
+            'title'    => 'Assignment Completion',
+            'icon'     => 'clipboard-check',
+            'color'    => $rate >= 80 ? 'text-green-600' : ($rate >= 60 ? 'text-yellow-600' : 'text-red-600'),
+            'bg'       => $rate >= 80 ? 'bg-green-100' : ($rate >= 60 ? 'bg-yellow-100' : 'bg-red-100'),
+            'severity' => $rate < 60 ? 'warning' : 'info',
         ];
     }
 
-    /** Subject performance doughnut */
-    public function subjectBreakdown(): array
+    // Top Performing Class (by average)
+    public function topClass(): array
     {
-        $data = TermResult::where('term_id', currentTerm()?->id)
-            ->join('subjects', 'results.subject_id', '=', 'subjects.id')
-            ->select('subjects.name', DB::raw('AVG(results.score) as avg_score'))
-            ->groupBy('subjects.id', 'subjects.name')
-            ->orderByDesc('avg_score')
-            ->get();
+        $cacheKey = 'academic.top_class.' . GetSchoolModel()?->id;
+
+        $data = Cache::remember($cacheKey, self::CACHE_TTL, function () {
+            return TermResult::where('term_id', \App\Facades\Academic::currentTerm()?->id)
+                ->selectRaw('class_section_id, AVG(score) as avg_score')
+                ->groupBy('class_section_id')
+                ->orderByDesc('avg_score')
+                ->with('classSection:id,name')
+                ->first();
+        });
 
         return [
-            'labels' => $data->pluck('name')->toArray(),
-            'data'   => $data->pluck('avg_score')->map(fn($v) => round($v, 1))->toArray(),
+            'value'    => $data?->classSection?->name ?? '—',
+            'title'    => 'Top Class',
+            'icon'     => 'trophy',
+            'color'    => 'text-indigo-600',
+            'bg'       => 'bg-indigo-100',
+            'severity' => 'info',
+            'subtitle' => $data ? number_format($data->avg_score, 1) . '%' : null,
         ];
     }
 
-    /** Termly grade trend */
-    public function termTrend(): array
+    protected function baseQuery()
     {
-        $base = TermResult::query()
-            ->selectRaw('terms.name as term, AVG(results.score) as avg')
-            ->join('terms', 'results.term_id', '=', 'terms.id')
-            ->groupBy('terms.id', 'terms.name')
-            ->orderBy('terms.start_date');
-
-        $sub = $base->getQuery();
-        $wrapped = DB::table(DB::raw("({$sub->toSql()}) as t"))->mergeBindings($sub);
-
-        $metric = \SaKanjo\EasyMetrics\Metrics\Trend::make($this->model)
-            ->modifyQuery(fn($q) => $q->fromSub($wrapped, 't'));
-
-        // EasyMetrics expects a date column – we fake it with a dummy
-        $metric->range(\SaKanjo\EasyMetrics\Enums\Range::YTD);
-
-        // Manual extraction
-        $rows = $base->get();
-        $labels = $rows->pluck('term')->toArray();
-        $data   = $rows->pluck('avg')->map(fn($v) => round($v, 1))->toArray();
-
-        return compact('labels', 'data');
+        return TermResult::query()->where('term_id', \App\Facades\Academic::currentTerm()?->id);
     }
-
-    /* ------------------------------------------------------------------ */
-    /* BASE QUERY – default to current term                               */
-    /* ------------------------------------------------------------------ */
-    protected function buildBaseQuery(array $filters): Builder
-    {
-        return TermResult::query()->where('term_id', currentTerm()?->id);
-    }
-
-    protected function getTitle(): string { return 'Academic Performance'; }
 }

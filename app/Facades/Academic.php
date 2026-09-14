@@ -2,23 +2,20 @@
 
 namespace App\Facades;
 
-use App\Models\Academic\AcademicSession;
-use App\Models\Academic\Term;
-use App\Support\AcademicContext;
 use Illuminate\Support\Facades\Facade;
 
 /**
- * Application-facing Academic context API (Phase 5).
- *
- * @method static AcademicSession|null currentSession()
- * @method static Term|null currentTerm()
- * @method static AcademicContext|null currentContext()
- * @method static AcademicSession requireCurrentSession()
- * @method static Term requireCurrentTerm()
- * @method static AcademicContext requireCurrentContext()
+ * @method static \App\Models\Academic\AcademicSession|null currentSession()
+ * @method static \App\Models\Academic\Term|null currentTerm()
+ * @method static \App\Support\AcademicContext|null currentContext()
+ * @method static \App\Models\Academic\AcademicSession requireCurrentSession()
+ * @method static \App\Models\Academic\Term requireCurrentTerm()
+ * @method static \App\Support\AcademicContext requireCurrentContext()
  * @method static string|null sessionState()
  * @method static bool isSessionActive()
  * @method static bool isSessionPaused()
+ * @method static array sessionsForSchool(\App\Models\School|string $school)
+ * @method static bool sessionBelongsToSchool(\App\Models\School|string $school, string $sessionId)
  * @method static void invalidateCaches(string $schoolId)
  *
  * @see \App\Services\AcademicSessionService
