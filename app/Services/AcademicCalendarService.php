@@ -2,76 +2,40 @@
 
 namespace App\Services;
 
-use App\Events\Academic\SessionActivated;
-use App\Events\Academic\SessionClosed;
-use App\Events\Academic\TermActivated;
-use App\Events\Academic\TermClosed;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
 use App\Models\School;
 use App\States\Academic\AcademicSession\Active as AcademicSessionActive;
-use App\States\Academic\AcademicSession\Closed as AcademicSessionClosed;
-use App\States\Academic\Term\Active as TermActive;
-use App\States\Academic\Term\Closed as TermClosedState;
-use App\States\Academic\Term\Planned as TermPlanned;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
- * AcademicCalendarService – Core Business Logic for Academic Sessions & Terms
+ * Academic calendar helpers (date validation, session membership, listings).
  *
- * Phase 2: current session is ACTIVE or PAUSED. Lifecycle mutation delegates to
- * AcademicSessionLifecycleService (no silent switch of another session).
- * Phase 3: Term activate/close delegate to TermLifecycleService; reopen removed.
+ * Phase 5: authoritative current-session / current-term resolution lives in
+ * AcademicSessionService (Academic facade). This class no longer owns that
+ * responsibility; currentSession()/currentTerm() delegate for backward
+ * compatibility until remaining call sites migrate.
+ *
+ * Phase 6 will introduce the Academic Calendar domain for calendar events.
+ * Do not add event/calendar features here.
  */
 class AcademicCalendarService
 {
-    private const CACHE_TTL_MINUTES = 15;
-
-    private const CACHE_KEY_SESSION = 'current_academic_session_';
-    private const CACHE_KEY_TERM    = 'current_academic_term_';
-
+    /**
+     * @deprecated Use Academic::currentSession() / AcademicSessionService::currentSession()
+     */
     public function currentSession(): ?AcademicSession
     {
-        $school = GetSchoolModel();
-        if (! $school) {
-            return null;
-        }
-
-        $key = self::CACHE_KEY_SESSION . $school->id;
-
-        return Cache::remember($key, now()->addMinutes(self::CACHE_TTL_MINUTES), function () use ($school) {
-            return AcademicSession::where('school_id', $school->id)
-                ->whereIn('state', [
-                    AcademicSessionActive::$name,
-                    \App\States\Academic\AcademicSession\Paused::$name,
-                ])
-                ->first();
-        });
+        return app(AcademicSessionService::class)->currentSession();
     }
 
+    /**
+     * @deprecated Use Academic::currentTerm() / AcademicSessionService::currentTerm()
+     */
     public function currentTerm(): ?Term
     {
-        $school = GetSchoolModel();
-        if (! $school) {
-            return null;
-        }
-
-        $key = self::CACHE_KEY_TERM . $school->id;
-
-        return Cache::remember($key, now()->addMinutes(self::CACHE_TTL_MINUTES), function () use ($school) {
-            $session = $this->currentSession();
-            if (! $session) {
-                return null;
-            }
-
-            return Term::where('academic_session_id', $session->id)
-                ->where('state', TermActive::$name)
-                ->first();
-        });
+        return app(AcademicSessionService::class)->currentTerm();
     }
 
     /**
@@ -83,7 +47,10 @@ class AcademicCalendarService
 
         return AcademicSession::query()
             ->where('school_id', $schoolId)
-            ->orderByRaw('CASE WHEN state IN (?, ?) THEN 0 ELSE 1 END', [AcademicSessionActive::$name, \App\States\Academic\AcademicSession\Paused::$name])
+            ->orderByRaw('CASE WHEN state IN (?, ?) THEN 0 ELSE 1 END', [
+                AcademicSessionActive::$name,
+                \App\States\Academic\AcademicSession\Paused::$name,
+            ])
             ->orderByDesc('created_at')
             ->get(['id', 'name', 'state'])
             ->map(function (AcademicSession $row) {
@@ -177,7 +144,7 @@ class AcademicCalendarService
 
     public function isDateInCurrentTerm(Carbon|string $date): bool
     {
-        $term = $this->currentTerm();
+        $term = app(AcademicSessionService::class)->currentTerm();
         if (! $term) {
             return false;
         }
