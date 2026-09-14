@@ -136,7 +136,7 @@ function insertSession(string $schoolId, string $state, string $name = '2025/202
         'updated_at' => now(),
     ]);
 
-    return AcademicSession::query()->findOrFail($id);
+    return AcademicSession::withoutGlobalScopes()->findOrFail($id);
 }
 
 function insertTerm(string $sessionId, string $state, string $name = 'Term 1', int $ordinal = 1): Term
