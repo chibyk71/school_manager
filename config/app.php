@@ -125,6 +125,7 @@ return [
 
     'aliases' => [
         'SchoolManager' => App\Facades\SchoolManager::class,
+        'Academic' => App\Facades\Academic::class,
     ],
 
     'metrics_cache_minutes' => 20
