@@ -28,117 +28,154 @@ class LifecycleReportsController extends Controller
 
     public function index(Request $request)
     {
-        $school = GetSchoolModel();
-        $this->authorizeReports($school);
+        $this->authorizeReport();
+
+        $school = $this->currentSchool();
+        $filters = $this->reportFilters($request);
+        $sessionId = $filters['academic_session_id'] ?? null;
 
         return Inertia::render('Student/Lifecycle/Reports', [
-            'sessions' => $this->sessionOptions($school),
-            'classLevels' => ClassLevel::query()
-                ->whereHas('schoolSection', fn ($q) => $q->where('school_id', $school->id))
-                ->orderBy('name')
-                ->get(['id', 'name']),
-            'classSections' => ClassSection::query()
-                ->whereHas('classLevel.schoolSection', fn ($q) => $q->where('school_id', $school->id))
-                ->orderBy('name')
-                ->get(['id', 'name', 'class_level_id']),
-            'filters' => $request->only([
-                'academic_session_id',
-                'class_level_id',
-                'class_section_id',
-                'status',
-                'from',
-                'to',
-            ]),
+            'applications' => $this->ops->applicationReport($school, $filters),
+            'admissions' => $this->ops->admissionReport($school, $filters),
+            'enrollments' => $this->ops->enrollmentReport($school, $filters),
+            'placement' => $this->ops->placementReport($school, $filters),
+            'funnel' => $this->ops->lifecycleFunnel($school, $sessionId),
+            'filters' => $filters,
+            'academicSessions' => $this->sessionOptions($school),
+            'classLevels' => $this->classLevelOptions($school),
+            'classSections' => $this->classSectionOptions($school, $filters['class_level_id'] ?? null),
         ]);
     }
 
-    public function applications(Request $request)
+    public function export(Request $request): BinaryFileResponse
     {
-        return $this->exportOrJson($request, 'applications');
-    }
+        $this->authorizeReport();
 
-    public function admissions(Request $request)
-    {
-        return $this->exportOrJson($request, 'admissions');
-    }
-
-    public function enrollments(Request $request)
-    {
-        return $this->exportOrJson($request, 'enrollments');
-    }
-
-    public function placements(Request $request)
-    {
-        return $this->exportOrJson($request, 'placements');
-    }
-
-    public function funnel(Request $request)
-    {
-        return $this->exportOrJson($request, 'funnel');
-    }
-
-    protected function exportOrJson(Request $request, string $type)
-    {
-        $school = GetSchoolModel();
-        $this->authorizeReports($school);
-
-        $filters = $request->only([
-            'academic_session_id',
-            'class_level_id',
-            'class_section_id',
-            'status',
-            'from',
-            'to',
-        ]);
-
-        if ($request->wantsJson() && ! $request->boolean('export')) {
-            return response()->json($this->ops->reportData($school, $type, $filters));
+        $school = $this->currentSchool();
+        $filters = $this->reportFilters($request);
+        $section = $request->string('section')->toString() ?: 'applications';
+        $format = strtolower($request->string('format')->toString() ?: 'csv');
+        if (! in_array($format, ['csv', 'xlsx'], true)) {
+            $format = 'csv';
         }
 
-        $export = match ($type) {
-            'applications' => new ApplicationsExport($school, $filters),
+        $export = match ($section) {
             'admissions' => new AdmissionsExport($school, $filters),
             'enrollments' => new EnrollmentsExport($school, $filters),
-            'placements' => new PlacementsExport($school, $filters),
+            'placement', 'placements' => new PlacementsExport($school, $filters),
             'funnel' => new FunnelExport($school, $filters),
-            default => abort(404),
+            'applications' => new ApplicationsExport($school, $filters),
+            default => abort(422, 'Unknown report section for export.'),
         };
 
-        $filename = "lifecycle-{$type}-" . now()->format('Ymd-His') . '.xlsx';
+        $filename = 'lifecycle-'.$section.'-'.now()->format('Ymd-His').'.'.$format;
+        $writerType = $format === 'xlsx'
+            ? \Maatwebsite\Excel\Excel::XLSX
+            : \Maatwebsite\Excel\Excel::CSV;
 
-        return Excel::download($export, $filename);
+        return Excel::download($export, $filename, $writerType);
+    }
+
+    protected function reportFilters(Request $request): array
+    {
+        $raw = array_filter([
+            'academic_session_id' => $request->string('academic_session_id')->toString() ?: null,
+            'status' => $request->input('status'),
+            'class_level_id' => $request->string('class_level_id')->toString() ?: null,
+            'class_section_id' => $request->string('class_section_id')->toString()
+                ?: ($request->string('section_id')->toString() ?: null),
+            'section_id' => $request->string('section_id')->toString() ?: null,
+            'source' => $request->string('source')->toString() ?: null,
+            'has_application' => $request->string('has_application')->toString() ?: null,
+            'origin' => $request->string('origin')->toString() ?: null,
+            'finalized' => $request->input('finalized'),
+            'review_state' => $request->string('review_state')->toString() ?: null,
+            'acceptance_state' => $request->string('acceptance_state')->toString() ?: null,
+            'date_from' => $request->string('date_from')->toString() ?: null,
+            'date_to' => $request->string('date_to')->toString() ?: null,
+            'deadline_from' => $request->string('deadline_from')->toString() ?: null,
+            'deadline_to' => $request->string('deadline_to')->toString() ?: null,
+        ], fn ($v) => $v !== null && $v !== '');
+
+        return $this->ops->normalizeReportFilters($raw);
     }
 
     /**
      * Session filter options — owned by Academic (not Lifecycle).
+     *
+     * @return list<array{id: string, name: string, state: string}>
      */
     protected function sessionOptions(School $school): array
     {
         return $this->academicSessions->sessionsForSchool($school);
     }
 
-    protected function authorizeReports(School $school): void
+    protected function classLevelOptions(School $school): array
+    {
+        if (! class_exists(ClassLevel::class) || ! Schema::hasTable('class_levels')) {
+            return [];
+        }
+
+        return ClassLevel::query()
+            ->where('school_id', $school->id)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn ($row) => ['id' => (string) $row->id, 'name' => (string) $row->name])
+            ->all();
+    }
+
+    protected function classSectionOptions(School $school, ?string $classLevelId = null): array
+    {
+        if (! class_exists(ClassSection::class) || ! Schema::hasTable('class_sections')) {
+            return [];
+        }
+
+        $q = ClassSection::query()->where('school_id', $school->id)->orderBy('name');
+        if ($classLevelId) {
+            $q->where('class_level_id', $classLevelId);
+        }
+
+        return $q->get(['id', 'name', 'class_level_id'])
+            ->map(fn ($row) => [
+                'id' => (string) $row->id,
+                'name' => (string) $row->name,
+                'class_level_id' => $row->class_level_id ? (string) $row->class_level_id : null,
+            ])
+            ->all();
+    }
+
+    protected function currentSchool(): School
+    {
+        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+        if (! $school instanceof School) {
+            abort(403, 'School context required.');
+        }
+
+        return $school;
+    }
+
+    protected function authorizeReport(): void
     {
         $user = auth()->user();
         if (! $user) {
             abort(403);
         }
 
-        // Reports require at least one lifecycle view permission.
-        $ok = false;
-        foreach (['applications.view', 'admissions.view', 'enrollments.view'] as $perm) {
-            if (method_exists($user, 'isAbleTo') && $user->isAbleTo($perm)) {
-                $ok = true;
-                break;
-            }
-            if (method_exists($user, 'hasPermission') && $user->hasPermission($perm)) {
-                $ok = true;
-                break;
-            }
+        if (method_exists($user, 'isAbleTo') && $user->isAbleTo('lifecycle-reports.view')) {
+            return;
+        }
+        if (method_exists($user, 'hasPermission') && $user->hasPermission('lifecycle-reports.view')) {
+            return;
         }
 
-        if (! $ok) {
-            abort(403);
+        $canApps = $user->can('viewAny', \App\Models\Student\StudentApplication::class);
+        $canAdm = $user->can('viewAny', \App\Models\Student\Admission::class);
+        $canEnr = $user->can('viewAny', \App\Models\Student\Enrollment::class);
+
+        if ($canApps && $canAdm && $canEnr) {
+            return;
         }
+
+        abort(403);
     }
 }
