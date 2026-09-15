@@ -7,7 +7,6 @@ use App\Http\Requests\StoreAcademicSessionRequest;
 use App\Http\Requests\UpdateAcademicSessionRequest;
 use App\Http\Resources\Academic\AcademicSessionResource;
 use App\Models\Academic\AcademicSession;
-use App\Services\AcademicCalendarService;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -23,9 +22,6 @@ use Inertia\Inertia;
  */
 class AcademicSessionController extends Controller
 {
-    public function __construct(protected AcademicCalendarService $service)
-    {
-    }
 
     public function index(Request $request)
     {
@@ -114,8 +110,6 @@ class AcademicSessionController extends Controller
             $validated = $request->validated();
             $lifecycle = app(\App\Services\Academic\AcademicSessionLifecycleService::class);
 
-            // Name may update directly; date mutations go through the domain service
-            // so operational-data boundary and overlap rules cannot be bypassed.
             if (array_key_exists('name', $validated) && $validated['name'] !== $academicSession->name) {
                 $academicSession->forceFill(['name' => $validated['name']])->save();
             }
@@ -172,7 +166,7 @@ class AcademicSessionController extends Controller
                     $lifecycle->delete($session);
                     $deleted++;
                 } catch (\Illuminate\Validation\ValidationException $e) {
-                    // Skip ineligible; aggregate result below.
+                    // Skip ineligible
                 }
             }
 
@@ -196,7 +190,6 @@ class AcademicSessionController extends Controller
         Gate::authorize('restore', $academicSession);
 
         try {
-            // Phase 2: restore only un-soft-deletes. It does not reopen/activate.
             $academicSession->restore();
 
             app(\App\Services\Academic\AcademicSessionLifecycleService::class)
