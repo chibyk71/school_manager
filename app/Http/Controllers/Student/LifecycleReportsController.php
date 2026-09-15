@@ -11,7 +11,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Academic\ClassLevel;
 use App\Models\Academic\ClassSection;
 use App\Models\School;
-use App\Services\AcademicCalendarService;
+use App\Services\AcademicSessionService;
 use App\Services\Student\LifecycleOperationalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -23,7 +23,7 @@ class LifecycleReportsController extends Controller
 {
     public function __construct(
         protected LifecycleOperationalService $ops,
-        protected AcademicCalendarService $calendar
+        protected AcademicSessionService $academicSessions
     ) {}
 
     public function index(Request $request)
@@ -107,7 +107,7 @@ class LifecycleReportsController extends Controller
      */
     protected function sessionOptions(School $school): array
     {
-        return $this->calendar->sessionsForSchool($school);
+        return $this->academicSessions->sessionsForSchool($school);
     }
 
     protected function classLevelOptions(School $school): array

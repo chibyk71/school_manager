@@ -8,7 +8,7 @@ use App\Http\Requests\Academic\UpdateTermRequest;
 use App\Http\Resources\Academic\TermResource;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
-use App\Services\AcademicCalendarService;
+use App\Facades\Academic;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -30,9 +30,6 @@ use Inertia\Inertia;
  */
 class TermController extends Controller
 {
-    public function __construct(protected AcademicCalendarService $service)
-    {
-    }
 
     /**
      * Display a listing of terms (optionally filtered by academic session).
@@ -42,7 +39,7 @@ class TermController extends Controller
         Gate::authorize('viewAny', Term::class);
 
         try {
-            $academicSession ??= $this->service->currentSession();
+            $academicSession ??= Academic::currentSession();
 
             $extra = [
                 [

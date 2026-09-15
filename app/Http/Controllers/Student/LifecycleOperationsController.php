@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Student\Admission;
 use App\Models\Student\Enrollment;
 use App\Models\Student\StudentApplication;
-use App\Services\AcademicCalendarService;
+use App\Facades\Academic;
 use App\Services\Student\LifecycleOperationalService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -88,7 +88,7 @@ class LifecycleOperationsController extends Controller
 
         $school = GetSchoolModel();
         $categories = $this->authorizedCategories();
-        $session = app(AcademicCalendarService::class)->currentSession();
+        $session = Academic::currentSession();
         $counts = $this->ops->dashboardCounts($school, $session);
 
         if (! in_array('applications', $categories, true)) {

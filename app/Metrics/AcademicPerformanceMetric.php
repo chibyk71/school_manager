@@ -18,7 +18,7 @@ class AcademicPerformanceMetric extends AbstractMetric
     /** Average grade for the current term */
     public function averageGrade(): array
     {
-        $avg = TermResult::where('term_id', currentTerm()?->id)->avg('score');
+        $avg = TermResult::where('term_id', \App\Facades\Academic::currentTerm()?->id)->avg('score');
 
         return [
             'value' => round($avg, 1),
@@ -30,7 +30,7 @@ class AcademicPerformanceMetric extends AbstractMetric
     /** Students below 50% (at-risk) */
     public function atRisk(): array
     {
-        $count = TermResult::where('term_id', currentTerm()?->id)
+        $count = TermResult::where('term_id', \App\Facades\Academic::currentTerm()?->id)
             ->where('score', '<', 50)
             ->distinct('student_id')
             ->count('student_id');
@@ -45,8 +45,8 @@ class AcademicPerformanceMetric extends AbstractMetric
     /** Assignment / CA submission rate */
     public function submissionRate(): array
     {
-        $assigned = Assignment::where('term_id', currentTerm()?->id)->count();
-        $submitted = Assignment::where('term_id', currentTerm()?->id)
+        $assigned = Assignment::where('term_id', \App\Facades\Academic::currentTerm()?->id)->count();
+        $submitted = Assignment::where('term_id', \App\Facades\Academic::currentTerm()?->id)
             ->whereNotNull('submitted_at')
             ->count();
 
@@ -61,7 +61,7 @@ class AcademicPerformanceMetric extends AbstractMetric
     /** Subject performance doughnut */
     public function subjectBreakdown(): array
     {
-        $data = TermResult::where('term_id', currentTerm()?->id)
+        $data = TermResult::where('term_id', \App\Facades\Academic::currentTerm()?->id)
             ->join('subjects', 'results.subject_id', '=', 'subjects.id')
             ->select('subjects.name', DB::raw('AVG(results.score) as avg_score'))
             ->groupBy('subjects.id', 'subjects.name')
@@ -105,7 +105,7 @@ class AcademicPerformanceMetric extends AbstractMetric
     /* ------------------------------------------------------------------ */
     protected function buildBaseQuery(array $filters): Builder
     {
-        return TermResult::query()->where('term_id', currentTerm()?->id);
+        return TermResult::query()->where('term_id', \App\Facades\Academic::currentTerm()?->id);
     }
 
     protected function getTitle(): string { return 'Academic Performance'; }

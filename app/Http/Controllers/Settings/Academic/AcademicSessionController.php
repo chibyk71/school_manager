@@ -7,7 +7,6 @@ use App\Http\Requests\StoreAcademicSessionRequest;
 use App\Http\Requests\UpdateAcademicSessionRequest;
 use App\Http\Resources\Academic\AcademicSessionResource;
 use App\Models\Academic\AcademicSession;
-use App\Services\AcademicCalendarService;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -23,9 +22,6 @@ use Inertia\Inertia;
  */
 class AcademicSessionController extends Controller
 {
-    public function __construct(protected AcademicCalendarService $service)
-    {
-    }
 
     public function index(Request $request)
     {

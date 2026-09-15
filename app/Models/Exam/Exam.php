@@ -253,7 +253,7 @@ class Exam extends Model
 
     public function scopeForCurrentTerm(Builder $query): Builder
     {
-        $currentTerm = app('academicContext')->currentTerm();
+        $currentTerm = \App\Facades\Academic::currentTerm();
         if (!$currentTerm) {
             return $query->whereRaw('1 = 0'); // No current term → no results
         }

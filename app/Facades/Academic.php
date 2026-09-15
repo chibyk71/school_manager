@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\Facade;
  * @method static string|null sessionState()
  * @method static bool isSessionActive()
  * @method static bool isSessionPaused()
+ * @method static array sessionsForSchool(\App\Models\School|string $school)
+ * @method static bool sessionBelongsToSchool(\App\Models\School|string $school, string $sessionId)
  * @method static void invalidateCaches(string $schoolId)
  *
  * @see \App\Services\AcademicSessionService

@@ -361,9 +361,9 @@ it('Academic facade delegates to AcademicSessionService', function () {
         ->and(Academic::currentContext())->toBeInstanceOf(AcademicContext::class);
 });
 
-it('helpers currentSession and currentTerm use academicContext binding', function () {
+it('Academic facade resolves current session and term', function () {
     $session = insertSession($this->school->id, SessionPaused::$name);
     $term = insertTerm($session->id, TermActive::$name);
-    expect(currentSession()?->id)->toBe($session->id)
-        ->and(currentTerm()?->id)->toBe($term->id);
+    expect(Academic::currentSession()?->id)->toBe($session->id)
+        ->and(Academic::currentTerm()?->id)->toBe($term->id);
 });
