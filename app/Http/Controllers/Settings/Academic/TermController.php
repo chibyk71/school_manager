@@ -8,7 +8,7 @@ use App\Http\Requests\Academic\UpdateTermRequest;
 use App\Http\Resources\Academic\TermResource;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\Term;
-use App\Services\AcademicCalendarService;
+use App\Facades\Academic;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -30,9 +30,6 @@ use Inertia\Inertia;
  */
 class TermController extends Controller
 {
-    public function __construct(protected AcademicCalendarService $service)
-    {
-    }
 
     /**
      * Display a listing of terms (optionally filtered by academic session).
@@ -42,7 +39,7 @@ class TermController extends Controller
         Gate::authorize('viewAny', Term::class);
 
         try {
-            $academicSession ??= $this->service->currentSession();
+            $academicSession ??= Academic::currentSession();
 
             $extra = [
                 [
@@ -103,9 +100,6 @@ class TermController extends Controller
         }
     }
 
-    /**
-     * Store a newly created term.
-     */
     public function store(StoreTermRequest $request)
     {
         Gate::authorize('create', Term::class);
@@ -144,9 +138,6 @@ class TermController extends Controller
         }
     }
 
-    /**
-     * Display the specified term.
-     */
     public function show(Term $term)
     {
         Gate::authorize('view', $term);
@@ -175,9 +166,6 @@ class TermController extends Controller
         ]);
     }
 
-    /**
-     * Update the specified term.
-     */
     public function update(UpdateTermRequest $request, Term $term)
     {
         Gate::authorize('update', $term);
@@ -213,9 +201,6 @@ class TermController extends Controller
         }
     }
 
-    /**
-     * Quick action: Set this term as the active one in its session.
-     */
     public function setActive(Term $term)
     {
         Gate::authorize('activate', $term);
@@ -237,9 +222,6 @@ class TermController extends Controller
         }
     }
 
-    /**
-     * Remove one or more terms (bulk soft-delete).
-     */
     public function destroy(Request $request)
     {
         Gate::authorize('delete', Term::class);
@@ -285,9 +267,6 @@ class TermController extends Controller
         }
     }
 
-    /**
-     * Restore a soft-deleted term.
-     */
     public function restore($id)
     {
         $term = Term::withTrashed()->findOrFail($id);
