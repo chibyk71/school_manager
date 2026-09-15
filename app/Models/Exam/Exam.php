@@ -15,7 +15,31 @@ use Spatie\Activitylog\Traits\LogsActivity;
 /**
  * Exam Model
  *
- * Represents a specific examination event in the system.
+ * Represents a specific examination event in the system. An exam is the central anchor
+ * for score entry, timetable scheduling, result computation, and report card generation.
+ *
+ * Status Machine:
+ *   draft → published → ongoing → completed → results_approved
+ *
+ * Key transitions enforced by ExamService:
+ *   - draft → published:       admin publishes; teachers can now see and enter scores
+ *   - published → ongoing:     exam start_date reached or manually triggered
+ *   - ongoing → completed:     all scores entered (or manually forced by admin)
+ *   - completed → results_approved: principal/admin approves results; report cards unlock
+ *
+ * Features / Problems Solved:
+ * - `isEditable()`: single method used by all services to check if mutation is allowed
+ * - `isLocked()`: checks locked_at timestamp; used to block score entry
+ * - `scopeForCurrentTerm()`: commonly needed across controllers
+ * - `getApplicableSectionsAttribute()`: resolves which class_sections this exam covers
+ *   (all sections of a level if class_section_id is null, or the specific section)
+ * - Soft deletes preserve exam records even when sections/levels are archived
+ *
+ * Fits into the module:
+ * - ExamController: full CRUD + status transitions
+ * - ScoreEntryController: checks isEditable() before allowing score saves
+ * - ResultComputationService: reads this to pull enrolled students
+ * - ExamTimetableController: links timetable rows to this exam
  */
 class Exam extends Model
 {
@@ -54,6 +78,10 @@ class Exam extends Model
     protected array $defaultHiddenColumns = ['description', 'created_at', 'updated_at'];
     protected array $globalFilterFields = ['name', 'description'];
 
+    // ────────────────────────────────────────────────────────────
+    // Status Constants
+    // ────────────────────────────────────────────────────────────
+
     public const STATUS_DRAFT            = 'draft';
     public const STATUS_PUBLISHED        = 'published';
     public const STATUS_ONGOING          = 'ongoing';
@@ -68,13 +96,18 @@ class Exam extends Model
         self::STATUS_RESULTS_APPROVED,
     ];
 
+    /** Allowed transitions: current_status → [next_allowed_statuses] */
     public const STATUS_TRANSITIONS = [
         self::STATUS_DRAFT            => [self::STATUS_PUBLISHED],
         self::STATUS_PUBLISHED        => [self::STATUS_ONGOING, self::STATUS_DRAFT],
         self::STATUS_ONGOING          => [self::STATUS_COMPLETED],
         self::STATUS_COMPLETED        => [self::STATUS_RESULTS_APPROVED],
-        self::STATUS_RESULTS_APPROVED => [],
+        self::STATUS_RESULTS_APPROVED => [], // Terminal state
     ];
+
+    // ────────────────────────────────────────────────────────────
+    // Relationships
+    // ────────────────────────────────────────────────────────────
 
     public function academicSession()
     {
@@ -126,12 +159,21 @@ class Exam extends Model
         return $this->belongsTo(\App\Models\User::class, 'approved_by');
     }
 
+    // ────────────────────────────────────────────────────────────
+    // Status Helpers
+    // ────────────────────────────────────────────────────────────
+
     public function isDraft(): bool      { return $this->status === self::STATUS_DRAFT; }
     public function isPublished(): bool  { return $this->status === self::STATUS_PUBLISHED; }
     public function isOngoing(): bool    { return $this->status === self::STATUS_ONGOING; }
     public function isCompleted(): bool  { return $this->status === self::STATUS_COMPLETED; }
     public function isApproved(): bool   { return $this->status === self::STATUS_RESULTS_APPROVED; }
 
+    /**
+     * Determines whether scores can be entered/modified for this exam.
+     * Score entry is allowed from published through completed, but NOT once results are approved
+     * or the exam is explicitly locked.
+     */
     public function isEditable(): bool
     {
         if ($this->locked_at !== null) {
@@ -141,20 +183,36 @@ class Exam extends Model
         return in_array($this->status, [
             self::STATUS_PUBLISHED,
             self::STATUS_ONGOING,
-            self::STATUS_COMPLETED,
+            self::STATUS_COMPLETED, // Allow corrections until approved
         ], true);
     }
 
+    /**
+     * Checks if the exam is locked (hard lock — no further changes at all).
+     */
     public function isLocked(): bool
     {
         return $this->locked_at !== null || $this->status === self::STATUS_RESULTS_APPROVED;
     }
 
+    /**
+     * Checks whether a given status transition is allowed.
+     */
     public function canTransitionTo(string $newStatus): bool
     {
         return in_array($newStatus, self::STATUS_TRANSITIONS[$this->status] ?? [], true);
     }
 
+    // ────────────────────────────────────────────────────────────
+    // Helpers
+    // ────────────────────────────────────────────────────────────
+
+    /**
+     * Get the class sections this exam applies to.
+     * If class_section_id is set → only that section.
+     * If only class_level_id is set → all sections of that level.
+     * Returns an Eloquent Collection of ClassSection models.
+     */
     public function getApplicableSections(): \Illuminate\Database\Eloquent\Collection
     {
         if ($this->class_section_id) {
@@ -170,6 +228,10 @@ class Exam extends Model
         return new \Illuminate\Database\Eloquent\Collection();
     }
 
+    /**
+     * Get the completion percentage for score entry.
+     * Percentage = scores entered / total expected scores × 100
+     */
     public function getScoreEntryProgressAttribute(): float
     {
         $total = $this->examResults()->count();
@@ -177,6 +239,7 @@ class Exam extends Model
             return 0.0;
         }
 
+        // Count rows where total_score is not null (all components entered)
         $completed = $this->examResults()
             ->whereNotNull('total_score')
             ->count();
@@ -184,11 +247,15 @@ class Exam extends Model
         return round(($completed / $total) * 100, 1);
     }
 
+    // ────────────────────────────────────────────────────────────
+    // Scopes
+    // ────────────────────────────────────────────────────────────
+
     public function scopeForCurrentTerm(Builder $query): Builder
     {
         $currentTerm = \App\Facades\Academic::currentTerm();
         if (!$currentTerm) {
-            return $query->whereRaw('1 = 0');
+            return $query->whereRaw('1 = 0'); // No current term → no results
         }
 
         return $query->where('term_id', $currentTerm->id);
@@ -213,6 +280,10 @@ class Exam extends Model
     {
         return $query->where('status', '!=', self::STATUS_DRAFT);
     }
+
+    // ────────────────────────────────────────────────────────────
+    // Activity Logging
+    // ────────────────────────────────────────────────────────────
 
     public function getActivitylogOptions(): LogOptions
     {

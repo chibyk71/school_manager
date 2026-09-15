@@ -47,7 +47,7 @@ class LifecycleOperationalService
     /**
      * Actionable counts for dashboard cards.
      *
-     * Session resolution is owned by AcademicCalendarService (or an explicit
+     * Session resolution is owned by Academic facade (or an explicit
      * $session passed by the caller for tests). This method never queries
      * academic_sessions and never treats a missing session as "all sessions".
      *

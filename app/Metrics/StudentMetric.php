@@ -2,49 +2,71 @@
 
 namespace App\Metrics;
 
-use App\Models\Student\Student;
-use Illuminate\Support\Facades\Cache;
+use App\Models\Academic\Student;
+use Illuminate\Database\Eloquent\Builder;
 
-final class StudentMetric extends AbstractMetric
+class StudentMetric extends AbstractMetric
 {
-    private const CACHE_TTL = 300;
+    protected string $model = Student::class;
 
-    public function totalStudents(): array
+    /* ------------------------------------------------------------------ */
+    /* PUBLIC API – used directly by the dashboard controller             */
+    /* ------------------------------------------------------------------ */
+
+    /** Total students (any filters) */
+    public function total(array $filters = []): array
     {
-        $cacheKey = 'student.total.' . GetSchoolModel()?->id;
-
-        $count = Cache::remember($cacheKey, self::CACHE_TTL, function () {
-            return Student::query()->count();
-        });
-
-        return [
-            'value'    => number_format($count),
-            'title'    => 'Total Students',
-            'icon'     => 'users',
-            'color'    => 'text-blue-600',
-            'bg'       => 'bg-blue-100',
-            'severity' => 'info',
-        ];
+        return $this->value('count', null, $filters);
     }
 
-    public function activeStudents(): array
+    /** Active students */
+    public function active(): array
     {
-        $cacheKey = 'student.active.' . GetSchoolModel()?->id;
+        return $this->value('count', null, ['status' => 'active']);
+    }
 
-        $count = Cache::remember($cacheKey, self::CACHE_TTL, function () {
-            // Historical: prefer explicit session selection or Academic::currentSession()
-            return Student::query()
-                ->where('status', 'active')
-                ->count();
-        });
+    /** Inactive students */
+    public function inactive(): array
+    {
+        return $this->value('count', null, ['status' => 'inactive']);
+    }
 
-        return [
-            'value'    => number_format($count),
-            'title'    => 'Active Students',
-            'icon'     => 'user-check',
-            'color'    => 'text-green-600',
-            'bg'       => 'bg-green-100',
-            'severity' => 'info',
-        ];
+    /** Gender breakdown (Doughnut) */
+    public function genderBreakdown(): array
+    {
+        return $this->breakdown('gender');
+    }
+
+    /** Enrollment trend (YTD) */
+    public function enrollmentTrendYTD(): array
+    {
+        return $this->trend('monthly');
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* BASE QUERY – automatically scopes to current session               */
+    /* ------------------------------------------------------------------ */
+    protected function buildBaseQuery(array $filters): Builder
+    {
+        $query = $this->model::query();
+        // Historical: prefer explicit session selection or Academic::currentSession()
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+        if (!empty($filters['class_id'])) {
+            $query->whereIn('class_id', (array) $filters['class_id']);
+        }
+
+        return $query;
+    }
+
+    protected function getTitle(): string
+    {
+        return 'Total Students';
+    }
+    protected function getImage(): string
+    {
+        return '/assets/img/icons/student.svg';
     }
 }

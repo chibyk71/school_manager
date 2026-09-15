@@ -258,6 +258,7 @@ class AdmissionService
                     ]);
                 }
 
+                // Use setAttribute to avoid HasDynamicEnum __set validation when enums are not seeded.
                 $lockedApp->setAttribute('status', StudentApplication::STATUS_APPROVED);
                 $lockedApp->setAttribute('reviewed_by', $actor->id);
                 $lockedApp->setAttribute('reviewed_at', now());
@@ -288,6 +289,8 @@ class AdmissionService
 
     public function accept(Admission $admission, ?User $actor = null): Admission
     {
+        // Expiry-on-accept must commit before the validation exception is thrown,
+        // otherwise the outer transaction would roll back the expiry side effects.
         $outcome = DB::transaction(function () use ($admission, $actor) {
             $locked = Admission::query()->whereKey($admission->id)->lockForUpdate()->firstOrFail();
 
@@ -412,6 +415,10 @@ class AdmissionService
         });
     }
 
+    /**
+     * Centralized expiry transition + side effects (notification + activity log).
+     * Caller must hold a lock on the admission row and ensure canExpire() (or already past deadline).
+     */
     protected function applyExpiryTransition(Admission $locked): void
     {
         if ($locked->status === Admission::STATUS_EXPIRED) {
@@ -502,6 +509,10 @@ class AdmissionService
         return $count;
     }
 
+    /**
+     * Remind accepted admissions whose registration window is approaching/ending.
+     * Skips admissions that already have an enrollment or left accepted status.
+     */
     public function processRegistrationWindowReminders(int $withinHours = 72, ?School $school = null): int
     {
         $deadline = now()->addHours($withinHours);
@@ -598,6 +609,7 @@ class AdmissionService
         ?string $sectionId
     ): void {
         if ($classLevelId) {
+            // ClassLevel is scoped via school_section → school (no direct school_id).
             $ok = ClassLevel::query()
                 ->whereKey($classLevelId)
                 ->whereHas('schoolSection', fn ($q) => $q->where('school_id', $school->id))

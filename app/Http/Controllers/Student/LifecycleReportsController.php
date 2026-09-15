@@ -101,7 +101,7 @@ class LifecycleReportsController extends Controller
     }
 
     /**
-     * Session filter options — owned by Academic (not Lifecycle).
+     * Session filter options — owned by Academic Calendar (not Lifecycle).
      *
      * @return list<array{id: string, name: string, state: string}>
      */

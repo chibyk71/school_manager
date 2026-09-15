@@ -30,6 +30,9 @@ class AcademicSessionService
 
     private const CACHE_KEY_TERM = 'current_academic_term_';
 
+    /**
+     * Current operational session for the current school (ACTIVE or PAUSED only).
+     */
     public function currentSession(): ?AcademicSession
     {
         $school = GetSchoolModel();
@@ -47,6 +50,9 @@ class AcademicSessionService
         });
     }
 
+    /**
+     * ACTIVE term belonging to the current operational session, or null.
+     */
     public function currentTerm(): ?Term
     {
         $school = GetSchoolModel();
@@ -69,6 +75,10 @@ class AcademicSessionService
         });
     }
 
+    /**
+     * Full current academic context, or null when there is no current session.
+     * Term is intentionally nullable.
+     */
     public function currentContext(): ?AcademicContext
     {
         $school = GetSchoolModel();
@@ -89,6 +99,9 @@ class AcademicSessionService
         );
     }
 
+    /**
+     * @throws RuntimeException when no current operational session exists
+     */
     public function requireCurrentSession(): AcademicSession
     {
         $session = $this->currentSession();
@@ -99,6 +112,9 @@ class AcademicSessionService
         return $session;
     }
 
+    /**
+     * @throws RuntimeException when no current active term exists
+     */
     public function requireCurrentTerm(): Term
     {
         $term = $this->currentTerm();
@@ -109,6 +125,11 @@ class AcademicSessionService
         return $term;
     }
 
+    /**
+     * Requires a current session; term may still be null.
+     *
+     * @throws RuntimeException when no current operational session exists
+     */
     public function requireCurrentContext(): AcademicContext
     {
         $context = $this->currentContext();
@@ -119,6 +140,9 @@ class AcademicSessionService
         return $context;
     }
 
+    /**
+     * Authoritative session state name for the current operational session, or null.
+     */
     public function sessionState(): ?string
     {
         $session = $this->currentSession();
@@ -140,6 +164,8 @@ class AcademicSessionService
     }
 
     /**
+     * List sessions for a school (operational sessions first). Explicit listing, not "current" resolution.
+     *
      * @return list<array{id: string, name: string, state: string}>
      */
     public function sessionsForSchool(School|string $school): array
@@ -164,6 +190,9 @@ class AcademicSessionService
             ->all();
     }
 
+    /**
+     * Whether the given session ID belongs to the given school (ownership validation).
+     */
     public function sessionBelongsToSchool(School|string $school, string $sessionId): bool
     {
         $schoolId = is_object($school) ? $school->id : $school;
@@ -174,6 +203,9 @@ class AcademicSessionService
             ->exists();
     }
 
+    /**
+     * Forget current-session / current-term cache for a school.
+     */
     public function invalidateCaches(string $schoolId): void
     {
         Cache::forget(self::CACHE_KEY_SESSION.$schoolId);

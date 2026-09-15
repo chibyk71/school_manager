@@ -14,7 +14,7 @@ use App\Services\Student\LifecycleOperationalService;
 use App\Metrics\StudentMetric;
 use App\Metrics\StaffMetric;
 use App\Metrics\FinanceMetric;
-use App\Metrics\AttendanceMetric;
+use App\Metrics\AttendanceMetric;        // ← One unified metric
 use App\Metrics\AcademicPerformanceMetric;
 use App\Metrics\HealthMetric;
 use App\Metrics\SystemMetric;
@@ -64,13 +64,16 @@ class DashboardController extends Controller
         if ($request->expectsJson()) {
             return response()->json([
                 'dashboard' => $component,
-                'data' => $data,
+                'widgets'   => DashboardWidgets::getForDashboard(strtolower(str_replace('Dashboard', '', $component))),
+                'data'      => $data,
             ]);
         }
 
-        return Inertia::render("Dashboard/{$component}", [
-            'data' => $data,
-            'widgets' => DashboardWidgets::forCategory($category),
+        return Inertia::render('Dashboard/Index', [
+            'component' => $component,
+            'title'     => Str::title(str_replace('Dashboard', ' Dashboard', $component)),
+            'widgets'   => DashboardWidgets::getForDashboard(strtolower(str_replace('Dashboard', '', $component))),
+            'data'      => $data,
         ]);
     }
 
@@ -96,63 +99,56 @@ class DashboardController extends Controller
                 app(StudentMetric::class)->total(),
                 app(StaffMetric::class)->total(),
                 app(StaffMetric::class)->academic(),
+                app(FinanceMetric::class)->collected(['month' => now()->month]),
+                app(FinanceMetric::class)->pending(),
                 $attendance->studentTodayRate(),
-                $attendance->staffTodayRate(),
-                app(FinanceMetric::class)->collectionRate(),
-                $attendance->pendingLeaves(),
+                $attendance->staffTodayRate(),           // ← New
+                $attendance->pendingLeaves(),           // ← New: HR visibility
+                app(StudentMetric::class)->active(),
             ],
-            'lifecycle' => $lifecycle,
             'charts' => [
-                'staff_dept'   => app(StaffMetric::class)->departmentBreakdown(),
-                'enrollment'   => app(StudentMetric::class)->enrollmentTrendYTD(),
-                'student_att'  => $attendance->studentTrend(),
-                'staff_att'    => $attendance->staffTrend(),
+                'revenue'         => app(FinanceMetric::class)->methodBreakdown(),
+                'enrollment'      => app(StudentMetric::class)->enrollmentTrendYTD(),
+                'staff_dept'      => app(StaffMetric::class)->departmentBreakdown(),
+                'student_attendance' => $attendance->studentTrend(),
+                'staff_attendance'   => $attendance->staffTrend(),
             ],
-            'recentLogs' => \Spatie\Activitylog\Models\Activity::latest()
-                ->take(5)
-                ->get()
-                ->map(fn ($log) => [
-                    'id'          => $log->id,
-                    'description' => $log->description,
-                    'icon'        => $this->logIcon($log->description),
-                    'time'        => $log->created_at->diffForHumans(),
-                ])->toArray(),
+            // Phase 7: expose lifecycle operational counts to admin dashboard widgets
+            'lifecycle' => $lifecycle,
         ];
     }
 
     private function academicData(): array
     {
+        $myClasses = auth()->user()->teacherClasses()->pluck('id')->toArray();
         $attendance = app(AttendanceMetric::class);
-        $academic = app(AcademicPerformanceMetric::class);
 
         return [
             'cards' => [
-                app(StudentMetric::class)->total(),
-                $academic->averageScore(),
-                $academic->studentsAtRisk(),
-                $academic->assignmentCompletionRate(),
-                $academic->topClass(),
+                app(StudentMetric::class)->total(['class_id' => $myClasses]),
                 $attendance->studentTodayRate(),
+                app(AcademicPerformanceMetric::class)->averageGrade(),
+                app(AcademicPerformanceMetric::class)->atRisk(),
+                app(AcademicPerformanceMetric::class)->submissionRate(),
             ],
             'charts' => [
-                'performance' => $academic->termTrend(),
-                'student_att' => $attendance->studentTrend(),
+                'subject_perf' => app(AcademicPerformanceMetric::class)->subjectBreakdown(),
+                'grade_trend'  => app(AcademicPerformanceMetric::class)->termTrend(),
+                'attendance'   => $attendance->studentTrend(),
             ],
         ];
     }
 
     private function financeData(): array
     {
-        $finance = app(FinanceMetric::class);
-
         return [
             'cards' => [
-                $finance->outstandingFees(),
-                $finance->collectionRate(),
-                $finance->todayCollections(),
+                app(FinanceMetric::class)->collected(['month' => now()->month]),
+                app(FinanceMetric::class)->outstanding(),
+                app(FinanceMetric::class)->collectionRate(),
             ],
             'charts' => [
-                'collections' => $finance->collectionTrend(),
+                'methods' => app(FinanceMetric::class)->methodBreakdown(),
             ],
         ];
     }
@@ -163,12 +159,13 @@ class DashboardController extends Controller
 
         return [
             'cards' => [
-                app(StudentMetric::class)->total(),
+                app(HealthMetric::class)->alertsToday(),
                 $attendance->studentTodayRate(),
-                $attendance->pendingLeaves(),
+                $attendance->staffTodayRate(),
             ],
             'charts' => [
-                'student_att' => $attendance->studentTrend(),
+                'incidents' => app(HealthMetric::class)->incidentTrend(),
+                'types'     => app(HealthMetric::class)->typeBreakdown(),
             ],
         ];
     }
@@ -180,27 +177,27 @@ class DashboardController extends Controller
 
         return [
             'cards' => [
-                ['value' => $student->current_class ?? '—', 'title' => 'My Class'],
-                ['value' => $student->current_average ?? '—', 'title' => 'My Average'],
-                ['value' => $student->fees_balance ?? '—', 'title' => 'Fees Owed'],
-                $attendance->studentTodayRate(),
+                ['value' => $student->attendance_rate . '%', 'title' => 'My Attendance'],
+                ['value' => $student->current_average,       'title' => 'My Average'],
+                ['value' => $student->fees_balance,          'title' => 'Fees Owed'],
+                $attendance->studentTodayRate(), // optional personal card
             ],
             'charts' => [
-                'grade_trend' => app(AcademicPerformanceMetric::class)->termTrend(),
-                'attendance'  => $attendance->studentTrend(),
+                'grade_trend'  => app(AcademicPerformanceMetric::class)->termTrend(),
+                'attendance'   => $attendance->studentTrend(),
             ],
         ];
     }
 
     private function parentData(): array
     {
-        $children = auth()->user()->children ?? collect();
+        $children = auth()->user()->children;
 
         return [
-            'cards' => $children->map(fn ($c) => [
+            'cards' => $children->map(fn($c) => [
                 'value' => $c->name,
                 'title' => 'Child',
-                'image' => $c->photo ?? null,
+                'image' => $c->photo,
             ])->toArray(),
             'charts' => [],
         ];
@@ -221,15 +218,15 @@ class DashboardController extends Controller
                 $attendance->pendingLeaves(),
             ],
             'charts' => [
-                'staff_dept'  => app(StaffMetric::class)->departmentBreakdown(),
-                'enrollment'  => app(StudentMetric::class)->enrollmentTrendYTD(),
-                'student_att' => $attendance->studentTrend(),
-                'staff_att'   => $attendance->staffTrend(),
+                'staff_dept'   => app(StaffMetric::class)->departmentBreakdown(),
+                'enrollment'   => app(StudentMetric::class)->enrollmentTrendYTD(),
+                'student_att'  => $attendance->studentTrend(),
+                'staff_att'    => $attendance->staffTrend(),
             ],
             'recentLogs' => \Spatie\Activitylog\Models\Activity::latest()
                 ->take(5)
                 ->get()
-                ->map(fn ($log) => [
+                ->map(fn($log) => [
                     'id'          => $log->id,
                     'description' => $log->description,
                     'icon'        => $this->logIcon($log->description),

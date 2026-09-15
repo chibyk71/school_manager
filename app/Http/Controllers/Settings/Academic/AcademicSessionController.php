@@ -110,6 +110,8 @@ class AcademicSessionController extends Controller
             $validated = $request->validated();
             $lifecycle = app(\App\Services\Academic\AcademicSessionLifecycleService::class);
 
+            // Name may update directly; date mutations go through the domain service
+            // so operational-data boundary and overlap rules cannot be bypassed.
             if (array_key_exists('name', $validated) && $validated['name'] !== $academicSession->name) {
                 $academicSession->forceFill(['name' => $validated['name']])->save();
             }
@@ -166,7 +168,7 @@ class AcademicSessionController extends Controller
                     $lifecycle->delete($session);
                     $deleted++;
                 } catch (\Illuminate\Validation\ValidationException $e) {
-                    // Skip ineligible
+                    // Skip ineligible; aggregate result below.
                 }
             }
 
@@ -190,6 +192,7 @@ class AcademicSessionController extends Controller
         Gate::authorize('restore', $academicSession);
 
         try {
+            // Phase 2: restore only un-soft-deletes. It does not reopen/activate.
             $academicSession->restore();
 
             app(\App\Services\Academic\AcademicSessionLifecycleService::class)

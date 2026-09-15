@@ -5,6 +5,8 @@
  */
 
 use App\Facades\Academic;
+use App\Models\Academic\AcademicSession;
+use App\Models\Academic\Term;
 use App\Models\School;
 use App\Services\AcademicSessionService;
 use App\States\Academic\AcademicSession\Active as SessionActive;
