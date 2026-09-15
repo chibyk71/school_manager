@@ -134,7 +134,9 @@ it('Academic facade is the path for current context after Phase 7', function () 
 
     expect(Academic::currentSession()?->id)->toBe($sid)
         ->and(Academic::currentTerm()?->id)->toBe($tid)
-        ->and(class_exists(\App\Services\AcademicCalendarService::class))->toBeFalse();
+        ->and(file_exists(base_path('app/Services/AcademicCalendarService.php')))->toBeFalse()
+        // autoload=false avoids fatal include when Composer classmap/PSR-4 still points at the deleted file
+        ->and(class_exists(\App\Services\AcademicCalendarService::class, false))->toBeFalse();
 });
 
 it('sessionBelongsToSchool validates ownership without implying current context', function () {
