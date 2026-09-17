@@ -3,7 +3,8 @@
 /**
  * Address Phase 2 — HasAddress capability domain tests.
  *
- * Full suite also available in artifacts/AddressDomainTest.phase2.php (Phase1+2 combined).
+ * Covers owner-scoped CRUD, primary integrity, validation hierarchy (including
+ * partial-update effective location), and lock-scoped primary target resolution.
  */
 
 uses(Tests\TestCase::class);
@@ -285,4 +286,140 @@ it('database uniqueness still rejects two primaries', function () {
     $owner = makeCapProfile();
     makeCapAddress($owner, ['is_primary' => true]);
     expect(fn () => makeCapAddress($owner, ['is_primary' => true]))->toThrow(QueryException::class);
+});
+
+it('rejects partial update that places state under a different existing country', function () {
+    seedAddressCapTypeEnum();
+    $nigeria = DB::table('countries')->insertGetId(['name' => 'Nigeria', 'iso2' => 'NG']);
+    $ghana = DB::table('countries')->insertGetId(['name' => 'Ghana', 'iso2' => 'GH']);
+    $lagos = DB::table('states')->insertGetId(['country_id' => $nigeria, 'name' => 'Lagos']);
+    $accra = DB::table('states')->insertGetId(['country_id' => $ghana, 'name' => 'Accra']);
+
+    $owner = makeCapProfile();
+    $address = $owner->addAddress([
+        'country_id' => $nigeria,
+        'state_id' => $lagos,
+        'address_line_1' => '12 Victoria St',
+        'type' => 'residential',
+    ]);
+
+    expect(fn () => $owner->updateAddress($address->id, [
+        'state_id' => $accra,
+    ]))->toThrow(ValidationException::class);
+
+    expect($address->fresh()->state_id)->toBe($lagos)
+        ->and($address->fresh()->country_id)->toBe($nigeria);
+});
+
+it('rejects partial update that places city under a different existing state', function () {
+    seedAddressCapTypeEnum();
+    $nigeria = DB::table('countries')->insertGetId(['name' => 'Nigeria', 'iso2' => 'NG']);
+    $lagos = DB::table('states')->insertGetId(['country_id' => $nigeria, 'name' => 'Lagos']);
+    $ogun = DB::table('states')->insertGetId(['country_id' => $nigeria, 'name' => 'Ogun']);
+    $ikeja = DB::table('cities')->insertGetId(['state_id' => $lagos, 'name' => 'Ikeja']);
+    $abeokuta = DB::table('cities')->insertGetId(['state_id' => $ogun, 'name' => 'Abeokuta']);
+
+    $owner = makeCapProfile();
+    $address = $owner->addAddress([
+        'country_id' => $nigeria,
+        'state_id' => $lagos,
+        'city_id' => $ikeja,
+        'address_line_1' => '15 Road',
+        'type' => 'residential',
+    ]);
+
+    expect(fn () => $owner->updateAddress($address->id, [
+        'city_id' => $abeokuta,
+    ]))->toThrow(ValidationException::class);
+
+    expect($address->fresh()->city_id)->toBe($ikeja)
+        ->and($address->fresh()->state_id)->toBe($lagos);
+});
+
+it('rejects country change that leaves an incompatible existing state', function () {
+    seedAddressCapTypeEnum();
+    $nigeria = DB::table('countries')->insertGetId(['name' => 'Nigeria', 'iso2' => 'NG']);
+    $ghana = DB::table('countries')->insertGetId(['name' => 'Ghana', 'iso2' => 'GH']);
+    $lagos = DB::table('states')->insertGetId(['country_id' => $nigeria, 'name' => 'Lagos']);
+
+    $owner = makeCapProfile();
+    $address = $owner->addAddress([
+        'country_id' => $nigeria,
+        'state_id' => $lagos,
+        'address_line_1' => '12 Test St',
+        'type' => 'residential',
+    ]);
+
+    expect(fn () => $owner->updateAddress($address->id, [
+        'country_id' => $ghana,
+    ]))->toThrow(ValidationException::class);
+
+    expect($address->fresh()->country_id)->toBe($nigeria);
+});
+
+it('accepts coherent partial location update against existing hierarchy', function () {
+    seedAddressCapTypeEnum();
+    $nigeria = DB::table('countries')->insertGetId(['name' => 'Nigeria', 'iso2' => 'NG']);
+    $lagos = DB::table('states')->insertGetId(['country_id' => $nigeria, 'name' => 'Lagos']);
+    $ikeja = DB::table('cities')->insertGetId(['state_id' => $lagos, 'name' => 'Ikeja']);
+    $victoria = DB::table('cities')->insertGetId(['state_id' => $lagos, 'name' => 'Victoria Island']);
+
+    $owner = makeCapProfile();
+    $address = $owner->addAddress([
+        'country_id' => $nigeria,
+        'state_id' => $lagos,
+        'city_id' => $ikeja,
+        'address_line_1' => '15 Road',
+        'type' => 'residential',
+    ]);
+
+    $updated = $owner->updateAddress($address->id, [
+        'city_id' => $victoria,
+        'landmark' => 'Near park',
+    ]);
+
+    expect($updated->city_id)->toBe($victoria)
+        ->and($updated->state_id)->toBe($lagos)
+        ->and($updated->country_id)->toBe($nigeria)
+        ->and($updated->landmark)->toBe('Near park');
+});
+
+it('setPrimaryAddress resolves target under owner lock and succeeds', function () {
+    seedAddressCapTypeEnum();
+    $owner = makeCapProfile();
+    $a = $owner->addAddress(['address_line_1' => 'A', 'type' => 'residential'], true);
+    $b = $owner->addAddress(['address_line_1' => 'B', 'type' => 'office']);
+
+    $primary = $owner->setPrimaryAddress($b->id);
+
+    expect($primary->id)->toBe($b->id)
+        ->and($primary->is_primary)->toBeTrue()
+        ->and($a->fresh()->is_primary)->toBeFalse()
+        ->and($owner->primaryAddress()?->id)->toBe($b->id);
+});
+
+it('make-primary update resolves target under owner lock', function () {
+    seedAddressCapTypeEnum();
+    $owner = makeCapProfile();
+    $a = $owner->addAddress(['address_line_1' => 'A', 'type' => 'residential'], true);
+    $b = $owner->addAddress(['address_line_1' => 'B', 'type' => 'office']);
+
+    $updated = $owner->updateAddress($b->id, ['landmark' => 'HQ'], true);
+
+    expect($updated->is_primary)->toBeTrue()
+        ->and($updated->landmark)->toBe('HQ')
+        ->and($a->fresh()->is_primary)->toBeFalse();
+});
+
+it('primary mutation fails cleanly when address was deleted before lock', function () {
+    seedAddressCapTypeEnum();
+    $owner = makeCapProfile();
+    $addr = $owner->addAddress(['address_line_1' => 'Gone', 'type' => 'residential']);
+    $id = $addr->id;
+    $addr->delete();
+
+    expect(fn () => $owner->setPrimaryAddress($id))
+        ->toThrow(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    expect(fn () => $owner->updateAddress($id, ['landmark' => 'x'], true))
+        ->toThrow(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
 });
