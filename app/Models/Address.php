@@ -2,34 +2,32 @@
 
 namespace App\Models;
 
-use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
-use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Nnjeim\World\Models\City;
 use Nnjeim\World\Models\Country;
 use Nnjeim\World\Models\State;
-use Spatie\Activitylog\LogOptions;
-use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Address Model v4.0 – Production-Ready Polymorphic Address (Nigeria-First + Global)
+ * Address — foundational polymorphic address entity (Phase 1).
+ *
+ * Ownership: addressable (morphTo) only. No school_id / tenant_id.
+ * Lifecycle: permanent deletion only (no SoftDeletes).
+ * Type: Dynamic Enum–backed string (InDynamicEnum / DynamicEnumSeeder).
+ * Primary: is_primary defaults false; 0..1 primary per owner (DB partial unique where supported).
+ *
+ * Authorization, tenant context, and CRUD capability live on the owning resource
+ * (and later phases of the Address module), not on Address itself.
  */
 class Address extends Model
 {
     use HasFactory;
-    use BelongsToSchool;
-    use HasConfig;
-    use HasTableQuery;
-    use LogsActivity;
-    use SoftDeletes;
     use HasUuids;
 
     protected $fillable = [
-        'school_id',
         'addressable_id',
         'addressable_type',
         'country_id',
@@ -52,70 +50,37 @@ class Address extends Model
         'longitude'  => 'decimal:7',
     ];
 
-    protected array $hiddenTableColumns = [
-        'id',
-        'school_id',
-        'addressable_id',
-        'addressable_type',
-        'deleted_at',
-    ];
-
-    protected array $defaultHiddenColumns = [
-        'latitude',
-        'longitude',
-        'created_at',
-        'updated_at',
-    ];
-
-    protected array $globalFilterFields = [
-        'address_line_1',
-        'address_line_2',
-        'landmark',
-        'city_text',
-        'postal_code',
-    ];
-
-    public function getConfigurableProperties(): array
-    {
-        return ['type'];
-    }
-
-    public function addressable()
+    public function addressable(): MorphTo
     {
         return $this->morphTo();
     }
 
-    public function country()
+    public function country(): BelongsTo
     {
         return $this->belongsTo(Country::class);
     }
 
-    public function state()
+    public function state(): BelongsTo
     {
         return $this->belongsTo(State::class);
     }
 
-    public function city()
+    public function city(): BelongsTo
     {
         return $this->belongsTo(City::class);
     }
 
     /**
-     * Address rows are not name-keyed config; partition by primary key so SchoolScope
-     * does not reference a non-existent `name` column (required for HasAddress queries).
+     * Human-readable single-line representation.
+     * Prefer structured city name when city_id is set; otherwise city_text.
      */
-    protected static function schoolScopePartitionColumns(): string|array
-    {
-        return 'id';
-    }
-
     public function getFormattedAttribute(): string
     {
         $parts = array_filter([
             $this->address_line_1,
             $this->address_line_2,
             $this->landmark ? "Near {$this->landmark}" : null,
-            $this->city_text ?? $this->city?->name,
+            $this->city_id ? $this->city?->name : $this->city_text,
             $this->state?->name,
             $this->country?->name,
             $this->postal_code ? "({$this->postal_code})" : null,
@@ -127,13 +92,5 @@ class Address extends Model
     public function scopePrimaryOnly($query)
     {
         return $query->where('is_primary', true);
-    }
-
-    public function getActivitylogOptions(): LogOptions
-    {
-        return LogOptions::defaults()
-            ->logFillable()
-            ->logOnlyDirty()
-            ->dontSubmitEmptyLogs();
     }
 }
