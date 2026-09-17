@@ -78,8 +78,8 @@ class ExamController extends Controller
             }
 
             // Load support data for filters
-            $currentSession = currentSession();
-            $currentTerm    = currentTerm();
+            $currentSession = \App\Facades\Academic::currentSession();
+            $currentTerm    = \App\Facades\Academic::currentTerm();
 
             return Inertia::render('Academic/Exams/Index', [
                 'exams'          => ExamResource::collection($result['data']),

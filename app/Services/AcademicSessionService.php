@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 
 /**
- * Authoritative application-facing academic context resolver (Phase 5).
+ * Authoritative application-facing academic context and session query helpers.
  *
  * Current operational session = ACTIVE or PAUSED (at most one per school).
  * Current term = ACTIVE term belonging to that session (nullable).
@@ -25,7 +25,7 @@ class AcademicSessionService
 {
     private const CACHE_TTL_MINUTES = 15;
 
-    /** Must match AcademicSessionLifecycleService / TermLifecycleService / AcademicCalendarService. */
+    /** Must match AcademicSessionLifecycleService / TermLifecycleService cache keys. */
     private const CACHE_KEY_SESSION = 'current_academic_session_';
 
     private const CACHE_KEY_TERM = 'current_academic_term_';
@@ -164,8 +164,47 @@ class AcademicSessionService
     }
 
     /**
+     * List sessions for a school (operational sessions first). Explicit listing, not "current" resolution.
+     *
+     * @return list<array{id: string, name: string, state: string}>
+     */
+    public function sessionsForSchool(School|string $school): array
+    {
+        $schoolId = is_object($school) ? $school->id : $school;
+
+        return AcademicSession::query()
+            ->where('school_id', $schoolId)
+            ->orderByRaw('CASE WHEN state IN (?, ?) THEN 0 ELSE 1 END', [
+                SessionActive::$name,
+                SessionPaused::$name,
+            ])
+            ->orderByDesc('created_at')
+            ->get(['id', 'name', 'state'])
+            ->map(function (AcademicSession $row) {
+                return [
+                    'id' => (string) $row->id,
+                    'name' => (string) $row->name,
+                    'state' => $this->resolveSessionStateName($row),
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * Whether the given session ID belongs to the given school (ownership validation).
+     */
+    public function sessionBelongsToSchool(School|string $school, string $sessionId): bool
+    {
+        $schoolId = is_object($school) ? $school->id : $school;
+
+        return AcademicSession::query()
+            ->whereKey($sessionId)
+            ->where('school_id', $schoolId)
+            ->exists();
+    }
+
+    /**
      * Forget current-session / current-term cache for a school.
-     * Lifecycle services already call their own invalidation; this is available for tests and edge cases.
      */
     public function invalidateCaches(string $schoolId): void
     {

@@ -12,7 +12,7 @@ use Illuminate\Notifications\Messages\BroadcastMessage;
 /**
  * SessionClosedNotification – Notifies relevant users when an academic session is closed
  *
- * Triggered automatically when a session is successfully closed via AcademicCalendarService.
+ * Triggered automatically when a session is successfully closed via AcademicSessionLifecycleService.
  * This notification informs key school personnel (admins, principal, academic officers, etc.)
  * that the session has ended, marking the transition point for actions like:
  *   - Annual result finalization
@@ -33,7 +33,7 @@ use Illuminate\Notifications\Messages\BroadcastMessage;
  *
  * Fits into the Academic Calendar Module:
  * ────────────────────────────────────────────────────────────────
- * • Dispatched from AcademicCalendarService::closeSession()
+ * • Dispatched from AcademicSessionLifecycleService::closeSession()
  * • Part of the session closure workflow:
  *     1. Admin/Principal closes session → service validates → updates status
  *     2. Service fires SessionClosed event

@@ -273,8 +273,8 @@ it('does not allow CLOSED to ACTIVE via reopen path', function () {
         'state' => TermClosedState::$name,
         'closed_at' => now(),
     ]);
-    expect(fn () => app(\App\Services\AcademicCalendarService::class)->reopenTerm($term))
-        ->toThrow(ValidationException::class);
+    // Phase 7: AcademicCalendarService::reopenTerm removed; CLOSED → ACTIVE is not a domain path.
+    expect(method_exists($this->terms, 'reopen'))->toBeFalse();
     expect($term->fresh()->state)->toBeInstanceOf(TermClosedState::class);
 });
 

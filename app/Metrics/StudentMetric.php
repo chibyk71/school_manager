@@ -49,7 +49,7 @@ class StudentMetric extends AbstractMetric
     protected function buildBaseQuery(array $filters): Builder
     {
         $query = $this->model::query();
-        // ->where('session_id', currentSession()?->id);   // <-- your helper
+        // Historical: prefer explicit session selection or Academic::currentSession()
 
         if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);

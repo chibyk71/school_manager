@@ -249,25 +249,6 @@ if (!function_exists('generateEnrollmentId')) {
     }
 }
 
-if (! function_exists('currentSession')) {
-    /**
-     * @return \App\Models\Academic\AcademicSession|null
-     */
-    function currentSession(): ?\App\Models\Academic\AcademicSession
-    {
-        return app('academicContext')->currentSession();
-    }
-}
-
-if (! function_exists('currentTerm')) {
-    /**
-     * @return \App\Models\Academic\Term|null
-     */
-    function currentTerm(): ?\App\Models\Academic\Term
-    {
-        return app('academicContext')->currentTerm();
-    }
-}
 
 if (!function_exists('send_school_sms')) {
     /**

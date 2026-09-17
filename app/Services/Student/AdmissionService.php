@@ -2,7 +2,7 @@
 
 namespace App\Services\Student;
 
-use App\Services\AcademicCalendarService;
+use App\Services\AcademicSessionService;
 use App\Models\Academic\ClassLevel;
 use App\Models\School;
 use App\Models\Student\Admission;
@@ -621,7 +621,7 @@ class AdmissionService
             }
         }
         if ($sessionId) {
-            $ok = app(AcademicCalendarService::class)->sessionBelongsToSchool($school, $sessionId);
+            $ok = app(AcademicSessionService::class)->sessionBelongsToSchool($school, $sessionId);
             if (! $ok) {
                 throw ValidationException::withMessages([
                     'academic_session_id' => 'Academic session does not belong to the current school.',

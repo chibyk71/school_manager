@@ -13,7 +13,7 @@ use Illuminate\Notifications\Messages\BroadcastMessage;
 /**
  * SessionActivatedNotification – Notifies relevant users when an academic session is activated
  *
- * This notification is triggered via the SessionActivated event (dispatched from AcademicCalendarService).
+ * This notification is triggered via the SessionActivated event (dispatched from AcademicSessionLifecycleService).
  * It informs key school personnel (admins, principal, academic officers) that a new academic session
  * has been officially activated and is now the current/active one.
  *
@@ -29,14 +29,14 @@ use Illuminate\Notifications\Messages\BroadcastMessage;
  *
  * Fits into the Academic Calendar Module:
  * ────────────────────────────────────────────────────────────────
- * • Dispatched automatically on session activation (AcademicCalendarService@activateSession)
+ * • Dispatched automatically on session activation (AcademicSessionLifecycleService@activateSession)
  * • Complements SessionActivated event for loose coupling
  * • Part of the activation workflow: create session → activate → notify stakeholders
  * • Integrates with existing notification system (database + mail)
  * • Prepares for future enhancements: principal approval workflow, parent summary
  *
  * Notification Flow:
- *   1. Session activated → AcademicCalendarService dispatches SessionActivated event
+ *   1. Session activated → AcademicSessionLifecycleService dispatches SessionActivated event
  *   2. Event listener (or direct call) → $users->notify(new SessionActivatedNotification($session))
  *   3. Notification sent via queue to database + email + broadcast
  *
