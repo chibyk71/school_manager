@@ -21,8 +21,8 @@ use Illuminate\Validation\ValidationException;
  * - Centralised, reusable validation with dynamic rules (required on create, sometimes on update).
  * - Hierarchical validation for nnjeim/world (country → state → city existence checks).
  * - Nigeria-first design support: landmark, city_text fallback, address_line_1/2 flexibility.
- * - Multi-tenant safety: automatically assigns current school_id via BelongsToSchool/GetSchoolModel().
- * - Soft-delete integration matching Address model (deleteAllAddresses, restoreAllAddresses, forceDeleteAllAddresses).
+ * - Ownership is polymorphic only (Phase 1): Address has no school_id; tenant context stays on the owner.
+ * - Soft-delete helpers remain for transitional callers; Address itself is permanently deleted (no SoftDeletes).
  * - Comprehensive error handling and structured logging for production debugging.
  * - Clean separation: trait handles direct model operations; complex logic (events, notifications, geocoding)
  *   can be delegated to AddressService in the future without breaking existing usage.
@@ -36,9 +36,9 @@ use Illuminate\Validation\ValidationException;
  * - Primary flag management is enforced here – UI can trust that only one address is primary.
  *
  * Dependencies:
- * - App\Models\Address (with BelongsToSchool, SoftDeletes)
+ * - App\Models\Address (polymorphic addressable; no school_id / SoftDeletes)
  * - nnjeim/world package for countries/states/cities tables
- * - Global helper GetSchoolModel() for multi-tenant context
+ * - InDynamicEnum for Address type validation
  */
 
 trait HasAddress
@@ -91,13 +91,11 @@ trait HasAddress
             $this->unsetPrimaryAddress();
         }
 
-        $schoolId = $this->school_id ?? GetSchoolModel()?->id
-            ?? throw new \Exception('No active school context found when creating address.');
-
+        // Phase 1: Address is no longer school-scoped; ownership is polymorphic only.
+        // school_id is not written. Tenant context remains on the owning resource.
         try {
             return $this->addressesForOwner()->create(array_merge($validated, [
                 'is_primary' => $isPrimary,
-                'school_id'  => $schoolId,
             ]));
         } catch (\Exception $e) {
             Log::error('Address creation failed', [
