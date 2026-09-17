@@ -91,13 +91,11 @@ trait HasAddress
             $this->unsetPrimaryAddress();
         }
 
-        $schoolId = $this->school_id ?? GetSchoolModel()?->id
-            ?? throw new \Exception('No active school context found when creating address.');
-
+        // Phase 1: Address is no longer school-scoped; ownership is polymorphic only.
+        // school_id is not written. Tenant context remains on the owning resource.
         try {
             return $this->addressesForOwner()->create(array_merge($validated, [
                 'is_primary' => $isPrimary,
-                'school_id'  => $schoolId,
             ]));
         } catch (\Exception $e) {
             Log::error('Address creation failed', [
