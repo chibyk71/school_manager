@@ -28,6 +28,8 @@ use InvalidArgumentException;
  * - Deletion is permanent (Address has no SoftDeletes; no restore / forceDelete / withTrashed).
  * - is_primary is capability-controlled only ($isPrimary / $makePrimary); never from arbitrary $data.
  * - Zero or one primary per owner; primary mutations are transactional + owner-row locked.
+ * - Target resolution for primary mutations happens inside the lock (atomic lifecycle).
+ * - Partial-update hierarchy validates against existing + incoming effective location.
  * - First address is not auto-primary; zero primaries are valid; deleting primary does not promote.
  * - Unsaved owners cannot create addresses.
  * - country_id / state_id / city_id are optional; city_text is free-text locality fallback.
@@ -109,6 +111,9 @@ trait HasAddress
      * Normal updates never change primary status. Pass $makePrimary = true to
      * atomically clear the current primary and promote the target.
      *
+     * Primary-changing updates resolve the target inside the owner-locked transaction.
+     * Hierarchy validation uses the effective location (existing attributes + incoming).
+     *
      * @param  Address|string  $address  Address instance or key belonging to this owner
      * @param  array<string, mixed>  $data
      *
@@ -117,14 +122,17 @@ trait HasAddress
      */
     public function updateAddress(Address|string $address, array $data, bool $makePrimary = false): Address
     {
-        $validated = $this->validateAddressData($data, forUpdate: true);
+        $key = $address instanceof Address ? $address->getKey() : $address;
+
+        // Resolve once for hierarchy merge (validation). Primary path re-resolves under lock.
+        $existing = $this->resolveOwnedAddress($key);
+        $validated = $this->validateAddressData($data, forUpdate: true, existing: $existing);
         unset($validated['is_primary']);
 
-        $target = $this->resolveOwnedAddress($address);
-
         if ($makePrimary) {
-            return DB::transaction(function () use ($target, $validated) {
+            return DB::transaction(function () use ($key, $validated) {
                 $this->lockOwnerForPrimaryMutation();
+                $target = $this->resolveOwnedAddress($key);
                 $this->clearPrimaryFlags();
                 $validated['is_primary'] = true;
                 $target->update($validated);
@@ -133,9 +141,9 @@ trait HasAddress
             });
         }
 
-        $target->update($validated);
+        $existing->update($validated);
 
-        return $target->fresh();
+        return $existing->fresh();
     }
 
     /**
@@ -158,16 +166,20 @@ trait HasAddress
     /**
      * Make the given owned address the sole primary (atomic).
      *
+     * Target is resolved inside the transaction after the owner-row lock so the
+     * entire primary mutation is a single serialized unit of work.
+     *
      * @param  Address|string  $address
      *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
     public function setPrimaryAddress(Address|string $address): Address
     {
-        $target = $this->resolveOwnedAddress($address);
+        $key = $address instanceof Address ? $address->getKey() : $address;
 
-        return DB::transaction(function () use ($target) {
+        return DB::transaction(function () use ($key) {
             $this->lockOwnerForPrimaryMutation();
+            $target = $this->resolveOwnedAddress($key);
             $this->clearPrimaryFlags();
             $target->update(['is_primary' => true]);
 
@@ -249,24 +261,38 @@ trait HasAddress
      * Validate address payload against Phase 1 schema / domain rules.
      *
      * Create: address_line_1 and type required; country/state/city optional.
-     * Update: all fields sometimes (partial).
+     * Update: all fields sometimes (partial). Hierarchy is checked against the
+     * effective location (existing address attributes merged with incoming $data).
+     * Only the requested fields from $data are returned for persistence.
      * is_primary is never accepted from $data — stripped by callers.
-     * Location hierarchy: when state_id/city_id supplied, they must match parent FKs.
      *
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      *
      * @throws ValidationException
      */
-    protected function validateAddressData(array $data, bool $forUpdate = false): array
+    protected function validateAddressData(array $data, bool $forUpdate = false, ?Address $existing = null): array
     {
         $presence = $forUpdate ? 'sometimes' : 'required';
 
-        $countryId = $data['country_id'] ?? null;
-        $stateId = $data['state_id'] ?? null;
+        // Effective location for hierarchy: existing attrs + incoming overrides.
+        $effective = $data;
+        if ($existing !== null) {
+            $effective = array_merge(
+                [
+                    'country_id' => $existing->country_id,
+                    'state_id' => $existing->state_id,
+                    'city_id' => $existing->city_id,
+                ],
+                $data
+            );
+        }
+
+        $countryId = $effective['country_id'] ?? null;
+        $stateId = $effective['state_id'] ?? null;
 
         $rules = [
-            // Location FKs optional; hierarchical when present
+            // Location FKs optional; hierarchical when present (against effective parent)
             'country_id' => ['nullable', 'exists:countries,id'],
             'state_id' => [
                 'nullable',
@@ -301,12 +327,63 @@ trait HasAddress
             unset($data['is_primary']);
         }
 
+        // Validate the requested fields, but hierarchy rules use effective parents above.
+        // For fields present only on existing (not in $data), "sometimes" skips them —
+        // so we additionally assert effective hierarchy consistency when location changes.
         $validator = Validator::make($data, $rules);
 
         if ($validator->fails()) {
             throw new ValidationException($validator);
         }
 
-        return $validator->validated();
+        $validated = $validator->validated();
+
+        // When the payload changes a parent without supplying the child, the child may
+        // still sit on the row from a previous country/state. Reject that inconsistency.
+        if ($forUpdate && $existing !== null) {
+            $this->assertEffectiveLocationHierarchy($effective);
+        }
+
+        return $validated;
+    }
+
+    /**
+     * Ensure the effective (existing + incoming) country → state → city chain is coherent.
+     *
+     * @param  array<string, mixed>  $effective
+     *
+     * @throws ValidationException
+     */
+    protected function assertEffectiveLocationHierarchy(array $effective): void
+    {
+        $countryId = $effective['country_id'] ?? null;
+        $stateId = $effective['state_id'] ?? null;
+        $cityId = $effective['city_id'] ?? null;
+
+        $errors = [];
+
+        if ($stateId !== null && $stateId !== '' && $countryId !== null && $countryId !== '') {
+            $stateOk = DB::table('states')
+                ->where('id', $stateId)
+                ->where('country_id', $countryId)
+                ->exists();
+            if (! $stateOk) {
+                $errors['state_id'] = ['The selected state does not belong to the selected country.'];
+            }
+        }
+
+        if ($cityId !== null && $cityId !== '' && $stateId !== null && $stateId !== '') {
+            $cityOk = DB::table('cities')
+                ->where('id', $cityId)
+                ->where('state_id', $stateId)
+                ->exists();
+            if (! $cityOk) {
+                $errors['city_id'] = ['The selected city does not belong to the selected state.'];
+            }
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 }
