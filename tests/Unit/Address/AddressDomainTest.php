@@ -11,7 +11,6 @@
 uses(Tests\TestCase::class);
 
 use App\Models\Address;
-use App\Models\DynamicEnum;
 use App\Models\Profile;
 use App\Rules\InDynamicEnum;
 use Illuminate\Database\Eloquent\Model;
@@ -118,22 +117,27 @@ function buildAddressPhase1Prerequisites(): void
     });
 }
 
-function seedAddressTypeDynamicEnum(): DynamicEnum
+function seedAddressTypeDynamicEnum(): void
 {
-    return DynamicEnum::query()->create([
+    // Insert via query builder: DynamicEnum uses BelongsToSchool, which requires an active
+    // school on Eloquent create even when school_id is intentionally null (global enum).
+    // Global Address type seeds are system-wide (school_id null) — same pattern as Phase4 fixtures.
+    DB::table('dynamic_enums')->insert([
         'id' => (string) Str::uuid(),
         'name' => 'type',
         'label' => 'Address Type',
         'applies_to' => Address::class,
-        'options' => [
+        'options' => json_encode([
             ['value' => 'residential', 'label' => 'Residential'],
             ['value' => 'school_campus', 'label' => 'School Campus'],
             ['value' => 'office', 'label' => 'Office'],
             ['value' => 'postal', 'label' => 'Postal'],
             ['value' => 'temporary', 'label' => 'Temporary'],
             ['value' => 'billing', 'label' => 'Billing'],
-        ],
+        ]),
         'school_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
 }
 
