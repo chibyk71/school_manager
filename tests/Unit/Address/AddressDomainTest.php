@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Address Phase 1 — foundational domain tests.
+ * Address Phase 1 - foundational domain tests.
  *
  * Exercises the real create_addresses_table migration (not a hand-copied Schema::create).
  * Prerequisites (countries/states/cities/dynamic_enums/profiles) are minimal stubs required
@@ -30,7 +30,6 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    // Migration down() drops addresses (and its partial unique index with the table).
     rollbackAddressMigration();
     dropAddressPhase1Prerequisites();
 });
@@ -47,7 +46,6 @@ function loadAddressMigration(): object
 
 function runAddressMigration(): void
 {
-    // Ensure clean slate so migration up() is the sole creator of `addresses`.
     Schema::dropIfExists('addresses');
     loadAddressMigration()->up();
 }
@@ -68,15 +66,11 @@ function dropAddressPhase1Prerequisites(): void
     Schema::dropIfExists('profiles');
 }
 
-/**
- * Tables the Address migration and domain depend on — not a reimplementation of addresses.
- */
 function buildAddressPhase1Prerequisites(): void
 {
     dropAddressPhase1Prerequisites();
     Schema::dropIfExists('addresses');
 
-    // nnjeim/world stubs (integer PKs; migration constrains against these tables)
     Schema::create('countries', function (Blueprint $table) {
         $table->id();
         $table->string('name')->nullable();
@@ -107,7 +101,6 @@ function buildAddressPhase1Prerequisites(): void
         $table->timestamps();
     });
 
-    // Minimal addressable owner (Profile uses HasAddress in production)
     Schema::create('profiles', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->string('first_name')->nullable();
@@ -119,9 +112,8 @@ function buildAddressPhase1Prerequisites(): void
 
 function seedAddressTypeDynamicEnum(): void
 {
-    // Insert via query builder: DynamicEnum uses BelongsToSchool, which requires an active
-    // school on Eloquent create even when school_id is intentionally null (global enum).
-    // Global Address type seeds are system-wide (school_id null) — same pattern as Phase4 fixtures.
+    // DynamicEnum uses BelongsToSchool; Eloquent create requires active school even for
+    // global (school_id null) rows. DB insert matches Phase4 fixtures.
     DB::table('dynamic_enums')->insert([
         'id' => (string) Str::uuid(),
         'name' => 'type',
@@ -167,8 +159,6 @@ function makeAddress(Model $owner, array $attrs = []): Address
     return $address->fresh();
 }
 
-// ── Real migration ──────────────────────────────────────────────────────
-
 it('migrates addresses via the real create_addresses_table migration', function () {
     expect(Schema::hasTable('addresses'))->toBeTrue();
 
@@ -206,7 +196,6 @@ it('creates the SQLite partial unique primary index from the migration', functio
 
     expect($indexes)->toContain('addresses_one_primary_per_owner');
 
-    // Partial index SQL should include the is_primary predicate
     $info = DB::select("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'addresses_one_primary_per_owner'");
     expect($info)->not->toBeEmpty();
     expect(strtolower($info[0]->sql ?? ''))->toContain('is_primary');
@@ -217,7 +206,6 @@ it('rolls back the addresses table via migration down()', function () {
     loadAddressMigration()->down();
     expect(Schema::hasTable('addresses'))->toBeFalse();
 
-    // Restore for afterEach / subsequent assertions in this process
     loadAddressMigration()->up();
 });
 
@@ -238,8 +226,6 @@ it('defaults is_primary to false from the migration', function () {
     $row = DB::table('addresses')->where('id', $id)->first();
     expect((bool) $row->is_primary)->toBeFalse();
 });
-
-// ── Model ───────────────────────────────────────────────────────────────
 
 it('uses UUID identity and does not use SoftDeletes', function () {
     $owner = makeProfile();
@@ -275,8 +261,6 @@ it('exposes addressable country state city relationships and casts', function ()
         ->and($address->longitude)->not->toBeNull();
 });
 
-// ── Ownership ───────────────────────────────────────────────────────────
-
 it('belongs to addressable owner via polymorphic columns only', function () {
     $owner = makeProfile();
     $address = makeAddress($owner, ['type' => 'office']);
@@ -285,8 +269,6 @@ it('belongs to addressable owner via polymorphic columns only', function () {
         ->and($address->addressable_id)->toBe($owner->getKey())
         ->and(Schema::hasColumn('addresses', 'school_id'))->toBeFalse();
 });
-
-// ── Primary invariant (migration partial index) ─────────────────────────────
 
 it('allows zero or one primary and multiple non-primary addresses for same owner', function () {
     $owner = makeProfile();
@@ -328,8 +310,6 @@ it('does not auto-promote the first address to primary', function () {
     expect(Address::where('addressable_id', $owner->id)->where('is_primary', true)->count())->toBe(0);
 });
 
-// ── Dynamic Enum (real InDynamicEnum rule) ────────────────────────────────
-
 it('accepts seeded Address type values through InDynamicEnum', function () {
     seedAddressTypeDynamicEnum();
 
@@ -354,7 +334,6 @@ it('rejects unknown Address type values through InDynamicEnum', function () {
 });
 
 it('fails InDynamicEnum when Address type enum is not configured', function () {
-    // No DynamicEnum row seeded
     $validator = Validator::make(
         ['type' => 'residential'],
         ['type' => [new InDynamicEnum('type', Address::class)]]
@@ -368,7 +347,6 @@ it('accepts Address type through HasAddress validation path when enum is seeded'
     $countryId = DB::table('countries')->insertGetId(['name' => 'Nigeria', 'iso2' => 'NG']);
     $owner = makeProfile();
 
-    // HasAddress::validateAddressData is protected; exercise via addAddress (public API).
     $address = $owner->addAddress([
         'country_id' => $countryId,
         'address_line_1' => '15 Admiralty Way',
@@ -394,8 +372,6 @@ it('rejects invalid Address type through HasAddress validation path', function (
     ], false))->toThrow(ValidationException::class);
 });
 
-// ── HasAddress compatibility (Phase 1 school_id removal) ────────────────────
-
 it('creates an address via HasAddress without writing school_id', function () {
     seedAddressTypeDynamicEnum();
     $countryId = DB::table('countries')->insertGetId(['name' => 'Nigeria', 'iso2' => 'NG']);
@@ -414,8 +390,6 @@ it('creates an address via HasAddress without writing school_id', function () {
         ->and($row->addressable_id)->toBe($owner->id)
         ->and(property_exists($row, 'school_id') || isset($row->school_id))->toBeFalse();
 });
-
-// ── Lifecycle ───────────────────────────────────────────────────────────
 
 it('permanently deletes an address with no soft-delete residual', function () {
     $owner = makeProfile();
