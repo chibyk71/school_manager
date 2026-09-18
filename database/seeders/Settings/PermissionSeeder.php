@@ -165,7 +165,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'class-sections.force-delete', 'display_name' => 'Force Delete Class Section', 'description' => 'Permanently delete a class section from the database'],
             ['name' => 'class-sections.bulk-generate', 'display_name' => 'Bulk Generate Class Sections', 'description' => 'Generate multiple class arms or sections at once'],
             ['name' => 'class-sections.assign-teacher', 'display_name' => 'Assign Teacher', 'description' => 'Set or change the form teacher for a class section'],
-            ['name' => 'class-sections.manage-subjects', 'description' => 'Manage Subject Assignments', 'description' => 'Assign or manage subjects for a class section'],
+            ['name' => 'class-sections.manage-subjects', 'display_name' => 'Manage Subject Assignments', 'description' => 'Assign or manage subjects for a class section'],
             ['name' => 'class-sections.reorder', 'display_name' => 'Reorder Class Sections', 'description' => 'Change the display sort order of class sections'],
             ['name' => 'class-sections.toggle-status', 'display_name' => 'Toggle Class Status', 'description' => 'Activate or deactivate a class section'],
 
