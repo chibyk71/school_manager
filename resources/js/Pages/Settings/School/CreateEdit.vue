@@ -1,6 +1,6 @@
-<!-- resources/js/Pages/Settings/Schools/CreateEdit.vue -->
+﻿<!-- resources/js/Pages/Settings/Schools/CreateEdit.vue -->
 <!--
-CreateEdit.vue v1.0 – Production-Ready Combined Create/Edit School Form
+CreateEdit.vue v1.0 â€“ Production-Ready Combined Create/Edit School Form
 
 Purpose & Context:
 ------------------
@@ -14,7 +14,7 @@ It replaces previous modal-based flows and aligns perfectly with the updated bac
 
 Key Features & Problems Solved:
 ------------------------------
-- **Single component** for create & edit → DRY, consistent UX, easy maintenance
+- **Single component** for create & edit â†’ DRY, consistent UX, easy maintenance
 - **Primary Address Section** using flattened fields matching AddressFormData (from address.ts)
 - **Branding/Media Uploads** with live previews (Spatie Media Library single-file collections)
 - **Responsive, accessible layout** using Tailwind + PrimeVue best practices
@@ -31,8 +31,8 @@ Integration Points:
 - Props: school (null | School), countries, timezones
 - Uses: useForm from Inertia, useToast from PrimeVue
 - Submits to: schools.store (POST) or schools.update (PUT with _method)
-- Address data sent as 'primary_address' array → validated & stored via HasAddress trait
-- Media files sent directly → handled by Spatie in controller/service
+- Address data sent as 'primary_address' array â†’ validated & stored via HasAddress trait
+- Media files sent directly â†’ handled by Spatie in controller/service
 
 Responsive Design:
 ------------------
@@ -62,7 +62,6 @@ import type { Address, AddressFormData } from '@/types/address';
 import TextInput from '@/Components/forms/textInput.vue';
 import { Select } from 'primevue';
 import InputLabel from '@/Components/forms/InputLabel.vue';
-import AddressManager from '@/Components/Address/AddressManager.vue';
 
 interface Props {
     school?: any; // null on create, School instance on edit (with appended media URLs and loaded primaryAddress)
@@ -100,7 +99,7 @@ const firstAddress = computed<(AddressFormData | Address)[]>(() => {
     return props.school.address
 });
 
-// Inertia form – matches Store/UpdateSchoolRequest expectations
+// Inertia form â€“ matches Store/UpdateSchoolRequest expectations
 const form = useForm({
     name: props.school?.name ?? '',
     code: props.school?.code ?? '',
@@ -110,7 +109,7 @@ const form = useForm({
     type: props.school?.type ?? 'private',
     is_active: props.school?.is_active ?? true,
 
-    // Primary address – flattened fields
+    // Primary address â€“ flattened fields
     addresses: firstAddress.value,
 
     // Media files (File objects or null)
@@ -241,15 +240,8 @@ const schoolTypeOptions = [
                                 </div>
                             </div>
 
-                            <!-- Addresses – Full multi-address support via AddressManager -->
-                            <div>
-                                <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
-                                    Addresses
-                                </h2>
-                                <!-- AddressManager handles create/edit mode, primary designation, and full CRUD -->
-                                <AddressManager addressable-type="App\\Models\\School"
-                                    :addressable-id="props.school?.id ?? null" v-model="form.addresses" />
-                            </div>
+                            <!-- Addresses: multi-address UI deferred to Address Phase 4. Primary address via SchoolService / HasAddress. -->
+                            <div v-if="false"></div>
 
                             <!-- Branding & Media - Unchanged (FileUpload doesn't use TextInput) -->
                             <div>

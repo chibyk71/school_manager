@@ -1,12 +1,12 @@
-<!-- resources/js/Components/Forms/AddressForm.vue -->
+﻿<!-- resources/js/Components/Forms/AddressForm.vue -->
 <!--
-AddressForm.vue v2.0 – Production-Ready Reusable Address Form (Fully Aligned with Address Module)
+AddressForm.vue v2.0 â€“ Production-Ready Reusable Address Form (Fully Aligned with Address Module)
 
 Purpose & Problems Solved:
 - Central, reusable form component for all address input across the application.
 - Perfectly mirrors backend validation (HasAddress trait) and model fillable fields.
-- Full v-model support for two-way binding (used in AddressManager.vue and AddressModal.vue).
-- Cascading async selects powered by nnjeim/world API (Country → State → City) using your production AsyncSelect.vue.
+- Full v-model support for two-way binding (reusable address form fields).
+- Cascading async selects powered by nnjeim/world API (Country â†’ State â†’ City) using your production AsyncSelect.vue.
 - Nigeria-first UX: landmark with tooltip, city_text shown only when no city selected.
 - Address type dropdown driven by centralized ADDRESS_TYPE_OPTIONS from address.ts (consistent with backend enum).
 - Geolocation inputs with high precision (decimal:7) and proper bounds.
@@ -16,14 +16,14 @@ Purpose & Problems Solved:
 - Responsive Tailwind grid layout (mobile-friendly).
 - Accessible: labels, required indicators, tooltips, proper ARIA via PrimeVue.
 - Clean error display using PrimeVue Message component.
-- Type-safe with AddressFormData from address.ts – no mismatched fields.
+- Type-safe with AddressFormData from address.ts â€“ no mismatched fields.
 
 Key Changes in v2.0:
 - Upgraded to use ADDRESS_TYPE_OPTIONS & getAddressTypeLabel from '@/types/address' (single source of truth).
 - Fixed AsyncSelect configuration to exactly match nnjeim/world documented endpoints:
-  • Countries: GET /api/countries?search=...
-  • States: GET /api/states?filters[country_id]=...
-  • Cities: GET /api/cities?filters[state_id]=...
+  â€¢ Countries: GET /api/countries?search=...
+  â€¢ States: GET /api/states?filters[country_id]=...
+  â€¢ Cities: GET /api/cities?filters[state_id]=...
 - Ensured cascading works reliably via reactive search_params.
 - Improved conditional rendering: State only when country selected, city_text only when no city.
 - Consistent height styling for all inputs.
@@ -32,9 +32,9 @@ Key Changes in v2.0:
 
 Fits into the Address Management Module:
 - Core input component used by:
-  • AddressModal.vue (create/edit modal)
-  • AddressManager.vue (inline first address in create mode)
-- Works with useAddress composable (direct submit mode) and bundled emit mode.
+  â€¢ Phase 4 UI (create/edit modal)
+  â€¢ owner forms (inline first address in create mode)
+- Works with owner workflows (direct submit mode) and bundled emit mode.
 - Validation errors come from Inertia (via useModalForm or parent form).
 - Type dropdown stays in sync with backend validation and configurable via HasConfig.
 
@@ -184,7 +184,7 @@ const getErrorMessage = (field: keyof AddressFormData): string | undefined => {
                     Landmark
                     <i
                         class="pi pi-info-circle text-xs text-gray-500 ml-1 cursor-help"
-                        v-tooltip.top="'Common in Nigeria – e.g., Near GTBank, Opposite Shoprite'"
+                        v-tooltip.top="'Common in Nigeria â€“ e.g., Near GTBank, Opposite Shoprite'"
                     ></i>
                 </label>
                 <InputText

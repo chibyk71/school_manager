@@ -1,7 +1,7 @@
-<?php
+﻿<?php
 
 /**
- * SchoolService v3.0 – Production-Ready with Polymorphic Address Integration
+ * SchoolService v3.0 â€“ Production-Ready with Polymorphic Address Integration
  *
  * Purpose & Context:
  * ------------------
@@ -11,12 +11,12 @@
  * Key Changes & Improvements in v3.0:
  * -----------------------------------
  * - createSchool() and updateSchool() now handle primary address via HasAddress trait methods:
- *   • Uses $school->addAddress($data, true) on create
- *   • Uses intelligent primary address upsert on update (update existing if present, add new if not)
+ *   â€¢ Uses $school->addAddress($data, true) on create
+ *   â€¢ Uses intelligent primary address upsert on update (update existing if present, add new if not)
  * - Address payload standardized to 'primary_address' (flattened array) to match Store/UpdateSchoolRequest
  *   and upcoming CreateEdit.vue form.
  * - Removed outdated nested 'address' handling (old JSON-style fields).
- * - Validation fully delegated to HasAddress::validateAddressData() – no duplication here.
+ * - Validation fully delegated to HasAddress::validateAddressData() â€“ no duplication here.
  * - Media handling left untouched (Spatie collections managed in controller via $request->file()).
  * - Transaction boundaries preserved for data integrity.
  * - Comprehensive logging and error handling.
@@ -34,19 +34,19 @@
  * -------------------
  * 1. StoreSchoolRequest validates core fields + optional primary_address array.
  * 2. Controller calls $this->schoolService->createSchool($validated).
- * 3. Service creates school → adds primary address if provided → fires SchoolCreated event.
+ * 3. Service creates school â†’ adds primary address if provided â†’ fires SchoolCreated event.
  *
  * Usage Flow (Update):
  * -------------------
  * 1. UpdateSchoolRequest validates core + optional primary_address.
  * 2. Controller calls $this->schoolService->updateSchool($school, $validated).
- * 3. Service updates core attributes → upserts primary address if provided.
+ * 3. Service updates core attributes â†’ upserts primary address if provided.
  *
  * Fits into School Module:
  * ------------------------
  * Works with SchoolController (create/edit/store/update), Store/UpdateSchoolRequest,
  * HasAddress trait, and the upcoming combined CreateEdit.vue page.
- * Future-proof for AddressService integration (events, notifications, geocoding).
+ * Address mutations use HasAddress on the School model (no standalone AddressService).
  */
 
 namespace App\Services;
@@ -161,11 +161,11 @@ class SchoolService
                     // Update existing primary address
                     $school->updateAddress($primary->id, $data['primary_address']);
                 } elseif (!empty($data['primary_address'])) {
-                    // No primary exists → create new one
+                    // No primary exists â†’ create new one
                     $school->addAddress($data['primary_address'], true);
                 } elseif ($primary && empty($data['primary_address'])) {
                     // Optional: soft-delete primary if payload explicitly empty? (not recommended)
-                    // Currently: do nothing – keeps existing primary
+                    // Currently: do nothing â€“ keeps existing primary
                 }
             }
 

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers;
 
@@ -40,7 +40,7 @@ use Throwable;
  * Important Notes:
  * ----------------
  * - The store() method is the primary entry point for tenant onboarding
- * - Admin creation is fully decoupled — handled optionally after school creation
+ * - Admin creation is fully decoupled â€” handled optionally after school creation
  * - Section context is managed via SchoolService (active section resolution)
  * - All destructive actions (deactivate, forceDelete, restore) include safety checks
  *   and support bulk operations
@@ -204,20 +204,20 @@ class SchoolController extends BaseSchoolController
     }
 
     /**
-     * SchoolController::store() v2.0 – Create School with Multi-Address Support
+     * SchoolController::store() v2.0 â€“ Create School with Multi-Address Support
      *
      * Purpose & Context:
      * ------------------
      * Handles HTTP POST for creating a new school (tenant/branch) in the multi-tenant SaaS.
-     * Updated to support **multiple addresses** via the AddressManager component and polymorphic HasAddress trait.
+     * Primary address handled via polymorphic HasAddress trait on School (multi-address UI is Address Phase 4).
      *
      * Key Changes & Improvements (v2.0):
      * ----------------------------------
-     * - Removed manual primary address handling – now fully delegated to AddressManager.vue.
+     * - Removed manual primary address handling â€“ now fully delegated to HasAddress.
      * - Expects 'addresses' array in request (array of AddressFormData from frontend).
-     * - Passes entire validated payload to SchoolService::createSchool() – service handles core creation.
+     * - Passes entire validated payload to SchoolService::createSchool() â€“ service handles core creation.
      * - Address creation now handled in a dedicated loop using $school->addAddress($addrData, $isPrimary).
-     *   • First address marked as primary, others as regular.
+     *   â€¢ First address marked as primary, others as regular.
      * - Media handling unchanged (Spatie single-file collections).
      * - Cache invalidation and active school context preserved.
      * - Success response supports Inertia (JSON) and traditional redirect.
@@ -225,14 +225,14 @@ class SchoolController extends BaseSchoolController
      *
      * Problems Solved:
      * ----------------
-     * - Supports full multi-address workflow (add/edit/delete via AddressManager).
+     * - Multi-address UI deferred to Address Phase 4; backend capability is HasAddress.
      * - Eliminates outdated single-address logic.
-     * - Keeps controller thin – business logic (address creation loop) could move to service if preferred.
+     * - Keeps controller thin â€“ business logic (address creation loop) could move to service if preferred.
      * - Ensures only one primary address (first in array).
      *
      * Integration:
      * ------------
-     * - Frontend: AddressManager v-model="form.addresses" sends full array.
+     * - Frontend: primary_address / addresses form data processed by SchoolService.
      * - Request: StoreSchoolRequest validates core fields + 'addresses' => 'sometimes|array'.
      * - Service: createSchool() only creates core record.
      * - Trait: HasAddress handles validation/storage per address.
@@ -256,7 +256,7 @@ class SchoolController extends BaseSchoolController
                 }
             }
 
-            // 3. Optional admin assignment (unchanged – supports onboarding flows)
+            // 3. Optional admin assignment (unchanged â€“ supports onboarding flows)
             if ($request->hasAny(['admin_id', 'admin_name', 'admin_email'])) {
                 $adminData = [
                     'name' => $request->input('admin_name'),
@@ -268,7 +268,7 @@ class SchoolController extends BaseSchoolController
                 $this->schoolService->assignAdmin($adminData, $school);
             }
 
-            // 4. Handle media uploads (Spatie – single-file collections)
+            // 4. Handle media uploads (Spatie â€“ single-file collections)
             $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];
             foreach ($mediaCollections as $collection) {
                 if ($request->hasFile($collection)) {
@@ -425,26 +425,26 @@ class SchoolController extends BaseSchoolController
     }
 
     /**
-     * SchoolController::update() v2.0 – Update School with Multi-Address Support
+     * SchoolController::update() v2.0 â€“ Update School with Multi-Address Support
      *
      * Purpose & Context:
      * ------------------
      * Handles full or partial updates to an existing school.
-     * Now supports **multiple addresses** via AddressManager workflow.
+     * Primary address via HasAddress; multi-address UI is Address Phase 4.
      *
      * Key Changes & Improvements (v2.0):
      * ----------------------------------
      * - Removed outdated single-address handling.
      * - If 'addresses' array present: deletes all existing addresses, then recreates from payload.
-     *   • First = primary, others = regular.
-     *   • Alternative: Could implement diff-based updates (future enhancement).
+     *   â€¢ First = primary, others = regular.
+     *   â€¢ Alternative: Could implement diff-based updates (future enhancement).
      * - Partial is_active toggle preserved (for inline actions).
      * - Media handling unchanged.
      * - Cache invalidation on any change.
      *
      * Problems Solved:
      * ----------------
-     * - Full sync with AddressManager (replace all addresses on save).
+     * - Address mutations use School → HasAddress.
      * - Consistent with create flow.
      * - Simple, reliable implementation (full replace avoids complex diff logic).
      */
@@ -460,7 +460,7 @@ class SchoolController extends BaseSchoolController
                 // 2. Full update: core attributes
                 $school->update($request->safe()->except(['addresses']));
 
-                // 3. Sync addresses – full replace (simplest reliable approach)
+                // 3. Sync addresses â€“ full replace (simplest reliable approach)
                 if ($request->has('addresses') && is_array($request->input('addresses'))) {
                     // Delete all existing addresses (soft or force depending on Address model)
                     $school->addresses()->delete(); // or forceDelete() if needed
@@ -555,7 +555,7 @@ class SchoolController extends BaseSchoolController
         // ---------------------------------------------------------------------
         // Ensure the user has general permission to delete schools.
         // Uses Laravel's Gate/Policy with 'delete' ability on the School class.
-        // A specific instance is not checked here — canDeactivate() handles business rules.
+        // A specific instance is not checked here â€” canDeactivate() handles business rules.
         Gate::authorize('delete', School::class);
 
         try {
@@ -845,7 +845,7 @@ class SchoolController extends BaseSchoolController
      * - Supports both authenticated Inertia/AJAX requests (JSON response) and traditional form posts.
      * - Authorization: Uses the general 'update' ability on the School class.
      *   Granular per-school checks can be added in a policy if required.
-     * - Safety: Skips schools that are soft-deleted (trashed) – status toggle is disabled on trashed rows
+     * - Safety: Skips schools that are soft-deleted (trashed) â€“ status toggle is disabled on trashed rows
      *   in the frontend, but we double-check here to prevent accidental API misuse.
      * - Efficiency: Uses mass update where possible, but falls back to individual updates
      *   to allow future per-school hooks or events.
