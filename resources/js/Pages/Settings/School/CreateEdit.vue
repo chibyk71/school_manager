@@ -240,14 +240,9 @@ const schoolTypeOptions = [
                                 </div>
                             </div>
 
-                            <!-- Addresses ΓÇô Full multi-address support via AddressManager -->
-                            <div>
-                                <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
-                                    Addresses
-                                </h2>
-                                <!-- AddressManager handles create/edit mode, primary designation, and full CRUD -->
-                                    :addressable-id="props.school?.id ?? null" v-model="form.addresses" />
-                            </div>
+                            <!-- Addresses: multi-address UI deferred to Address Phase 4.
+     Primary address continues via form primary_address / SchoolService -> HasAddress. -->
+<div v-if="false"></div>
 
                             <!-- Branding & Media - Unchanged (FileUpload doesn't use TextInput) -->
                             <div>
