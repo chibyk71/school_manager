@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 // database/seeders/Settings/PermissionSeeder.php
 
 namespace Database\Seeders\Settings;

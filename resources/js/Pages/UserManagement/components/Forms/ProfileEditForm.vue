@@ -1,38 +1,38 @@
-﻿<!-- /resources/js/Pages/UserManagement/components/Forms/ProfileEditForm.vue -->
+<!-- /resources/js/Pages/UserManagement/components/Forms/ProfileEditForm.vue -->
 <!--
   resources/js/Pages/Profile/EditSelf.vue
   (or resources/js/Components/Modals/Edit/ProfileSelfEditModal.vue if used as modal)
 
-  Self Profile Edit Page / Modal â€“ Personal + Address + Password Change
+  Self Profile Edit Page / Modal ΓÇô Personal + Address + Password Change
 
   Features / Problems Solved:
-  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  â€¢ Full self-service profile editing (name, email, phone, username, avatar, address)
-  â€¢ Avatar upload with preview, drag-drop, delete & size validation
-  â€¢ Responsive two-column layout (sidebar avatar + main form) on md+
-  â€¢ PrimeVue components for consistency (InputText, Button, FileUpload, etc.)
-  â€¢ Form validation using Inertia useForm + custom rules
-  â€¢ Password change section with visibility toggle
-  â€¢ Matches backend ProfileController update() + uploadAvatar()
-  â€¢ Dark mode support + accessibility (labels, focus states, ARIA)
-  â€¢ Uses useModalForm composable for submit/close/reload pattern
-  â€¢ Fits into your modal system (can be registered in ModalDirectory as 'edit-profile-self')
+  ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  ΓÇó Full self-service profile editing (name, email, phone, username, avatar, address)
+  ΓÇó Avatar upload with preview, drag-drop, delete & size validation
+  ΓÇó Responsive two-column layout (sidebar avatar + main form) on md+
+  ΓÇó PrimeVue components for consistency (InputText, Button, FileUpload, etc.)
+  ΓÇó Form validation using Inertia useForm + custom rules
+  ΓÇó Password change section with visibility toggle
+  ΓÇó Matches backend ProfileController update() + uploadAvatar()
+  ΓÇó Dark mode support + accessibility (labels, focus states, ARIA)
+  ΓÇó Uses useModalForm composable for submit/close/reload pattern
+  ΓÇó Fits into your modal system (can be registered in ModalDirectory as 'edit-profile-self')
 
   Backend Alignment:
-  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  â€¢ PATCH /profiles/{profile} â†’ update personal info
-  â€¢ POST /profiles/{profile}/avatar â†’ avatar upload (Spatie MediaLibrary)
-  â€¢ PATCH /profiles/{profile}/password â†’ change password (separate or same form)
+  ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  ΓÇó PATCH /profiles/{profile} ΓåÆ update personal info
+  ΓÇó POST /profiles/{profile}/avatar ΓåÆ avatar upload (Spatie MediaLibrary)
+  ΓÇó PATCH /profiles/{profile}/password ΓåÆ change password (separate or same form)
 
   Usage:
-  â€¢ As full page: <EditSelf /> in Pages/Profile/Edit.vue
-  â€¢ As modal: register in ModalDirectory â†’ open via useModal().open('edit-profile-self', { profile })
+  ΓÇó As full page: <EditSelf /> in Pages/Profile/Edit.vue
+  ΓÇó As modal: register in ModalDirectory ΓåÆ open via useModal().open('edit-profile-self', { profile })
 
   TODO / Future:
-  â€¢ Add dynamic enums (gender, title) via HasDynamicEnum trait
-  â€¢ Add country/state/city dropdowns with nnjeim/world integration
-  â€¢ Add email verification status badge
-  â€¢ Add 2FA toggle if implemented
+  ΓÇó Add dynamic enums (gender, title) via HasDynamicEnum trait
+  ΓÇó Add country/state/city dropdowns with nnjeim/world integration
+  ΓÇó Add email verification status badge
+  ΓÇó Add 2FA toggle if implemented
 -->
 
 <script setup lang="ts">
@@ -49,9 +49,9 @@ import InputWrapper from '@/Components/forms/InputWrapper.vue'
 import CustomField from '@/Pages/Settings/System/CustomField.vue'
 import CustomFieldRenderer from '@/Components/CustomFieldRenderer.vue'
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // Props (when used as modal)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 const props = defineProps<{
     profile?: {
         id: number | string
@@ -70,9 +70,9 @@ const props = defineProps<{
     }
 }>()
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // Form Setup
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 const form = useForm({
     title: props.profile?.title || '',
     first_name: props.profile?.first_name || '',
@@ -156,7 +156,7 @@ const uploadAvatar = () => {
                             <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                                 <i class="pi pi-cloud-upload text-4xl text-gray-400 mb-3"></i>
                                 <p class="text-sm">JPG or PNG</p>
-                                <p class="text-xs text-gray-500">(Max 450 Ã— 450 px)</p>
+                                <p class="text-xs text-gray-500">(Max 450 ├ù 450 px)</p>
                             </div>
                         </template>
                         <template #header="{ chooseCallback, uploadCallback, clearCallback, files }">
@@ -229,12 +229,12 @@ const uploadAvatar = () => {
                     </div>
                 </Card>
 
-                <!-- Address Information: multi-address UI deferred to Address Phase 4.
-                     Owner-level address mutations use HasAddress on the backend. -->
-                <Card v-if="false">
+                <!-- Address Information -->
+                <Card>
                     <template #header>
                         <div class="flex justify-between items-center">
                             <h5 class="font-semibold text-lg">Address Information</h5>
+                            <!-- <Button icon="pi pi-pencil" label="Edit" severity="primary" text size="small" /> -->
                         </div>
                     </template>
                 </Card>
