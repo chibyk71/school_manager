@@ -5,7 +5,7 @@ AddressForm.vue v2.0 – Production-Ready Reusable Address Form (Fully Aligned w
 Purpose & Problems Solved:
 - Central, reusable form component for all address input across the application.
 - Perfectly mirrors backend validation (HasAddress trait) and model fillable fields.
-- Full v-model support for two-way binding (used in AddressManager.vue and AddressModal.vue).
+- Full v-model support for two-way binding (reusable address form fields).
 - Cascading async selects powered by nnjeim/world API (Country → State → City) using your production AsyncSelect.vue.
 - Nigeria-first UX: landmark with tooltip, city_text shown only when no city selected.
 - Address type dropdown driven by centralized ADDRESS_TYPE_OPTIONS from address.ts (consistent with backend enum).
@@ -32,9 +32,9 @@ Key Changes in v2.0:
 
 Fits into the Address Management Module:
 - Core input component used by:
-  • AddressModal.vue (create/edit modal)
-  • AddressManager.vue (inline first address in create mode)
-- Works with useAddress composable (direct submit mode) and bundled emit mode.
+  • Phase 4 UI (create/edit modal)
+  • owner forms (inline first address in create mode)
+- Works with owner workflows (direct submit mode) and bundled emit mode.
 - Validation errors come from Inertia (via useModalForm or parent form).
 - Type dropdown stays in sync with backend validation and configurable via HasConfig.
 

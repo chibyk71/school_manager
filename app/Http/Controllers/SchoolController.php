@@ -209,11 +209,11 @@ class SchoolController extends BaseSchoolController
      * Purpose & Context:
      * ------------------
      * Handles HTTP POST for creating a new school (tenant/branch) in the multi-tenant SaaS.
-     * Updated to support **multiple addresses** via the AddressManager component and polymorphic HasAddress trait.
+     * Primary address handled via polymorphic HasAddress trait on School (multi-address UI is Address Phase 4).
      *
      * Key Changes & Improvements (v2.0):
      * ----------------------------------
-     * - Removed manual primary address handling – now fully delegated to AddressManager.vue.
+     * - Primary address handling delegated to SchoolService -> HasAddress.
      * - Expects 'addresses' array in request (array of AddressFormData from frontend).
      * - Passes entire validated payload to SchoolService::createSchool() – service handles core creation.
      * - Address creation now handled in a dedicated loop using $school->addAddress($addrData, $isPrimary).
@@ -225,14 +225,14 @@ class SchoolController extends BaseSchoolController
      *
      * Problems Solved:
      * ----------------
-     * - Supports full multi-address workflow (add/edit/delete via AddressManager).
+     * - Multi-address UI deferred to Address Phase 4; backend capability is HasAddress.
      * - Eliminates outdated single-address logic.
      * - Keeps controller thin – business logic (address creation loop) could move to service if preferred.
      * - Ensures only one primary address (first in array).
      *
      * Integration:
      * ------------
-     * - Frontend: AddressManager v-model="form.addresses" sends full array.
+     * - Frontend: primary_address / addresses form data processed by SchoolService.
      * - Request: StoreSchoolRequest validates core fields + 'addresses' => 'sometimes|array'.
      * - Service: createSchool() only creates core record.
      * - Trait: HasAddress handles validation/storage per address.
@@ -430,7 +430,7 @@ class SchoolController extends BaseSchoolController
      * Purpose & Context:
      * ------------------
      * Handles full or partial updates to an existing school.
-     * Now supports **multiple addresses** via AddressManager workflow.
+     * Primary address via HasAddress; multi-address UI is Address Phase 4.
      *
      * Key Changes & Improvements (v2.0):
      * ----------------------------------
@@ -444,7 +444,7 @@ class SchoolController extends BaseSchoolController
      *
      * Problems Solved:
      * ----------------
-     * - Full sync with AddressManager (replace all addresses on save).
+     * - Address mutations use School -> HasAddress.
      * - Consistent with create flow.
      * - Simple, reliable implementation (full replace avoids complex diff logic).
      */

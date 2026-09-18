@@ -10,7 +10,7 @@
  * - Defines a strict union type for the 'type' field (matching backend validation rules).
  * - Supplies ready-to-use dropdown options and label helper for AddressForm.vue and any future select components.
  * - Includes optional school_id (multi-tenant) – hidden from forms but available when needed (e.g., DataTables).
- * - Prevents "any" leakage and field name mismatches throughout the module (AddressManager.vue, AddressList.vue, AddressModal.vue, etc.).
+ * - Prevents "any" leakage and field name mismatches for address form data aligned with HasAddress.
  * - Enables consistent handling of nullable fields, relations, and accessors.
  *
  * Key Changes in v2.0:
@@ -20,8 +20,7 @@
  * - Kept ADDRESS_TYPE_OPTIONS exhaustive and type-safe using 'satisfies'.
  *
  * Fits into the Address Management Module:
- * - Used by all address-related components (AddressForm.vue, AddressModal.vue, AddressManager.vue, AddressList.vue).
- * - Consumed by useAddress composable (future) and any DataTable configurations.
+ * - Used by AddressForm.vue and owner forms; domain types match HasAddress fillable/validation.
  * - Critical for type-safe communication between backend (Inertia props / JSON responses) and frontend.
  *
  * Usage Examples:

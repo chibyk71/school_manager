@@ -46,7 +46,7 @@
  * ------------------------
  * Works with SchoolController (create/edit/store/update), Store/UpdateSchoolRequest,
  * HasAddress trait, and the upcoming combined CreateEdit.vue page.
- * Future-proof for AddressService integration (events, notifications, geocoding).
+ * Address mutations use HasAddress on the School model (no standalone AddressService).
  */
 
 namespace App\Services;

@@ -42,7 +42,6 @@ import { useToast, FileUpload, InputText, Button, Password, Avatar, Card } from 
 
 import { useModalForm } from '@/composables/useModalForm'
 import { useModal } from '@/composables/useModal'
-import AddressManager from '@/Components/Address/AddressManager.vue'
 import TextInput from '@/Components/forms/textInput.vue'
 import type { AddressFormData } from '@/types/address'
 import DynamicEnumField from '@/Components/forms/DynamicEnumField.vue'
@@ -229,17 +228,8 @@ const uploadAvatar = () => {
                          }" />
                     </div>
                 </Card>
-
-                <!-- Address Information -->
-                <Card>
-                    <template #header>
-                        <div class="flex justify-between items-center">
-                            <h5 class="font-semibold text-lg">Address Information</h5>
-                            <!-- <Button icon="pi pi-pencil" label="Edit" severity="primary" text size="small" /> -->
-                        </div>
-                    </template>
-                    <AddressManager addressable-type="profile" v-model="form.address" />
-                </Card>
+                <!-- Address Information: multi-address UI deferred to Address Phase 4. -->
+                <Card v-if="false"></Card>
 
                 <!-- Password Change -->
                 <Card>

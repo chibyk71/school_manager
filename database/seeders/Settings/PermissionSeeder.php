@@ -34,14 +34,6 @@ class PermissionSeeder extends Seeder
             ['name' => 'dynamic-enums.view', 'display_name' => 'View Dynamic Enums', 'description' => 'View dynamic enum definitions and options'],
             ['name' => 'dynamic-enums.manage', 'display_name' => 'Manage Dynamic Enums', 'description' => 'Create, update, or delete dynamic enum definitions and options'],
 
-            // Address permissions
-            ['name' => 'address.view-any', 'display_name' => 'View All Addresses', 'description' => 'View list of all addresses across all owners (admin feature)',],
-            ['name' => 'address.view', 'display_name' => 'View Own Addresses', 'description' => 'View addresses belonging to models the user owns or has access to (e.g., own student/staff profile)',],
-            ['name' => 'address.create', 'display_name' => 'Create Addresses', 'description' => 'Create new addresses for models the user has access to'],
-            ['name' => 'address.update', 'display_name' => 'Update Addresses', 'description' => 'Update existing addresses belonging to models the user has access to'],
-            ['name' => 'address.delete', 'display_name' => 'Delete Addresses', 'description' => 'Soft delete addresses belonging to models the user has access to'],
-            ['name' => 'address.restore', 'display_name' => 'Restore Deleted Addresses', 'description' => 'Restore soft-deleted addresses (admin or owner recovery)',],
-
             // Schools (Tenant Management)
             ['name' => 'schools.view-any', 'display_name' => 'View All Schools', 'description' => 'Access the list of schools'],
             ['name' => 'schools.view', 'display_name' => 'View School', 'description' => 'Access The detail of individual school'],

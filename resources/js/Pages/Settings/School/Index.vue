@@ -10,7 +10,7 @@ It provides a powerful, searchable, sortable data table with full row/bulk actio
 Key Features & Improvements (v2.0):
 ----------------------------------
 - **Full integration with multi-address workflow**: Edit action now links to CreateEdit.vue (full-page form)
-  which uses AddressManager.vue for complete address CRUD (multiple addresses + primary designation).
+  Address multi-address UI is deferred to Address Phase 4; primary address via HasAddress.
 - **Consistent action handling** via reusable composables (useDeleteResource, useRestoreResource).
 - **Permission-aware UI** using usePermissions composable.
 - **Trashed toggle** support via useTrashedToggle.
@@ -33,7 +33,7 @@ Dependencies:
 -------------
 - AdvancedDataTable.vue
 - useDeleteResource, useRestoreResource, useTrashedToggle, usePermissions
-- AddressManager.vue (indirectly via edit page)
+- Primary address via SchoolService -> HasAddress (Phase 4 multi-address UI pending)
 -->
 
 <script setup lang="ts">

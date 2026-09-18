@@ -108,13 +108,6 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
         },
     },
 
-    'address': {
-        loader: () => import('@/Components/Modals/Create/AddressModal.vue'),
-        config: {
-            title: 'Address',
-            maxWidth: '2xl',
-        },
-    },
 
     'dynamic-enum-metadata': {
         loader: () => import('@/Components/Modals/Create/DynamicEnumMetadataForm.vue'),

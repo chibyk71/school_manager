@@ -62,7 +62,6 @@ import type { Address, AddressFormData } from '@/types/address';
 import TextInput from '@/Components/forms/textInput.vue';
 import { Select } from 'primevue';
 import InputLabel from '@/Components/forms/InputLabel.vue';
-import AddressManager from '@/Components/Address/AddressManager.vue';
 
 interface Props {
     school?: any; // null on create, School instance on edit (with appended media URLs and loaded primaryAddress)
@@ -240,16 +239,9 @@ const schoolTypeOptions = [
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Addresses – Full multi-address support via AddressManager -->
-                            <div>
-                                <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
-                                    Addresses
-                                </h2>
-                                <!-- AddressManager handles create/edit mode, primary designation, and full CRUD -->
-                                <AddressManager addressable-type="App\\Models\\School"
-                                    :addressable-id="props.school?.id ?? null" v-model="form.addresses" />
-                            </div>
+                            <!-- Addresses: multi-address UI deferred to Address Phase 4.
+                                 Primary address continues via form primary_address and SchoolService -> HasAddress. -->
+                            <div v-if="false"></div>
 
                             <!-- Branding & Media - Unchanged (FileUpload doesn't use TextInput) -->
                             <div>
