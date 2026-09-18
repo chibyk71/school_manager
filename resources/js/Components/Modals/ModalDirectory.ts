@@ -1,1 +1,248 @@
-PLACEHOLDER
+// src/components/Modals/ModalDirectory.ts
+/**
+ * ModalDirectory.ts
+ *
+ * Central, type-safe registry for all dynamic modals in the application.
+ *
+ * Features / Problems Solved:
+ * - Acts as the single source of truth for modal identifiers, lazy-loaded components, and optional UI configurations.
+ * - Enables full code-splitting via dynamic imports → smaller initial bundle.
+ * - Provides optional per-modal settings (title, maxWidth, maxHeight, persistent behavior) applied automatically in ResourceDialog.vue.
+ * - Generates a strict `ModalId` union type from the object keys → eliminates typos and offers autocomplete when opening modals.
+ * - Offers `ModalConfig<Id>` utility type for type-safe access to a specific modal's configuration.
+ * - Easy extensibility: simply add a new entry with a unique key.
+ *
+ * Fits into the Modal Module:
+ * - Imported by ModalService.ts for ID validation and config retrieval.
+ * - Used by ResourceDialog.vue to resolve and render the correct async component.
+ * - Indirectly consumed via useModal().open() / prepend() throughout the app.
+ */
+
+import type { Grade } from '@/types/grade';
+import { Component } from 'vue';
+
+/**
+ * Shape of a single modal registration entry.
+ */
+export interface ModalRegistration {
+    /**
+     * Lazy loader returning the modal Vue component.
+     * Uses dynamic import for optimal code-splitting.
+     */
+    loader: () => Promise<Component>;
+
+    /**
+     * Optional configuration applied by ResourceDialog.vue.
+     */
+    config?: {
+        /** Header title displayed in the PrimeVue Dialog */
+        title?: string | ((payload: any) => string); // Can be a static string or a function that generates a title based on the payload
+
+        /**
+         * Tailwind max-width utility class.
+         * Recommended values: 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', 'full'
+         */
+        maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | 'full';
+
+        /** Custom maximum height (e.g., '80vh', '600px') */
+        maxHeight?: string;
+
+        /**
+         * When true, disables ESC key and overlay click closing.
+         * Useful for critical confirmation dialogs.
+         */
+        persistent?: boolean;
+
+        // Future extensions (icon, custom transition, etc.) can be added here
+    };
+}
+
+/**
+ * Registry containing all available modals.
+ *
+ * Keys are unique identifiers used across the app.
+ * Values define the component loader and optional configuration.
+ */
+export const ModalComponentDirectory: Record<string, ModalRegistration> = {
+    'custom-field': {
+        loader: () => import('@/Components/Modals/CreateEdit/CustomFieldModal.vue'),
+        config: {
+            title: 'Custom Field',
+            maxWidth: 'md',
+        },
+    },
+
+    'assign-teacher-subject': {
+        loader: () => import('@/Components/Modals/Create/AssignTeacherSubjectClass.vue'),
+    },
+
+    'add-staff': {
+        loader: () => import('@/Components/Modals/Create/AddStaff.vue'),
+    },
+
+    'assign-department-role': {
+        loader: () => import('@/Components/Modals/Create/AssignRoleDepartmentModal.vue'),
+    },
+
+    'admin-password-reset': {
+        loader: () => import('@/Components/Modals/Create/AdminPasswordResetModal.vue'),
+    },
+
+    'create-role': {
+        loader: () => import('@/Components/Modals/Create/Roles/CreateModal.vue'),
+    },
+
+    'department': {
+        loader: () => import('@/Components/Modals/Create/hrm/DepartmentFormModal.vue'),
+        config: {
+            title: 'Department',
+            maxWidth: 'lg',
+        },
+    },
+
+    'department-details': {
+        loader: () => import('@/Components/Modals/Show/DepartmentDetailsModal.vue'),
+        config: {
+            title: 'Department Details',
+            maxWidth: 'xl',
+        },
+    },
+
+    'dynamic-enum-metadata': {
+        loader: () => import('@/Components/Modals/Create/DynamicEnumMetadataForm.vue'),
+        config: {
+            title: 'Edit Enum Details',
+            maxWidth: 'lg',
+        },
+    },
+    'activate-session': {
+        loader() {
+            return import('@/Components/Modals/Show/ActivateSessionModal.vue')
+        },
+        config: {
+            title: 'Activate Session'
+        }
+    },
+    'delete-session': {
+        loader: () => import('@/Components/Modals/Show/DeleteSessionModal.vue')
+    },
+    'close-session': {
+        loader: () => import('@/Components/Modals/Show/CloseSessionModal.vue')
+    },
+    'session-terms': {
+        loader: () => import('@/Components/Academic/SessionTerms/TermListTable.vue'),
+        config: {
+            title: 'Manage Terms',
+            maxWidth: '2xl',
+            persistent: false,  // allow close even if form is open (user can cancel)
+        },
+    },
+    'term-form': {
+        loader: () => import('@/Components/Academic/SessionTerms/TermFormModal.vue'),
+        config: {
+            title: 'Academic Term',
+            maxWidth: 'lg',
+            persistent: true,           // prevent accidental close during form work
+        },
+    },
+    'close-term': {
+        loader: () => import('@/Components/Academic/SessionTerms/CloseTermModal.vue'),
+        config: {
+            title: 'Close Academic Term',
+            maxWidth: 'md',
+            persistent: true,           // Prevent accidental close during confirmation
+        },
+    },
+    'reopen-term': {
+        loader: () => import('@/Components/Academic/SessionTerms/ReopenTermModal.vue'),
+        config: {
+            title: 'Reopen Closed Term',
+            maxWidth: 'md',
+            persistent: true,           // Prevent accidental close during sensitive action
+        },
+    },
+    'grade-form': {
+        loader: () => import('@/Components/Modals/Create/Academic/GradeModal.vue'),
+        config: {
+            title: (payload: { grade?: Grade }) => payload.grade ? 'Edit Grade' : 'Create Grade',
+            maxWidth: '2xl',
+            persistent: false, // allow ESC/close button
+        }
+    },
+    'section-form': {
+        loader: () => import('@/Components/Modals/CreateEdit/SectionFormModal.vue'),
+        config: {
+            title: '',          // Title is rendered inside the modal itself (dynamic)
+            maxWidth: 'lg',
+            persistent: true,   // Dirty-state guard handles close — prevent accidental ESC dismiss
+        },
+    },
+    'class-level-form': {
+        loader: () => import('@/Components/Modals/ClassLevel/FormModal.vue'),
+        config: {
+            title: (payload: { classLevel?: { name: string } | null }) =>
+                payload.classLevel ? `Edit: ${payload.classLevel.name}` : 'Add Class Level',
+            maxWidth: 'lg',
+            persistent: false,
+        },
+    },
+    'class-level-bulk-generate': {
+        loader: () => import('@/Components/Modals/ClassLevel/BulkGenerateModal.vue'),
+        config: {
+            title: 'Generate Class Levels',
+            maxWidth: 'lg',
+            persistent: false,
+        },
+    },
+    // ── Create / Edit single class section ───────────────────────────────────────
+'class-section-form': {
+    loader: () => import('@/Components//ClassSections/ClassSectionFormModal.vue'),
+    config: {
+        // Title is dynamic — "Create Class Section" or "Edit — JSS 1A"
+        title: (payload: { section?: { display_name: string } | null }) =>
+            payload.section
+                ? `Edit — ${payload.section.display_name}`
+                : 'Create Class Section',
+        maxWidth: 'xl',
+        // Prevent accidental ESC close — dirty-state guard inside modal handles this
+        persistent: true,
+    },
+},
+
+// ── Bulk generate arms across one or multiple class levels ────────────────────
+'class-section-generate': {
+    loader: () => import('@/Components/ClassSections/BulkGenerateSectionsModal.vue'),
+    config: {
+        title: 'Generate Class Sections',
+        maxWidth: '2xl',
+        // 3-step wizard — prevent accidental close mid-way
+        persistent: true,
+    },
+},
+} as const;
+
+/**
+ * Union type of all registered modal identifiers.
+ *
+ * Use this type when calling `useModal().open()` or `useModal().prepend()`
+ * to benefit from autocomplete and prevent invalid IDs.
+ *
+ * @example
+ * const modal = useModal();
+ * modal.open('custom-field' as ModalId, data);
+ */
+export type ModalId = keyof typeof ModalComponentDirectory;
+
+/**
+ * Utility type extracting the configuration type for a specific modal.
+ *
+ * Returns `undefined` if the modal has no config defined.
+ *
+ * @template Id - A valid ModalId
+ *
+ * @example
+ * type CustomFieldConfig = ModalConfig<'custom-field'>;
+ * // => { title?: string; maxWidth?: string; ... } | undefined
+ */
+export type ModalConfig<Id extends ModalId> =
+    typeof ModalComponentDirectory[Id]['config'];
