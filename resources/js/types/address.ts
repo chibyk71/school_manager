@@ -1,6 +1,6 @@
-﻿// resources/js/types/address.ts
+// resources/js/types/address.ts
 /**
- * address.ts v2.0 â€“ Centralized TypeScript Definitions for Address Management Module
+ * address.ts v2.0 – Centralized TypeScript Definitions for Address Management Module
  *
  * Purpose & Problems Solved:
  * - Single source of truth for all address-related types across the entire frontend application.
@@ -9,7 +9,7 @@
  * - Supports polymorphic usage while exposing useful display helpers (formatted address, type label).
  * - Defines a strict union type for the 'type' field (matching backend validation rules).
  * - Supplies ready-to-use dropdown options and label helper for AddressForm.vue and any future select components.
- * - Includes optional school_id (multi-tenant) â€“ hidden from forms but available when needed (e.g., DataTables).
+ * - Includes optional school_id (multi-tenant) – hidden from forms but available when needed (e.g., DataTables).
  * - Prevents "any" leakage and field name mismatches for address form data aligned with HasAddress.
  * - Enables consistent handling of nullable fields, relations, and accessors.
  *
@@ -31,7 +31,7 @@
  *   const label = getAddressTypeLabel(address.type);
  *
  * Dependencies:
- * - None (pure TypeScript â€“ zero runtime overhead).
+ * - None (pure TypeScript – zero runtime overhead).
  * - Assumes nnjeim/world types are imported separately if relations are used deeply.
  */
 
@@ -48,7 +48,7 @@ export interface Address {
     /** UUID primary key */
     id: string;
 
-    /** Multi-tenant scoping â€“ nullable for global/shared addresses (rare) */
+    /** Multi-tenant scoping – nullable for global/shared addresses (rare) */
     school_id?: string | null;
 
     /** Polymorphic owner */
@@ -74,7 +74,7 @@ export interface Address {
     latitude: number | null;
     longitude: number | null;
 
-    /** Primary flag â€“ managed by HasAddress trait */
+    /** Primary flag – managed by HasAddress trait */
     is_primary: boolean;
 
     /** Timestamps & soft deletes */
@@ -87,7 +87,7 @@ export interface Address {
     state?: { id: number; name: string };
     city?: { id: number; name: string };
 
-    /** Backend accessor â€“ human-readable full address */
+    /** Backend accessor – human-readable full address */
     formatted?: string;
 }
 
@@ -116,7 +116,7 @@ export interface AddressFormData {
 }
 
 /**
- * Dropdown options for address type â€“ used in AddressForm.vue and any future selects.
+ * Dropdown options for address type – used in AddressForm.vue and any future selects.
  * Kept in sync with backend validation rule in HasAddress trait.
  */
 export const ADDRESS_TYPE_OPTIONS = [
