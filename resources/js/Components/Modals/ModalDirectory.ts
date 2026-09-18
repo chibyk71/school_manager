@@ -108,6 +108,7 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
         },
     },
 
+
     'dynamic-enum-metadata': {
         loader: () => import('@/Components/Modals/Create/DynamicEnumMetadataForm.vue'),
         config: {

@@ -93,7 +93,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'profile.view-any', 'display_name' => 'View All Profiles', 'description' => 'View the list of all profiles (admin-level access)',],
             ['name' => 'profile.view', 'display_name' => 'View Profile', 'description' => 'View a specific profile (own profile or permitted others)',],
             ['name' => 'profile.update-own', 'display_name' => 'Update Own Profile', 'description' => 'Edit personal profile information (name, phone, photo, etc.)',],
-            ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any userΓÇÖs profile (admin override)',],
+            ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any user’s profile (admin override)',],
             ['name' => 'profile.avatar.upload-own', 'display_name' => 'Upload Own Avatar', 'description' => 'Change own profile photo/avatar',],
             ['name' => 'profile.avatar.upload-any', 'display_name' => 'Upload Avatar for Any Profile', 'description' => 'Change avatar/photo for any user (admin)',],
             ['name' => 'profile.delete-any', 'display_name' => 'Delete Any Profile', 'description' => 'Soft-delete any profile (admin action)',],
@@ -129,7 +129,7 @@ class PermissionSeeder extends Seeder
             [
                 'name' => 'grades.update',
                 'display_name' => 'Update Grade',
-                'description' => 'Edit an existing gradeΓÇÖs details (name, code, score range, remark, section assignments)',
+                'description' => 'Edit an existing grade’s details (name, code, score range, remark, section assignments)',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -169,13 +169,13 @@ class PermissionSeeder extends Seeder
             ['name' => 'class-sections.reorder', 'display_name' => 'Reorder Class Sections', 'description' => 'Change the display sort order of class sections'],
             ['name' => 'class-sections.toggle-status', 'display_name' => 'Toggle Class Status', 'description' => 'Activate or deactivate a class section'],
 
-            // ΓöÇΓöÇ Class Levels ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+            // ── Class Levels ──────────────────────────────────────────────────────────
             ['name' => 'class-levels.view', 'display_name' => 'View Class Levels', 'description' => 'View all class levels within a school section'],
             ['name' => 'class-levels.create', 'display_name' => 'Create Class Levels', 'description' => 'Create new class levels within a school section'],
             ['name' => 'class-levels.update', 'display_name' => 'Update Class Levels', 'description' => 'Edit and update existing class levels'],
             ['name' => 'class-levels.delete', 'display_name' => 'Delete Class Levels', 'description' => 'Soft-delete class levels from a school section'],
             ['name' => 'class-levels.restore', 'display_name' => 'Restore Class Levels', 'description' => 'Restore soft-deleted class levels from trash'],
-            ['name' => 'class-levels.force-delete', 'display_name' => 'Permanently Delete Class Levels', 'description' => 'Permanently delete soft-deleted class levels ΓÇö irreversible'],
+            ['name' => 'class-levels.force-delete', 'display_name' => 'Permanently Delete Class Levels', 'description' => 'Permanently delete soft-deleted class levels — irreversible'],
 
 
             // Subjects

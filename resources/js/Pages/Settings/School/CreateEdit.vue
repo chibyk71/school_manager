@@ -1,6 +1,6 @@
 <!-- resources/js/Pages/Settings/Schools/CreateEdit.vue -->
 <!--
-CreateEdit.vue v1.0 ΓÇô Production-Ready Combined Create/Edit School Form
+CreateEdit.vue v1.0 – Production-Ready Combined Create/Edit School Form
 
 Purpose & Context:
 ------------------
@@ -14,7 +14,7 @@ It replaces previous modal-based flows and aligns perfectly with the updated bac
 
 Key Features & Problems Solved:
 ------------------------------
-- **Single component** for create & edit ΓåÆ DRY, consistent UX, easy maintenance
+- **Single component** for create & edit → DRY, consistent UX, easy maintenance
 - **Primary Address Section** using flattened fields matching AddressFormData (from address.ts)
 - **Branding/Media Uploads** with live previews (Spatie Media Library single-file collections)
 - **Responsive, accessible layout** using Tailwind + PrimeVue best practices
@@ -31,8 +31,8 @@ Integration Points:
 - Props: school (null | School), countries, timezones
 - Uses: useForm from Inertia, useToast from PrimeVue
 - Submits to: schools.store (POST) or schools.update (PUT with _method)
-- Address data sent as 'primary_address' array ΓåÆ validated & stored via HasAddress trait
-- Media files sent directly ΓåÆ handled by Spatie in controller/service
+- Address data sent as 'primary_address' array → validated & stored via HasAddress trait
+- Media files sent directly → handled by Spatie in controller/service
 
 Responsive Design:
 ------------------
@@ -99,7 +99,7 @@ const firstAddress = computed<(AddressFormData | Address)[]>(() => {
     return props.school.address
 });
 
-// Inertia form ΓÇô matches Store/UpdateSchoolRequest expectations
+// Inertia form – matches Store/UpdateSchoolRequest expectations
 const form = useForm({
     name: props.school?.name ?? '',
     code: props.school?.code ?? '',
@@ -109,7 +109,7 @@ const form = useForm({
     type: props.school?.type ?? 'private',
     is_active: props.school?.is_active ?? true,
 
-    // Primary address ΓÇô flattened fields
+    // Primary address – flattened fields
     addresses: firstAddress.value,
 
     // Media files (File objects or null)
@@ -239,10 +239,9 @@ const schoolTypeOptions = [
                                     </div>
                                 </div>
                             </div>
-
                             <!-- Addresses: multi-address UI deferred to Address Phase 4.
-     Primary address continues via form primary_address / SchoolService -> HasAddress. -->
-<div v-if="false"></div>
+                                 Primary address continues via form primary_address and SchoolService -> HasAddress. -->
+                            <div v-if="false"></div>
 
                             <!-- Branding & Media - Unchanged (FileUpload doesn't use TextInput) -->
                             <div>

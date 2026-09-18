@@ -1,6 +1,6 @@
 <!-- resources/js/Pages/Settings/Schools/Index.vue -->
 <!--
-Schools Management Index Page (Index.vue) v2.0 ΓÇô Production-Ready with Multi-Address Support
+Schools Management Index Page (Index.vue) v2.0 – Production-Ready with Multi-Address Support
 
 Purpose & Context:
 ------------------
@@ -10,7 +10,7 @@ It provides a powerful, searchable, sortable data table with full row/bulk actio
 Key Features & Improvements (v2.0):
 ----------------------------------
 - **Full integration with multi-address workflow**: Edit action now links to CreateEdit.vue (full-page form)
-  Address multi-address UI deferred to Phase 4; primary address via HasAddress.
+  Address multi-address UI is deferred to Address Phase 4; primary address via HasAddress.
 - **Consistent action handling** via reusable composables (useDeleteResource, useRestoreResource).
 - **Permission-aware UI** using usePermissions composable.
 - **Trashed toggle** support via useTrashedToggle.
@@ -84,7 +84,7 @@ const refreshTable = () => {
 // Enhanced columns: logo preview + inline status toggle
 const enhancedColumns = computed<ColumnDefinition<School>[]>(() => {
     return props.columns.map((col) => {
-        // Logo column ΓåÆ render as rounded image with fallback
+        // Logo column → render as rounded image with fallback
         if (col.field === 'logo_url') {
             return {
                 ...col,
@@ -97,7 +97,7 @@ const enhancedColumns = computed<ColumnDefinition<School>[]>(() => {
             };
         }
 
-        // Status column ΓåÆ inline toggle switch
+        // Status column → inline toggle switch
         if (col.field === 'is_active') {
             return {
                 ...col,
@@ -172,7 +172,7 @@ const toggleStatus = async (school: School, newValue: boolean) => {
 };
 
 /**
- * Row Actions ΓÇô Powered by composables for consistent dialogs/toasts
+ * Row Actions – Powered by composables for consistent dialogs/toasts
  */
 const schoolActions: TableAction<School>[] = [
     {
@@ -214,7 +214,7 @@ const schoolActions: TableAction<School>[] = [
 ];
 
 /**
- * Bulk Actions ΓÇô Consistent UX via composables where possible
+ * Bulk Actions – Consistent UX via composables where possible
  */
 const schoolBulkActions: BulkAction<School>[] = [
     {
