@@ -24,8 +24,8 @@ const getErrorMessage = (field: keyof AddressFormData): string | undefined => {
     return Array.isArray(err) ? err[0] : err;
 };
 
-const onTypeUpdate = (value: string | null) => {
-    form.value.type = value;
+const onTypeUpdate = (value: string | null | undefined) => {
+    form.value.type = value ?? null;
 };
 
 // Cascade: clear dependents when parent changes
@@ -53,7 +53,7 @@ watch(
         <div>
             <label class="block text-sm font-medium mb-1">Address type</label>
             <DynamicEnumField
-                :model-value="form.type"
+                :model-value="form.type ?? ''"
                 model="App\\Models\\Address"
                 property="type"
                 :disabled="disabled"
