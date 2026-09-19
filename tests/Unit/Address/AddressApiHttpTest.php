@@ -51,6 +51,7 @@ function buildAddressApiSchema(): void
     Schema::create('schools', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->string('name');
+        $table->string('slug')->nullable()->unique();
         $table->string('code')->nullable();
         $table->string('email')->nullable();
         $table->string('phone_one')->nullable();
