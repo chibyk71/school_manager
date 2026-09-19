@@ -1,51 +1,10 @@
 <!-- resources/js/Pages/Settings/Schools/CreateEdit.vue -->
 <!--
-CreateEdit.vue v1.0 – Production-Ready Combined Create/Edit School Form
+CreateEdit.vue – School create/edit with Phase 4 Address integration.
 
-Purpose & Context:
-------------------
-This is the **single, shared full-page form** for both creating and editing a School (tenant/branch).
-It replaces previous modal-based flows and aligns perfectly with the updated backend:
-
-- School model uses HasAddress trait (polymorphic multi-address)
-- StoreSchoolRequest / UpdateSchoolRequest validate only core fields + optional 'primary_address' array
-- SchoolService::createSchool() and updateSchool() handle primary address upsert via HasAddress methods
-- SchoolController::create() and edit() render this page with shared props (countries, timezones)
-
-Key Features & Problems Solved:
-------------------------------
-- **Single component** for create & edit → DRY, consistent UX, easy maintenance
-- **Primary Address Section** using flattened fields matching AddressFormData (from address.ts)
-- **Branding/Media Uploads** with live previews (Spatie Media Library single-file collections)
-- **Responsive, accessible layout** using Tailwind + PrimeVue best practices
-- **Form validation feedback** via Inertia errors + PrimeVue styling
-- **Loading states** and success toast with redirect to index
-- **Smart title & submit button** based on create/edit mode
-- **Pre-population** on edit: school data + primary address fields + existing media URLs
-- **File upload handling** with proper preview and replace UX
-- **Accessibility**: labels, ARIA, focus management
-- **Performance**: minimal props, lazy media previews
-
-Integration Points:
--------------------
-- Props: school (null | School), countries, timezones
-- Uses: useForm from Inertia, useToast from PrimeVue
-- Submits to: schools.store (POST) or schools.update (PUT with _method)
-- Address data sent as 'primary_address' array → validated & stored via HasAddress trait
-- Media files sent directly → handled by Spatie in controller/service
-
-Responsive Design:
-------------------
-- Mobile: stacked full-width fields
-- Desktop: 2-column grid for efficiency
-- Images section remains side-by-side for visual balance
-
-Fits into School Management Module:
------------------------------------
-- Replaces old modal create/edit
-- Used by SchoolController::create() and edit()
-- Works with Index.vue (links to /create and /edit/{id})
-- Fully aligned with address.ts types and HasAddress backend logic
+- Create: AddressManager embedded mode (v-model addresses[]) submitted with the school form.
+- Edit: AddressManager managed mode (owner=school) — independent Address API mutations.
+- First address is not auto-primary; is_primary comes from form data when set.
 -->
 
 <script setup lang="ts">
@@ -56,7 +15,7 @@ import { useToast } from 'primevue/usetoast';
 import Dropdown from 'primevue/dropdown';
 import FileUpload from 'primevue/fileupload';
 import ProgressSpinner from 'primevue/progressspinner';
-import { ref, computed, ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { route } from 'ziggy-js';
 import type { Address, AddressFormData, AddressInput } from '@/types/address';
 import { emptyAddressFormData } from '@/types/address';
@@ -66,7 +25,7 @@ import { Select } from 'primevue';
 import InputLabel from '@/Components/forms/InputLabel.vue';
 
 interface Props {
-    school?: any; // null on create, School instance on edit (with appended media URLs and loaded primaryAddress)
+    school?: any; // null on create; on edit includes addresses collection for AddressManager
     countries: Array<{ id: number; name: string }>;
     timezones: string[];
 }
@@ -160,7 +119,6 @@ const clearFile = (field: 'logo' | 'small_logo' | 'favicon' | 'dark_logo' | 'dar
     previewRef.value = props.school?.[`${field}_url`] ?? null;
 };
 
-// School type options with proper label/value structure
 const schoolTypeOptions = [
     { label: 'Private', value: 'private' },
     { label: 'Government', value: 'government' },
@@ -180,7 +138,6 @@ const schoolTypeOptions = [
                         </h1>
 
                         <form @submit.prevent="submit" class="space-y-12">
-                            <!-- School Information - Consistent TextInput usage with built-in error handling -->
                             <div>
                                 <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
                                     School Information
@@ -195,7 +152,6 @@ const schoolTypeOptions = [
                                     <TextInput label="School Email" id="email" type="email" v-model="form.email"
                                         :error="form.errors.email" required />
 
-                                    <!-- School Type Dropdown - Consistent error handling -->
                                     <div>
                                         <InputLabel for="type" value="School Type" required />
                                         <Select id="type" v-model="form.type" :options="schoolTypeOptions"
@@ -215,7 +171,6 @@ const schoolTypeOptions = [
                                     <TextInput label="Secondary Phone" id="phone_two" :error="form.errors.phone_two"
                                         v-model="form.phone_two" />
 
-                                    <!-- Active Status Checkbox -->
                                     <div class="col-span-1 md:col-span-2 flex items-center">
                                         <div class="flex items-center">
                                             <input type="checkbox" id="is_active" v-model="form.is_active"
@@ -226,6 +181,7 @@ const schoolTypeOptions = [
                                     </div>
                                 </div>
                             </div>
+
                             <!-- Addresses: embedded on create, managed on edit (Phase 4) -->
                             <div class="mt-8">
                                 <h3 class="text-lg font-semibold mb-3">Addresses</h3>
@@ -242,15 +198,12 @@ const schoolTypeOptions = [
                                     :can-mutate="true"
                                 />
                             </div>
-                            <div v-if="false"></div>
 
-                            <!-- Branding & Media - Unchanged (FileUpload doesn't use TextInput) -->
                             <div>
                                 <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">
                                     Branding & Logos
                                 </h2>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-8">
-                                    <!-- Main Logo -->
                                     <div class="space-y-3">
                                         <InputLabel value="Main Logo (450x450px max)" class="mb-2" />
                                         <div
@@ -268,7 +221,6 @@ const schoolTypeOptions = [
                                             class="text-red-600 hover:text-red-700 text-sm font-medium">Remove</button>
                                     </div>
 
-                                    <!-- Small Logo -->
                                     <div class="space-y-3">
                                         <InputLabel value="Small Logo (450x450px max)" class="mb-2" />
                                         <div
@@ -288,7 +240,6 @@ const schoolTypeOptions = [
                                             class="text-red-600 hover:text-red-700 text-sm font-medium">Remove</button>
                                     </div>
 
-                                    <!-- Favicon -->
                                     <div class="space-y-3">
                                         <InputLabel value="Favicon (32x32px)" class="mb-2" />
                                         <div
@@ -306,7 +257,6 @@ const schoolTypeOptions = [
                                         </div>
                                     </div>
 
-                                    <!-- Dark Logo -->
                                     <div class="space-y-3">
                                         <InputLabel value="Dark Mode Logo (450x450px max)" class="mb-2" />
                                         <div
@@ -326,7 +276,6 @@ const schoolTypeOptions = [
                                             class="text-red-600 hover:text-red-700 text-sm font-medium">Remove</button>
                                     </div>
 
-                                    <!-- Dark Small Logo -->
                                     <div class="space-y-3">
                                         <InputLabel value="Dark Small Logo (450x450px max)" class="mb-2" />
                                         <div
@@ -338,8 +287,8 @@ const schoolTypeOptions = [
                                                 chooseLabel="Upload"
                                                 @select="(e) => updatePreview(e, 'dark_small_logo', darkSmallLogoPreview)"
                                                 class="w-full" />
-                                            <p v-if="!darkSmallLogoPreview" class="text-xs text-gray-500 mt-1">JPEG,
-                                                PNG, SVG (Max 5MB)</p>
+                                            <p v-if="!darkSmallLogoPreview" class="text-xs text-gray-500 mt-1">JPEG, PNG, SVG
+                                                (Max 5MB)</p>
                                         </div>
                                         <button v-if="darkSmallLogoPreview" type="button"
                                             @click="clearFile('dark_small_logo', darkSmallLogoPreview)"
@@ -348,18 +297,15 @@ const schoolTypeOptions = [
                                 </div>
                             </div>
 
-                            <!-- Submit Section - Added Cancel button for better UX -->
-                            <div
-                                class="flex justify-end gap-4 pt-8 border-t bg-gray-50 dark:bg-gray-900/50 rounded-b-lg p-6">
-                                <Button :as="Link" label="Cancel" severity="secondary" :href="route('schools.index')"
-                                    outlined />
-                                <PrimaryButton type="submit" :disabled="form.processing" :loading="form.processing">
-                                    <template #loading>
-                                        <ProgressSpinner style="width:20px;height:20px" strokeWidth="4" />
-                                        Saving...
-                                    </template>
-                                    {{ isEdit ? 'Update School' : 'Create School' }}
-                                </PrimaryButton>
+                            <div class="flex justify-end gap-4 pt-6 border-t border-gray-200 dark:border-gray-700">
+                                <Link :href="route('schools.index')"
+                                    class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900">
+                                    Cancel
+                                </Link>
+                                <button type="submit" :disabled="form.processing"
+                                    class="px-6 py-2 bg-primary-600 text-white text-sm font-medium rounded-md hover:bg-primary-700 disabled:opacity-50">
+                                    {{ form.processing ? 'Saving…' : (isEdit ? 'Update School' : 'Create School') }}
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -368,10 +314,3 @@ const schoolTypeOptions = [
         </SettingsLayout>
     </AuthenticatedLayout>
 </template>
-
-<style scoped lang="postcss">
-/* Optional: improve file upload button styling */
-:deep(.p-fileupload-choose) {
-    @apply w-full;
-}
-</style>
