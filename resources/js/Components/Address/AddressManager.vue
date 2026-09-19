@@ -12,6 +12,7 @@
   Managed:  <AddressManager owner="school" :owner-id="school.id" />
     - Inline single form is a local draft synced from capability; Save issues create/PATCH.
     - Cards use capability mutations (update / delete / setPrimary / unsetPrimary).
+    - Managed count===1 also exposes Set primary / Unset primary via dedicated endpoints.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, toRef } from 'vue';
@@ -219,6 +220,23 @@ async function saveManagedSingle() {
     }
 }
 
+/** Managed single-address (count === 1): set/unset primary via dedicated endpoints. */
+async function toggleManagedPrimary() {
+    if (!isManaged.value || !props.canMutate || !managedSingleId.value) return;
+    actionError.value = null;
+    try {
+        if (managedSingle.value.is_primary) {
+            await capability.unsetPrimary(managedSingleId.value);
+        } else {
+            await capability.setPrimary(managedSingleId.value);
+        }
+        syncManagedSingleFromCapability();
+    } catch (e: unknown) {
+        actionError.value =
+            capability.error.value || (e as Error).message || 'Primary update failed';
+    }
+}
+
 function startEdit(index: number) {
     const item = displayList.value[index];
     draft.value = addressToFormData(item);
@@ -369,12 +387,29 @@ const showAddAnother = computed(() => {
                         :disabled="disabled || !managedSingle.address_line_1 || !canMutate"
                         @click="saveManagedSingle"
                     />
-                    <span
+                    <Button
+                        v-if="managedSingleId && canMutate && !managedSingle.is_primary"
+                        label="Set primary"
+                        size="small"
+                        severity="secondary"
+                        outlined
+                        :disabled="disabled || saving"
+                        @click="toggleManagedPrimary"
+                    />
+                    <Button
+                        v-if="managedSingleId && canMutate && managedSingle.is_primary"
+                        label="Unset primary"
+                        size="small"
+                        severity="secondary"
+                        outlined
+                        :disabled="disabled || saving"
+                        @click="toggleManagedPrimary"
+                    />
+                    <Tag
                         v-if="managedSingleId && managedSingle.is_primary"
-                        class="text-sm text-surface-500"
-                    >
-                        <Tag value="Primary" severity="info" />
-                    </span>
+                        value="Primary"
+                        severity="info"
+                    />
                 </div>
             </template>
         </template>
