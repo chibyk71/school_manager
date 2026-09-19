@@ -240,21 +240,9 @@ class SchoolController extends BaseSchoolController
     public function store(StoreSchoolRequest $request)
     {
         try {
-            // 1. Create core school record via service (validated data passed through)
+            // 1. Create core school + nested addresses[] via service (transactional)
+            //    First address is NOT auto-primary; is_primary comes from payload only.
             $school = $this->schoolService->createSchool($request->validated());
-
-            // 2. Handle multiple addresses if provided
-            if ($request->has('addresses') && is_array($request->input('addresses'))) {
-                $addresses = $request->input('addresses');
-
-                foreach ($addresses as $index => $addressData) {
-                    // First address = primary, others = regular
-                    $isPrimary = $index === 0;
-
-                    // HasAddress trait validates and assigns school_id automatically
-                    $school->addAddress($addressData, $isPrimary);
-                }
-            }
 
             // 3. Optional admin assignment (unchanged – supports onboarding flows)
             if ($request->hasAny(['admin_id', 'admin_name', 'admin_email'])) {
@@ -457,21 +445,9 @@ class SchoolController extends BaseSchoolController
             if ($request->has('is_active')) {
                 $school->update(['is_active' => $request->boolean('is_active')]);
             } else {
-                // 2. Full update: core attributes
-                $school->update($request->safe()->except(['addresses']));
-
-                // 3. Sync addresses – full replace (simplest reliable approach)
-                if ($request->has('addresses') && is_array($request->input('addresses'))) {
-                    // Delete all existing addresses (soft or force depending on Address model)
-                    $school->addresses()->delete(); // or forceDelete() if needed
-
-                    $addresses = $request->input('addresses');
-
-                    foreach ($addresses as $index => $addressData) {
-                        $isPrimary = $index === 0;
-                        $school->addAddress($addressData, $isPrimary);
-                    }
-                }
+                // 2. Full update: core attributes only.
+                // Address mutations for persisted schools use the managed Address API (Phase 4).
+                $school->update($request->safe()->except(['addresses', 'primary_address']));
 
                 // 4. Handle media replacements
                 $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];

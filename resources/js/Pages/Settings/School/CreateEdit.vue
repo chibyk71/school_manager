@@ -56,9 +56,11 @@ import { useToast } from 'primevue/usetoast';
 import Dropdown from 'primevue/dropdown';
 import FileUpload from 'primevue/fileupload';
 import ProgressSpinner from 'primevue/progressspinner';
-import { computed, ref, watch } from 'vue';
+import { ref, computed, ref, watch } from 'vue';
 import { route } from 'ziggy-js';
-import type { Address, AddressFormData } from '@/types/address';
+import type { Address, AddressFormData, AddressInput } from '@/types/address';
+import { emptyAddressFormData } from '@/types/address';
+import AddressManager from '@/Components/Address/AddressManager.vue';
 import TextInput from '@/Components/forms/textInput.vue';
 import { Select } from 'primevue';
 import InputLabel from '@/Components/forms/InputLabel.vue';
@@ -77,27 +79,8 @@ const page = usePage();
 const isEdit = computed(() => !!props.school);
 const pageTitle = computed(() => isEdit.value ? 'Edit School' : 'Create New School');
 
-// first address data for form population
-const firstAddress = computed<(AddressFormData | Address)[]>(() => {
-    if (!props.school?.address) {
-        return [{
-            country_id: null,
-            state_id: null,
-            city_id: null,
-            address_line_1: '',
-            address_line_2: null,
-            landmark: null,
-            city_text: null,
-            postal_code: null,
-            type: null,
-            latitude: null,
-            longitude: null,
-            is_primary: true,
-        }];
-    }
-
-    return props.school.address
-});
+// Embedded addresses for create only (managed mode on edit uses AddressManager owner context)
+const embeddedAddresses = ref<AddressInput[]>([emptyAddressFormData()]);
 
 // Inertia form – matches Store/UpdateSchoolRequest expectations
 const form = useForm({
@@ -109,8 +92,8 @@ const form = useForm({
     type: props.school?.type ?? 'private',
     is_active: props.school?.is_active ?? true,
 
-    // Primary address – flattened fields
-    addresses: firstAddress.value,
+    // Nested addresses[] on create (embedded AddressManager). Edit uses managed API.
+    addresses: [] as AddressInput[],
 
     // Media files (File objects or null)
     logo: null,
@@ -127,6 +110,10 @@ const submit = () => {
 
     form.transform((data) => ({
         ...data,
+        // Create: persist embedded addresses with the school. Edit: addresses managed independently.
+        addresses: isEdit.value
+            ? undefined
+            : (embeddedAddresses.value || []).filter((a) => a.address_line_1),
         // Inertia needs _method for PUT/PATCH on edit
         ...(isEdit.value ? { _method: 'put' } : {}),
     })).submit(isEdit.value ? 'put' : 'post', url, {
@@ -239,8 +226,22 @@ const schoolTypeOptions = [
                                     </div>
                                 </div>
                             </div>
-                            <!-- Addresses: multi-address UI deferred to Address Phase 4.
-                                 Primary address continues via form primary_address and SchoolService -> HasAddress. -->
+                            <!-- Addresses: embedded on create, managed on edit (Phase 4) -->
+                            <div class="mt-8">
+                                <h3 class="text-lg font-semibold mb-3">Addresses</h3>
+                                <AddressManager
+                                    v-if="!isEdit"
+                                    v-model="embeddedAddresses"
+                                />
+                                <AddressManager
+                                    v-else
+                                    owner="school"
+                                    :owner-id="school.id"
+                                    :initial-addresses="school.addresses || school.address || []"
+                                    :can-view="true"
+                                    :can-mutate="true"
+                                />
+                            </div>
                             <div v-if="false"></div>
 
                             <!-- Branding & Media - Unchanged (FileUpload doesn't use TextInput) -->

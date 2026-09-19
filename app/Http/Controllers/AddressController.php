@@ -120,12 +120,18 @@ class AddressController extends Controller
 
     /**
      * DELETE /addresses/{owner}/{ownerId}/{address}/primary
+     *
+     * Unsets primary on the given address only when it is currently primary.
+     * If the address is not primary, the zero-primary state is left unchanged.
+     * Spec allows zero primaries; unsetting clears all primaries for the owner
+     * when the target is (or was) primary — HasAddress::unsetPrimaryAddress clears all.
      */
     public function unsetPrimary(string $owner, string $ownerId, string $address): JsonResponse
     {
         $ownerModel = $this->resolveOwner($owner, $ownerId);
         Gate::authorize('update', $ownerModel);
 
+        // Resolve through owner to enforce ownership isolation.
         $target = $ownerModel->addresses()->withoutGlobalScopes()->whereKey($address)->firstOrFail();
 
         if ($target->is_primary) {
