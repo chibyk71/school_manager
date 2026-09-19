@@ -12,7 +12,7 @@
   Managed:  <AddressManager owner="school" :owner-id="school.id" />
     - Inline single form is a local draft synced from capability; Save issues create/PATCH.
     - Cards use capability mutations (update / delete / setPrimary / unsetPrimary).
-    - Managed count===1 also exposes Set primary / Unset primary via dedicated endpoints.
+    - Managed count===1 exposes Set/Unset primary and Delete (capability endpoints).
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, toRef } from 'vue';
@@ -34,7 +34,7 @@ const props = withDefaults(
         ownerId?: string | number | null;
         canView?: boolean;
         canMutate?: boolean;
-        /** Preloaded addresses for managed mode (skips fetch when provided). */
+        /** Preloaded addresses for managed mode (skips fetch when provided, including []). */
         initialAddresses?: Address[];
         disabled?: boolean;
     }>(),
@@ -141,7 +141,8 @@ function ensureEmbeddedSlot() {
 
 onMounted(async () => {
     if (isManaged.value) {
-        if (props.initialAddresses?.length) {
+        if (props.initialAddresses !== undefined) {
+            // Parent already loaded this owner (including zero addresses) — skip fetch.
             capability.addresses.value = [...props.initialAddresses];
             syncManagedSingleFromCapability();
         } else if (props.canView && props.ownerId) {
@@ -235,6 +236,28 @@ async function toggleManagedPrimary() {
         actionError.value =
             capability.error.value || (e as Error).message || 'Primary update failed';
     }
+}
+
+/** Managed single-address delete: 1 → 0 via capability.remove (confirm + resync). */
+function deleteManagedSingle() {
+    if (!isManaged.value || !props.canMutate || !managedSingleId.value) return;
+    const id = managedSingleId.value;
+    confirm.require({
+        message: 'Delete this address? This cannot be undone.',
+        header: 'Confirm delete',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        accept: async () => {
+            actionError.value = null;
+            try {
+                await capability.remove(id);
+                syncManagedSingleFromCapability();
+            } catch (e: unknown) {
+                actionError.value =
+                    capability.error.value || (e as Error).message || 'Delete failed';
+            }
+        },
+    });
 }
 
 function startEdit(index: number) {
@@ -404,6 +427,15 @@ const showAddAnother = computed(() => {
                         outlined
                         :disabled="disabled || saving"
                         @click="toggleManagedPrimary"
+                    />
+                    <Button
+                        v-if="managedSingleId && canMutate"
+                        label="Delete"
+                        size="small"
+                        severity="danger"
+                        outlined
+                        :disabled="disabled || saving"
+                        @click="deleteManagedSingle"
                     />
                     <Tag
                         v-if="managedSingleId && managedSingle.is_primary"
