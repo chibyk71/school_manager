@@ -24,6 +24,10 @@ const getErrorMessage = (field: keyof AddressFormData): string | undefined => {
     return Array.isArray(err) ? err[0] : err;
 };
 
+const onTypeUpdate = (value: string | null) => {
+    form.value.type = value;
+};
+
 // Cascade: clear dependents when parent changes
 watch(
     () => form.value.country_id,
@@ -49,11 +53,12 @@ watch(
         <div>
             <label class="block text-sm font-medium mb-1">Address type</label>
             <DynamicEnumField
-                v-model="form.type"
+                :model-value="form.type"
                 model="App\\Models\\Address"
                 property="type"
                 :disabled="disabled"
                 placeholder="Select type"
+                @update:model-value="onTypeUpdate"
             />
             <Message v-if="getErrorMessage('type')" severity="error" size="small" class="mt-1">
                 {{ getErrorMessage('type') }}
@@ -98,37 +103,57 @@ watch(
             <div>
                 <label class="block text-sm font-medium mb-1">Country</label>
                 <AsyncSelect
+                    id="address-country"
                     v-model="form.country_id"
-                    url="/api/countries"
-                    option-label="name"
-                    option-value="id"
-                    placeholder="Select country"
+                    :field="{
+                        placeholder: 'Select country',
+                        search_url: '/api/countries',
+                        field_options: {
+                            option_label: 'name',
+                            option_value: 'id',
+                            search_key: 'search',
+                        },
+                    }"
                     :disabled="disabled"
-                    :search-params="{}"
+                    :invalid="!!getErrorMessage('country_id')"
                 />
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">State</label>
                 <AsyncSelect
+                    id="address-state"
                     v-model="form.state_id"
-                    url="/api/states"
-                    option-label="name"
-                    option-value="id"
-                    placeholder="Select state"
+                    :field="{
+                        placeholder: 'Select state',
+                        search_url: '/api/states',
+                        field_options: {
+                            option_label: 'name',
+                            option_value: 'id',
+                            search_key: 'search',
+                            search_params: { 'filters[country_id]': form.country_id },
+                        },
+                    }"
                     :disabled="disabled || !form.country_id"
-                    :search-params="{ 'filters[country_id]': form.country_id }"
+                    :invalid="!!getErrorMessage('state_id')"
                 />
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">City</label>
                 <AsyncSelect
+                    id="address-city"
                     v-model="form.city_id"
-                    url="/api/cities"
-                    option-label="name"
-                    option-value="id"
-                    placeholder="Select city"
+                    :field="{
+                        placeholder: 'Select city',
+                        search_url: '/api/cities',
+                        field_options: {
+                            option_label: 'name',
+                            option_value: 'id',
+                            search_key: 'search',
+                            search_params: { 'filters[state_id]': form.state_id },
+                        },
+                    }"
                     :disabled="disabled || !form.state_id"
-                    :search-params="{ 'filters[state_id]': form.state_id }"
+                    :invalid="!!getErrorMessage('city_id')"
                 />
             </div>
         </div>
