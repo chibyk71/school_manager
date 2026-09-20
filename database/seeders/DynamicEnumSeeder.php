@@ -1,49 +1,28 @@
 <?php
+
 /**
- * database/seeders/DynamicEnumSeeder.php
+ * Dynamic Enum Phase 1 — default (tenant-wide) definitions.
  *
- * Seeds the default global (system-wide) dynamic enum definitions into the dynamic_enums table.
- *
- * Features / Problems Solved:
- * - Provides out-of-the-box, sensible default option lists for common "enum-like" properties
- *   (title, gender, profile_type on Profile; type on Address).
- * - Mirrors the structure and data from the original ConfigSeeder to ensure zero disruption
- *   when migrating away from the generic configs table for these enum-style entries.
- * - Uses indexed arrays for options with explicit 'value' and 'label' keys – this is more
- *   extensible than assoc arrays (allows future per-option metadata like color, icon, sort_order).
- * - Preserves original descriptions and color classes for consistent UI (badges, previews).
- * - All entries are global (school_id = null) so every school inherits them automatically.
- * - Uses updateOrCreate() for idempotency – safe to run multiple times during development/deployments.
- * - Fully compatible with the HasDynamicEnum trait's validation and option fetching logic
- *   (expects options as array of ['value' => ..., 'label' => ...]).
- *
- * Fits into the DynamicEnums Module:
- * - Populates the dynamic_enums table with production-ready defaults immediately after migration.
- * - Ensures that any model using HasDynamicEnum (e.g., Profile, Address) has valid options
- *   available right away, even before any school admin customizes them.
- * - Serves as the migration path from the old Config-based enums – after running this seeder,
- *   the equivalent rows in configs can be safely archived/deleted.
- * - Run via `php artisan db:seed --class=DynamicEnumSeeder` or as part of DatabaseSeeder.
+ * Seeds global definitions (school_id = null) with normalized option rows.
+ * Key identity replaces the legacy name + applies_to pair.
+ * Consumer migration and runtime resolution remain later phases.
  */
 
 namespace Database\Seeders;
 
-use App\Models\Academic\Subject;
 use App\Models\DynamicEnum;
+use App\Models\DynamicEnumOption;
 use Illuminate\Database\Seeder;
 
 class DynamicEnumSeeder extends Seeder
 {
     public function run(): void
     {
-        $enums = [
-            // 1. Title – used on Profile
+        $definitions = [
             [
+                'key' => 'profile.title',
                 'label' => 'Title',
-                'name' => 'title',
-                'applies_to' => \App\Models\Profile::class,
                 'description' => 'Prefix that appears before a person\'s name (Mr, Mrs, Dr, …).',
-                'color' => 'bg-indigo-100 text-indigo-800',
                 'options' => [
                     ['value' => 'Mr', 'label' => 'Mr'],
                     ['value' => 'Mrs', 'label' => 'Mrs'],
@@ -54,47 +33,32 @@ class DynamicEnumSeeder extends Seeder
                     ['value' => 'Rev', 'label' => 'Rev'],
                     ['value' => 'Engr', 'label' => 'Engr'],
                 ],
-                'school_id' => null,
             ],
-
-            // 2. Gender – used on Profile
             [
+                'key' => 'profile.gender',
                 'label' => 'Gender',
-                'name' => 'gender',
-                'applies_to' => \App\Models\Profile::class,
                 'description' => 'Gender identity options for staff, students and guardians.',
-                'color' => 'bg-pink-100 text-pink-800',
                 'options' => [
                     ['value' => 'male', 'label' => 'Male'],
                     ['value' => 'female', 'label' => 'Female'],
                     ['value' => 'other', 'label' => 'Other'],
                     ['value' => 'prefer_not', 'label' => 'Prefer not to say'],
                 ],
-                'school_id' => null,
             ],
-
-            // 3. Profile Type – used on Profile
             [
+                'key' => 'profile.type',
                 'label' => 'Profile Type',
-                'name' => 'profile_type',
-                'applies_to' => \App\Models\Profile::class,
                 'description' => 'The role a profile represents inside the school.',
-                'color' => 'bg-teal-100 text-teal-800',
                 'options' => [
                     ['value' => 'staff', 'label' => 'Staff / Teacher'],
                     ['value' => 'student', 'label' => 'Student'],
                     ['value' => 'guardian', 'label' => 'Parent / Guardian'],
                 ],
-                'school_id' => null,
             ],
-
-            // 4. Address Type – used on Address
             [
+                'key' => 'address.type',
                 'label' => 'Address Type',
-                'name' => 'type',
-                'applies_to' => \App\Models\Address::class,
                 'description' => 'Classification of the address (residential, school campus, office, postal, temporary, billing).',
-                'color' => 'bg-yellow-100 text-yellow-800',
                 'options' => [
                     ['value' => 'residential', 'label' => 'Residential'],
                     ['value' => 'school_campus', 'label' => 'School Campus'],
@@ -103,104 +67,67 @@ class DynamicEnumSeeder extends Seeder
                     ['value' => 'temporary', 'label' => 'Temporary'],
                     ['value' => 'billing', 'label' => 'Billing'],
                 ],
-                'school_id' => null,
             ],
             [
-                'name' => 'subject_type',
-                'applies_to' => Subject::class,
-                'school_id' => null,           // global default
+                'key' => 'academic.subject_type',
                 'label' => 'Subject Type',
                 'description' => 'Classifies whether a subject is mandatory or optional for students.',
                 'options' => [
-                    [
-                        'value' => 'core',
-                        'label' => 'Core',
-                        'color' => 'bg-blue-100 text-blue-800',
-                    ],
-                    [
-                        'value' => 'elective',
-                        'label' => 'Elective',
-                        'color' => 'bg-purple-100 text-purple-800',
-                    ],
-                    [
-                        'value' => 'compulsory_elective',
-                        'label' => 'Compulsory Elective',
-                        'color' => 'bg-amber-100 text-amber-800',
-                    ],
-                    [
-                        'value' => 'extra_curricular',
-                        'label' => 'Extra-Curricular',
-                        'color' => 'bg-green-100 text-green-800',
-                    ],
+                    ['value' => 'core', 'label' => 'Core', 'color' => 'bg-blue-100 text-blue-800'],
+                    ['value' => 'elective', 'label' => 'Elective', 'color' => 'bg-purple-100 text-purple-800'],
+                    ['value' => 'compulsory_elective', 'label' => 'Compulsory Elective', 'color' => 'bg-amber-100 text-amber-800'],
+                    ['value' => 'extra_curricular', 'label' => 'Extra-Curricular', 'color' => 'bg-green-100 text-green-800'],
                 ],
             ],
-
-            // ── 2. Subject Category ────────────────────────────────────────────────
             [
-                'name' => 'subject_category',
-                'applies_to' => Subject::class,
-                'school_id' => null,
+                'key' => 'academic.subject_category',
                 'label' => 'Subject Category',
                 'description' => 'Groups subjects by academic discipline. Aligned with Nigerian curriculum structure.',
                 'options' => [
-                    [
-                        'value' => 'sciences',
-                        'label' => 'Sciences',
-                        'color' => 'bg-cyan-100 text-cyan-800',
-                    ],
-                    [
-                        'value' => 'arts_humanities',
-                        'label' => 'Arts & Humanities',
-                        'color' => 'bg-rose-100 text-rose-800',
-                    ],
-                    [
-                        'value' => 'commerce',
-                        'label' => 'Commerce',
-                        'color' => 'bg-yellow-100 text-yellow-800',
-                    ],
-                    [
-                        'value' => 'technical',
-                        'label' => 'Technical & Vocational',
-                        'color' => 'bg-orange-100 text-orange-800',
-                    ],
-                    [
-                        'value' => 'languages',
-                        'label' => 'Languages',
-                        'color' => 'bg-indigo-100 text-indigo-800',
-                    ],
-                    [
-                        'value' => 'social_sciences',
-                        'label' => 'Social Sciences',
-                        'color' => 'bg-teal-100 text-teal-800',
-                    ],
-                    [
-                        'value' => 'mathematics',
-                        'label' => 'Mathematics',
-                        'color' => 'bg-blue-100 text-blue-800',
-                    ],
-                    [
-                        'value' => 'religious_studies',
-                        'label' => 'Religious Studies',
-                        'color' => 'bg-violet-100 text-violet-800',
-                    ],
-                    [
-                        'value' => 'general',
-                        'label' => 'General',
-                        'color' => 'bg-gray-100 text-gray-700',
-                    ],
+                    ['value' => 'sciences', 'label' => 'Sciences', 'color' => 'bg-cyan-100 text-cyan-800'],
+                    ['value' => 'arts_humanities', 'label' => 'Arts & Humanities', 'color' => 'bg-rose-100 text-rose-800'],
+                    ['value' => 'commerce', 'label' => 'Commerce', 'color' => 'bg-yellow-100 text-yellow-800'],
+                    ['value' => 'technical', 'label' => 'Technical & Vocational', 'color' => 'bg-orange-100 text-orange-800'],
+                    ['value' => 'languages', 'label' => 'Languages', 'color' => 'bg-indigo-100 text-indigo-800'],
+                    ['value' => 'social_sciences', 'label' => 'Social Sciences', 'color' => 'bg-teal-100 text-teal-800'],
+                    ['value' => 'mathematics', 'label' => 'Mathematics', 'color' => 'bg-blue-100 text-blue-800'],
+                    ['value' => 'religious_studies', 'label' => 'Religious Studies', 'color' => 'bg-violet-100 text-violet-800'],
+                    ['value' => 'general', 'label' => 'General', 'color' => 'bg-gray-100 text-gray-700'],
                 ],
             ],
         ];
 
-        foreach ($enums as $enum) {
-            DynamicEnum::updateOrCreate(
+        foreach ($definitions as $definition) {
+            $options = $definition['options'];
+            unset($definition['options']);
+
+            $enum = DynamicEnum::query()->firstOrCreate(
                 [
-                    'name' => $enum['name'],
-                    'applies_to' => $enum['applies_to'],
-                    'school_id' => $enum['school_id'],
+                    'school_id' => null,
+                    'key' => $definition['key'],
                 ],
-                $enum
+                [
+                    'label' => $definition['label'],
+                    'description' => $definition['description'] ?? null,
+                ]
             );
+
+            foreach ($options as $index => $option) {
+                DynamicEnumOption::query()->firstOrCreate(
+                    [
+                        'dynamic_enum_id' => $enum->id,
+                        'value' => $option['value'],
+                    ],
+                    [
+                        'label' => $option['label'],
+                        'sort_order' => $index,
+                        'is_active' => true,
+                        'is_required' => false,
+                        'color' => $option['color'] ?? null,
+                        'icon' => $option['icon'] ?? null,
+                    ]
+                );
+            }
         }
     }
 }

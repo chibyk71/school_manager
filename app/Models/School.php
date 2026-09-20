@@ -46,7 +46,7 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
  * -------------------
  * - Addresses: Uses the polymorphic HasAddress trait – primary address is automatically available via $school->primaryAddress()
  * - Media: Logos and favicons are stored in dedicated single-file collections with fallback URLs
- * - Relationships: Users (pivot), class levels (through sections), academic sessions, vehicles
+ * - Relationships: Users (pivot), class levels (through sections), academic sessions, vehicles, dynamic enums
  * - Frontend: Props like logo_url, primary address fields are automatically appended/serialized for Inertia
  *
  * Problems Solved:
@@ -183,6 +183,11 @@ class School extends \App\Models\Model implements HasMedia
     public function vehicles()
     {
         return $this->hasMany(Vehicle::class);
+    }
+
+    public function dynamicEnums()
+    {
+        return $this->hasMany(DynamicEnum::class);
     }
 
     // =================================================================

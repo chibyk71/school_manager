@@ -1,61 +1,116 @@
 <?php
+
 /**
- * database/migrations/2026_01_02_000001_create_dynamic_enums_table.php
+ * Dynamic Enum Phase 1 — normalized definition schema.
  *
- * This migration creates the `dynamic_enums` table, which stores customizable "enum-like" option lists
- * for model properties in a multi-tenant environment.
+ * Replaces the legacy JSON-options Dynamic Enum design.
  *
- * Features / Problems Solved:
- * - Provides a dedicated, normalized storage for dynamic options (e.g., gender, title, profile_type)
- *   that were previously mixed in the generic `configs` table.
- * - Supports both system-wide defaults (school_id = null) and school-specific overrides/extensions.
- * - Stores options as JSON for flexibility (array of {value: string, label: string, color?: string}).
- * - Ensures uniqueness: a school cannot define the same name + applies_to twice.
- * - Indexes critical columns for fast lookups in scopes (visibleToSchool, forModel).
- * - Uses UUID primary key and foreign UUID for school_id (consistent with the rest of the app).
- * - Cascade on delete for school_id to keep data clean when a school is removed.
+ * Identity:
+ *   - Default (tenant-wide): school_id IS NULL + key
+ *   - School customization:  school_id = S + key
  *
- * Fits into the DynamicEnums Module:
- * - This table is the single source of truth for all dynamic option definitions.
- * - Replaces the subset of rows in the existing `configs` table that were used for enum-style options
- *   (title, gender, profile_type, address type, etc.).
- * - Allows future expansion (e.g., ordering, icons, disabled flags) without schema changes.
- * - Works seamlessly with BelongsToSchool trait, HasTableQuery, Activitylog, and the upcoming
- *   HasDynamicEnum trait.
+ * Uniqueness must hold on every supported engine:
+ *   - At most one default definition per key
+ *   - At most one definition per (school_id, key)
+ *   - Default and school definitions for the same key may coexist
+ *
+ * Strategy by driver:
+ *   - SQLite / PostgreSQL: partial unique indexes (WHERE school_id IS NULL / IS NOT NULL)
+ *   - MySQL / MariaDB: STORED generated ownership_scope column + unique (ownership_scope, key)
+ *     so that NULL school_id participates in uniqueness (normal UNIQUE allows multiple NULLs)
+ *
+ * ownership_scope is a database-only uniqueness helper (nil UUID when school_id IS NULL).
+ * It is not an application identity field and is not mass-assigned.
+ *
+ * Options live in dynamic_enum_options (first-class rows), not JSON.
  */
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Sentinel UUID used only for uniqueness of default (school_id IS NULL) rows.
+     * Must never collide with a real schools.id.
+     */
+    private const DEFAULT_OWNERSHIP_SCOPE = '00000000-0000-0000-0000-000000000000';
+
     public function up(): void
     {
         Schema::create('dynamic_enums', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('name');                  // machine name, e.g., 'gender', 'title'
-            $table->string('label');                 // UI label, e.g., 'Gender'
-            $table->string('applies_to');            // Fully qualified model class, e.g., App\Models\Profile
-            $table->mediumText('description')->nullable();
-            $table->string('color')->nullable();     // Optional Tailwind class for badges/previews
-            $table->json('options');                 // [{value: 'male', label: 'Male', color?: 'bg-blue-100'}, ...]
+
             $table->foreignUuid('school_id')
-                  ->nullable()
-                  ->constrained('schools')
-                  ->cascadeOnDelete();
+                ->nullable()
+                ->constrained('schools')
+                ->cascadeOnDelete();
+
+            // Stable machine-readable identity (e.g. expense.type, profile.gender)
+            $table->string('key');
+
+            // Human-facing presentation
+            $table->string('label');
+            $table->mediumText('description')->nullable();
 
             $table->timestamps();
 
-            // Critical for data integrity and performance
-            $table->unique(['name', 'applies_to', 'school_id']);
-            $table->index(['applies_to']);
-            $table->index(['school_id']);
+            // Non-unique indexes for common lookups
+            $table->index('key');
+            $table->index('school_id');
         });
+
+        $this->addKeyUniquenessIndexes();
     }
 
     public function down(): void
     {
         Schema::dropIfExists('dynamic_enums');
+    }
+
+    /**
+     * Enforce ownership identity at the database level on every supported engine.
+     */
+    private function addKeyUniquenessIndexes(): void
+    {
+        $driver = Schema::getConnection()->getDriverName();
+        $nil = self::DEFAULT_OWNERSHIP_SCOPE;
+
+        if (in_array($driver, ['sqlite', 'pgsql'], true)) {
+            // Partial unique indexes: NULL defaults and school rows are separate identity spaces.
+            DB::statement(
+                'CREATE UNIQUE INDEX dynamic_enums_default_key_unique ON dynamic_enums (key) WHERE school_id IS NULL'
+            );
+            DB::statement(
+                'CREATE UNIQUE INDEX dynamic_enums_school_key_unique ON dynamic_enums (school_id, key) WHERE school_id IS NOT NULL'
+            );
+
+            return;
+        }
+
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            // MySQL/MariaDB treat NULL as distinct in UNIQUE indexes, so multiple
+            // (NULL, same-key) rows would otherwise be allowed. A STORED generated
+            // column maps NULL school_id to a fixed sentinel so uniqueness holds.
+            DB::statement("
+                ALTER TABLE dynamic_enums
+                ADD COLUMN ownership_scope CHAR(36)
+                    CHARACTER SET ascii COLLATE ascii_bin
+                    GENERATED ALWAYS AS (IFNULL(school_id, '{$nil}')) STORED
+                    NOT NULL
+            ");
+            DB::statement(
+                'CREATE UNIQUE INDEX dynamic_enums_ownership_key_unique ON dynamic_enums (ownership_scope, `key`)'
+            );
+
+            return;
+        }
+
+        // Unknown engine: best-effort composite unique (does not fully protect NULL defaults).
+        Schema::table('dynamic_enums', function (Blueprint $table) {
+            $table->unique(['school_id', 'key'], 'dynamic_enums_school_key_unique');
+        });
     }
 };
