@@ -371,3 +371,59 @@ test('school A, school B, and tenant default expense.type remain distinct', func
     expect($enumA->options()->pluck('value')->all())->toBe(['supplies']);
     expect($enumB->options()->pluck('value')->all())->toBe(['transport']);
 });
+
+/* ------------------------------------------------------------------ */
+/* Migration strategy — multi-engine uniqueness                       */
+/* ------------------------------------------------------------------ */
+
+test('migration defines MySQL ownership_scope uniqueness strategy', function () {
+    $source = file_get_contents(dynamicEnumsMigrationPath());
+
+    expect($source)->toContain('ownership_scope')
+        ->and($source)->toContain('IFNULL(school_id')
+        ->and($source)->toContain('GENERATED ALWAYS AS')
+        ->and($source)->toContain('dynamic_enums_ownership_key_unique')
+        ->and($source)->toContain("'mysql'")
+        ->and($source)->toContain("'mariadb'");
+});
+
+test('migration defines partial unique indexes for sqlite and pgsql', function () {
+    $source = file_get_contents(dynamicEnumsMigrationPath());
+
+    expect($source)->toContain('dynamic_enums_default_key_unique')
+        ->and($source)->toContain('dynamic_enums_school_key_unique')
+        ->and($source)->toContain('WHERE school_id IS NULL')
+        ->and($source)->toContain('WHERE school_id IS NOT NULL');
+});
+
+/* ------------------------------------------------------------------ */
+/* Legacy consumer isolation                                          */
+/* ------------------------------------------------------------------ */
+
+test('InDynamicEnum rule does not call removed DynamicEnum scopes', function () {
+    $rule = new \App\Rules\InDynamicEnum('type', \App\Models\Address::class);
+    $failed = false;
+    $rule->validate('type', 'residential', function () use (&$failed) {
+        $failed = true;
+    });
+    // Phase 1 stub is inert — must not throw and must not fail.
+    expect($failed)->toBeFalse();
+});
+
+test('HasDynamicEnum getVisibleEnums returns empty options without querying removed API', function () {
+    $model = new class extends \Illuminate\Database\Eloquent\Model
+    {
+        use \App\Traits\HasDynamicEnum;
+
+        public function getDynamicEnumProperties(): array
+        {
+            return ['title', 'gender'];
+        }
+    };
+
+    expect($model->getVisibleEnums())->toBe([
+        'title' => [],
+        'gender' => [],
+    ]);
+    expect($model->getDynamicEnumOptions('title'))->toBe([]);
+});
