@@ -1,31 +1,29 @@
 <?php
+
 /**
- * database/migrations/2026_01_02_000001_create_dynamic_enums_table.php
+ * Dynamic Enum Phase 1 — normalized definition schema.
  *
- * This migration creates the `dynamic_enums` table, which stores customizable "enum-like" option lists
- * for model properties in a multi-tenant environment.
+ * Replaces the legacy JSON-options Dynamic Enum design.
  *
- * Features / Problems Solved:
- * - Provides a dedicated, normalized storage for dynamic options (e.g., gender, title, profile_type)
- *   that were previously mixed in the generic `configs` table.
- * - Supports both system-wide defaults (school_id = null) and school-specific overrides/extensions.
- * - Stores options as JSON for flexibility (array of {value: string, label: string, color?: string}).
- * - Ensures uniqueness: a school cannot define the same name + applies_to twice.
- * - Indexes critical columns for fast lookups in scopes (visibleToSchool, forModel).
- * - Uses UUID primary key and foreign UUID for school_id (consistent with the rest of the app).
- * - Cascade on delete for school_id to keep data clean when a school is removed.
+ * Identity:
+ *   - Default (tenant-wide): school_id IS NULL + key
+ *   - School customization:  school_id = S + key
  *
- * Fits into the DynamicEnums Module:
- * - This table is the single source of truth for all dynamic option definitions.
- * - Replaces the subset of rows in the existing `configs` table that were used for enum-style options
- *   (title, gender, profile_type, address type, etc.).
- * - Allows future expansion (e.g., ordering, icons, disabled flags) without schema changes.
- * - Works seamlessly with BelongsToSchool trait, HasTableQuery, Activitylog, and the upcoming
- *   HasDynamicEnum trait.
+ * Uniqueness is enforced with partial unique indexes so that:
+ *   - At most one default definition exists per key
+ *   - At most one definition exists per (school_id, key)
+ *   - Default and school definitions for the same key may coexist
+ *
+ * SQLite (test) and PostgreSQL support partial unique indexes.
+ * MySQL/MariaDB do not; application-level enforcement is deferred to later phases
+ * if/when those engines become primary.
+ *
+ * Options live in dynamic_enum_options (first-class rows), not JSON.
  */
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -34,28 +32,60 @@ return new class extends Migration
     {
         Schema::create('dynamic_enums', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('name');                  // machine name, e.g., 'gender', 'title'
-            $table->string('label');                 // UI label, e.g., 'Gender'
-            $table->string('applies_to');            // Fully qualified model class, e.g., App\Models\Profile
-            $table->mediumText('description')->nullable();
-            $table->string('color')->nullable();     // Optional Tailwind class for badges/previews
-            $table->json('options');                 // [{value: 'male', label: 'Male', color?: 'bg-blue-100'}, ...]
+
             $table->foreignUuid('school_id')
-                  ->nullable()
-                  ->constrained('schools')
-                  ->cascadeOnDelete();
+                ->nullable()
+                ->constrained('schools')
+                ->cascadeOnDelete();
+
+            // Stable machine-readable identity (e.g. expense.type, profile.gender)
+            $table->string('key');
+
+            // Human-facing presentation
+            $table->string('label');
+            $table->mediumText('description')->nullable();
 
             $table->timestamps();
 
-            // Critical for data integrity and performance
-            $table->unique(['name', 'applies_to', 'school_id']);
-            $table->index(['applies_to']);
-            $table->index(['school_id']);
+            // Non-unique indexes for common lookups
+            $table->index('key');
+            $table->index('school_id');
         });
+
+        $this->addKeyUniquenessIndexes();
     }
 
     public function down(): void
     {
         Schema::dropIfExists('dynamic_enums');
+    }
+
+    /**
+     * Enforce (NULL, key) and (school_id, key) uniqueness where the engine supports it.
+     */
+    private function addKeyUniquenessIndexes(): void
+    {
+        $driver = Schema::getConnection()->getDriverName();
+
+        if (in_array($driver, ['sqlite', 'pgsql'], true)) {
+            // At most one default definition per key
+            DB::statement(
+                'CREATE UNIQUE INDEX dynamic_enums_default_key_unique ON dynamic_enums (key) WHERE school_id IS NULL'
+            );
+
+            // At most one school-specific definition per (school, key)
+            DB::statement(
+                'CREATE UNIQUE INDEX dynamic_enums_school_key_unique ON dynamic_enums (school_id, key) WHERE school_id IS NOT NULL'
+            );
+
+            return;
+        }
+
+        // Fallback for engines without partial unique indexes (e.g. MySQL):
+        // composite unique still helps for non-null school_id; NULL duplicates
+        // remain an application concern until engine support or a later phase.
+        Schema::table('dynamic_enums', function (Blueprint $table) {
+            $table->unique(['school_id', 'key'], 'dynamic_enums_school_key_unique');
+        });
     }
 };
