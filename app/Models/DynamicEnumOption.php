@@ -8,14 +8,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * DynamicEnumOption — Phase 1 domain foundation.
+ * DynamicEnumOption — first-class option row + Phase 2 identity protection.
  *
- * First-class option row belonging to a DynamicEnum definition.
+ * Identity (immutable after create): id, dynamic_enum_id, value.
+ * Mutable presentation: label, sort_order, color, icon.
+ * Lifecycle flags: is_active, is_required (managed via lifecycle service).
  *
  * value is the stable machine identity within the definition.
- * label / color / icon are presentation metadata.
- * is_active / is_required defaults support future Phase 2 lifecycle rules;
- * Phase 1 only persists them.
+ * Physical deletion is not the normal option lifecycle (deactivate instead).
  */
 class DynamicEnumOption extends Model
 {
@@ -41,16 +41,29 @@ class DynamicEnumOption extends Model
         'is_required' => 'boolean',
     ];
 
-    /**
-     * Database defaults are the source of truth; these attributes ensure
-     * new instances without explicit values still surface the expected defaults
-     * before persistence (consistent with migration defaults).
-     */
     protected $attributes = [
         'sort_order' => 0,
         'is_active' => true,
         'is_required' => false,
     ];
+
+    protected static function booted(): void
+    {
+        static::updating(function (self $option) {
+            if ($option->isDirty(['dynamic_enum_id', 'value'])) {
+                throw new \RuntimeException(
+                    'DynamicEnumOption identity fields (dynamic_enum_id, value) are immutable after creation.'
+                );
+            }
+
+            // Domain invariant: required options must remain active.
+            if ($option->is_required && ! $option->is_active) {
+                throw new \RuntimeException(
+                    'A required DynamicEnumOption cannot be inactive.'
+                );
+            }
+        });
+    }
 
     public function dynamicEnum(): BelongsTo
     {

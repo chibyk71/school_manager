@@ -4,28 +4,22 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * DynamicEnum — Phase 1 domain foundation.
- *
- * Represents a finite configurable vocabulary whose meaning belongs to the
- * tenant/school rather than application code.
+ * DynamicEnum — domain foundation + Phase 2 identity protection.
  *
  * Ownership:
  *   school_id = null  → tenant-wide / default definition
  *   school_id = S     → school-specific definition for the same key
  *
- * Identity is (school_id, key). Options are first-class rows (DynamicEnumOption).
+ * Identity (immutable after create): id, school_id, key.
+ * Mutable presentation: label, description.
  *
- * Intentionally does NOT use BelongsToSchool / SchoolScope: both default and
- * school-specific rows for the same key must remain queryable independently.
+ * Intentionally does NOT use BelongsToSchool / SchoolScope.
+ * Lifecycle operations live in DynamicEnumLifecycleService (Phase 2).
  * Effective resolution is Phase 3.
- *
- * Phase 1 responsibilities only: identity, ownership, persistence, relationships,
- * casting. No resolution, lifecycle, validation orchestration, or API behavior.
  */
 class DynamicEnum extends Model
 {
@@ -41,6 +35,17 @@ class DynamicEnum extends Model
         'description',
     ];
 
+    protected static function booted(): void
+    {
+        static::updating(function (self $definition) {
+            if ($definition->isDirty(['school_id', 'key'])) {
+                throw new \RuntimeException(
+                    'DynamicEnum identity fields (school_id, key) are immutable after creation.'
+                );
+            }
+        });
+    }
+
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
@@ -49,5 +54,15 @@ class DynamicEnum extends Model
     public function options(): HasMany
     {
         return $this->hasMany(DynamicEnumOption::class)->orderBy('sort_order');
+    }
+
+    public function isDefault(): bool
+    {
+        return $this->school_id === null;
+    }
+
+    public function isSchoolOwned(): bool
+    {
+        return $this->school_id !== null;
     }
 }
