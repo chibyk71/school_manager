@@ -6,12 +6,12 @@
  * Definitions are application-owned (one key = one baseline definition).
  * Tenant options form the baseline vocabulary.
  * School options are sparse per-value overlays on the same definition:
- *   - same value as tenant → school override (presentation / activity)
- *   - value absent from tenant → school-only option
+ *   - same value as tenant → school override via createSchoolOverride()
+ *   - value absent from tenant → school-only via createSchoolOption()
  *
  * Removing a school override deletes the school row (fallback to tenant).
  * Deactivation sets is_active = false and keeps the row.
- * Permanent deletion is separate and dependency-protected.
+ * Permanent deletion is separate and dependency-protected (fail closed for unknown keys).
  *
  * No complete school definition replacement. No option mass-copy. No Phase 3R resolution.
  */
@@ -209,6 +209,18 @@ class DynamicEnumLifecycleService
     ): DynamicEnumOption {
         $this->assertApplicationDefinition($definition);
 
+        $tenantExists = DynamicEnumOption::query()
+            ->where('dynamic_enum_id', $definition->id)
+            ->whereNull('school_id')
+            ->where('value', $value)
+            ->exists();
+
+        if ($tenantExists) {
+            throw ValidationException::withMessages([
+                'value' => "Tenant option [{$value}] already exists. Use createSchoolOverride() for school overrides of tenant values.",
+            ]);
+        }
+
         return $this->createOptionRow($definition, $school->id, $value, $label, $attributes);
     }
 
@@ -219,6 +231,8 @@ class DynamicEnumLifecycleService
         string $label,
         array $attributes = []
     ): DynamicEnumOption {
+        $this->assertApplicationDefinition($definition);
+
         $tenant = DynamicEnumOption::query()
             ->where('dynamic_enum_id', $definition->id)
             ->whereNull('school_id')
@@ -227,11 +241,11 @@ class DynamicEnumLifecycleService
 
         if ($tenant === null) {
             throw ValidationException::withMessages([
-                'value' => "No tenant option [{$value}] exists to override. Use createSchoolOption for school-only values.",
+                'value' => "No tenant option [{$value}] exists to override. Use createSchoolOption() for school-only values.",
             ]);
         }
 
-        return $this->createSchoolOption($definition, $school, $value, $label, $attributes);
+        return $this->createOptionRow($definition, $school->id, $value, $label, $attributes);
     }
 
     public function removeSchoolOverride(DynamicEnumOption $option): void
@@ -363,6 +377,13 @@ class DynamicEnumLifecycleService
 
     private function assertNoBusinessReferences(string $key, string $value): void
     {
+        // Fail closed: unknown keys have no dependency metadata — cannot safely delete.
+        if (! DynamicEnumConsumerRegistry::isRegistered($key)) {
+            throw ValidationException::withMessages([
+                'option' => "Cannot permanently delete [{$value}]: Dynamic Enum key [{$key}] has no registered consumer metadata.",
+            ]);
+        }
+
         foreach (DynamicEnumConsumerRegistry::consumersFor($key) as $consumer) {
             $modelClass = $consumer['model'];
             $column = $consumer['column'];
