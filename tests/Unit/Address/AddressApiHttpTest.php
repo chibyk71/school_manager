@@ -10,13 +10,16 @@
  * - Owner Gate view/update (no AddressPolicy)
  * - Address IDs resolved only through owner relationship
  *
- * Users table is UUID (User uses HasUuids). Schools include slug (School boot).
- * HandleInertiaRequests is disabled: User::email loads profile + Laratrust tables
- * that are out of scope for this focused suite.
+ * Fixture notes:
+ * - Users are UUID (HasUuids); schools include slug (School boot).
+ * - dynamic_enums uses the real applies_to/options shape (same as AddressCapabilityDomainTest).
+ * - Web middleware that needs full app routes/tables is disabled (Inertia share,
+ *   EnsureCurrentSession → academic.session.index, SchoolContext, maintenance).
  */
 
 uses(Tests\TestCase::class);
 
+use App\Models\Address;
 use App\Models\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -31,10 +34,12 @@ beforeEach(function () {
     Model::unguard();
     buildAddressApiSchema();
 
-    // Address API is pure JSON — skip Inertia share (User::email loads profile;
-    // Laratrust permissions) so focused schema does not need full app tables.
+    // Pure JSON Address API — do not require full web app context.
     $this->withoutMiddleware([
         \App\Http\Middleware\HandleInertiaRequests::class,
+        \App\Http\Middleware\EnsureCurrentSession::class,
+        \App\Http\Middleware\SchoolContext::class,
+        \App\Http\Middleware\CheckMaintenanceMode::class,
     ]);
 });
 
@@ -58,7 +63,6 @@ function buildAddressApiSchema(): void
         $table->timestamps();
     });
 
-    // Minimal profiles so User accessors do not 500 if any path touches $user->email.
     Schema::create('profiles', function (Blueprint $table) {
         $table->uuid('id')->primary();
         $table->uuid('user_id')->nullable()->index();
@@ -100,19 +104,32 @@ function buildAddressApiSchema(): void
         $table->timestamps();
     });
 
+    // Real Dynamic Enum shape (not legacy model/property/value rows).
     Schema::create('dynamic_enums', function (Blueprint $table) {
-        $table->id();
-        $table->string('model');
-        $table->string('property');
-        $table->string('value');
+        $table->uuid('id')->primary();
+        $table->string('name');
         $table->string('label')->nullable();
+        $table->string('applies_to')->nullable();
+        $table->text('description')->nullable();
+        $table->string('color')->nullable();
+        $table->json('options')->nullable();
+        $table->uuid('school_id')->nullable();
         $table->timestamps();
     });
 
     DB::table('dynamic_enums')->insert([
-        ['model' => 'App\\Models\\Address', 'property' => 'type', 'value' => 'physical', 'label' => 'Physical'],
-        ['model' => 'App\\Models\\Address', 'property' => 'type', 'value' => 'postal', 'label' => 'Postal'],
-        ['model' => 'App\\Models\\Address', 'property' => 'type', 'value' => 'billing', 'label' => 'Billing'],
+        'id' => (string) Str::uuid(),
+        'name' => 'type',
+        'label' => 'Address Type',
+        'applies_to' => Address::class,
+        'options' => json_encode([
+            ['value' => 'physical', 'label' => 'Physical'],
+            ['value' => 'postal', 'label' => 'Postal'],
+            ['value' => 'billing', 'label' => 'Billing'],
+        ]),
+        'school_id' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
 }
 
