@@ -7,7 +7,8 @@
     2+ → cards/list; Add/Edit dialog
 
   Embedded: <AddressManager v-model="form.addresses" />
-    - Form binds directly to model[0]; parent submit reads the array (no Apply step).
+    - Form binds directly to model[0] (same object reference);
+      parent submit reads the array (no Apply step).
 
   Managed:  <AddressManager owner="school" :owner-id="school.id" />
     - Inline single form is a local draft synced from capability; Save issues create/PATCH.
@@ -77,23 +78,48 @@ const count = computed(() => displayList.value.length);
 /** Shared progressive-disclosure rule: 0 or 1 → inline form; 2+ → cards. */
 const useInlineSingle = computed(() => count.value <= 1);
 
-/** Embedded 0/1: bind form directly to model[0] so School submit sees live form state. */
+function ensureEmbeddedSlot() {
+    if (isManaged.value) return;
+    if (!model.value?.length) {
+        model.value = [emptyAddressFormData()];
+        return;
+    }
+    // Guarantee AddressFormData keys exist on the live slot (parent may pass {}).
+    const slot = model.value[0] as AddressInput;
+    if (slot.address_line_1 === undefined) {
+        Object.assign(slot, emptyAddressFormData(), slot);
+    }
+}
+
+// Keep one live slot for embedded inline form (0 → still one empty draft in the array).
+watch(
+    () => [isManaged.value, model.value?.length ?? 0] as const,
+    () => {
+        if (!isManaged.value) {
+            ensureEmbeddedSlot();
+        }
+    },
+    { immediate: true }
+);
+
+/**
+ * Embedded 0/1: AddressForm must mutate the *same object* as model[0].
+ * addressToFormData() clones — nested v-model fields would write the clone and
+ * School submit would still see empty/stale addresses[]. Return the live slot.
+ */
 const singleEmbedded = computed({
     get(): AddressFormData {
+        ensureEmbeddedSlot();
         const list = model.value ?? [];
-        if (list.length === 0) {
-            return emptyAddressFormData();
-        }
-        return addressToFormData(list[0]);
+        // Live reference: InputText/DynamicEnumField mutations write through to model[0].
+        return list[0] as AddressFormData;
     },
     set(v: AddressFormData) {
-        const list = [...(model.value ?? [])];
-        if (list.length === 0) {
-            model.value = [{ ...v }];
-        } else {
-            list[0] = { ...v, id: list[0].id };
-            model.value = list;
-        }
+        if (isManaged.value) return;
+        ensureEmbeddedSlot();
+        const slot = model.value![0] as AddressInput;
+        // In-place assign keeps object identity so parent refs stay linked.
+        Object.assign(slot, v, { id: slot.id });
     },
 });
 
@@ -131,13 +157,6 @@ watch(managedSingle, () => {
         managedSingleDirty.value = true;
     }
 }, { deep: true });
-
-function ensureEmbeddedSlot() {
-    if (isManaged.value) return;
-    if (!model.value?.length) {
-        model.value = [emptyAddressFormData()];
-    }
-}
 
 onMounted(async () => {
     if (isManaged.value) {
@@ -201,8 +220,8 @@ function mapServerErrors(e: unknown): boolean {
 async function saveManagedSingle() {
     if (!isManaged.value || !props.canMutate) return;
     saving.value = true;
-    formErrors.value = {};
     serverError.value = null;
+    formErrors.value = {};
     actionError.value = null;
     try {
         if (managedSingleId.value) {
@@ -211,18 +230,19 @@ async function saveManagedSingle() {
         } else {
             await capability.create(managedSingle.value);
         }
+        await capability.list();
         syncManagedSingleFromCapability();
         managedSingleDirty.value = false;
-    } catch (e: unknown) {
-        mapServerErrors(e);
-        actionError.value = serverError.value || capability.error.value || 'Save failed';
+    } catch (e) {
+        if (!mapServerErrors(e)) {
+            actionError.value = (e as Error).message || 'Save failed';
+        }
     } finally {
         saving.value = false;
     }
 }
 
-/** Managed single-address (count === 1): set/unset primary via dedicated endpoints. */
-async function toggleManagedPrimary() {
+async function toggleManagedSinglePrimary() {
     if (!isManaged.value || !props.canMutate || !managedSingleId.value) return;
     actionError.value = null;
     try {
@@ -231,30 +251,29 @@ async function toggleManagedPrimary() {
         } else {
             await capability.setPrimary(managedSingleId.value);
         }
+        await capability.list();
         syncManagedSingleFromCapability();
-    } catch (e: unknown) {
-        actionError.value =
-            capability.error.value || (e as Error).message || 'Primary update failed';
+    } catch (e) {
+        actionError.value = (e as Error).message || 'Primary update failed';
     }
 }
 
-/** Managed single-address delete: 1 → 0 via capability.remove (confirm + resync). */
 function deleteManagedSingle() {
     if (!isManaged.value || !props.canMutate || !managedSingleId.value) return;
     const id = managedSingleId.value;
     confirm.require({
-        message: 'Delete this address? This cannot be undone.',
-        header: 'Confirm delete',
+        message: 'Delete this address?',
+        header: 'Confirm',
         icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
         accept: async () => {
             actionError.value = null;
             try {
                 await capability.remove(id);
+                await capability.list();
                 syncManagedSingleFromCapability();
-            } catch (e: unknown) {
-                actionError.value =
-                    capability.error.value || (e as Error).message || 'Delete failed';
+            } catch (e) {
+                actionError.value = (e as Error).message || 'Delete failed';
             }
         },
     });
@@ -262,16 +281,17 @@ function deleteManagedSingle() {
 
 function startEdit(index: number) {
     const item = displayList.value[index];
-    draft.value = addressToFormData(item);
+    if (!item) return;
     editingIndex.value = index;
+    draft.value = addressToFormData(item);
     formErrors.value = {};
     serverError.value = null;
     showAddDialog.value = true;
 }
 
 function startAdd() {
-    draft.value = emptyAddressFormData();
     editingIndex.value = null;
+    draft.value = emptyAddressFormData();
     formErrors.value = {};
     serverError.value = null;
     showAddDialog.value = true;
@@ -284,109 +304,108 @@ function cancelEdit() {
 
 async function saveDraft() {
     saving.value = true;
-    formErrors.value = {};
     serverError.value = null;
+    formErrors.value = {};
+    actionError.value = null;
     try {
         if (isManaged.value) {
             if (editingIndex.value !== null) {
                 const existing = capability.addresses.value[editingIndex.value];
+                if (!existing) throw new Error('Address not found');
                 const { is_primary: _omit, ...payload } = draft.value;
-                await capability.update(existing.id, payload);
+                await capability.update(String(existing.id), payload);
             } else {
                 await capability.create(draft.value);
             }
+            await capability.list();
             syncManagedSingleFromCapability();
         } else {
-            const next = [...(model.value ?? [])];
+            const list = [...(model.value ?? [])];
             if (editingIndex.value !== null) {
-                next[editingIndex.value] = {
+                list[editingIndex.value] = {
                     ...draft.value,
-                    id: next[editingIndex.value]?.id,
+                    id: list[editingIndex.value]?.id,
                 };
             } else {
-                next.push({ ...draft.value });
+                list.push({ ...draft.value });
             }
-            model.value = next;
+            model.value = list;
         }
         showAddDialog.value = false;
         editingIndex.value = null;
-    } catch (e: unknown) {
-        mapServerErrors(e);
+    } catch (e) {
+        if (!mapServerErrors(e)) {
+            serverError.value = (e as Error).message || 'Save failed';
+        }
     } finally {
         saving.value = false;
     }
 }
 
 function removeAt(index: number) {
-    const item = displayList.value[index];
-    confirm.require({
-        message: 'Delete this address? This cannot be undone.',
-        header: 'Confirm delete',
-        icon: 'pi pi-exclamation-triangle',
-        acceptClass: 'p-button-danger',
-        accept: async () => {
-            actionError.value = null;
-            if (isManaged.value && item.id) {
+    if (isManaged.value) {
+        const existing = capability.addresses.value[index];
+        if (!existing) return;
+        confirm.require({
+            message: 'Delete this address?',
+            header: 'Confirm',
+            icon: 'pi pi-exclamation-triangle',
+            acceptClass: 'p-button-danger',
+            accept: async () => {
+                actionError.value = null;
                 try {
-                    await capability.remove(String(item.id));
+                    await capability.remove(String(existing.id));
+                    await capability.list();
                     syncManagedSingleFromCapability();
-                } catch (e: unknown) {
-                    actionError.value =
-                        capability.error.value || (e as Error).message || 'Delete failed';
+                } catch (e) {
+                    actionError.value = (e as Error).message || 'Delete failed';
                 }
-            } else {
-                const next = [...(model.value ?? [])];
-                next.splice(index, 1);
-                model.value = next.length ? next : [emptyAddressFormData()];
-            }
-        },
-    });
+            },
+        });
+        return;
+    }
+    const list = [...(model.value ?? [])];
+    list.splice(index, 1);
+    model.value = list.length ? list : [emptyAddressFormData()];
 }
 
 async function togglePrimary(index: number) {
     if (!isManaged.value || !props.canMutate) return;
-    const item = capability.addresses.value[index];
-    if (!item) return;
+    const existing = capability.addresses.value[index];
+    if (!existing) return;
     actionError.value = null;
     try {
-        if (item.is_primary) {
-            await capability.unsetPrimary(item.id);
+        if (existing.is_primary) {
+            await capability.unsetPrimary(String(existing.id));
         } else {
-            await capability.setPrimary(item.id);
+            await capability.setPrimary(String(existing.id));
         }
-        syncManagedSingleFromCapability();
-    } catch (e: unknown) {
-        actionError.value =
-            capability.error.value || (e as Error).message || 'Primary update failed';
+        await capability.list();
+    } catch (e) {
+        actionError.value = (e as Error).message || 'Primary update failed';
     }
 }
 
 const showAddAnother = computed(() => {
-    if (isManaged.value) {
-        return count.value >= 1 && props.canMutate;
-    }
-    return count.value >= 1 && Boolean(displayList.value[0]?.address_line_1);
+    if (disabledOrViewOnly.value) return false;
+    if (useInlineSingle.value) return count.value === 1;
+    return true;
 });
+
+const disabledOrViewOnly = computed(() => props.disabled || !props.canMutate);
+
+const canMutate = computed(() => props.canMutate && !props.disabled);
+const disabled = computed(() => props.disabled);
 </script>
 
 <template>
-    <div class="address-manager space-y-4">
-        <ConfirmDialog />
-
-        <Message v-if="isManaged && capability.error.value" severity="error" class="mb-2">
-            {{ capability.error.value }}
-        </Message>
-        <Message v-if="actionError" severity="error" class="mb-2">
-            {{ actionError }}
+    <div class="space-y-4">
+        <Message v-if="capability.error.value || actionError" severity="error" class="mb-2">
+            {{ capability.error.value || actionError }}
         </Message>
 
-        <div v-if="isManaged && capability.loading.value" class="text-sm text-surface-500">
-            Loading addresses…
-        </div>
-
-        <!-- 0 or 1: inline form (both modes) -->
         <template v-if="useInlineSingle">
-            <!-- Embedded: live bind to parent model -->
+            <!-- Embedded: live v-model into parent addresses[0] -->
             <template v-if="!isManaged">
                 <AddressForm
                     v-model="singleEmbedded"
@@ -394,15 +413,15 @@ const showAddAnother = computed(() => {
                     :show-primary="true"
                 />
             </template>
-            <!-- Managed: local draft; Save → create or PATCH -->
+            <!-- Managed: local draft + explicit Save / primary / delete -->
             <template v-else>
                 <AddressForm
                     v-model="managedSingle"
                     :errors="formErrors"
-                    :disabled="disabled || saving"
-                    :show-primary="count === 0"
+                    :disabled="saving || disabled"
+                    :show-primary="false"
                 />
-                <div class="flex flex-wrap items-center gap-2">
+                <div v-if="canMutate" class="flex flex-wrap gap-2 mt-3">
                     <Button
                         :label="managedSingleId ? 'Save changes' : 'Save address'"
                         size="small"
@@ -416,8 +435,8 @@ const showAddAnother = computed(() => {
                         size="small"
                         severity="secondary"
                         outlined
-                        :disabled="disabled || saving"
-                        @click="toggleManagedPrimary"
+                        :disabled="disabled"
+                        @click="toggleManagedSinglePrimary"
                     />
                     <Button
                         v-if="managedSingleId && canMutate && managedSingle.is_primary"
@@ -425,8 +444,8 @@ const showAddAnother = computed(() => {
                         size="small"
                         severity="secondary"
                         outlined
-                        :disabled="disabled || saving"
-                        @click="toggleManagedPrimary"
+                        :disabled="disabled"
+                        @click="toggleManagedSinglePrimary"
                     />
                     <Button
                         v-if="managedSingleId && canMutate"
@@ -434,35 +453,41 @@ const showAddAnother = computed(() => {
                         size="small"
                         severity="danger"
                         outlined
-                        :disabled="disabled || saving"
+                        :disabled="disabled"
                         @click="deleteManagedSingle"
                     />
                     <Tag
                         v-if="managedSingleId && managedSingle.is_primary"
                         value="Primary"
-                        severity="info"
+                        severity="success"
+                        class="self-center"
                     />
                 </div>
             </template>
         </template>
 
-        <!-- 2+: cards -->
         <template v-else>
             <div
                 v-for="(item, index) in displayList"
                 :key="item.id ?? index"
-                class="border border-surface-200 rounded-lg p-4 flex flex-col md:flex-row md:items-start md:justify-between gap-3"
+                class="flex flex-wrap items-start justify-between gap-3 p-3 border border-surface-200 dark:border-surface-700 rounded-lg"
             >
-                <div class="min-w-0 flex-1">
-                    <div class="font-medium truncate">
-                        {{ item.address_line_1 || 'Untitled address' }}
-                        <Tag v-if="item.is_primary" value="Primary" severity="info" class="ml-2" />
+                <div class="min-w-0 flex-1 space-y-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-medium truncate">{{ item.address_line_1 || 'Address' }}</span>
+                        <Tag v-if="item.is_primary" value="Primary" severity="success" />
+                        <Tag v-if="item.type" :value="String(item.type)" severity="secondary" />
                     </div>
-                    <div class="text-sm text-surface-500 mt-1">
-                        {{ [item.city_text, item.postal_code, item.type].filter(Boolean).join(' · ') }}
-                    </div>
+                    <p v-if="item.address_line_2" class="text-sm text-surface-600 dark:text-surface-400">
+                        {{ item.address_line_2 }}
+                    </p>
+                    <p v-if="item.landmark || item.postal_code" class="text-sm text-surface-500">
+                        <span v-if="item.landmark">{{ item.landmark }}</span>
+                        <span v-if="item.landmark && item.postal_code"> · </span>
+                        <span v-if="item.postal_code">{{ item.postal_code }}</span>
+                    </p>
                 </div>
-                <div v-if="canMutate || !isManaged" class="flex flex-wrap gap-2 shrink-0">
+                <div v-if="canMutate" class="flex flex-wrap gap-2 shrink-0">
                     <Button
                         label="Edit"
                         size="small"
@@ -530,5 +555,7 @@ const showAddAnother = computed(() => {
                 <Button label="Save" :loading="saving" @click="saveDraft" />
             </template>
         </Dialog>
+
+        <ConfirmDialog />
     </div>
 </template>
