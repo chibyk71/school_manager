@@ -1,19 +1,20 @@
 <?php
 
 /**
- * Address Module Phase 4 — HTTP API tests (Unit folder: focused schema, no RefreshDatabase).
+ * Address Module Phase 4 — HTTP API tests (focused schema, no RefreshDatabase).
  *
- * Authorization: owner view → list; owner update → all mutations.
- * Ownership isolation: address IDs resolved only through owner relationship.
- * Primary invariants preserved via HasAddress.
+ * Matches production AddressController / routes/address.php contract:
+ * - PATCH update
+ * - 204 on destroy and unset-primary
+ * - 422 on unsupported owner alias (ValidationException from resolveOwner)
+ * - Owner Gate view/update (no AddressPolicy)
+ * - Address IDs resolved only through owner relationship
  *
- * Lives under tests/Unit so Pest does not apply RefreshDatabase (avoids
- * pre-existing devices/staff SQLite migration debt on full migrate).
+ * Users table is UUID (User uses HasUuids). Schools include slug (School boot).
  */
 
 uses(Tests\TestCase::class);
 
-use App\Models\Address;
 use App\Models\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -31,6 +32,7 @@ beforeEach(function () {
 
 afterEach(function () {
     rollbackAddressApiSchema();
+    Gate::before(fn () => null);
 });
 
 function buildAddressApiSchema(): void
@@ -41,7 +43,7 @@ function buildAddressApiSchema(): void
     Schema::dropIfExists('dynamic_enums');
 
     Schema::create('users', function (Blueprint $table) {
-        $table->id();
+        $table->uuid('id')->primary();
         $table->string('name');
         $table->string('email')->unique();
         $table->string('password');
@@ -115,7 +117,11 @@ function makeSchool(array $overrides = []): School
     ], $overrides));
 }
 
-function makeUserWithSchoolPerms(School $school, array $abilities = ['view', 'update']): User
+/**
+ * Bypass SchoolPolicy with Gate::before for focused HTTP tests.
+ * $abilities: subset of ['view', 'update'].
+ */
+function makeUserWithSchoolAbilities(School $school, array $abilities = ['view', 'update']): User
 {
     $user = User::query()->create([
         'name' => 'Tester',
@@ -123,37 +129,76 @@ function makeUserWithSchoolPerms(School $school, array $abilities = ['view', 'up
         'password' => bcrypt('password'),
     ]);
 
-    foreach ($abilities as $ability) {
-        Gate::define($ability, function ($authUser, $model) use ($user, $school) {
-            if ($authUser->id !== $user->id) {
-                return false;
-            }
-            if ($model instanceof School) {
-                return $model->id === $school->id;
-            }
+    $userId = $user->id;
+    $schoolId = $school->id;
 
+    Gate::before(function (User $auth, string $ability, mixed $arguments = null) use ($userId, $schoolId, $abilities) {
+        if ($auth->id !== $userId) {
+            return null;
+        }
+        if (! in_array($ability, $abilities, true)) {
             return false;
-        });
-    }
+        }
+        $model = is_array($arguments) ? ($arguments[0] ?? null) : $arguments;
+        if ($model instanceof School) {
+            return $model->id === $schoolId;
+        }
+
+        return null;
+    });
 
     return $user;
 }
 
+function addressPayload(array $overrides = []): array
+{
+    return array_merge([
+        'address_line_1' => '12 Main Street',
+        'type' => 'physical',
+        'is_primary' => false,
+    ], $overrides);
+}
+
+function assertAddressResourceShape(array $row): void
+{
+    expect($row)->toHaveKeys([
+        'id',
+        'type',
+        'address_line_1',
+        'address_line_2',
+        'landmark',
+        'postal_code',
+        'country_id',
+        'state_id',
+        'city_id',
+        'city_text',
+        'is_primary',
+        'formatted',
+    ]);
+    expect($row)->not->toHaveKey('addressable_type');
+    expect($row)->not->toHaveKey('addressable_id');
+    expect($row)->not->toHaveKey('latitude');
+    expect($row)->not->toHaveKey('longitude');
+}
+
 it('allows listing addresses when owner view is granted', function () {
     $school = makeSchool();
-    $user = makeUserWithSchoolPerms($school, ['view']);
+    $user = makeUserWithSchoolAbilities($school, ['view']);
 
-    $school->addAddress(['address_line_1' => '12 Main St', 'type' => 'physical'], false);
+    $school->addAddress(addressPayload(['address_line_1' => 'Listed Ave']), false);
 
-    $this->actingAs($user)
+    $response = $this->actingAs($user)
         ->getJson(route('addresses.index', ['owner' => 'school', 'ownerId' => $school->id]))
-        ->assertOk()
-        ->assertJsonCount(1, 'data');
+        ->assertOk();
+
+    $data = $response->json('data');
+    expect($data)->toHaveCount(1);
+    assertAddressResourceShape($data[0]);
 });
 
 it('denies listing addresses without owner view', function () {
     $school = makeSchool();
-    $user = makeUserWithSchoolPerms($school, []);
+    $user = makeUserWithSchoolAbilities($school, []); // no abilities
 
     $this->actingAs($user)
         ->getJson(route('addresses.index', ['owner' => 'school', 'ownerId' => $school->id]))
@@ -162,56 +207,75 @@ it('denies listing addresses without owner view', function () {
 
 it('allows create update delete set and unset primary with owner update', function () {
     $school = makeSchool();
-    $user = makeUserWithSchoolPerms($school, ['view', 'update']);
+    $user = makeUserWithSchoolAbilities($school, ['view', 'update']);
 
     $create = $this->actingAs($user)
-        ->postJson(route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]), [
-            'address_line_1' => '1 First Ave',
-            'type' => 'physical',
-            'is_primary' => false,
-        ])
+        ->postJson(
+            route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]),
+            addressPayload(['address_line_1' => '1 First Ave'])
+        )
         ->assertCreated();
 
-    $id = $create->json('data.id') ?? $create->json('id');
+    $body = $create->json('data') ?? $create->json();
+    assertAddressResourceShape($body);
+    $id = $body['id'];
     expect($id)->not->toBeEmpty();
+    expect($body['is_primary'])->toBeFalse();
 
-    $this->actingAs($user)
-        ->putJson(route('addresses.update', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $id]), [
-            'address_line_1' => '1 First Ave Updated',
-            'type' => 'physical',
-        ])
+    $update = $this->actingAs($user)
+        ->patchJson(
+            route('addresses.update', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $id]),
+            ['address_line_1' => '1 First Ave Updated', 'type' => 'physical']
+        )
         ->assertOk();
 
-    $this->actingAs($user)
+    $updated = $update->json('data') ?? $update->json();
+    expect($updated['address_line_1'])->toBe('1 First Ave Updated');
+
+    $setPrimary = $this->actingAs($user)
         ->postJson(route('addresses.set-primary', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $id]))
         ->assertOk();
 
+    $primaryBody = $setPrimary->json('data') ?? $setPrimary->json();
+    expect($primaryBody['is_primary'])->toBeTrue();
+
     $this->actingAs($user)
-        ->postJson(route('addresses.unset-primary', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $id]))
-        ->assertOk();
+        ->deleteJson(route('addresses.unset-primary', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $id]))
+        ->assertNoContent();
 
     $this->actingAs($user)
         ->deleteJson(route('addresses.destroy', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $id]))
-        ->assertOk();
+        ->assertNoContent();
+
+    expect($school->addresses()->count())->toBe(0);
 });
 
 it('denies mutations with view-only access', function () {
     $school = makeSchool();
-    $user = makeUserWithSchoolPerms($school, ['view']);
+    $user = makeUserWithSchoolAbilities($school, ['view']);
 
-    $address = $school->addAddress(['address_line_1' => 'Read Only St', 'type' => 'physical'], false);
+    $address = $school->addAddress(addressPayload(['address_line_1' => 'Read Only St']), false);
 
     $this->actingAs($user)
-        ->postJson(route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]), [
-            'address_line_1' => 'Should Fail',
-            'type' => 'physical',
-        ])
+        ->postJson(
+            route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]),
+            addressPayload(['address_line_1' => 'Should Fail'])
+        )
         ->assertForbidden();
 
     $this->actingAs($user)
-        ->putJson(route('addresses.update', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $address->id]), [
-            'address_line_1' => 'Nope',
-        ])
+        ->patchJson(
+            route('addresses.update', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $address->id]),
+            ['address_line_1' => 'Nope']
+        )
+        ->assertForbidden();
+
+    $this->actingAs($user)
+        ->postJson(route('addresses.set-primary', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $address->id]))
+        ->assertForbidden();
+
+    $this->actingAs($user)
+        ->deleteJson(route('addresses.unset-primary', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $address->id]))
         ->assertForbidden();
 
     $this->actingAs($user)
@@ -222,51 +286,64 @@ it('denies mutations with view-only access', function () {
 it('cannot mutate an address belonging to another owner', function () {
     $schoolA = makeSchool(['name' => 'School A']);
     $schoolB = makeSchool(['name' => 'School B']);
-    $user = makeUserWithSchoolPerms($schoolA, ['view', 'update']);
+    $user = makeUserWithSchoolAbilities($schoolA, ['view', 'update']);
 
-    $foreign = $schoolB->addAddress(['address_line_1' => 'Foreign Rd', 'type' => 'physical'], false);
+    $foreign = $schoolB->addAddress(addressPayload(['address_line_1' => 'Foreign Rd']), false);
+
+    // All mutations against school A with school B's address id → not found (owner-scoped resolve)
+    $this->actingAs($user)
+        ->patchJson(
+            route('addresses.update', ['owner' => 'school', 'ownerId' => $schoolA->id, 'address' => $foreign->id]),
+            ['address_line_1' => 'Hijack']
+        )
+        ->assertNotFound();
 
     $this->actingAs($user)
-        ->putJson(route('addresses.update', ['owner' => 'school', 'ownerId' => $schoolA->id, 'address' => $foreign->id]), [
-            'address_line_1' => 'Hijack',
-        ])
+        ->postJson(route('addresses.set-primary', ['owner' => 'school', 'ownerId' => $schoolA->id, 'address' => $foreign->id]))
+        ->assertNotFound();
+
+    $this->actingAs($user)
+        ->deleteJson(route('addresses.unset-primary', ['owner' => 'school', 'ownerId' => $schoolA->id, 'address' => $foreign->id]))
         ->assertNotFound();
 
     $this->actingAs($user)
         ->deleteJson(route('addresses.destroy', ['owner' => 'school', 'ownerId' => $schoolA->id, 'address' => $foreign->id]))
         ->assertNotFound();
+
+    // Foreign address still exists on B
+    expect($schoolB->addresses()->whereKey($foreign->id)->exists())->toBeTrue();
 });
 
-it('rejects unsupported owner aliases', function () {
+it('rejects unsupported owner aliases with validation error', function () {
     $school = makeSchool();
-    $user = makeUserWithSchoolPerms($school, ['view', 'update']);
+    $user = makeUserWithSchoolAbilities($school, ['view', 'update']);
 
     $this->actingAs($user)
         ->getJson(route('addresses.index', ['owner' => 'not-a-real-owner', 'ownerId' => $school->id]))
-        ->assertStatus(404);
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['owner']);
 });
 
 it('preserves primary invariants via API', function () {
     $school = makeSchool();
-    $user = makeUserWithSchoolPerms($school, ['view', 'update']);
+    $user = makeUserWithSchoolAbilities($school, ['view', 'update']);
 
     $a = $this->actingAs($user)
-        ->postJson(route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]), [
-            'address_line_1' => 'Alpha',
-            'type' => 'physical',
-            'is_primary' => true,
-        ])
+        ->postJson(
+            route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]),
+            addressPayload(['address_line_1' => 'Alpha', 'is_primary' => true])
+        )
         ->assertCreated();
 
     $b = $this->actingAs($user)
-        ->postJson(route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]), [
-            'address_line_1' => 'Beta',
-            'type' => 'physical',
-            'is_primary' => true,
-        ])
+        ->postJson(
+            route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]),
+            addressPayload(['address_line_1' => 'Beta', 'is_primary' => true])
+        )
         ->assertCreated();
 
-    $idB = $b->json('data.id') ?? $b->json('id');
+    $idA = ($a->json('data') ?? $a->json())['id'];
+    $idB = ($b->json('data') ?? $b->json())['id'];
 
     $list = $this->actingAs($user)
         ->getJson(route('addresses.index', ['owner' => 'school', 'ownerId' => $school->id]))
@@ -274,10 +351,14 @@ it('preserves primary invariants via API', function () {
         ->json('data');
 
     expect(collect($list)->where('is_primary', true)->count())->toBe(1);
+    // Second primary should have won
+    expect(collect($list)->firstWhere('id', $idB)['is_primary'])->toBeTrue();
+    expect(collect($list)->firstWhere('id', $idA)['is_primary'])->toBeFalse();
 
+    // Delete primary leaves zero primary (no auto-promotion)
     $this->actingAs($user)
         ->deleteJson(route('addresses.destroy', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $idB]))
-        ->assertOk();
+        ->assertNoContent();
 
     $list2 = $this->actingAs($user)
         ->getJson(route('addresses.index', ['owner' => 'school', 'ownerId' => $school->id]))
@@ -285,4 +366,22 @@ it('preserves primary invariants via API', function () {
         ->json('data');
 
     expect(collect($list2)->where('is_primary', true)->count())->toBe(0);
+    expect($list2)->toHaveCount(1);
+});
+
+it('resource representation omits polymorphic ownership fields', function () {
+    $school = makeSchool();
+    $user = makeUserWithSchoolAbilities($school, ['view', 'update']);
+
+    $response = $this->actingAs($user)
+        ->postJson(
+            route('addresses.store', ['owner' => 'school', 'ownerId' => $school->id]),
+            addressPayload(['address_line_1' => 'Shape Check', 'type' => 'billing'])
+        )
+        ->assertCreated();
+
+    $row = $response->json('data') ?? $response->json();
+    assertAddressResourceShape($row);
+    expect($row['type'])->toBe('billing');
+    expect($row['address_line_1'])->toBe('Shape Check');
 });
