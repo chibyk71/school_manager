@@ -7,8 +7,7 @@
     2+ → cards/list; Add/Edit dialog
 
   Embedded: <AddressManager v-model="form.addresses" />
-    - Form binds directly to model[0] (same object reference);
-      parent submit reads the array (no Apply step).
+    - Form binds directly to model[0] (same object reference); parent submit reads the array (no Apply step).
 
   Managed:  <AddressManager owner="school" :owner-id="school.id" />
     - Inline single form is a local draft synced from capability; Save issues create/PATCH.
@@ -78,30 +77,6 @@ const count = computed(() => displayList.value.length);
 /** Shared progressive-disclosure rule: 0 or 1 → inline form; 2+ → cards. */
 const useInlineSingle = computed(() => count.value <= 1);
 
-function ensureEmbeddedSlot() {
-    if (isManaged.value) return;
-    if (!model.value?.length) {
-        model.value = [emptyAddressFormData()];
-        return;
-    }
-    // Guarantee AddressFormData keys exist on the live slot (parent may pass {}).
-    const slot = model.value[0] as AddressInput;
-    if (slot.address_line_1 === undefined) {
-        Object.assign(slot, emptyAddressFormData(), slot);
-    }
-}
-
-// Keep one live slot for embedded inline form (0 → still one empty draft in the array).
-watch(
-    () => [isManaged.value, model.value?.length ?? 0] as const,
-    () => {
-        if (!isManaged.value) {
-            ensureEmbeddedSlot();
-        }
-    },
-    { immediate: true }
-);
-
 /**
  * Embedded 0/1: AddressForm must mutate the *same object* as model[0].
  * addressToFormData() clones — nested v-model fields would write the clone and
@@ -157,6 +132,30 @@ watch(managedSingle, () => {
         managedSingleDirty.value = true;
     }
 }, { deep: true });
+
+function ensureEmbeddedSlot() {
+    if (isManaged.value) return;
+    if (!model.value?.length) {
+        model.value = [emptyAddressFormData()];
+        return;
+    }
+    // Guarantee AddressFormData keys exist on the live slot (parent may pass {}).
+    const slot = model.value[0] as AddressInput;
+    if (slot.address_line_1 === undefined) {
+        Object.assign(slot, emptyAddressFormData(), slot);
+    }
+}
+
+// Keep one live slot for embedded inline form (0 → still one empty draft in the array).
+watch(
+    () => [isManaged.value, model.value?.length ?? 0] as const,
+    () => {
+        if (!isManaged.value) {
+            ensureEmbeddedSlot();
+        }
+    },
+    { immediate: true }
+);
 
 onMounted(async () => {
     if (isManaged.value) {
@@ -233,15 +232,17 @@ async function saveManagedSingle() {
         await capability.list();
         syncManagedSingleFromCapability();
         managedSingleDirty.value = false;
-    } catch (e) {
+    } catch (e: unknown) {
         if (!mapServerErrors(e)) {
-            actionError.value = (e as Error).message || 'Save failed';
+            actionError.value =
+                capability.error.value || (e as Error).message || 'Save failed';
         }
     } finally {
         saving.value = false;
     }
 }
 
+/** Managed single-address primary toggle via dedicated endpoints. */
 async function toggleManagedSinglePrimary() {
     if (!isManaged.value || !props.canMutate || !managedSingleId.value) return;
     actionError.value = null;
@@ -253,27 +254,29 @@ async function toggleManagedSinglePrimary() {
         }
         await capability.list();
         syncManagedSingleFromCapability();
-    } catch (e) {
-        actionError.value = (e as Error).message || 'Primary update failed';
+    } catch (e: unknown) {
+        actionError.value =
+            capability.error.value || (e as Error).message || 'Primary update failed';
     }
 }
 
+/** Managed single-address delete: 1 → 0 via capability.remove (confirm + resync). */
 function deleteManagedSingle() {
     if (!isManaged.value || !props.canMutate || !managedSingleId.value) return;
     const id = managedSingleId.value;
     confirm.require({
-        message: 'Delete this address?',
-        header: 'Confirm',
+        message: 'Delete this address? This cannot be undone.',
+        header: 'Confirm delete',
         icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
         accept: async () => {
             actionError.value = null;
             try {
                 await capability.remove(id);
-                await capability.list();
                 syncManagedSingleFromCapability();
-            } catch (e) {
-                actionError.value = (e as Error).message || 'Delete failed';
+            } catch (e: unknown) {
+                actionError.value =
+                    capability.error.value || (e as Error).message || 'Delete failed';
             }
         },
     });
@@ -281,17 +284,16 @@ function deleteManagedSingle() {
 
 function startEdit(index: number) {
     const item = displayList.value[index];
-    if (!item) return;
-    editingIndex.value = index;
     draft.value = addressToFormData(item);
+    editingIndex.value = index;
     formErrors.value = {};
     serverError.value = null;
     showAddDialog.value = true;
 }
 
 function startAdd() {
-    editingIndex.value = null;
     draft.value = emptyAddressFormData();
+    editingIndex.value = null;
     formErrors.value = {};
     serverError.value = null;
     showAddDialog.value = true;
@@ -304,16 +306,14 @@ function cancelEdit() {
 
 async function saveDraft() {
     saving.value = true;
-    serverError.value = null;
     formErrors.value = {};
-    actionError.value = null;
+    serverError.value = null;
     try {
         if (isManaged.value) {
             if (editingIndex.value !== null) {
                 const existing = capability.addresses.value[editingIndex.value];
-                if (!existing) throw new Error('Address not found');
                 const { is_primary: _omit, ...payload } = draft.value;
-                await capability.update(String(existing.id), payload);
+                await capability.update(existing.id, payload);
             } else {
                 await capability.create(draft.value);
             }
@@ -333,9 +333,10 @@ async function saveDraft() {
         }
         showAddDialog.value = false;
         editingIndex.value = null;
-    } catch (e) {
+    } catch (e: unknown) {
         if (!mapServerErrors(e)) {
-            serverError.value = (e as Error).message || 'Save failed';
+            serverError.value =
+                capability.error.value || (e as Error).message || 'Save failed';
         }
     } finally {
         saving.value = false;
@@ -347,18 +348,19 @@ function removeAt(index: number) {
         const existing = capability.addresses.value[index];
         if (!existing) return;
         confirm.require({
-            message: 'Delete this address?',
-            header: 'Confirm',
+            message: 'Delete this address? This cannot be undone.',
+            header: 'Confirm delete',
             icon: 'pi pi-exclamation-triangle',
             acceptClass: 'p-button-danger',
             accept: async () => {
                 actionError.value = null;
                 try {
-                    await capability.remove(String(existing.id));
+                    await capability.remove(existing.id);
                     await capability.list();
                     syncManagedSingleFromCapability();
-                } catch (e) {
-                    actionError.value = (e as Error).message || 'Delete failed';
+                } catch (e: unknown) {
+                    actionError.value =
+                        capability.error.value || (e as Error).message || 'Delete failed';
                 }
             },
         });
@@ -366,6 +368,7 @@ function removeAt(index: number) {
     }
     const list = [...(model.value ?? [])];
     list.splice(index, 1);
+    // Embedded: keep one empty slot so inline form remains available (0-state).
     model.value = list.length ? list : [emptyAddressFormData()];
 }
 
@@ -376,23 +379,23 @@ async function togglePrimary(index: number) {
     actionError.value = null;
     try {
         if (existing.is_primary) {
-            await capability.unsetPrimary(String(existing.id));
+            await capability.unsetPrimary(existing.id);
         } else {
-            await capability.setPrimary(String(existing.id));
+            await capability.setPrimary(existing.id);
         }
         await capability.list();
-    } catch (e) {
-        actionError.value = (e as Error).message || 'Primary update failed';
+    } catch (e: unknown) {
+        actionError.value =
+            capability.error.value || (e as Error).message || 'Primary update failed';
     }
 }
 
 const showAddAnother = computed(() => {
-    if (disabledOrViewOnly.value) return false;
+    if (props.disabled || !props.canMutate) return false;
+    // Inline mode: offer “Add another” when exactly one address is shown.
     if (useInlineSingle.value) return count.value === 1;
     return true;
 });
-
-const disabledOrViewOnly = computed(() => props.disabled || !props.canMutate);
 
 const canMutate = computed(() => props.canMutate && !props.disabled);
 const disabled = computed(() => props.disabled);
