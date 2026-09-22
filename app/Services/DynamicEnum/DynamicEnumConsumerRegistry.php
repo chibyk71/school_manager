@@ -6,6 +6,9 @@
  * Maps definition key → model class + column that store the option scalar value.
  * Used for dependency-protected permanent deletion only.
  * Not a generic dependency graph.
+ *
+ * Unregistered keys must not be permanently deleted (fail closed):
+ * missing consumer metadata means dependency status is unknown.
  */
 
 namespace App\Services\DynamicEnum;
@@ -43,5 +46,14 @@ class DynamicEnumConsumerRegistry
     public static function consumersFor(string $key): array
     {
         return self::map()[$key] ?? [];
+    }
+
+    /**
+     * Whether the application has declared consumers for this definition key.
+     * Unregistered keys must not be permanently deleted (fail closed).
+     */
+    public static function isRegistered(string $key): bool
+    {
+        return array_key_exists($key, self::map());
     }
 }
