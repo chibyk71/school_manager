@@ -11,6 +11,8 @@
  * - Address IDs resolved only through owner relationship
  *
  * Users table is UUID (User uses HasUuids). Schools include slug (School boot).
+ * HandleInertiaRequests is disabled: User::email loads profile + Laratrust tables
+ * that are out of scope for this focused suite.
  */
 
 uses(Tests\TestCase::class);
@@ -28,17 +30,23 @@ beforeEach(function () {
     config(['activitylog.enabled' => false]);
     Model::unguard();
     buildAddressApiSchema();
+
+    // Address API is pure JSON — skip Inertia share (User::email loads profile;
+    // Laratrust permissions) so focused schema does not need full app tables.
+    $this->withoutMiddleware([
+        \App\Http\Middleware\HandleInertiaRequests::class,
+    ]);
 });
 
 afterEach(function () {
     rollbackAddressApiSchema();
-    Gate::before(fn () => null);
 });
 
 function buildAddressApiSchema(): void
 {
     Schema::dropIfExists('addresses');
     Schema::dropIfExists('schools');
+    Schema::dropIfExists('profiles');
     Schema::dropIfExists('users');
     Schema::dropIfExists('dynamic_enums');
 
@@ -48,6 +56,17 @@ function buildAddressApiSchema(): void
         $table->string('email')->unique();
         $table->string('password');
         $table->timestamps();
+    });
+
+    // Minimal profiles so User accessors do not 500 if any path touches $user->email.
+    Schema::create('profiles', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->uuid('user_id')->nullable()->index();
+        $table->string('email')->nullable();
+        $table->string('phone')->nullable();
+        $table->string('full_name')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
     });
 
     Schema::create('schools', function (Blueprint $table) {
@@ -101,6 +120,7 @@ function rollbackAddressApiSchema(): void
 {
     Schema::dropIfExists('addresses');
     Schema::dropIfExists('schools');
+    Schema::dropIfExists('profiles');
     Schema::dropIfExists('users');
     Schema::dropIfExists('dynamic_enums');
 }
@@ -198,7 +218,7 @@ it('allows listing addresses when owner view is granted', function () {
 
 it('denies listing addresses without owner view', function () {
     $school = makeSchool();
-    $user = makeUserWithSchoolAbilities($school, []); // no abilities
+    $user = makeUserWithSchoolAbilities($school, []);
 
     $this->actingAs($user)
         ->getJson(route('addresses.index', ['owner' => 'school', 'ownerId' => $school->id]))
@@ -290,7 +310,6 @@ it('cannot mutate an address belonging to another owner', function () {
 
     $foreign = $schoolB->addAddress(addressPayload(['address_line_1' => 'Foreign Rd']), false);
 
-    // All mutations against school A with school B's address id → not found (owner-scoped resolve)
     $this->actingAs($user)
         ->patchJson(
             route('addresses.update', ['owner' => 'school', 'ownerId' => $schoolA->id, 'address' => $foreign->id]),
@@ -310,7 +329,6 @@ it('cannot mutate an address belonging to another owner', function () {
         ->deleteJson(route('addresses.destroy', ['owner' => 'school', 'ownerId' => $schoolA->id, 'address' => $foreign->id]))
         ->assertNotFound();
 
-    // Foreign address still exists on B
     expect($schoolB->addresses()->whereKey($foreign->id)->exists())->toBeTrue();
 });
 
@@ -351,11 +369,9 @@ it('preserves primary invariants via API', function () {
         ->json('data');
 
     expect(collect($list)->where('is_primary', true)->count())->toBe(1);
-    // Second primary should have won
     expect(collect($list)->firstWhere('id', $idB)['is_primary'])->toBeTrue();
     expect(collect($list)->firstWhere('id', $idA)['is_primary'])->toBeFalse();
 
-    // Delete primary leaves zero primary (no auto-promotion)
     $this->actingAs($user)
         ->deleteJson(route('addresses.destroy', ['owner' => 'school', 'ownerId' => $school->id, 'address' => $idB]))
         ->assertNoContent();
