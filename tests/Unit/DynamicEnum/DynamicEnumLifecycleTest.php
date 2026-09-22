@@ -361,3 +361,34 @@ test('definition key is immutable', function () {
     expect(fn () => $this->lifecycle->updateDefinitionPresentation($def, ['key' => 'other']))
         ->toThrow(ValidationException::class);
 });
+
+test('createSchoolOption rejects value that already exists on tenant baseline', function () {
+    $def = phase2rDefinition();
+    $this->lifecycle->createTenantOption($def, 'male', 'Male');
+    $school = phase2rSchool('A');
+
+    expect(fn () => $this->lifecycle->createSchoolOption($def, $school, 'male', 'Cis-Male'))
+        ->toThrow(ValidationException::class);
+
+    expect(DynamicEnumOption::where('school_id', $school->id)->count())->toBe(0);
+});
+
+test('createSchoolOverride succeeds for existing tenant value', function () {
+    $def = phase2rDefinition();
+    $this->lifecycle->createTenantOption($def, 'male', 'Male');
+    $school = phase2rSchool('A');
+    $override = $this->lifecycle->createSchoolOverride($def, $school, 'male', 'Cis-Male');
+
+    expect($override->value)->toBe('male')
+        ->and($override->school_id)->toBe($school->id)
+        ->and($override->label)->toBe('Cis-Male');
+});
+
+test('permanent deletion blocked for unregistered Dynamic Enum key', function () {
+    $def = $this->lifecycle->ensureDefinition('expense.type', 'Expense Type');
+    $opt = $this->lifecycle->createTenantOption($def, 'travel', 'Travel');
+
+    expect(fn () => $this->lifecycle->permanentlyDeleteTenantOption($opt))
+        ->toThrow(ValidationException::class);
+    expect(DynamicEnumOption::find($opt->id))->not->toBeNull();
+});
