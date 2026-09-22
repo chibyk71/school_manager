@@ -1,19 +1,19 @@
 <?php
 
 /**
- * Dynamic Enum Phase 2 — definition & option lifecycle.
+ * Dynamic Enum Phase 2R — option lifecycle & sparse school overlays.
  *
- * Explicit domain operations for:
- *   - definition create / presentation update (identity immutable)
- *   - option create / presentation update (value + parent immutable)
- *   - activate / deactivate / restore
- *   - make required / optional
- *   - school customization create / update / revert
+ * Definitions are application-owned (one key = one baseline definition).
+ * Tenant options form the baseline vocabulary.
+ * School options are sparse per-value overlays on the same definition:
+ *   - same value as tenant → school override via createSchoolOverride()
+ *   - value absent from tenant → school-only via createSchoolOption()
  *
- * Ownership boundaries are enforced here. HTTP authorization is Phase 4.
- * Effective resolution and selected-value validation are Phase 3.
+ * Removing a school override deletes the school row (fallback to tenant).
+ * Deactivation sets is_active = false and keeps the row.
+ * Permanent deletion is separate and dependency-protected (fail closed for unknown keys).
  *
- * No synchronization/propagation between tenant and school definitions.
+ * No complete school definition replacement. No option mass-copy. No Phase 3R resolution.
  */
 
 namespace App\Services\DynamicEnum;
@@ -23,6 +23,7 @@ use App\Models\DynamicEnumOption;
 use App\Models\School;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class DynamicEnumLifecycleService
@@ -31,11 +32,21 @@ class DynamicEnumLifecycleService
 
     private const DEFINITION_PRESENTATION_FIELDS = ['label', 'description'];
 
-    /* -----------------------------------------------------------------
-     | Definitions
-     | ----------------------------------------------------------------- */
+    public function ensureDefinition(string $key, string $label, ?string $description = null): DynamicEnum
+    {
+        $existing = DynamicEnum::query()
+            ->whereNull('school_id')
+            ->where('key', $key)
+            ->first();
 
-    public function createDefaultDefinition(string $key, string $label, ?string $description = null): DynamicEnum
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        return $this->createDefinition($key, $label, $description);
+    }
+
+    public function createDefinition(string $key, string $label, ?string $description = null): DynamicEnum
     {
         $this->assertNonEmptyKey($key);
         $this->assertNonEmptyLabel($label);
@@ -49,36 +60,15 @@ class DynamicEnumLifecycleService
             ]);
         } catch (QueryException $e) {
             throw ValidationException::withMessages([
-                'key' => "A default definition for key [{$key}] already exists.",
+                'key' => "A definition for key [{$key}] already exists.",
             ]);
         }
     }
 
-    public function createSchoolDefinition(School $school, string $key, string $label, ?string $description = null): DynamicEnum
-    {
-        $this->assertNonEmptyKey($key);
-        $this->assertNonEmptyLabel($label);
-
-        try {
-            return DynamicEnum::create([
-                'school_id' => $school->id,
-                'key' => $key,
-                'label' => $label,
-                'description' => $description,
-            ]);
-        } catch (QueryException $e) {
-            throw ValidationException::withMessages([
-                'key' => "A definition for key [{$key}] already exists for this school.",
-            ]);
-        }
-    }
-
-    /**
-     * Update only mutable presentation fields (label, description).
-     * key and school_id are immutable.
-     */
     public function updateDefinitionPresentation(DynamicEnum $definition, array $attributes): DynamicEnum
     {
+        $this->assertApplicationDefinition($definition);
+
         $payload = array_intersect_key($attributes, array_flip(self::DEFINITION_PRESENTATION_FIELDS));
 
         if (array_key_exists('label', $payload)) {
@@ -88,7 +78,7 @@ class DynamicEnumLifecycleService
         $forbidden = array_diff_key($attributes, array_flip(self::DEFINITION_PRESENTATION_FIELDS));
         if ($forbidden !== []) {
             throw ValidationException::withMessages([
-                'definition' => 'Definition identity fields (id, school_id, key) cannot be modified. Rejected: '.implode(', ', array_keys($forbidden)).'.',
+                'definition' => 'Definition identity fields cannot be modified. Rejected: '.implode(', ', array_keys($forbidden)).'.',
             ]);
         }
 
@@ -98,50 +88,17 @@ class DynamicEnumLifecycleService
         return $definition->refresh();
     }
 
-    /* -----------------------------------------------------------------
-     | Options — identity & presentation
-     | ----------------------------------------------------------------- */
+    public function createTenantOption(
+        DynamicEnum $definition,
+        string $value,
+        string $label,
+        array $attributes = []
+    ): DynamicEnumOption {
+        $this->assertApplicationDefinition($definition);
 
-    /**
-     * @param  array{label?: string, sort_order?: int, is_active?: bool, is_required?: bool, color?: string|null, icon?: string|null}  $attributes
-     */
-    public function createOption(DynamicEnum $definition, string $value, string $label, array $attributes = []): DynamicEnumOption
-    {
-        $this->assertNonEmptyValue($value);
-        $this->assertNonEmptyLabel($label);
-
-        $isActive = array_key_exists('is_active', $attributes) ? (bool) $attributes['is_active'] : true;
-        $isRequired = array_key_exists('is_required', $attributes) ? (bool) $attributes['is_required'] : false;
-
-        if ($isRequired && ! $isActive) {
-            throw ValidationException::withMessages([
-                'is_required' => 'A required option must be active.',
-            ]);
-        }
-
-        try {
-            return DynamicEnumOption::create([
-                'dynamic_enum_id' => $definition->id,
-                'value' => $value,
-                'label' => $label,
-                'sort_order' => $attributes['sort_order'] ?? 0,
-                'is_active' => $isActive,
-                'is_required' => $isRequired,
-                'color' => $attributes['color'] ?? null,
-                'icon' => $attributes['icon'] ?? null,
-            ]);
-        } catch (QueryException $e) {
-            throw ValidationException::withMessages([
-                'value' => "An option with value [{$value}] already exists on this definition.",
-            ]);
-        }
+        return $this->createOptionRow($definition, null, $value, $label, $attributes);
     }
 
-    /**
-     * Update only presentation fields. value and dynamic_enum_id are immutable.
-     *
-     * @param  array{label?: string, sort_order?: int, color?: string|null, icon?: string|null}  $attributes
-     */
     public function updateOptionPresentation(DynamicEnumOption $option, array $attributes): DynamicEnumOption
     {
         $payload = array_intersect_key($attributes, array_flip(self::PRESENTATION_FIELDS));
@@ -153,7 +110,7 @@ class DynamicEnumLifecycleService
         $forbidden = array_diff_key($attributes, array_flip(self::PRESENTATION_FIELDS));
         if ($forbidden !== []) {
             throw ValidationException::withMessages([
-                'option' => 'Option identity fields (id, dynamic_enum_id, value) and lifecycle flags cannot be modified here. Rejected: '.implode(', ', array_keys($forbidden)).'.',
+                'option' => 'Option identity and lifecycle flags cannot be modified here. Rejected: '.implode(', ', array_keys($forbidden)).'.',
             ]);
         }
 
@@ -162,10 +119,6 @@ class DynamicEnumLifecycleService
 
         return $option->refresh();
     }
-
-    /* -----------------------------------------------------------------
-     | Option lifecycle — active / inactive / required
-     | ----------------------------------------------------------------- */
 
     public function deactivateOption(DynamicEnumOption $option): DynamicEnumOption
     {
@@ -181,7 +134,7 @@ class DynamicEnumLifecycleService
         return $option->refresh();
     }
 
-    public function restoreOption(DynamicEnumOption $option): DynamicEnumOption
+    public function activateOption(DynamicEnumOption $option): DynamicEnumOption
     {
         $option->is_active = true;
         $option->save();
@@ -189,17 +142,16 @@ class DynamicEnumLifecycleService
         return $option->refresh();
     }
 
-    /** Alias of restore for callers that prefer activate wording. */
-    public function activateOption(DynamicEnumOption $option): DynamicEnumOption
+    public function restoreOption(DynamicEnumOption $option): DynamicEnumOption
     {
-        return $this->restoreOption($option);
+        return $this->activateOption($option);
     }
 
     public function makeOptionRequired(DynamicEnumOption $option): DynamicEnumOption
     {
         if (! $option->is_active) {
             throw ValidationException::withMessages([
-                'is_required' => 'An inactive option must be restored before it can become required.',
+                'is_required' => 'An inactive option must be activated before it can become required.',
             ]);
         }
 
@@ -217,255 +169,265 @@ class DynamicEnumLifecycleService
         return $option->refresh();
     }
 
-    /* -----------------------------------------------------------------
-     | School customization — complete replacement definition
-     | ----------------------------------------------------------------- */
+    public function permanentlyDeleteTenantOption(DynamicEnumOption $option): void
+    {
+        if (! $option->isTenantOption()) {
+            throw ValidationException::withMessages([
+                'option' => 'Expected a tenant baseline option.',
+            ]);
+        }
 
-    /**
-     * Create a school-owned complete replacement definition for a key.
-     *
-     * @param  array<int, array{value: string, label: string, sort_order?: int, is_active?: bool, is_required?: bool, color?: string|null, icon?: string|null}>  $options
-     */
-    public function createSchoolCustomization(
+        DB::transaction(function () use ($option) {
+            $locked = DynamicEnumOption::query()->whereKey($option->id)->lockForUpdate()->firstOrFail();
+
+            $definition = $locked->dynamicEnum()->firstOrFail();
+
+            $schoolOverlays = DynamicEnumOption::query()
+                ->where('dynamic_enum_id', $locked->dynamic_enum_id)
+                ->whereNotNull('school_id')
+                ->where('value', $locked->value)
+                ->count();
+
+            if ($schoolOverlays > 0) {
+                throw ValidationException::withMessages([
+                    'option' => "Cannot delete tenant option [{$locked->value}]: school overlays still exist for this value.",
+                ]);
+            }
+
+            $this->assertNoBusinessReferences($definition->key, $locked->value);
+
+            $locked->delete();
+        });
+    }
+
+    public function createSchoolOption(
+        DynamicEnum $definition,
         School $school,
-        string $key,
+        string $value,
         string $label,
-        array $options,
-        ?string $description = null
-    ): DynamicEnum {
-        $this->assertNonEmptyKey($key);
-        $this->assertNonEmptyLabel($label);
-        $this->assertCustomizationPreservesRequiredTenantOptions($key, $options);
+        array $attributes = []
+    ): DynamicEnumOption {
+        $this->assertApplicationDefinition($definition);
 
-        return DB::transaction(function () use ($school, $key, $label, $options, $description) {
-            $definition = $this->createSchoolDefinition($school, $key, $label, $description);
+        $tenantExists = DynamicEnumOption::query()
+            ->where('dynamic_enum_id', $definition->id)
+            ->whereNull('school_id')
+            ->where('value', $value)
+            ->exists();
 
-            foreach ($options as $index => $optionData) {
-                $this->assertOptionPayload($optionData, $index);
-                $this->createOption(
-                    $definition,
-                    $optionData['value'],
-                    $optionData['label'],
-                    [
-                        'sort_order' => $optionData['sort_order'] ?? $index,
-                        'is_active' => $optionData['is_active'] ?? true,
-                        'is_required' => $optionData['is_required'] ?? false,
-                        'color' => $optionData['color'] ?? null,
-                        'icon' => $optionData['icon'] ?? null,
-                    ]
-                );
-            }
-
-            return $definition->load('options');
-        });
-    }
-
-    /**
-     * Replace the full option set on an existing school customization.
-     * Presentation of the definition may also be updated.
-     *
-     * @param  array{label?: string, description?: string|null}  $presentation
-     * @param  array<int, array{value: string, label: string, sort_order?: int, is_active?: bool, is_required?: bool, color?: string|null, icon?: string|null}>  $options
-     */
-    public function updateSchoolCustomization(
-        DynamicEnum $schoolDefinition,
-        array $presentation,
-        array $options
-    ): DynamicEnum {
-        $this->assertIsSchoolDefinition($schoolDefinition);
-        $this->assertCustomizationPreservesRequiredTenantOptions($schoolDefinition->key, $options);
-
-        return DB::transaction(function () use ($schoolDefinition, $presentation, $options) {
-            if ($presentation !== []) {
-                $this->updateDefinitionPresentation($schoolDefinition, $presentation);
-            }
-
-            // Full replacement: remove existing options, recreate from payload.
-            // Physical delete here is configuration replacement, not option lifecycle.
-            $schoolDefinition->options()->delete();
-
-            foreach ($options as $index => $optionData) {
-                $this->assertOptionPayload($optionData, $index);
-                $this->createOption(
-                    $schoolDefinition,
-                    $optionData['value'],
-                    $optionData['label'],
-                    [
-                        'sort_order' => $optionData['sort_order'] ?? $index,
-                        'is_active' => $optionData['is_active'] ?? true,
-                        'is_required' => $optionData['is_required'] ?? false,
-                        'color' => $optionData['color'] ?? null,
-                        'icon' => $optionData['icon'] ?? null,
-                    ]
-                );
-            }
-
-            return $schoolDefinition->refresh()->load('options');
-        });
-    }
-
-    /**
-     * Remove a school-owned definition and its options. Tenant definition is untouched.
-     */
-    public function revertSchoolCustomization(DynamicEnum $schoolDefinition): void
-    {
-        $this->assertIsSchoolDefinition($schoolDefinition);
-
-        DB::transaction(function () use ($schoolDefinition) {
-            // Cascade deletes options via FK.
-            $schoolDefinition->delete();
-        });
-    }
-
-    /* -----------------------------------------------------------------
-     | Ownership guards (domain-level; policies are Phase 4)
-     | ----------------------------------------------------------------- */
-
-    public function assertOwnedBySchool(DynamicEnum $definition, School $school): void
-    {
-        if ($definition->school_id === null) {
+        if ($tenantExists) {
             throw ValidationException::withMessages([
-                'definition' => 'Cannot perform school-owned operations on a tenant/default definition.',
+                'value' => "Tenant option [{$value}] already exists. Use createSchoolOverride() for school overrides of tenant values.",
             ]);
         }
 
-        if ($definition->school_id !== $school->id) {
-            throw ValidationException::withMessages([
-                'definition' => 'Definition does not belong to the specified school.',
-            ]);
-        }
+        return $this->createOptionRow($definition, $school->id, $value, $label, $attributes);
     }
 
-    public function assertIsDefaultDefinition(DynamicEnum $definition): void
+    public function createSchoolOverride(
+        DynamicEnum $definition,
+        School $school,
+        string $value,
+        string $label,
+        array $attributes = []
+    ): DynamicEnumOption {
+        $this->assertApplicationDefinition($definition);
+
+        $tenant = DynamicEnumOption::query()
+            ->where('dynamic_enum_id', $definition->id)
+            ->whereNull('school_id')
+            ->where('value', $value)
+            ->first();
+
+        if ($tenant === null) {
+            throw ValidationException::withMessages([
+                'value' => "No tenant option [{$value}] exists to override. Use createSchoolOption() for school-only values.",
+            ]);
+        }
+
+        return $this->createOptionRow($definition, $school->id, $value, $label, $attributes);
+    }
+
+    public function removeSchoolOverride(DynamicEnumOption $option): void
+    {
+        if (! $option->isSchoolOption()) {
+            throw ValidationException::withMessages([
+                'option' => 'Expected a school-owned option to remove.',
+            ]);
+        }
+
+        DB::transaction(function () use ($option) {
+            $locked = DynamicEnumOption::query()->whereKey($option->id)->lockForUpdate()->firstOrFail();
+
+            $hasTenantFallback = DynamicEnumOption::query()
+                ->where('dynamic_enum_id', $locked->dynamic_enum_id)
+                ->whereNull('school_id')
+                ->where('value', $locked->value)
+                ->exists();
+
+            if (! $hasTenantFallback) {
+                $definition = $locked->dynamicEnum()->firstOrFail();
+                $this->assertNoBusinessReferences($definition->key, $locked->value);
+            }
+
+            $locked->delete();
+        });
+    }
+
+    public function permanentlyDeleteSchoolOption(DynamicEnumOption $option): void
+    {
+        if (! $option->isSchoolOption()) {
+            throw ValidationException::withMessages([
+                'option' => 'Expected a school-owned option.',
+            ]);
+        }
+
+        DB::transaction(function () use ($option) {
+            $locked = DynamicEnumOption::query()->whereKey($option->id)->lockForUpdate()->firstOrFail();
+            $definition = $locked->dynamicEnum()->firstOrFail();
+
+            $hasTenantFallback = DynamicEnumOption::query()
+                ->where('dynamic_enum_id', $locked->dynamic_enum_id)
+                ->whereNull('school_id')
+                ->where('value', $locked->value)
+                ->exists();
+
+            if ($hasTenantFallback) {
+                $locked->delete();
+
+                return;
+            }
+
+            $this->assertNoBusinessReferences($definition->key, $locked->value);
+            $locked->delete();
+        });
+    }
+
+    public function assertApplicationDefinition(DynamicEnum $definition): void
     {
         if ($definition->school_id !== null) {
             throw ValidationException::withMessages([
-                'definition' => 'Expected a tenant/default definition (school_id must be null).',
+                'definition' => 'Expected an application/tenant definition (school_id must be null).',
             ]);
         }
     }
 
-    public function assertIsSchoolDefinition(DynamicEnum $definition): void
+    public function assertSchoolOwnsOption(DynamicEnumOption $option, School $school): void
     {
-        if ($definition->school_id === null) {
+        if ($option->school_id === null) {
             throw ValidationException::withMessages([
-                'definition' => 'Expected a school-owned definition.',
+                'option' => 'Cannot perform school operations on a tenant option.',
             ]);
         }
-    }
 
-    public function assertOptionBelongsToDefinition(DynamicEnumOption $option, DynamicEnum $definition): void
-    {
-        if ($option->dynamic_enum_id !== $definition->id) {
+        if ($option->school_id !== $school->id) {
             throw ValidationException::withMessages([
-                'option' => 'Option does not belong to the specified definition.',
+                'option' => 'Option does not belong to the specified school.',
             ]);
         }
     }
 
-    /* -----------------------------------------------------------------
-     | Required-tenant-option preservation
-     | ----------------------------------------------------------------- */
-
-    /**
-     * @param  array<int, array{value: string, label?: string, is_active?: bool, is_required?: bool}>  $options
-     */
-    private function assertCustomizationPreservesRequiredTenantOptions(string $key, array $options): void
+    public function assertIsTenantOption(DynamicEnumOption $option): void
     {
-        $default = DynamicEnum::query()
-            ->whereNull('school_id')
-            ->where('key', $key)
-            ->with('options')
-            ->first();
+        if (! $option->isTenantOption()) {
+            throw ValidationException::withMessages([
+                'option' => 'Expected a tenant baseline option.',
+            ]);
+        }
+    }
 
-        if ($default === null) {
-            // No tenant definition yet — school may create a standalone customization.
-            return;
+    private function createOptionRow(
+        DynamicEnum $definition,
+        ?string $schoolId,
+        string $value,
+        string $label,
+        array $attributes
+    ): DynamicEnumOption {
+        $this->assertNonEmptyValue($value);
+        $this->assertNonEmptyLabel($label);
+
+        $isActive = array_key_exists('is_active', $attributes) ? (bool) $attributes['is_active'] : true;
+        $isRequired = array_key_exists('is_required', $attributes) ? (bool) $attributes['is_required'] : false;
+
+        if ($isRequired && ! $isActive) {
+            throw ValidationException::withMessages([
+                'is_required' => 'A required option must be active.',
+            ]);
         }
 
-        $requiredValues = $default->options
-            ->where('is_required', true)
-            ->pluck('value')
-            ->all();
+        try {
+            return DynamicEnumOption::create([
+                'dynamic_enum_id' => $definition->id,
+                'school_id' => $schoolId,
+                'value' => $value,
+                'label' => $label,
+                'sort_order' => $attributes['sort_order'] ?? 0,
+                'is_active' => $isActive,
+                'is_required' => $isRequired,
+                'color' => $attributes['color'] ?? null,
+                'icon' => $attributes['icon'] ?? null,
+            ]);
+        } catch (QueryException $e) {
+            $scope = $schoolId === null ? 'tenant' : 'school';
+            throw ValidationException::withMessages([
+                'value' => "An option with value [{$value}] already exists in this {$scope} scope.",
+            ]);
+        }
+    }
 
-        if ($requiredValues === []) {
-            return;
+    private function assertNoBusinessReferences(string $key, string $value): void
+    {
+        // Fail closed: unknown keys have no dependency metadata — cannot safely delete.
+        if (! DynamicEnumConsumerRegistry::isRegistered($key)) {
+            throw ValidationException::withMessages([
+                'option' => "Cannot permanently delete [{$value}]: Dynamic Enum key [{$key}] has no registered consumer metadata.",
+            ]);
         }
 
-        $byValue = collect($options)->keyBy('value');
+        foreach (DynamicEnumConsumerRegistry::consumersFor($key) as $consumer) {
+            $modelClass = $consumer['model'];
+            $column = $consumer['column'];
 
-        foreach ($requiredValues as $requiredValue) {
-            if (! $byValue->has($requiredValue)) {
-                throw ValidationException::withMessages([
-                    'options' => "School customization must preserve required tenant option [{$requiredValue}].",
-                ]);
+            if (! class_exists($modelClass)) {
+                continue;
             }
 
-            $schoolOption = $byValue->get($requiredValue);
+            /** @var \Illuminate\Database\Eloquent\Model $instance */
+            $instance = new $modelClass;
+            $table = $instance->getTable();
 
-            if (array_key_exists('is_active', $schoolOption) && $schoolOption['is_active'] === false) {
+            if (! Schema::hasTable($table) || ! Schema::hasColumn($table, $column)) {
+                continue;
+            }
+
+            $exists = DB::table($table)->where($column, $value)->exists();
+
+            if ($exists) {
                 throw ValidationException::withMessages([
-                    'options' => "Required tenant option [{$requiredValue}] cannot be deactivated in a school customization.",
+                    'option' => "Cannot permanently delete [{$value}]: referenced by {$modelClass}.{$column}.",
                 ]);
             }
         }
     }
-
-    /* -----------------------------------------------------------------
-     | Input assertions
-     | ----------------------------------------------------------------- */
 
     private function assertNonEmptyKey(string $key): void
     {
         if (trim($key) === '') {
-            throw ValidationException::withMessages([
-                'key' => 'Definition key is required.',
-            ]);
+            throw ValidationException::withMessages(['key' => 'Definition key is required.']);
         }
     }
 
     private function assertNonEmptyValue(string $value): void
     {
         if (trim($value) === '') {
-            throw ValidationException::withMessages([
-                'value' => 'Option value is required.',
-            ]);
+            throw ValidationException::withMessages(['value' => 'Option value is required.']);
         }
     }
 
     private function assertNonEmptyLabel(string $label): void
     {
         if (trim($label) === '') {
-            throw ValidationException::withMessages([
-                'label' => 'Label is required.',
-            ]);
-        }
-    }
-
-    /**
-     * @param  array<string, mixed>  $optionData
-     */
-    private function assertOptionPayload(array $optionData, int $index): void
-    {
-        if (! isset($optionData['value']) || ! is_string($optionData['value']) || trim($optionData['value']) === '') {
-            throw ValidationException::withMessages([
-                "options.{$index}.value" => 'Each option requires a non-empty value.',
-            ]);
-        }
-
-        if (! isset($optionData['label']) || ! is_string($optionData['label']) || trim($optionData['label']) === '') {
-            throw ValidationException::withMessages([
-                "options.{$index}.label" => 'Each option requires a non-empty label.',
-            ]);
-        }
-
-        $isActive = array_key_exists('is_active', $optionData) ? (bool) $optionData['is_active'] : true;
-        $isRequired = array_key_exists('is_required', $optionData) ? (bool) $optionData['is_required'] : false;
-
-        if ($isRequired && ! $isActive) {
-            throw ValidationException::withMessages([
-                "options.{$index}" => "Option [{$optionData['value']}] cannot be required and inactive.",
-            ]);
+            throw ValidationException::withMessages(['label' => 'Label is required.']);
         }
     }
 }

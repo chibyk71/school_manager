@@ -8,18 +8,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * DynamicEnum — domain foundation + Phase 2 identity protection.
+ * DynamicEnum — application-owned definition (Phase 2R).
  *
- * Ownership:
- *   school_id = null  → tenant-wide / default definition
- *   school_id = S     → school-specific definition for the same key
+ * One definition per stable key (e.g. profile.gender). Administrators do not
+ * create arbitrary definitions; keys are application identity.
  *
- * Identity (immutable after create): id, school_id, key.
- * Mutable presentation: label, description.
+ * school_id on the definition row is retained for optional school-level
+ * presentation of the definition itself. Option ownership is on DynamicEnumOption.
  *
- * Intentionally does NOT use BelongsToSchool / SchoolScope.
- * Lifecycle operations live in DynamicEnumLifecycleService (Phase 2).
- * Effective resolution is Phase 3.
+ * Identity (immutable): id, key (and school_id when set for presentation rows).
  */
 class DynamicEnum extends Model
 {
@@ -56,13 +53,24 @@ class DynamicEnum extends Model
         return $this->hasMany(DynamicEnumOption::class)->orderBy('sort_order');
     }
 
-    public function isDefault(): bool
+    /** Tenant baseline options (school_id IS NULL). */
+    public function tenantOptions(): HasMany
     {
-        return $this->school_id === null;
+        return $this->hasMany(DynamicEnumOption::class)
+            ->whereNull('school_id')
+            ->orderBy('sort_order');
     }
 
-    public function isSchoolOwned(): bool
+    /** Sparse overlay / school-only options for a specific school. */
+    public function schoolOptions(string $schoolId): HasMany
     {
-        return $this->school_id !== null;
+        return $this->hasMany(DynamicEnumOption::class)
+            ->where('school_id', $schoolId)
+            ->orderBy('sort_order');
+    }
+
+    public function isApplicationDefinition(): bool
+    {
+        return $this->school_id === null;
     }
 }

@@ -1,11 +1,10 @@
 <?php
 
 /**
- * Dynamic Enum Phase 1 — default (tenant-wide) definitions.
+ * Dynamic Enum Phase 2R — application definitions with tenant baseline options.
  *
  * Seeds global definitions (school_id = null) with normalized option rows.
- * Key identity replaces the legacy name + applies_to pair.
- * Consumer migration and runtime resolution remain later phases.
+ * Option school_id = null marks tenant baseline (sparse school overlays come later).
  */
 
 namespace Database\Seeders;
@@ -116,6 +115,7 @@ class DynamicEnumSeeder extends Seeder
                 DynamicEnumOption::query()->firstOrCreate(
                     [
                         'dynamic_enum_id' => $enum->id,
+                        'school_id' => null,
                         'value' => $option['value'],
                     ],
                     [
