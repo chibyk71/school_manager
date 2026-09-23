@@ -54,6 +54,11 @@ class AppServiceProvider extends ServiceProvider
             \App\Policies\Student\StudentPolicy::class
         );
 
+        \Illuminate\Support\Facades\Gate::policy(
+            \App\Models\DynamicEnum::class,
+            \App\Policies\DynamicEnumPolicy::class
+        );
+
         Vite::prefetch(concurrency: 3);
     }
 }
