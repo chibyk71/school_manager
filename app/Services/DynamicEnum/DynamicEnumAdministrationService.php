@@ -8,6 +8,10 @@
  *
  * School scope is never taken from request IDs for mutation; callers must
  * pass an authorized, resolved School instance (or null for tenant ops).
+ *
+ * Option mutations always receive the route definition key so the option's
+ * dynamic_enum_id is verified against that definition (cross-definition
+ * UUID attack surface closed).
  */
 
 namespace App\Services\DynamicEnum;
@@ -27,6 +31,8 @@ class DynamicEnumAdministrationService
     }
 
     /**
+     * Catalogue of application-owned definitions (school_id IS NULL).
+     *
      * @return Collection<int, DynamicEnum>
      */
     public function catalogue(): Collection
@@ -37,17 +43,25 @@ class DynamicEnumAdministrationService
             ->get();
     }
 
+    /**
+     * Effective configuration for tenant default (no school overlay).
+     */
     public function effectiveTenant(string $key): ResolvedDynamicEnum
     {
         return $this->resolver->resolve($key);
     }
 
+    /**
+     * Effective configuration for an explicit school.
+     */
     public function effectiveForSchool(School $school, string $key): ResolvedDynamicEnum
     {
         return $this->resolver->resolveForSchool($school, $key);
     }
 
     /**
+     * Administrative detail payload: definition + effective options + capability hints.
+     *
      * @return array<string, mixed>
      */
     public function detail(string $key, ?School $school, bool $canManage, bool $canManageGlobals): array
@@ -194,43 +208,49 @@ class DynamicEnumAdministrationService
         return $this->lifecycle->createTenantOption($definition, $value, $label, $attributes);
     }
 
-    public function updateTenantOption(DynamicEnumOption $option, array $attributes): DynamicEnumOption
+    public function updateTenantOption(string $key, DynamicEnumOption $option, array $attributes): DynamicEnumOption
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->assertTenantOption($option);
 
         return $this->lifecycle->updateOptionPresentation($option, $attributes);
     }
 
-    public function activateTenantOption(DynamicEnumOption $option): DynamicEnumOption
+    public function activateTenantOption(string $key, DynamicEnumOption $option): DynamicEnumOption
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->assertTenantOption($option);
 
         return $this->lifecycle->activateOption($option);
     }
 
-    public function deactivateTenantOption(DynamicEnumOption $option): DynamicEnumOption
+    public function deactivateTenantOption(string $key, DynamicEnumOption $option): DynamicEnumOption
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->assertTenantOption($option);
 
         return $this->lifecycle->deactivateOption($option);
     }
 
-    public function makeTenantOptionRequired(DynamicEnumOption $option): DynamicEnumOption
+    public function makeTenantOptionRequired(string $key, DynamicEnumOption $option): DynamicEnumOption
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->assertTenantOption($option);
 
         return $this->lifecycle->makeOptionRequired($option);
     }
 
-    public function removeTenantOptionRequired(DynamicEnumOption $option): DynamicEnumOption
+    public function removeTenantOptionRequired(string $key, DynamicEnumOption $option): DynamicEnumOption
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->assertTenantOption($option);
 
         return $this->lifecycle->makeOptionOptional($option);
     }
 
-    public function deleteTenantOption(DynamicEnumOption $option): void
+    public function deleteTenantOption(string $key, DynamicEnumOption $option): void
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->assertTenantOption($option);
         $this->lifecycle->permanentlyDeleteTenantOption($option);
     }
@@ -251,38 +271,58 @@ class DynamicEnumAdministrationService
         return $this->lifecycle->createSchoolOverride($definition, $school, $value, $label, $attributes);
     }
 
-    public function updateSchoolOption(School $school, DynamicEnumOption $option, array $attributes): DynamicEnumOption
+    public function updateSchoolOption(School $school, string $key, DynamicEnumOption $option, array $attributes): DynamicEnumOption
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->lifecycle->assertSchoolOwnsOption($option, $school);
         unset($attributes['is_required']);
 
         return $this->lifecycle->updateOptionPresentation($option, $attributes);
     }
 
-    public function activateSchoolOption(School $school, DynamicEnumOption $option): DynamicEnumOption
+    public function activateSchoolOption(School $school, string $key, DynamicEnumOption $option): DynamicEnumOption
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->lifecycle->assertSchoolOwnsOption($option, $school);
 
         return $this->lifecycle->activateOption($option);
     }
 
-    public function deactivateSchoolOption(School $school, DynamicEnumOption $option): DynamicEnumOption
+    public function deactivateSchoolOption(School $school, string $key, DynamicEnumOption $option): DynamicEnumOption
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->lifecycle->assertSchoolOwnsOption($option, $school);
 
         return $this->lifecycle->deactivateOption($option);
     }
 
-    public function removeSchoolOverride(School $school, DynamicEnumOption $option): void
+    public function removeSchoolOverride(School $school, string $key, DynamicEnumOption $option): void
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->lifecycle->assertSchoolOwnsOption($option, $school);
         $this->lifecycle->removeSchoolOverride($option);
     }
 
-    public function deleteSchoolOption(School $school, DynamicEnumOption $option): void
+    public function deleteSchoolOption(School $school, string $key, DynamicEnumOption $option): void
     {
+        $this->assertOptionBelongsToKey($option, $key);
         $this->lifecycle->assertSchoolOwnsOption($option, $school);
         $this->lifecycle->permanentlyDeleteSchoolOption($option);
+    }
+
+    /**
+     * Ensure the option row belongs to the application definition identified by $key.
+     * Prevents cross-definition mutation via a valid option UUID from another enum.
+     */
+    public function assertOptionBelongsToKey(DynamicEnumOption $option, string $key): void
+    {
+        $definition = $this->requireTenantDefinition($key);
+
+        if ((string) $option->dynamic_enum_id !== (string) $definition->id) {
+            throw ValidationException::withMessages([
+                'option' => 'Option does not belong to the specified Dynamic Enum definition.',
+            ]);
+        }
     }
 
     private function requireTenantDefinition(string $key): DynamicEnum
