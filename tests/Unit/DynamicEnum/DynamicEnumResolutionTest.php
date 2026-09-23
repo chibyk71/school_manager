@@ -420,3 +420,55 @@ test('school definition presentation overrides label without replacing options',
         ->and($resolved->options)->toHaveCount(1)
         ->and($resolved->findByValue('male')->label)->toBe('Male');
 });
+
+test('school-only option rejects is_required true', function () {
+    $def = phase3rDefinition();
+    $school = phase3rSchool('A');
+
+    expect(fn () => $this->lifecycle->createSchoolOption($def, $school, 'trans-male', 'Trans-Male', [
+        'is_required' => true,
+    ]))->toThrow(\Illuminate\Validation\ValidationException::class);
+
+    expect(DynamicEnumOption::where('school_id', $school->id)->count())->toBe(0);
+});
+
+test('school override rejects is_required true', function () {
+    $def = phase3rDefinition();
+    $this->lifecycle->createTenantOption($def, 'male', 'Male');
+    $school = phase3rSchool('A');
+
+    expect(fn () => $this->lifecycle->createSchoolOverride($def, $school, 'male', 'Cis-Male', [
+        'is_required' => true,
+    ]))->toThrow(\Illuminate\Validation\ValidationException::class);
+
+    expect(DynamicEnumOption::where('school_id', $school->id)->count())->toBe(0);
+});
+
+test('school options and overrides remain valid with default is_required false', function () {
+    $def = phase3rDefinition();
+    $this->lifecycle->createTenantOption($def, 'male', 'Male');
+    $school = phase3rSchool('A');
+
+    $override = $this->lifecycle->createSchoolOverride($def, $school, 'male', 'Cis-Male');
+    $only = $this->lifecycle->createSchoolOption($def, $school, 'trans-male', 'Trans-Male');
+
+    expect($override->is_required)->toBeFalse()
+        ->and($only->is_required)->toBeFalse();
+});
+
+test('tenant required options continue to work after school required rejection', function () {
+    $def = phase3rDefinition();
+    $tenant = $this->lifecycle->createTenantOption($def, 'male', 'Male', ['is_required' => true]);
+    expect($tenant->is_required)->toBeTrue()->and($tenant->is_active)->toBeTrue();
+
+    $school = phase3rSchool('A');
+    $override = $this->lifecycle->createSchoolOverride($def, $school, 'male', 'Cis-Male');
+    $this->lifecycle->deactivateOption($override);
+
+    $male = $this->resolver->resolveForSchool($school, 'profile.gender')->findByValue('male');
+    expect($male->isActive)->toBeTrue()
+        ->and($male->enforced)->toBeTrue()
+        ->and($male->isRequired)->toBeTrue()
+        ->and($override->fresh()->is_active)->toBeFalse()
+        ->and($override->fresh()->is_required)->toBeFalse();
+});
