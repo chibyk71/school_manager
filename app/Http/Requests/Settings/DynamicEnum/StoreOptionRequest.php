@@ -25,6 +25,7 @@ class StoreOptionRequest extends FormRequest
             'is_active' => ['sometimes', 'boolean'],
             'is_required' => ['sometimes', 'boolean'],
             'mode' => ['sometimes', 'in:option,override'],
+            'tenant' => ['sometimes', 'boolean'],
         ];
     }
 }

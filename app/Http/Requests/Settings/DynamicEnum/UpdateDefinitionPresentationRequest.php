@@ -19,6 +19,7 @@ class UpdateDefinitionPresentationRequest extends FormRequest
         return [
             'label' => ['sometimes', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'tenant' => ['sometimes', 'boolean'],
         ];
     }
 }
