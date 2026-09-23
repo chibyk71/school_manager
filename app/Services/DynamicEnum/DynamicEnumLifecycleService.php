@@ -13,7 +13,9 @@
  * Deactivation sets is_active = false and keeps the row.
  * Permanent deletion is separate and dependency-protected (fail closed for unknown keys).
  *
- * No complete school definition replacement. No option mass-copy. No Phase 3R resolution.
+ * Phase 3R: option values are canonicalized (trim + lowercase) on write.
+ *
+ * No complete school definition replacement. No option mass-copy. No resolution logic here.
  */
 
 namespace App\Services\DynamicEnum;
@@ -209,19 +211,21 @@ class DynamicEnumLifecycleService
     ): DynamicEnumOption {
         $this->assertApplicationDefinition($definition);
 
+        $canonical = DynamicEnumValue::canonicalize($value);
+
         $tenantExists = DynamicEnumOption::query()
             ->where('dynamic_enum_id', $definition->id)
             ->whereNull('school_id')
-            ->where('value', $value)
+            ->where('value', $canonical)
             ->exists();
 
         if ($tenantExists) {
             throw ValidationException::withMessages([
-                'value' => "Tenant option [{$value}] already exists. Use createSchoolOverride() for school overrides of tenant values.",
+                'value' => "Tenant option [{$canonical}] already exists. Use createSchoolOverride() for school overrides of tenant values.",
             ]);
         }
 
-        return $this->createOptionRow($definition, $school->id, $value, $label, $attributes);
+        return $this->createOptionRow($definition, $school->id, $canonical, $label, $attributes);
     }
 
     public function createSchoolOverride(
@@ -233,19 +237,21 @@ class DynamicEnumLifecycleService
     ): DynamicEnumOption {
         $this->assertApplicationDefinition($definition);
 
+        $canonical = DynamicEnumValue::canonicalize($value);
+
         $tenant = DynamicEnumOption::query()
             ->where('dynamic_enum_id', $definition->id)
             ->whereNull('school_id')
-            ->where('value', $value)
+            ->where('value', $canonical)
             ->first();
 
         if ($tenant === null) {
             throw ValidationException::withMessages([
-                'value' => "No tenant option [{$value}] exists to override. Use createSchoolOption() for school-only values.",
+                'value' => "No tenant option [{$canonical}] exists to override. Use createSchoolOption() for school-only values.",
             ]);
         }
 
-        return $this->createOptionRow($definition, $school->id, $value, $label, $attributes);
+        return $this->createOptionRow($definition, $school->id, $canonical, $label, $attributes);
     }
 
     public function removeSchoolOverride(DynamicEnumOption $option): void
@@ -345,6 +351,9 @@ class DynamicEnumLifecycleService
     ): DynamicEnumOption {
         $this->assertNonEmptyValue($value);
         $this->assertNonEmptyLabel($label);
+
+        // Canonical contract: stored value is trim + lowercase identity.
+        $value = DynamicEnumValue::canonicalize($value);
 
         $isActive = array_key_exists('is_active', $attributes) ? (bool) $attributes['is_active'] : true;
         $isRequired = array_key_exists('is_required', $attributes) ? (bool) $attributes['is_required'] : false;
