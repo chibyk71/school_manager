@@ -14,6 +14,7 @@
  * Permanent deletion is separate and dependency-protected (fail closed for unknown keys).
  *
  * Phase 3R: option values are canonicalized (trim + lowercase) on write.
+ * is_required is tenant-level only; school creates reject is_required = true.
  *
  * No complete school definition replacement. No option mass-copy. No resolution logic here.
  */
@@ -210,6 +211,7 @@ class DynamicEnumLifecycleService
         array $attributes = []
     ): DynamicEnumOption {
         $this->assertApplicationDefinition($definition);
+        $this->assertSchoolOptionRejectsRequired($attributes);
 
         $canonical = DynamicEnumValue::canonicalize($value);
 
@@ -236,6 +238,7 @@ class DynamicEnumLifecycleService
         array $attributes = []
     ): DynamicEnumOption {
         $this->assertApplicationDefinition($definition);
+        $this->assertSchoolOptionRejectsRequired($attributes);
 
         $canonical = DynamicEnumValue::canonicalize($value);
 
@@ -416,6 +419,19 @@ class DynamicEnumLifecycleService
                     'option' => "Cannot permanently delete [{$value}]: referenced by {$modelClass}.{$column}.",
                 ]);
             }
+        }
+    }
+
+    /**
+     * is_required is tenant-level configuration only.
+     * School overlays must not persist independent requiredness.
+     */
+    private function assertSchoolOptionRejectsRequired(array $attributes): void
+    {
+        if (array_key_exists('is_required', $attributes) && (bool) $attributes['is_required']) {
+            throw ValidationException::withMessages([
+                'is_required' => 'is_required is tenant-level configuration only; school options and overrides cannot set is_required.',
+            ]);
         }
     }
 
