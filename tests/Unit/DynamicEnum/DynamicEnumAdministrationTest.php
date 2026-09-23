@@ -140,7 +140,7 @@ test('tenant option create and requiredness via admin service', function () {
     $opt = $this->admin->createTenantOption('profile.gender', 'other', 'Other');
     expect($opt->value)->toBe('other')->and($opt->school_id)->toBeNull();
 
-    $required = $this->admin->makeTenantOptionRequired($opt);
+    $required = $this->admin->makeTenantOptionRequired('profile.gender', $opt);
     expect($required->is_required)->toBeTrue();
 });
 
@@ -160,7 +160,7 @@ test('school override create and reset', function () {
     $override = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
     expect($override->label)->toBe('Boy')->and($override->school_id)->toBe($school->id);
 
-    $this->admin->removeSchoolOverride($school, $override);
+    $this->admin->removeSchoolOverride($school, 'profile.gender', $override);
     expect(DynamicEnumOption::find($override->id))->toBeNull();
 
     $resolved = $this->admin->effectiveForSchool($school, 'profile.gender');
@@ -173,7 +173,7 @@ test('school isolation: school A cannot update school B option', function () {
     $schoolB = phase4School('B');
     $optB = $this->admin->createSchoolOverride($schoolB, 'profile.gender', 'male', 'Boy B');
 
-    expect(fn () => $this->admin->updateSchoolOption($schoolA, $optB, ['label' => 'Hacked']))
+    expect(fn () => $this->admin->updateSchoolOption($schoolA, 'profile.gender', $optB, ['label' => 'Hacked']))
         ->toThrow(ValidationException::class);
 });
 
@@ -185,10 +185,10 @@ test('unknown key fails on detail', function () {
 test('tenant required + school inactive still effective via detail', function () {
     phase4SeedGender();
     $tenant = DynamicEnumOption::whereNull('school_id')->where('value', 'male')->first();
-    $this->admin->makeTenantOptionRequired($tenant);
+    $this->admin->makeTenantOptionRequired('profile.gender', $tenant);
     $school = phase4School('A');
     $override = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
-    $this->admin->deactivateSchoolOption($school, $override);
+    $this->admin->deactivateSchoolOption($school, 'profile.gender', $override);
 
     $detail = $this->admin->detail('profile.gender', $school, true, true);
     $male = collect($detail['options'])->firstWhere('value', 'male');
@@ -215,6 +215,72 @@ test('school-only option deletion path', function () {
     $school = phase4School('A');
     $only = $this->admin->createSchoolOption($school, 'profile.gender', 'student', 'Student');
 
-    $this->admin->deleteSchoolOption($school, $only);
+    $this->admin->deleteSchoolOption($school, 'profile.gender', $only);
     expect(DynamicEnumOption::find($only->id))->toBeNull();
+});
+
+test('cross-definition option UUID is rejected for tenant mutation', function () {
+    phase4SeedGender();
+    $status = app(DynamicEnumLifecycleService::class)->ensureDefinition('admission.status', 'Admission status');
+    app(DynamicEnumLifecycleService::class)->createTenantOption($status, 'pending', 'Pending');
+
+    $genderOpt = DynamicEnumOption::whereNull('school_id')->where('value', 'male')->first();
+
+    expect(fn () => $this->admin->updateTenantOption('admission.status', $genderOpt, ['label' => 'Hacked']))
+        ->toThrow(ValidationException::class);
+
+    expect(fn () => $this->admin->activateTenantOption('admission.status', $genderOpt))
+        ->toThrow(ValidationException::class);
+
+    expect(fn () => $this->admin->makeTenantOptionRequired('admission.status', $genderOpt))
+        ->toThrow(ValidationException::class);
+
+    expect(fn () => $this->admin->deleteTenantOption('admission.status', $genderOpt))
+        ->toThrow(ValidationException::class);
+
+    // Same-definition still works
+    $updated = $this->admin->updateTenantOption('profile.gender', $genderOpt, ['label' => 'Male person']);
+    expect($updated->label)->toBe('Male person');
+});
+
+test('cross-definition option UUID is rejected for school mutation', function () {
+    phase4SeedGender();
+    $status = app(DynamicEnumLifecycleService::class)->ensureDefinition('admission.status', 'Admission status');
+    app(DynamicEnumLifecycleService::class)->createTenantOption($status, 'pending', 'Pending');
+
+    $school = phase4School('A');
+    $genderOverride = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
+    $this->admin->createSchoolOverride($school, 'admission.status', 'pending', 'Waiting');
+
+    expect(fn () => $this->admin->updateSchoolOption($school, 'admission.status', $genderOverride, ['label' => 'Hacked']))
+        ->toThrow(ValidationException::class);
+
+    expect(fn () => $this->admin->deactivateSchoolOption($school, 'admission.status', $genderOverride))
+        ->toThrow(ValidationException::class);
+
+    expect(fn () => $this->admin->removeSchoolOverride($school, 'admission.status', $genderOverride))
+        ->toThrow(ValidationException::class);
+
+    expect(fn () => $this->admin->deleteSchoolOption($school, 'admission.status', $genderOverride))
+        ->toThrow(ValidationException::class);
+
+    // Same-definition school mutation still works
+    $updated = $this->admin->updateSchoolOption($school, 'profile.gender', $genderOverride, ['label' => 'Boy updated']);
+    expect($updated->label)->toBe('Boy updated');
+});
+
+test('canonical PermissionSeeder includes Phase 4 dynamic enum permissions', function () {
+    $source = file_get_contents(database_path('seeders/Settings/PermissionSeeder.php'));
+
+    expect($source)
+        ->toContain("'dynamic-enums.view'")
+        ->toContain("'dynamic-enums.manage'")
+        ->toContain("'dynamic-enums.manageGlobals'");
+
+    // Dedicated seeder remains aligned with the same three names
+    $dedicated = file_get_contents(database_path('seeders/Settings/DynamicEnumPermissionSeeder.php'));
+    expect($dedicated)
+        ->toContain("'dynamic-enums.view'")
+        ->toContain("'dynamic-enums.manage'")
+        ->toContain("'dynamic-enums.manageGlobals'");
 });

@@ -5,6 +5,9 @@
  *
  * Scope is resolved from the authenticated context (GetSchoolModel), never from
  * a client-supplied school_id for mutations.
+ *
+ * Option mutations always pass the route {key} into the administration service so
+ * the option's dynamic_enum_id is verified against that definition.
  */
 
 namespace App\Http\Controllers\Settings\System;
@@ -128,13 +131,13 @@ class DynamicEnumsController extends Controller
 
         if ($option->isTenantOption()) {
             Gate::authorize('manageGlobals', DynamicEnum::class);
-            $this->admin->updateTenantOption($option, $request->validated());
+            $this->admin->updateTenantOption($key, $option, $request->validated());
         } else {
             Gate::authorize('manage', DynamicEnum::class);
             if ($school === null || $option->school_id !== $school->id) {
                 abort(403, 'Cannot modify another school\'s option.');
             }
-            $this->admin->updateSchoolOption($school, $option, $request->validated());
+            $this->admin->updateSchoolOption($school, $key, $option, $request->validated());
         }
 
         return back()->with('success', 'Option updated.');
@@ -146,13 +149,13 @@ class DynamicEnumsController extends Controller
 
         if ($option->isTenantOption()) {
             Gate::authorize('manageGlobals', DynamicEnum::class);
-            $this->admin->activateTenantOption($option);
+            $this->admin->activateTenantOption($key, $option);
         } else {
             Gate::authorize('manage', DynamicEnum::class);
             if ($school === null || $option->school_id !== $school->id) {
                 abort(403);
             }
-            $this->admin->activateSchoolOption($school, $option);
+            $this->admin->activateSchoolOption($school, $key, $option);
         }
 
         return back()->with('success', 'Option activated.');
@@ -164,13 +167,13 @@ class DynamicEnumsController extends Controller
 
         if ($option->isTenantOption()) {
             Gate::authorize('manageGlobals', DynamicEnum::class);
-            $this->admin->deactivateTenantOption($option);
+            $this->admin->deactivateTenantOption($key, $option);
         } else {
             Gate::authorize('manage', DynamicEnum::class);
             if ($school === null || $option->school_id !== $school->id) {
                 abort(403);
             }
-            $this->admin->deactivateSchoolOption($school, $option);
+            $this->admin->deactivateSchoolOption($school, $key, $option);
         }
 
         return back()->with('success', 'Option deactivated.');
@@ -179,7 +182,7 @@ class DynamicEnumsController extends Controller
     public function makeRequired(string $key, DynamicEnumOption $option): RedirectResponse
     {
         Gate::authorize('manageGlobals', DynamicEnum::class);
-        $this->admin->makeTenantOptionRequired($option);
+        $this->admin->makeTenantOptionRequired($key, $option);
 
         return back()->with('success', 'Option marked required.');
     }
@@ -187,7 +190,7 @@ class DynamicEnumsController extends Controller
     public function removeRequired(string $key, DynamicEnumOption $option): RedirectResponse
     {
         Gate::authorize('manageGlobals', DynamicEnum::class);
-        $this->admin->removeTenantOptionRequired($option);
+        $this->admin->removeTenantOptionRequired($key, $option);
 
         return back()->with('success', 'Option requiredness removed.');
     }
@@ -199,7 +202,7 @@ class DynamicEnumsController extends Controller
         if ($school === null || $option->school_id !== $school->id) {
             abort(403);
         }
-        $this->admin->removeSchoolOverride($school, $option);
+        $this->admin->removeSchoolOverride($school, $key, $option);
 
         return back()->with('success', 'Override reset; tenant configuration is effective again.');
     }
@@ -211,13 +214,13 @@ class DynamicEnumsController extends Controller
         try {
             if ($option->isTenantOption()) {
                 Gate::authorize('manageGlobals', DynamicEnum::class);
-                $this->admin->deleteTenantOption($option);
+                $this->admin->deleteTenantOption($key, $option);
             } else {
                 Gate::authorize('manage', DynamicEnum::class);
                 if ($school === null || $option->school_id !== $school->id) {
                     abort(403);
                 }
-                $this->admin->deleteSchoolOption($school, $option);
+                $this->admin->deleteSchoolOption($school, $key, $option);
             }
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors());
