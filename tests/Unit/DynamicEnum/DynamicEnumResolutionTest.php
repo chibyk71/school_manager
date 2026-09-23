@@ -472,3 +472,37 @@ test('tenant required options continue to work after school required rejection',
         ->and($override->fresh()->is_active)->toBeFalse()
         ->and($override->fresh()->is_required)->toBeFalse();
 });
+
+test('makeOptionRequired rejects school override', function () {
+    $def = phase3rDefinition();
+    $this->lifecycle->createTenantOption($def, 'male', 'Male');
+    $school = phase3rSchool('A');
+    $override = $this->lifecycle->createSchoolOverride($def, $school, 'male', 'Cis-Male');
+
+    expect(fn () => $this->lifecycle->makeOptionRequired($override))
+        ->toThrow(\Illuminate\Validation\ValidationException::class);
+
+    expect($override->fresh()->is_required)->toBeFalse();
+});
+
+test('makeOptionRequired rejects school-only option', function () {
+    $def = phase3rDefinition();
+    $school = phase3rSchool('A');
+    $only = $this->lifecycle->createSchoolOption($def, $school, 'trans-male', 'Trans-Male');
+
+    expect(fn () => $this->lifecycle->makeOptionRequired($only))
+        ->toThrow(\Illuminate\Validation\ValidationException::class);
+
+    expect($only->fresh()->is_required)->toBeFalse();
+});
+
+test('makeOptionRequired still works for tenant options', function () {
+    $def = phase3rDefinition();
+    $tenant = $this->lifecycle->createTenantOption($def, 'male', 'Male');
+
+    $updated = $this->lifecycle->makeOptionRequired($tenant);
+
+    expect($updated->is_required)->toBeTrue()
+        ->and($updated->is_active)->toBeTrue()
+        ->and($updated->school_id)->toBeNull();
+});
