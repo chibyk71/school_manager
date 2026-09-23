@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use Database\Seeders\Settings\PermissionSeeder;
+use Database\Seeders\Settings\DynamicEnumPermissionSeeder;
 use Database\Seeders\Settings\RolesTableSeeder;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Log;
@@ -22,40 +23,25 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        Log::info('DatabaseSeeder started.');
 
         // -----------------------------------------------------------------
-        // 1. CREATE A SCHOOL FIRST (required for BelongsToSchool models)
-        // -----------------------------------------------------------------
-        $school = \App\Models\School::firstOrCreate(
-            ['slug' => 'demo'],
-            [
-                'name' => 'Demo Academy',
-                'code' => 'DA',
-                'email' => 'admin@demo.academy',
-                'phone_one' => '08012345678',
-            ]
-        );
-
-        // Set this school as the active one for the rest of seeding
-        app('schoolManager')->setActiveSchool($school);
-
-        // -----------------------------------------------------------------
-        // 2. GLOBAL SETTINGS (tenant-agnostic defaults)
+        // 1. Core settings defaults
         // -----------------------------------------------------------------
         $this->callWithLog(\Database\Seeders\Settings\SettingsDefaultsSeeder::class);
         $this->callWithLog(\Database\Seeders\Settings\ApplicationSettingsDefaultsSeeder::class);
 
         // -----------------------------------------------------------------
-        // 3. OPTIONAL: Demo data / factories (uncomment for local dev)
+        // 2. Structural seeders (sections, class levels, departments, roles)
         // -----------------------------------------------------------------
         $this->callWithLog(\Database\Seeders\SchoolSectionSeeder::class);
         $this->callWithLog(\Database\Seeders\ClassLevelSeeder::class);
         $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
         $this->callWithLog(RolesTableSeeder::class);
         $this->callWithLog(PermissionSeeder::class);
+        $this->callWithLog(DynamicEnumPermissionSeeder::class);
         $this->callWithLog(\Database\Seeders\ApplicationPermissionSeeder::class);
         $this->callWithLog(\Database\Seeders\AdmissionPermissionSeeder::class);
-
 
         $this->callWithLog(\Database\Seeders\DynamicEnumSeeder::class);
 
@@ -63,8 +49,12 @@ class DatabaseSeeder extends Seeder
         $role = \App\Models\Role::query()->where('name', 'admin')->first();
         $role->permissions()->sync(\App\Models\Permission::all()->pluck('id'));
 
-        \App\Models\User::factory()->create([
-            'email' => 'admin@demo.academy',
+        // create a default admin user if not exists
+        \App\Models\User::firstOrCreate([
+            'email' => 'admin@example.com',
+        ], [
+            'name' => 'Admin',
+            'password' => bcrypt('password'),
         ])->addRole('admin');
 
         Log::info('DatabaseSeeder finished successfully.');
