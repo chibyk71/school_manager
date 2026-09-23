@@ -14,7 +14,7 @@
  * Permanent deletion is separate and dependency-protected (fail closed for unknown keys).
  *
  * Phase 3R: option values are canonicalized (trim + lowercase) on write.
- * is_required is tenant-level only; school creates reject is_required = true.
+ * is_required is tenant-level only; school creates and makeOptionRequired reject school requiredness.
  *
  * No complete school definition replacement. No option mass-copy. No resolution logic here.
  */
@@ -152,6 +152,12 @@ class DynamicEnumLifecycleService
 
     public function makeOptionRequired(DynamicEnumOption $option): DynamicEnumOption
     {
+        if ($option->isSchoolOption()) {
+            throw ValidationException::withMessages([
+                'is_required' => 'is_required is tenant-level configuration only; school options and overrides cannot be made required.',
+            ]);
+        }
+
         if (! $option->is_active) {
             throw ValidationException::withMessages([
                 'is_required' => 'An inactive option must be activated before it can become required.',
