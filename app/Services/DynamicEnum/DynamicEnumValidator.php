@@ -1,67 +1,112 @@
 <?php
 
 /**
- * Dynamic Enum Phase 3 — selection validation against the effective definition.
+ * Dynamic Enum Phase 3R — selection validation against effective resolution.
  *
- * Algorithm for a new selection value:
- *   1. Resolve effective definition (school override → tenant default)
- *   2. definition_not_configured if none
- *   3. Find option by exact stable value
+ * Algorithm for a non-null selection value:
+ *   1. Canonicalize input (trim + lowercase)
+ *   2. Resolve effective enum (tenant + school sparse overlay)
+ *   3. Find option by canonical value
  *   4. invalid_option if missing
- *   5. inactive_option if present but is_active = false
+ *   5. inactive_option if present but effective is_active = false
  *   6. valid otherwise
  *
- * null is not treated as invalid by Dynamic Enum requiredness — business-field
- * nullability is the consumer's concern. is_required on options is configuration
- * protection only.
+ * null is not treated as invalid by Dynamic Enum — business-field nullability
+ * remains the consumer's concern.
  *
- * Read-only: never mutates configuration.
+ * Read-only: never mutates configuration. Merge logic lives only in the resolver.
  */
 
 namespace App\Services\DynamicEnum;
 
-use App\Models\DynamicEnumOption;
 use App\Models\School;
 
 class DynamicEnumValidator
 {
     public function __construct(
         private readonly DynamicEnumResolver $resolver,
-    ) {
-    }
+    ) {}
 
     /**
      * Validate a candidate selection value for school + key.
      *
-     * null is accepted (status valid) without applying option is_required;
-     * the consumer decides whether the business field is nullable.
+     * null is accepted (status valid) without applying option is_required.
      */
     public function validate(School $school, string $key, ?string $value): DynamicEnumValidationResult
     {
         if ($value === null) {
-            $definition = $this->resolver->resolve($school, $key);
+            try {
+                $resolved = $this->resolver->resolveForSchool($school, $key);
+            } catch (DynamicEnumNotConfiguredException) {
+                return DynamicEnumValidationResult::definitionNotConfigured();
+            }
 
-            return DynamicEnumValidationResult::valid($definition, null);
+            return DynamicEnumValidationResult::valid($resolved, null);
         }
 
-        $definition = $this->resolver->resolveWithOptions($school, $key);
-
-        if ($definition === null) {
+        try {
+            $resolved = $this->resolver->resolveForSchool($school, $key);
+        } catch (DynamicEnumNotConfiguredException) {
             return DynamicEnumValidationResult::definitionNotConfigured();
         }
 
-        /** @var DynamicEnumOption|null $option */
-        $option = $definition->options->firstWhere('value', $value);
+        $canonical = DynamicEnumValue::canonicalize($value);
+
+        if ($canonical === '') {
+            return DynamicEnumValidationResult::invalidOption($resolved);
+        }
+
+        $option = $resolved->findByValue($canonical);
 
         if ($option === null) {
-            return DynamicEnumValidationResult::invalidOption($definition);
+            return DynamicEnumValidationResult::invalidOption($resolved);
         }
 
-        if (! $option->is_active) {
-            return DynamicEnumValidationResult::inactiveOption($definition, $option);
+        if (! $option->isActive) {
+            return DynamicEnumValidationResult::inactiveOption($resolved, $option);
         }
 
-        return DynamicEnumValidationResult::valid($definition, $option);
+        return DynamicEnumValidationResult::valid($resolved, $option);
+    }
+
+    /**
+     * Validate against tenant/default configuration (no school overlay).
+     */
+    public function validateTenant(string $key, ?string $value): DynamicEnumValidationResult
+    {
+        if ($value === null) {
+            try {
+                $resolved = $this->resolver->resolve($key);
+            } catch (DynamicEnumNotConfiguredException) {
+                return DynamicEnumValidationResult::definitionNotConfigured();
+            }
+
+            return DynamicEnumValidationResult::valid($resolved, null);
+        }
+
+        try {
+            $resolved = $this->resolver->resolve($key);
+        } catch (DynamicEnumNotConfiguredException) {
+            return DynamicEnumValidationResult::definitionNotConfigured();
+        }
+
+        $canonical = DynamicEnumValue::canonicalize($value);
+
+        if ($canonical === '') {
+            return DynamicEnumValidationResult::invalidOption($resolved);
+        }
+
+        $option = $resolved->findByValue($canonical);
+
+        if ($option === null) {
+            return DynamicEnumValidationResult::invalidOption($resolved);
+        }
+
+        if (! $option->isActive) {
+            return DynamicEnumValidationResult::inactiveOption($resolved, $option);
+        }
+
+        return DynamicEnumValidationResult::valid($resolved, $option);
     }
 
     /**
@@ -73,18 +118,16 @@ class DynamicEnumValidator
     }
 
     /**
-     * Find an option by exact value in the effective definition (active or inactive).
-     * Returns null when definition missing or value unknown.
-     * Does not filter on is_active — inactive options remain recognizable.
+     * Find an effective option by value (recognizes inactive options).
      */
-    public function findOption(School $school, string $key, string $value): ?DynamicEnumOption
+    public function findOption(School $school, string $key, string $value): ?ResolvedDynamicEnumOption
     {
-        $definition = $this->resolver->resolveWithOptions($school, $key);
-
-        if ($definition === null) {
+        try {
+            $resolved = $this->resolver->resolveForSchool($school, $key);
+        } catch (DynamicEnumNotConfiguredException) {
             return null;
         }
 
-        return $definition->options->firstWhere('value', $value);
+        return $resolved->findByValue($value);
     }
 }
