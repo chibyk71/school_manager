@@ -345,6 +345,109 @@ test('detail capabilities reflect permission scopes with school context', functi
         ->and($both['capabilities']['can_manage_school_options'])->toBeTrue();
 });
 
+test('manageGlobals only with active school exposes tenant option actions on inherited options', function () {
+    phase4SeedGender();
+    $school = phase4School('A');
+
+    // Active school context, globals-only permission — inherited tenant options must be administrable.
+    $detail = $this->admin->detail('profile.gender', $school, false, true);
+    $male = collect($detail['options'])->firstWhere('value', 'male');
+
+    expect($male['source'])->toBe('tenant')
+        ->and($male['overridden'])->toBeFalse()
+        ->and($male['tenant_option_id'])->not->toBeNull()
+        ->and($male['school_option_id'])->toBeNull()
+        ->and($male['capabilities']['can_edit'])->toBeTrue()
+        ->and($male['capabilities']['can_activate'])->toBeTrue()
+        ->and($male['capabilities']['can_deactivate'])->toBeTrue()
+        ->and($male['capabilities']['can_make_required'])->toBeTrue()
+        ->and($male['capabilities']['can_delete'])->toBeTrue()
+        ->and($male['capabilities']['can_override'])->toBeFalse()
+        ->and($male['capabilities']['can_reset'])->toBeFalse();
+
+    // Backend tenant mutations still succeed under school context (capabilities are hints only).
+    $tenantOpt = DynamicEnumOption::findOrFail($male['tenant_option_id']);
+    $updated = $this->admin->updateTenantOption('profile.gender', $tenantOpt, ['label' => 'Male person']);
+    expect($updated->label)->toBe('Male person');
+
+    $deactivated = $this->admin->deactivateTenantOption('profile.gender', $tenantOpt);
+    expect($deactivated->is_active)->toBeFalse();
+
+    $activated = $this->admin->activateTenantOption('profile.gender', $tenantOpt);
+    expect($activated->is_active)->toBeTrue();
+
+    $required = $this->admin->makeTenantOptionRequired('profile.gender', $tenantOpt);
+    expect($required->is_required)->toBeTrue();
+});
+
+test('manage only with active school cannot mutate tenant options; school overlays remain editable', function () {
+    phase4SeedGender();
+    $school = phase4School('A');
+    $override = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
+
+    $detail = $this->admin->detail('profile.gender', $school, true, false);
+    $male = collect($detail['options'])->firstWhere('value', 'male');
+    $female = collect($detail['options'])->firstWhere('value', 'female');
+
+    // Overridden male: school-owned actions available; tenant mutation not advertised.
+    expect($male['overridden'])->toBeTrue()
+        ->and($male['capabilities']['can_edit'])->toBeTrue()
+        ->and($male['capabilities']['can_activate'])->toBeTrue()
+        ->and($male['capabilities']['can_deactivate'])->toBeTrue()
+        ->and($male['capabilities']['can_reset'])->toBeTrue()
+        ->and($male['capabilities']['can_make_required'])->toBeFalse()
+        ->and($male['capabilities']['can_delete'])->toBeFalse(); // override is not school-only
+
+    // Inherited female: not school-owned → no school mutation; no globals → no tenant mutation.
+    expect($female['overridden'])->toBeFalse()
+        ->and($female['source'])->toBe('tenant')
+        ->and($female['capabilities']['can_edit'])->toBeFalse()
+        ->and($female['capabilities']['can_activate'])->toBeFalse()
+        ->and($female['capabilities']['can_deactivate'])->toBeFalse()
+        ->and($female['capabilities']['can_make_required'])->toBeFalse()
+        ->and($female['capabilities']['can_override'])->toBeTrue()
+        ->and($female['capabilities']['can_delete'])->toBeFalse();
+
+    // School mutation of override still works.
+    $updated = $this->admin->updateSchoolOption($school, 'profile.gender', $override, ['label' => 'Boy updated']);
+    expect($updated->label)->toBe('Boy updated');
+});
+
+test('both permissions with active school expose tenant and school actions appropriately', function () {
+    phase4SeedGender();
+    $school = phase4School('A');
+    $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
+    $schoolOnly = $this->admin->createSchoolOption($school, 'profile.gender', 'student', 'Student');
+
+    $detail = $this->admin->detail('profile.gender', $school, true, true);
+    $male = collect($detail['options'])->firstWhere('value', 'male');
+    $female = collect($detail['options'])->firstWhere('value', 'female');
+    $student = collect($detail['options'])->firstWhere('value', 'student');
+
+    // Override row: school primary actions + tenant requiredness (tenant row still exists).
+    expect($male['overridden'])->toBeTrue()
+        ->and($male['capabilities']['can_edit'])->toBeTrue() // school primary
+        ->and($male['capabilities']['can_reset'])->toBeTrue()
+        ->and($male['capabilities']['can_make_required'])->toBeTrue() // tenant requiredness
+        ->and($male['capabilities']['can_delete'])->toBeFalse();
+
+    // Inherited tenant row: tenant actions available (not school-owned).
+    expect($female['overridden'])->toBeFalse()
+        ->and($female['capabilities']['can_edit'])->toBeTrue()
+        ->and($female['capabilities']['can_make_required'])->toBeTrue()
+        ->and($female['capabilities']['can_override'])->toBeTrue()
+        ->and($female['capabilities']['can_reset'])->toBeFalse();
+
+    // School-only option: school mutation + delete; no tenant requiredness.
+    expect($student['source'])->toBe('school')
+        ->and($student['capabilities']['can_edit'])->toBeTrue()
+        ->and($student['capabilities']['can_delete'])->toBeTrue()
+        ->and($student['capabilities']['can_make_required'])->toBeFalse()
+        ->and($student['capabilities']['can_reset'])->toBeFalse();
+
+    unset($schoolOnly); // used for side-effect create
+});
+
 test('canonical PermissionSeeder includes Phase 4 dynamic enum permissions', function () {
     $source = file_get_contents(database_path('seeders/Settings/PermissionSeeder.php'));
 
