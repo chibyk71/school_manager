@@ -83,16 +83,24 @@ class DynamicEnumsController extends Controller
     {
         $school = GetSchoolModel();
 
+        // tenant is an HTTP operation selector only — never part of the domain payload.
+        $payload = array_intersect_key(
+            $request->validated(),
+            array_flip(['label', 'description'])
+        );
+
         try {
             if ($request->boolean('tenant') || $school === null) {
                 Gate::authorize('manageGlobals', DynamicEnum::class);
-                $this->admin->updateTenantDefinitionPresentation($key, $request->validated());
+                $this->admin->updateTenantDefinitionPresentation($key, $payload);
             } else {
                 Gate::authorize('manage', DynamicEnum::class);
-                $this->admin->updateSchoolDefinitionPresentation($school, $key, $request->validated());
+                $this->admin->updateSchoolDefinitionPresentation($school, $key, $payload);
             }
         } catch (DynamicEnumNotConfiguredException $e) {
             abort(404, $e->getMessage());
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors());
         }
 
         return back()->with('success', 'Definition presentation updated.');
