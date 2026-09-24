@@ -23,16 +23,31 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        Log::info('DatabaseSeeder started.');
 
         // -----------------------------------------------------------------
-        // 1. Core settings defaults
+        // 1. CREATE A SCHOOL FIRST (required for BelongsToSchool models)
+        // -----------------------------------------------------------------
+        $school = \App\Models\School::firstOrCreate(
+            ['slug' => 'demo'],
+            [
+                'name' => 'Demo Academy',
+                'code' => 'DA',
+                'email' => 'admin@demo.academy',
+                'phone_one' => '08012345678',
+            ]
+        );
+
+        // Set this school as the active one for the rest of seeding
+        app('schoolManager')->setActiveSchool($school);
+
+        // -----------------------------------------------------------------
+        // 2. GLOBAL SETTINGS (tenant-agnostic defaults)
         // -----------------------------------------------------------------
         $this->callWithLog(\Database\Seeders\Settings\SettingsDefaultsSeeder::class);
         $this->callWithLog(\Database\Seeders\Settings\ApplicationSettingsDefaultsSeeder::class);
 
         // -----------------------------------------------------------------
-        // 2. Structural seeders (sections, class levels, departments, roles)
+        // 3. OPTIONAL: Demo data / factories (uncomment for local dev)
         // -----------------------------------------------------------------
         $this->callWithLog(\Database\Seeders\SchoolSectionSeeder::class);
         $this->callWithLog(\Database\Seeders\ClassLevelSeeder::class);
@@ -43,6 +58,7 @@ class DatabaseSeeder extends Seeder
         $this->callWithLog(\Database\Seeders\ApplicationPermissionSeeder::class);
         $this->callWithLog(\Database\Seeders\AdmissionPermissionSeeder::class);
 
+
         $this->callWithLog(\Database\Seeders\DynamicEnumSeeder::class);
 
         // assign all roles to admin role
@@ -51,7 +67,7 @@ class DatabaseSeeder extends Seeder
 
         // create a default admin user if not exists
         \App\Models\User::firstOrCreate([
-            'email' => 'admin@example.com',
+            'email' => 'admin@demo.academy',
         ], [
             'name' => 'Admin',
             'password' => bcrypt('password'),
