@@ -283,4 +283,36 @@ test('canonical PermissionSeeder includes Phase 4 dynamic enum permissions', fun
         ->toContain("'dynamic-enums.view'")
         ->toContain("'dynamic-enums.manage'")
         ->toContain("'dynamic-enums.manageGlobals'");
+
+    // Execute the normal seeding path (PermissionSeeder + DynamicEnumPermissionSeeder)
+    // and verify the three permissions exist in the database.
+    if (! Schema::hasTable('permissions')) {
+        Schema::create('permissions', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->unique();
+            $table->string('display_name')->nullable();
+            $table->string('description')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    app(\Database\Seeders\Settings\PermissionSeeder::class)->run();
+    app(\Database\Seeders\Settings\DynamicEnumPermissionSeeder::class)->run();
+
+    $names = \App\Models\Permission::query()
+        ->whereIn('name', [
+            'dynamic-enums.view',
+            'dynamic-enums.manage',
+            'dynamic-enums.manageGlobals',
+        ])
+        ->pluck('name')
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($names)->toBe([
+        'dynamic-enums.manage',
+        'dynamic-enums.manageGlobals',
+        'dynamic-enums.view',
+    ]);
 });
