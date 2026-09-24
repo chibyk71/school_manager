@@ -195,8 +195,12 @@ function resetOverride(optionId: string) {
   })
 }
 
+/** Primary row for edit/activate/deactivate/delete/reset: school overlay when present, else tenant. */
 const optionIdForAction = (opt: OptionRow) =>
   opt.school_option_id || opt.tenant_option_id || ''
+
+/** Requiredness is always a tenant-option operation. */
+const tenantOptionId = (opt: OptionRow) => opt.tenant_option_id || ''
 </script>
 
 <template>
@@ -327,18 +331,18 @@ const optionIdForAction = (opt: OptionRow) =>
                     @click="postAction('deactivate', optionIdForAction(opt))"
                   />
                   <Button
-                    v-if="opt.capabilities.can_make_required && !opt.is_required"
+                    v-if="opt.capabilities.can_make_required && !opt.is_required && tenantOptionId(opt)"
                     label="Make required"
                     size="small"
                     text
-                    @click="postAction('make-required', optionIdForAction(opt))"
+                    @click="postAction('make-required', tenantOptionId(opt))"
                   />
                   <Button
-                    v-if="opt.capabilities.can_remove_required"
+                    v-if="opt.capabilities.can_remove_required && tenantOptionId(opt)"
                     label="Remove required"
                     size="small"
                     text
-                    @click="postAction('remove-required', optionIdForAction(opt))"
+                    @click="postAction('remove-required', tenantOptionId(opt))"
                   />
                   <Button
                     v-if="opt.capabilities.can_reset"
