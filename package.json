@@ -47,6 +47,7 @@
         "tailwindcss-primeui": "^0.6.1",
         "uuid": "^13.0.0",
         "vue3-apexcharts": "^1.10.0",
-        "vue3-perfect-scrollbar": "^2.0.0"
+        "vue3-perfect-scrollbar": "^2.0.0",
+        "@tanstack/vue-query": "^5.66.0"
     }
 }
