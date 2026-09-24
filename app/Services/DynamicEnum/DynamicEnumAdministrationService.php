@@ -137,6 +137,16 @@ class DynamicEnumAdministrationService
     }
 
     /**
+     * Administrative capability hints for a single effective option row.
+     *
+     * Effective-view context (whether a school is selected for resolution) is
+     * independent of administrative scope:
+     * - manageGlobals may administer tenant-owned options even when a school is active
+     * - manage may administer school-owned options only when a school context exists
+     * - inherited tenant options are not treated as school-owned for mutation
+     *
+     * Capability flags are UI hints only; controller Gates remain the authority.
+     *
      * @return array<string, bool>
      */
     private function optionCapabilities(
@@ -152,19 +162,28 @@ class DynamicEnumAdministrationService
         $isOverride = $isSchoolOwned && $isTenantOwned;
         $isSchoolOnly = $isSchoolOwned && ! $isTenantOwned;
 
+        // Tenant administration is independent of the active school view context.
+        $canTenantMutate = $canManageGlobals && $isTenantOwned;
+        // School administration requires both permission and an active school.
+        $canSchoolMutate = $canManage && $schoolContext && $isSchoolOwned;
+
+        // Edit/activate/deactivate target the row optionIdForAction prefers:
+        // school row when present, otherwise tenant. Avoid advertising tenant
+        // edit on an override row where the UI would pass the school option id.
+        $canEditPrimary = $canSchoolMutate || ($canTenantMutate && ! $isSchoolOwned);
+
         return [
-            'can_edit' => ($canManageGlobals && $isTenantOwned && ! $schoolContext)
-                || ($canManage && $schoolContext && $isSchoolOwned),
-            'can_activate' => ($canManageGlobals && $isTenantOwned && ! $schoolContext)
-                || ($canManage && $schoolContext && $isSchoolOwned),
-            'can_deactivate' => ($canManageGlobals && $isTenantOwned && ! $schoolContext)
-                || ($canManage && $schoolContext && $isSchoolOwned),
-            'can_delete' => ($canManageGlobals && $isTenantOwned && ! $schoolContext)
+            'can_edit' => $canEditPrimary,
+            'can_activate' => $canEditPrimary,
+            'can_deactivate' => $canEditPrimary,
+            // Permanent delete: tenant baseline (no school overlay row) or school-only option.
+            'can_delete' => ($canTenantMutate && ! $isSchoolOwned)
                 || ($canManage && $schoolContext && $isSchoolOnly),
             'can_override' => $canManage && $schoolContext && $isTenantOwned && ! $isSchoolOwned,
             'can_reset' => $canManage && $schoolContext && $isOverride,
-            'can_make_required' => $canManageGlobals && $isTenantOwned && ! $schoolContext,
-            'can_remove_required' => $canManageGlobals && $isTenantOwned && ! $schoolContext && $opt->isRequired,
+            // Requiredness is always a tenant-option operation (uses tenant_option_id in UI).
+            'can_make_required' => $canTenantMutate,
+            'can_remove_required' => $canTenantMutate && $opt->isRequired,
         ];
     }
 
