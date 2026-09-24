@@ -65,12 +65,8 @@ class DatabaseSeeder extends Seeder
         $role = \App\Models\Role::query()->where('name', 'admin')->first();
         $role->permissions()->sync(\App\Models\Permission::all()->pluck('id'));
 
-        // create a default admin user if not exists
-        \App\Models\User::firstOrCreate([
+        \App\Models\User::factory()->create([
             'email' => 'admin@demo.academy',
-        ], [
-            'name' => 'Admin',
-            'password' => bcrypt('password'),
         ])->addRole('admin');
 
         Log::info('DatabaseSeeder finished successfully.');
