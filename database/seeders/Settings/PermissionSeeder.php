@@ -30,9 +30,10 @@ class PermissionSeeder extends Seeder
             // Your single settings permission
             ['name' => 'settings.manage', 'display_name' => 'Manage Settings', 'description' => 'Full access to all settings pages'],
 
-            // dynamic enums
-            ['name' => 'dynamic-enums.view', 'display_name' => 'View Dynamic Enums', 'description' => 'View dynamic enum definitions and options'],
-            ['name' => 'dynamic-enums.manage', 'display_name' => 'Manage Dynamic Enums', 'description' => 'Create, update, or delete dynamic enum definitions and options'],
+            // dynamic enums (Phase 4)
+            ['name' => 'dynamic-enums.view', 'display_name' => 'View Dynamic Enums', 'description' => 'View Dynamic Enum definitions and effective configuration'],
+            ['name' => 'dynamic-enums.manage', 'display_name' => 'Manage School Dynamic Enums', 'description' => 'Manage school-level Dynamic Enum overrides and school-only options'],
+            ['name' => 'dynamic-enums.manageGlobals', 'display_name' => 'Manage Tenant Dynamic Enums', 'description' => 'Manage tenant/default Dynamic Enum configuration and requiredness'],
 
             // Schools (Tenant Management)
             ['name' => 'schools.view-any', 'display_name' => 'View All Schools', 'description' => 'Access the list of schools'],
@@ -93,7 +94,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'profile.view-any', 'display_name' => 'View All Profiles', 'description' => 'View the list of all profiles (admin-level access)',],
             ['name' => 'profile.view', 'display_name' => 'View Profile', 'description' => 'View a specific profile (own profile or permitted others)',],
             ['name' => 'profile.update-own', 'display_name' => 'Update Own Profile', 'description' => 'Edit personal profile information (name, phone, photo, etc.)',],
-            ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any user’s profile (admin override)',],
+            ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any user\'s profile (admin override)',],
             ['name' => 'profile.avatar.upload-own', 'display_name' => 'Upload Own Avatar', 'description' => 'Change own profile photo/avatar',],
             ['name' => 'profile.avatar.upload-any', 'display_name' => 'Upload Avatar for Any Profile', 'description' => 'Change avatar/photo for any user (admin)',],
             ['name' => 'profile.delete-any', 'display_name' => 'Delete Any Profile', 'description' => 'Soft-delete any profile (admin action)',],
@@ -129,7 +130,7 @@ class PermissionSeeder extends Seeder
             [
                 'name' => 'grades.update',
                 'display_name' => 'Update Grade',
-                'description' => 'Edit an existing grade’s details (name, code, score range, remark, section assignments)',
+                'description' => 'Edit an existing grade\'s details (name, code, score range, remark, section assignments)',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -160,7 +161,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'class-sections.view', 'display_name' => 'View Class Section', 'description' => 'View detailed information for a specific class section'],
             ['name' => 'class-sections.create', 'display_name' => 'Create Class Section', 'description' => 'Manually create a new class section'],
             ['name' => 'class-sections.update', 'display_name' => 'Update Class Section', 'description' => 'Edit the details of an existing class section'],
-            ['name' => 'class-sections.delete', 'display_name' => 'Delete Class Section', 'description' => 'Soft-delete a class section record'],
+            ['name' => 'class-sections.delete', 'display_name' => 'Soft-delete a class section record'],
             ['name' => 'class-sections.restore', 'display_name' => 'Restore Class Section', 'description' => 'Restore a previously trashed class section'],
             ['name' => 'class-sections.force-delete', 'display_name' => 'Force Delete Class Section', 'description' => 'Permanently delete a class section from the database'],
             ['name' => 'class-sections.bulk-generate', 'display_name' => 'Bulk Generate Class Sections', 'description' => 'Generate multiple class arms or sections at once'],

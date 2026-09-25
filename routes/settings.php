@@ -141,16 +141,12 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
     Route::post('/session/rules', [AcademicSessionSettingsController::class, 'store'])->name('session.rules');
 
     Route::prefix('academic-sessions')->name('academic-sessions.')->group(function () {
-        // Main listing & management
         Route::get('/', [AcademicSessionController::class, 'index'])->name('index');
-
-        // CRUD operations
         Route::post('/', [AcademicSessionController::class, 'store'])->name('store');
         Route::get('/{academicSession}', [AcademicSessionController::class, 'show'])->name('show');
         Route::post('/{academicSession}', [AcademicSessionController::class, 'update'])->name('update');
-        Route::delete('/', [AcademicSessionController::class, 'destroy'])->name('destroy'); // Bulk delete
+        Route::delete('/', [AcademicSessionController::class, 'destroy'])->name('destroy');
 
-        // Phase 2 lifecycle operations (no setCurrent / silent switch)
         Route::patch('/{academicSession}/plan', [SessionActivationController::class, 'plan'])->name('plan');
         Route::patch('/{academicSession}/activate', [SessionActivationController::class, 'activate'])->name('activate');
         Route::patch('/{academicSession}/pause', [SessionActivationController::class, 'pause'])->name('pause');
@@ -159,7 +155,6 @@ Route::prefix('settings/academic')->name('settings.academic.')->group(function (
         Route::patch('/{academicSession}/reopen', [SessionActivationController::class, 'reopen'])->name('reopen');
     });
 
-    // Terms (CRUD + Quick Actions)
     Route::prefix('terms')->name('terms.')->group(function () {
         Route::get('/', [TermController::class, 'index'])->name('index');
         Route::post('/', [TermController::class, 'store'])->name('store');
@@ -278,3 +273,6 @@ Route::prefix('settings/advanced')->name('settings.advanced.')->group(function (
     Route::get('ip-ban', [IpBanController::class, 'index'])->name('ip_ban');
     Route::post('ip-ban', [IpBanController::class, 'store'])->name('ip_ban.store');
 });
+
+// Dynamic Enum Phase 4 administration routes
+require __DIR__ . '/dynamic_enums.php';

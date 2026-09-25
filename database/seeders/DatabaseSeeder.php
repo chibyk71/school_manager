@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use Database\Seeders\Settings\PermissionSeeder;
+use Database\Seeders\Settings\DynamicEnumPermissionSeeder;
 use Database\Seeders\Settings\RolesTableSeeder;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Log;
@@ -53,6 +54,7 @@ class DatabaseSeeder extends Seeder
         $this->callWithLog(\Database\Seeders\DepartmentSeeder::class);
         $this->callWithLog(RolesTableSeeder::class);
         $this->callWithLog(PermissionSeeder::class);
+        $this->callWithLog(DynamicEnumPermissionSeeder::class);
         $this->callWithLog(\Database\Seeders\ApplicationPermissionSeeder::class);
         $this->callWithLog(\Database\Seeders\AdmissionPermissionSeeder::class);
 
