@@ -245,8 +245,7 @@ console.log(departmentsArray.value);
         <!--  -->
         <AdvancedDataTable :endpoint="route('departments.index')" :initial-data="departmentsArray"
             :columns="enhancedColumns" :bulk-actions="bulkActions" @bulk-action="handleBulkAction"
-            :initial-params="{ with_trashed: showTrashed }" :global-filter-fields="globalFilterables"
-            :total-records="departmentsTotal">
+            :initial-params="{ with_trashed: showTrashed }">
         </AdvancedDataTable>
     </AuthenticatedLayout>
 </template>

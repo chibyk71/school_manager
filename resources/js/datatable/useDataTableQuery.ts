@@ -4,22 +4,33 @@ import {
     useQueryClient,
     keepPreviousData,
 } from '@tanstack/vue-query'
-import type { DataTableQuery, DataTableResponse, DataTableFilters, DataTableSort } from './types'
+import type {
+    DataTableQuery,
+    DataTableResponse,
+    DataTableFilters,
+    DataTableSort,
+    DataTableColumnMeta,
+} from './types'
 import { DEFAULT_PER_PAGE, DEFAULT_PREFETCH_PAGES } from './types'
 import { DataTableDataSource } from './DataTableDataSource'
 import { getDataTableQueryKey } from './queryKey'
 import { normalizeQuery } from './normalizeQuery'
 
-export interface UseDataTableQueryOptions {
+export interface UseDataTableQueryOptions<T = Record<string, unknown>> {
     resource: string
     initialQuery?: Partial<DataTableQuery>
     extraParams?: Record<string, unknown> | Ref<Record<string, unknown>>
+    /**
+     * Optional Inertia-hydrated first page. Seeded into TanStack Query as
+     * initialData for the default query identity only — never a parallel mode.
+     */
+    initialResponse?: DataTableResponse<T> | null
     /** Prefetch N pages ahead (default 2). Set 0 to disable. */
     prefetchPages?: number
     enabled?: boolean | Ref<boolean>
 }
 
-export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataTableQueryOptions) {
+export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataTableQueryOptions<T>) {
     const queryClient = useQueryClient()
     const prefetchPages = options.prefetchPages ?? DEFAULT_PREFETCH_PAGES
 
@@ -47,6 +58,19 @@ export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataT
         getDataTableQueryKey(resource.value, queryState.value) as unknown as unknown[],
     )
 
+    /** Seed default query only when query identity matches the initial page-1 identity. */
+    const seededInitialData = computed((): DataTableResponse<T> | undefined => {
+        const seed = options.initialResponse
+        if (!seed?.data) return undefined
+        const q = queryState.value
+        // Only use seed for the default first page with no search/filters/sorts
+        if (q.page !== 1) return undefined
+        if (q.search) return undefined
+        if (q.filters?.conditions?.length) return undefined
+        if (q.sorts?.length) return undefined
+        return seed
+    })
+
     const queryResult = useQuery<DataTableResponse<T>, Error>({
         queryKey,
         queryFn: () =>
@@ -55,9 +79,11 @@ export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataT
             }),
         enabled,
         placeholderData: keepPreviousData,
+        initialData: () => seededInitialData.value,
+        // Treat Inertia seed as stale so a background refetch still runs
+        initialDataUpdatedAt: () => (seededInitialData.value ? 0 : undefined),
     })
 
-    // Prefetch upcoming pages when active data settles
     watch(
         () => [queryResult.data.value, queryResult.isFetching.value, queryState.value.page] as const,
         ([data, isFetching]) => {
@@ -98,6 +124,16 @@ export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataT
         queryState.value = normalizeQuery({ ...queryState.value, sorts, page: 1 })
     }
 
+    /** Single coherent update for search + filters (one query transition). */
+    function setSearchAndFilters(search: string | undefined, filters: DataTableFilters | undefined) {
+        queryState.value = normalizeQuery({
+            ...queryState.value,
+            search: search?.trim() || undefined,
+            filters,
+            page: 1,
+        })
+    }
+
     function refresh() {
         return queryClient.invalidateQueries({
             queryKey: ['datatable', resource.value],
@@ -112,7 +148,7 @@ export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataT
     }
 
     const rows = computed(() => queryResult.data.value?.data ?? [])
-    const columns = computed(() => queryResult.data.value?.columns ?? [])
+    const columns = computed((): DataTableColumnMeta[] => queryResult.data.value?.columns ?? [])
     const meta = computed(
         () =>
             queryResult.data.value?.meta ?? {
@@ -141,6 +177,7 @@ export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataT
         setSearch,
         setFilters,
         setSorts,
+        setSearchAndFilters,
 
         refresh,
         prefetch,

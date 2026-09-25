@@ -109,8 +109,7 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
         <div v-if="viewMode === 'table'"
             class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
             <AdvancedDataTable endpoint="/student" :columns="enhancedColumns" :initial-data="studentsArray"
-                :total-records="totalRecords" :global-filter-fields="globalFilterFields"
-                :initial-params="{ with: 'user,schoolSection,classSections' }" selection-mode="multiple" :bulk-actions="[
+                :initial-params="{ with: 'user,schoolSection,classSections' }" :bulk-actions="[
                     { label: 'Delete Selected', icon: 'pi pi-trash', severity: 'danger', action: 'delete', visible: () => can?.delete },
                     { label: 'Export Selected', icon: 'pi pi-download', action: 'export' }
                 ]" />

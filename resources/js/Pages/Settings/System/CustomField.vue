@@ -240,9 +240,8 @@ const handleReorder = async (event: { newIndex: number; oldIndex: number; value:
 
         <!-- Main content -->
         <AdvancedDataTable :endpoint="route('settings.system.custom-fields', { resource: selectedResource })"
-            :columns="enhancedColumns" :initial-data="props.data" :total-records="props.totalRecords"
-            :initial-params="{ resource: selectedResource }" @row-reorder="handleReorder" data-key="id"
-            :global-filter-fields="globalFilterables" :export-filename="`custom-fields-${selectedResource}`" :actions="actionsButtons" :bulk-actions="bulkActions">
+            :columns="enhancedColumns" :initial-data="props.data"
+            :initial-params="{ resource: selectedResource }" @row-reorder="handleReorder" data-key="id" :export-filename="`custom-fields-${selectedResource}`" :actions="actionsButtons" :bulk-actions="bulkActions">
             <!-- Custom empty state -->
             <template #empty>
                 <div class="text-center py-16 text-gray-500 dark:text-gray-400">

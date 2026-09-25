@@ -416,8 +416,8 @@ const pageButtons = computed(() => [
 
         <!-- DataTable -->
         <AdvancedDataTable ref="tableRef" :endpoint="route('settings.academic.subjects.index')"
-            :initial-data="initialData" :total-records="totalRecords" :columns="enhancedColumns"
-            :bulk-actions="bulkActions" :actions="rowActions" :global-filter-fields="globalFilterables"
+            :initial-data="initialData" :columns="enhancedColumns"
+            :bulk-actions="bulkActions" :actions="rowActions"
             :initial-params="showTrashed ? { with_trashed: true } : {}" data-key="id" />
 
         <!-- Create / Edit Modal -->

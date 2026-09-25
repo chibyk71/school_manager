@@ -475,8 +475,6 @@ const pageButtons = computed(() => {
         { label: 'Sections' },
     ]" :buttons="pageButtons" :can-see-trashed="hasPermission('sections.delete')">
         <AdvancedDataTable ref="tableRef" :endpoint="route('settings.school.sections.index')"
-            :initial-data="props.initialData" :total-records="props.totalRecords" :columns="enhancedColumns"
-            :global-filter-fields="props.globalFilterables" :actions="rowActions" :bulk-actions="bulkActions"
-            data-property="data" />
+            :initial-data="props.initialData" :columns="enhancedColumns" :actions="rowActions" :bulk-actions="bulkActions" />
     </AuthenticatedLayout>
 </template>

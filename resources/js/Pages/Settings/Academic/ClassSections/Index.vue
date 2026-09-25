@@ -282,8 +282,6 @@ modal.emitter.value?.on('close', () => {
             onClick: openCreateModal,
         },
     ]" :can-see-trashed="true">
-        <AdvancedDataTable :endpoint="route('settings.academic.class-sections.index')" :initial-data="initialData"
-            :total-records="totalRecords" :columns="enhancedColumns" :actions="rowActions" :bulk-actions="bulkActions"
-            :global-filter-fields="['display_name', 'name', 'room']" data-property="initialData" />
+        <AdvancedDataTable :endpoint="route('settings.academic.class-sections.index')" :initial-data="initialData" :columns="enhancedColumns" :actions="rowActions" :bulk-actions="bulkActions" />
     </AuthenticatedLayout>
 </template>

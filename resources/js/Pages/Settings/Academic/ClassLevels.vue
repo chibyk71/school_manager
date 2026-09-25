@@ -516,8 +516,7 @@ const openFormModal = (classLevel: ClassLevel) => {
 
                 <!-- ── DataTable ──────────────────────────────────────────── -->
                 <AdvancedDataTable ref="tableRef" :endpoint="endpoint" :columns="columns" :actions="actions"
-                    :bulk-actions="bulkActions" :initial-params="initialParams" :initial-data="classLevels.data"
-                    :total-records="classLevels.totalRecords" data-property="data" />
+                    :bulk-actions="bulkActions" :initial-params="initialParams" :initial-data="classLevels.data" />
             </template>
         </SettingsLayout>
     </AuthenticatedLayout>

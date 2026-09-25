@@ -6,7 +6,7 @@
   Features / Problems Solved:
   ────────────────────────────────────────────────────────────────
   • Displays users with enhanced columns: avatar + name + email, type badge, status toggle
-  • Supports server-side lazy loading via AdvancedDataTable
+  • Supports server-side loading via AdvancedDataTable
   • Single-row status toggle (PATCH to api.users.toggle-status)
   • Bulk actions: activate / deactivate / reset-password / delete
     → Uses standard Laravel resource routes with { ids: [...] } payload
@@ -334,11 +334,7 @@ const handleBulkDelete = async (selected: any[]) => {
 
 <template>
     <div class="relative min-h-[400px]">
-        <AdvancedDataTable endpoint="/users" :columns="enhancedColumns" :initial-data="props.users"
-            :total-records="props.totalRecords" :initial-params="{ with: 'profiles,roles,schools' }"
-            :row-actions="rowActions" :bulk-actions="bulkActions" v-model:selected-rows="selectedUsers"
-            selection-mode="multiple" :loading="loading" :global-filter-fields="props.globalFilterFields" lazy paginator
-            :rows="20" responsive-layout="scroll" />
+        <AdvancedDataTable endpoint="/users" :columns="enhancedColumns" :initial-data="props.users" :initial-params="{ with: 'profiles,roles,schools' }" :actions="rowActions" :bulk-actions="bulkActions" />
 
         <!-- Global processing overlay -->
         <transition name="fade">

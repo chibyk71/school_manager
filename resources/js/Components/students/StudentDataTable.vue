@@ -10,7 +10,6 @@ defineProps<{
     bulkActions?: BulkAction[]
     initialParams?: Record<string, any>
     initialData?: Student[]
-    totalRecords?: number
 }>()
 </script>
 
@@ -21,6 +20,5 @@ defineProps<{
         :bulk-actions="bulkActions"
         :initial-params="initialParams"
         :initial-data="initialData"
-        :total-records="totalRecords"
     />
 </template>

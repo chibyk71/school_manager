@@ -11,6 +11,7 @@ import {
     extractGlobalSearch,
 } from '@/datatable/adapters/primevue'
 import { DEFAULT_PER_PAGE } from '@/datatable/types'
+import type { DataTableResponse } from '@/datatable/types'
 
 import DataTableHeader from './DataTableHeader.vue'
 import DataTableEmptyState from './DataTableEmptyState.vue'
@@ -35,19 +36,38 @@ import { formatDate } from '@/helpers'
 
 const props = defineProps<{
     endpoint: string
+    /**
+     * Optional Inertia first-page rows. Seeded into TanStack Query as initialData
+     * for the default query identity only — not a parallel data mode.
+     */
     initialData?: T[]
+    /** Optional column metadata accompanying initialData (from backend). */
+    initialColumns?: ColumnDefinition<T>[]
     initialParams?: Record<string, any>
-    totalRecords?: number
     columns: ColumnDefinition<T>[]
     bulkActions?: BulkAction[]
-    /** @deprecated Derive searchable fields from columns[].searchable */
-    globalFilterFields?: string[]
     virtualScroller?: boolean
-    dataProperty?: string
     actions?: TableAction<T>[]
 }>()
 
 const extraParams = computed(() => props.initialParams ?? {})
+
+/** Build a canonical seed response for TanStack initialData (page 1 only). */
+const initialResponse = computed((): DataTableResponse<T> | null => {
+    if (!props.initialData?.length) return null
+    const cols = (props.initialColumns ?? props.columns ?? []) as any[]
+    return {
+        data: props.initialData,
+        columns: cols as any,
+        meta: {
+            currentPage: 1,
+            perPage: DEFAULT_PER_PAGE,
+            // Unknown until first network response; seed uses row count as lower bound only for empty UX
+            total: props.initialData.length,
+            lastPage: 1,
+        },
+    }
+})
 
 const {
     query,
@@ -61,27 +81,27 @@ const {
     isPlaceholderData,
     setPage,
     setPerPage,
-    setSearch,
-    setFilters,
+    setSearchAndFilters,
     setSorts,
     refresh,
 } = useDataTableQuery<T>({
     resource: props.endpoint,
     initialQuery: { page: 1, perPage: DEFAULT_PER_PAGE },
     extraParams,
+    initialResponse: initialResponse.value,
 })
 
 const dtRef = ref<any>(null)
 const selectedRows = ref<T[]>([])
 const hiddenColumns = ref<string[]>([])
 const exportMenu = ref()
+const applyingFilters = ref(false)
 
 // PrimeVue filter model (presentation only)
 const filters = ref<Record<string, { value: any; matchMode: string }>>({
     global: { value: '', matchMode: 'contains' },
 })
 
-// Presentation columns: prefer prop columns, merge capability from server when available
 const displayColumns = computed(() => {
     const base = Array.isArray(props.columns) ? props.columns : []
     const server = serverColumns.value
@@ -91,10 +111,11 @@ const displayColumns = computed(() => {
         if (!s) return col
         return {
             ...col,
-            sortable: col.sortable ?? s.sortable,
-            filterable: col.filterable ?? s.filterable,
-            searchable: (col as any).searchable ?? s.searchable,
-            exportable: col.exportable ?? s.exportable,
+            // Backend capabilities are authoritative when present
+            sortable: s.sortable !== undefined ? s.sortable : col.sortable,
+            filterable: s.filterable !== undefined ? s.filterable : col.filterable,
+            searchable: s.searchable !== undefined ? s.searchable : (col as any).searchable,
+            exportable: s.exportable !== undefined ? s.exportable : col.exportable,
             filterType: col.filterType ?? s.filterType,
             filterOptions: col.filterOptions ?? s.filterOptions,
             filterMatchMode: col.filterMatchMode ?? s.filterMatchMode,
@@ -107,12 +128,13 @@ const visibleColumns = computed(() =>
     displayColumns.value.filter((c) => !hiddenColumns.value.includes(String(c.field))),
 )
 
-// Initialize hidden from defaultHidden / hidden flags
 watch(
     displayColumns,
     (cols) => {
         if (hiddenColumns.value.length) return
-        const initial = cols.filter((c) => c.hidden || (c as any).defaultHidden).map((c) => String(c.field))
+        const initial = cols
+            .filter((c) => c.hidden || (c as any).defaultHidden)
+            .map((c) => String(c.field))
         if (initial.length) hiddenColumns.value = initial
     },
     { immediate: true },
@@ -120,22 +142,26 @@ watch(
 
 const tableData = computed(() => rows.value)
 const loading = computed(() => isPending.value || (isFetching.value && !isPlaceholderData.value))
-const totalRecords = computed(() => props.totalRecords ?? meta.value.total)
+/** Authoritative total from live query meta — never a stale Inertia prop. */
+const totalRecords = computed(() => meta.value.total)
 const perPage = computed({
     get: () => query.value.perPage,
     set: (v: number) => setPerPage(v),
 })
 
 const safeBulkActions = computed(() => props.bulkActions ?? [])
-const searchableFields = computed(() => {
-    if (props.globalFilterFields?.length) return props.globalFilterFields
-    return displayColumns.value
-        .filter((c) => (c as any).searchable !== false && (c.filterable !== false) && (!c.filterType || c.filterType === 'text'))
-        .map((c) => String(c.field))
-})
+
+/**
+ * Searchable fields from capability metadata only.
+ * searchable is independent of filterable.
+ */
+const searchableFields = computed(() =>
+    displayColumns.value
+        .filter((c) => (c as any).searchable === true)
+        .map((c) => String(c.field)),
+)
 
 function onPage(event: { page: number; rows: number }) {
-    // PrimeVue page is 0-based
     const nextPage = (event.page ?? 0) + 1
     if (event.rows && event.rows !== query.value.perPage) {
         setPerPage(event.rows)
@@ -153,30 +179,32 @@ function onSortHandler(event: {
     setSorts(sorts.length ? sorts : undefined)
 }
 
+/**
+ * Single path: PrimeVue filters → one canonical search+filters update.
+ * Guard against re-entrant / duplicate event paths.
+ */
 function applyFiltersFromPrimeVue() {
-    const search = extractGlobalSearch(filters.value)
-    setSearch(search)
-    const canonical = primeVueFiltersToCanonical(filters.value)
-    setFilters(canonical)
+    if (applyingFilters.value) return
+    applyingFilters.value = true
+    try {
+        const search = extractGlobalSearch(filters.value)
+        const canonical = primeVueFiltersToCanonical(filters.value)
+        setSearchAndFilters(search, canonical)
+    } finally {
+        // nextTick would be better; microtask is enough to collapse same-tick doubles
+        queueMicrotask(() => {
+            applyingFilters.value = false
+        })
+    }
 }
 
-watch(
-    () => filters.value.global?.value,
-    () => {
-        applyFiltersFromPrimeVue()
-    },
-)
-
-// Debounce-free: PrimeVue column filterCallback already gates user intent
-function onColumnFilter() {
+function onFilter() {
     applyFiltersFromPrimeVue()
 }
 
 const showTrashed = ref(false)
 function toggleTrashed() {
     showTrashed.value = !showTrashed.value
-    // Resource-specific: pass as extra param via mutation of initialParams pattern
-    // Consumers should use dedicated trash API; keep minimal provide for legacy header
     refresh()
 }
 
@@ -188,7 +216,6 @@ provide('dataTableApi', {
 
 defineExpose({
     refresh,
-    /** Phase 6 owns export architecture — stub for UI continuity */
     exportData: () => {
         console.warn('[AdvancedDataTable] export is owned by Phase 6')
     },
@@ -216,6 +243,7 @@ const actions = computed(() => props.actions)
             v-model:hidden-columns="hiddenColumns"
             v-model:global-search="filters.global.value"
             @refresh="refresh"
+            @update:global-search="applyFiltersFromPrimeVue"
         />
 
         <div v-if="isError" class="p-4 text-sm text-red-600 dark:text-red-400" role="alert">
@@ -235,7 +263,7 @@ const actions = computed(() => props.actions)
             :virtual-scroller-options="virtualScroller ? { itemSize: 56 } : undefined"
             @page="onPage"
             @sort="onSortHandler"
-            @filter="onColumnFilter"
+            @filter="onFilter"
             :rowsPerPageOptions="[10, 20, 50, 100]"
             paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
             current-page-report-template="{first} - {last} of {totalRecords}"
@@ -292,12 +320,7 @@ const actions = computed(() => props.actions)
                             v-if="!col.filterType || col.filterType === 'text'"
                             v-model="filterModel.value"
                             type="text"
-                            @input="
-                                () => {
-                                    filterCallback()
-                                    onColumnFilter()
-                                }
-                            "
+                            @input="filterCallback()"
                             class="p-column-filter text-sm h-9"
                             :placeholder="col.filterPlaceholder ?? 'Search...'"
                         />
@@ -307,12 +330,7 @@ const actions = computed(() => props.actions)
                                     v-model="filterModel.value"
                                     :input-id="`${String(col.field)}-true`"
                                     :value="true"
-                                    @change="
-                                        () => {
-                                            filterCallback()
-                                            onColumnFilter()
-                                        }
-                                    "
+                                    @change="filterCallback()"
                                 />
                                 <label :for="`${String(col.field)}-true`" class="ml-2 text-sm">Yes</label>
                             </div>
@@ -321,12 +339,7 @@ const actions = computed(() => props.actions)
                                     v-model="filterModel.value"
                                     :input-id="`${String(col.field)}-false`"
                                     :value="false"
-                                    @change="
-                                        () => {
-                                            filterCallback()
-                                            onColumnFilter()
-                                        }
-                                    "
+                                    @change="filterCallback()"
                                 />
                                 <label :for="`${String(col.field)}-false`" class="ml-2 text-sm">No</label>
                             </div>
@@ -335,24 +348,14 @@ const actions = computed(() => props.actions)
                             v-else-if="col.filterType === 'number'"
                             v-model="filterModel.value"
                             class="p-column-filter"
-                            @input="
-                                () => {
-                                    filterCallback()
-                                    onColumnFilter()
-                                }
-                            "
+                            @input="filterCallback()"
                         />
                         <DatePicker
                             v-else-if="col.filterType === 'date'"
                             v-model="filterModel.value"
                             class="p-column-filter"
                             date-format="yy-mm-dd"
-                            @date-select="
-                                () => {
-                                    filterCallback()
-                                    onColumnFilter()
-                                }
-                            "
+                            @date-select="filterCallback()"
                         />
                         <Select
                             v-else-if="col.filterType === 'dropdown' || col.filterType === 'multiselect'"
@@ -363,12 +366,7 @@ const actions = computed(() => props.actions)
                             :placeholder="col.filterPlaceholder ?? 'Select...'"
                             class="p-column-filter text-sm"
                             :show-clear="true"
-                            @change="
-                                () => {
-                                    filterCallback()
-                                    onColumnFilter()
-                                }
-                            "
+                            @change="filterCallback()"
                         />
                         <span v-else class="text-xs text-gray-500">—</span>
                     </div>

@@ -288,8 +288,7 @@ const schoolBulkActions: BulkAction<School>[] = [
 
             <!-- Main data table -->
             <AdvancedDataTable endpoint="settings/schools" :columns="enhancedColumns" :bulk-actions="schoolBulkActions"
-                :initial-data="props.data" :total-records="props.totalRecords"
-                :global-filter-fields="props.globalFilterables" :actions="schoolActions" />
+                :initial-data="props.data" :actions="schoolActions" />
         </div>
     </AuthenticatedLayout>
 </template>
