@@ -57,13 +57,13 @@ class EnrollStudentRequest extends FormRequest
             'personal.last_name'     => 'required|string|max:100',
             'personal.middle_name'   => 'nullable|string|max:100',
             'personal.date_of_birth' => 'required|date|before:today',
-            'personal.gender'        => ['required', new InDynamicEnum('gender', \App\Models\Profile::class)],
+            'personal.gender'        => ['required', 'string', new InDynamicEnum('profile.gender', GetSchoolModel())],
             'personal.phone'         => 'nullable|string|max:30',
             'personal.email'         => 'nullable|email|max:191',
             'personal.nationality'   => 'nullable|string|max:100',
             'personal.state_of_origin'=> 'nullable|string|max:100',
-            'personal.religion'      => ['nullable', new InDynamicEnum('religion', \App\Models\Profile::class)],
-            'personal.blood_group'   => ['nullable', new InDynamicEnum('blood_group', \App\Models\Profile::class)],
+            'personal.religion'      => ['nullable', 'string', 'max:50'],
+            'personal.blood_group'   => ['nullable', 'string', 'max:20'],
 
             // ── Step 3: Guardians ─────────────────────────────────────────────
             'guardians'              => 'required|array|min:1',
@@ -71,7 +71,7 @@ class EnrollStudentRequest extends FormRequest
             'guardians.*.personal.last_name'  => 'required|string|max:100',
             'guardians.*.personal.phone'      => 'required|string|max:30',
             'guardians.*.personal.email'      => 'nullable|email|max:191',
-            'guardians.*.relationship'        => 'required|string|max:50',
+            'guardians.*.relationship'        => ['required', 'string', new InDynamicEnum('guardian.relationship', GetSchoolModel())],
             'guardians.*.is_primary_contact'  => 'boolean',
             'guardians.*.can_pickup'          => 'boolean',
             'guardians.*.can_access_portal'   => 'boolean',
@@ -80,7 +80,7 @@ class EnrollStudentRequest extends FormRequest
 
             // ── Step 4: Admission Details ─────────────────────────────────────
             'enrollment.admission_number' => 'nullable|string|max:50|unique:students,admission_number,NULL,id,school_id,' . $this->user()?->school_id,
-            'enrollment.admission_type'   => ['required', new InDynamicEnum('admission_type', \App\Models\Student\Student::class)],
+            'enrollment.admission_type'   => ['required', 'string', 'max:50'],
             'enrollment.notes'            => 'nullable|string|max:1000',
 
             // ── Step 5: Portal Access (Optional) ──────────────────────────────
