@@ -2,8 +2,9 @@
   resources/js/Pages/Admin/Users/components/UsersDataTable.vue
 
   Main reusable DataTable for the Admin → Users index page.
-  Restored from master; Phase 5: removed total-records, global-filter-fields;
-  :row-actions → :actions.
+  Phase 5: ADT owns selection/pagination/loading internally.
+  Unsupported external props removed (v-model:selected-rows, selection-mode, loading, rows, paginator).
+  Legacy totalRecords / globalFilterFields dropped from page contract.
 -->
 
 <script setup lang="ts">
@@ -23,8 +24,6 @@ import axios from 'axios'
 const props = defineProps<{
     columns: ColumnDefinition<any>[]
     users: any[]
-    totalRecords?: number
-    globalFilterFields?: string[]
 }>()
 
 const toast = useToast()
@@ -287,10 +286,13 @@ const handleBulkDelete = async (selected: any[]) => {
 
 <template>
     <div class="relative min-h-[400px]">
-        <AdvancedDataTable endpoint="/users" :columns="enhancedColumns" :initial-data="props.users" :initial-params="{ with: 'profiles,roles,schools' }"
-            :actions="rowActions" :bulk-actions="bulkActions" v-model:selected-rows="selectedUsers"
-            selection-mode="multiple" :loading="loading" lazy paginator
-            :rows="20" responsive-layout="scroll" />
+        <AdvancedDataTable
+            endpoint="/users"
+            :columns="enhancedColumns"
+            :initial-params="{ with: 'profiles,roles,schools' }"
+            :actions="rowActions"
+            :bulk-actions="bulkActions"
+        />
 
         <transition name="fade">
             <div v-if="loading"
