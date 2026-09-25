@@ -10,8 +10,13 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Generic DataTable query processor.
+ *
  * CRITICAL: Operates ONLY on an already-authorized Eloquent query.
  * Must never apply tenant/school/section/policy scopes itself.
+ *
+ * Pipeline:
+ *   request → canonical DataTableQuery → capability validation
+ *   → global search → Purity filter/sort → PK tie-breaker → pagination → response
  */
 final class DataTableQueryEngine
 {
@@ -46,8 +51,9 @@ final class DataTableQueryEngine
         $this->validateSorts($dtQuery->sorts, $capabilities);
 
         $this->applyGlobalSearch($query, $model, $dtQuery->search, $searchFields, $capabilities);
-        $this->applyFilters($query, $model, $dtQuery->filters, $capabilities);
-        $this->applySorts($query, $model, $dtQuery->sorts, $capabilities);
+        $this->applyFiltersViaPurity($query, $model, $dtQuery->filters, $capabilities);
+        $this->applySortsViaPurity($query, $model, $dtQuery->sorts, $capabilities);
+        $this->applyPrimaryKeyTieBreaker($query, $model, $dtQuery->sorts);
 
         $paginator = $query->paginate($dtQuery->perPage, ['*'], 'page', $dtQuery->page);
 
@@ -58,22 +64,19 @@ final class DataTableQueryEngine
             'lastPage' => $paginator->lastPage(),
         ];
 
-        // Canonical response + legacy top-level keys for in-progress frontend migration
         return [
             'data' => $paginator->items(),
             'columns' => $columns,
             'meta' => $meta,
-            // Legacy (to be removed once all consumers use meta)
             'totalRecords' => $meta['total'],
             'currentPage' => $meta['currentPage'],
             'lastPage' => $meta['lastPage'],
             'perPage' => $meta['perPage'],
+            'globalFilterables' => $searchFields,
         ];
     }
 
     /**
-     * Apply search/filter/sort without pagination (export / query selection).
-     *
      * @param  array<string, mixed>  $extraFields
      */
     public function applyQuerySemantics(Builder $query, Model $model, DataTableQuery $dtQuery, array $extraFields = []): Builder
@@ -86,8 +89,9 @@ final class DataTableQueryEngine
         $this->validateSorts($dtQuery->sorts, $capabilities);
 
         $this->applyGlobalSearch($query, $model, $dtQuery->search, $searchFields, $capabilities);
-        $this->applyFilters($query, $model, $dtQuery->filters, $capabilities);
-        $this->applySorts($query, $model, $dtQuery->sorts, $capabilities);
+        $this->applyFiltersViaPurity($query, $model, $dtQuery->filters, $capabilities);
+        $this->applySortsViaPurity($query, $model, $dtQuery->sorts, $capabilities);
+        $this->applyPrimaryKeyTieBreaker($query, $model, $dtQuery->sorts);
 
         return $query;
     }
@@ -152,16 +156,23 @@ final class DataTableQueryEngine
     }
 
     /** @param list<string> $searchFields */
-    private function applyGlobalSearch(Builder $query, Model $model, ?string $search, array $searchFields, DataTableCapabilityMap $capabilities): void
-    {
+    private function applyGlobalSearch(
+        Builder $query,
+        Model $model,
+        ?string $search,
+        array $searchFields,
+        DataTableCapabilityMap $capabilities,
+    ): void {
         if ($search === null || $search === '' || $searchFields === []) {
             return;
         }
+
         $query->where(function (Builder $q) use ($model, $search, $searchFields, $capabilities) {
             foreach ($searchFields as $field) {
                 $col = $capabilities->find($field);
                 $relation = $col['relation'] ?? null;
                 $relatedField = $col['relatedField'] ?? null;
+
                 if ($relation && $relatedField && method_exists($model, $relation)) {
                     $q->orWhereHas($relation, function (Builder $sub) use ($relatedField, $search) {
                         $sub->where($relatedField, 'like', "%{$search}%");
@@ -182,89 +193,162 @@ final class DataTableQueryEngine
         });
     }
 
-    /** @param list<array{field: string, operator: string, value: mixed}> $filters */
-    private function applyFilters(Builder $query, Model $model, array $filters, DataTableCapabilityMap $capabilities): void
-    {
+    /**
+     * @param  list<array{field: string, operator: string, value: mixed}>  $filters
+     */
+    private function applyFiltersViaPurity(
+        Builder $query,
+        Model $model,
+        array $filters,
+        DataTableCapabilityMap $capabilities,
+    ): void {
         if ($filters === []) {
             return;
         }
-        // Explicit Eloquent (flat AND). Purity remains available when request already carries filters.
-        foreach ($filters as $filter) {
-            $this->applyEloquentFilter($query, $model, $filter, $capabilities);
+
+        if (! $this->modelUsesFilterable($model)) {
+            throw DataTableQueryException::malformed(
+                'Model ['.get_class($model).'] must use Abbasudo\\Purity\\Traits\\Filterable for DataTable filtering.'
+            );
+        }
+
+        $purityParams = $this->toPurityFilterParams($filters, $capabilities);
+
+        try {
+            $query->filter($purityParams);
+        } catch (\Throwable $e) {
+            Log::warning('DataTable Purity filter failed', [
+                'model' => get_class($model),
+                'message' => $e->getMessage(),
+            ]);
+            throw DataTableQueryException::malformed('Filter execution failed: '.$e->getMessage());
         }
     }
 
-    /** @param array{field: string, operator: string, value: mixed} $filter */
-    private function applyEloquentFilter(Builder $query, Model $model, array $filter, DataTableCapabilityMap $capabilities): void
-    {
-        $field = $filter['field'];
-        $operator = $filter['operator'];
-        $value = $filter['value'];
-        $col = $capabilities->find($field);
-        $relation = $col['relation'] ?? null;
-        $relatedField = $col['relatedField'] ?? null;
-
-        $apply = function (Builder $q, string $column) use ($operator, $value) {
-            match ($operator) {
-                DataTableOperators::EQUALS => $q->where($column, '=', $value),
-                DataTableOperators::NOT_EQUALS => $q->where($column, '!=', $value),
-                DataTableOperators::CONTAINS => $q->where($column, 'like', '%'.$value.'%'),
-                DataTableOperators::NOT_CONTAINS => $q->where($column, 'not like', '%'.$value.'%'),
-                DataTableOperators::STARTS_WITH => $q->where($column, 'like', $value.'%'),
-                DataTableOperators::ENDS_WITH => $q->where($column, 'like', '%'.$value),
-                DataTableOperators::LESS_THAN => $q->where($column, '<', $value),
-                DataTableOperators::LESS_THAN_OR_EQUAL => $q->where($column, '<=', $value),
-                DataTableOperators::GREATER_THAN => $q->where($column, '>', $value),
-                DataTableOperators::GREATER_THAN_OR_EQUAL => $q->where($column, '>=', $value),
-                DataTableOperators::IN => $q->whereIn($column, is_array($value) ? $value : [$value]),
-                DataTableOperators::NOT_IN => $q->whereNotIn($column, is_array($value) ? $value : [$value]),
-                DataTableOperators::BETWEEN => $q->whereBetween($column, $value),
-                DataTableOperators::NOT_BETWEEN => $q->whereNotBetween($column, $value),
-                DataTableOperators::IS_NULL => $q->whereNull($column),
-                DataTableOperators::IS_NOT_NULL => $q->whereNotNull($column),
-                default => null,
-            };
-        };
-
-        if ($relation && $relatedField && method_exists($model, $relation)) {
-            $query->whereHas($relation, function (Builder $sub) use ($apply, $relatedField) {
-                $apply($sub, $relatedField);
-            });
-        } elseif (! str_contains($field, '.')) {
-            $apply($query, $field);
-        } else {
-            $parts = explode('.', $field);
-            $leaf = array_pop($parts);
-            $relationPath = implode('.', $parts);
-            if ($relationPath !== '' && $leaf !== null) {
-                $query->whereHas($relationPath, function (Builder $sub) use ($apply, $leaf) {
-                    $apply($sub, $leaf);
-                });
-            }
+    /**
+     * @param  list<array{field: string, direction: string}>  $sorts
+     */
+    private function applySortsViaPurity(
+        Builder $query,
+        Model $model,
+        array $sorts,
+        DataTableCapabilityMap $capabilities,
+    ): void {
+        if ($sorts === []) {
+            return;
         }
-    }
 
-    /** @param list<array{field: string, direction: string}> $sorts */
-    private function applySorts(Builder $query, Model $model, array $sorts, DataTableCapabilityMap $capabilities): void
-    {
-        $applied = [];
+        if (! $this->modelUsesSortable($model)) {
+            throw DataTableQueryException::malformed(
+                'Model ['.get_class($model).'] must use Abbasudo\\Purity\\Traits\\Sortable for DataTable sorting.'
+            );
+        }
+
+        $puritySorts = [];
         foreach ($sorts as $sort) {
-            $field = $sort['field'];
+            $path = $this->puritySortPath($sort['field'], $capabilities);
             $direction = $sort['direction'] === 'desc' ? 'desc' : 'asc';
-            $col = $capabilities->find($field);
-            if (! empty($col['relation'])) {
-                if (! str_contains($field, '.')) {
-                    $query->orderBy($field, $direction);
-                    $applied[] = $field;
-                }
-                continue;
-            }
-            $query->orderBy($field, $direction);
-            $applied[] = $field;
+            $puritySorts[] = $path.':'.$direction;
         }
+
+        try {
+            $query->sort($puritySorts);
+        } catch (\Throwable $e) {
+            Log::warning('DataTable Purity sort failed', [
+                'model' => get_class($model),
+                'message' => $e->getMessage(),
+            ]);
+            throw DataTableQueryException::malformed('Sort execution failed: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * @param  list<array{field: string, direction: string}>  $sorts
+     */
+    private function applyPrimaryKeyTieBreaker(Builder $query, Model $model, array $sorts): void
+    {
         $key = $model->getKeyName();
-        if ($key && ! in_array($key, $applied, true)) {
-            $query->orderBy($model->getTable().'.'.$key, 'asc');
+        if (! $key) {
+            return;
         }
+
+        $applied = array_map(fn ($s) => $s['field'], $sorts);
+        if (in_array($key, $applied, true)) {
+            return;
+        }
+
+        $query->orderBy($model->getTable().'.'.$key, 'asc');
+    }
+
+    /**
+     * @param  list<array{field: string, operator: string, value: mixed}>  $filters
+     * @return array<string, mixed>
+     */
+    private function toPurityFilterParams(array $filters, DataTableCapabilityMap $capabilities): array
+    {
+        $params = [];
+        $opMap = DataTableOperators::toPurity();
+
+        foreach ($filters as $filter) {
+            $purityOp = $opMap[$filter['operator']] ?? null;
+            if ($purityOp === null) {
+                throw DataTableQueryException::unsupportedOperator($filter['field'], $filter['operator']);
+            }
+
+            $segments = $this->purityFieldSegments($filter['field'], $capabilities);
+            $value = DataTableOperators::isNullary($filter['operator'])
+                ? true
+                : $filter['value'];
+
+            $leaf = array_pop($segments);
+            $node = [$purityOp => $value];
+            $node = [$leaf => $node];
+            while ($segments !== []) {
+                $seg = array_pop($segments);
+                $node = [$seg => $node];
+            }
+
+            $params = array_replace_recursive($params, $node);
+        }
+
+        return $params;
+    }
+
+    private function puritySortPath(string $field, DataTableCapabilityMap $capabilities): string
+    {
+        return implode('.', $this->purityFieldSegments($field, $capabilities));
+    }
+
+    /** @return list<string> */
+    private function purityFieldSegments(string $field, DataTableCapabilityMap $capabilities): array
+    {
+        $col = $capabilities->find($field);
+        $relation = is_array($col) ? ($col['relation'] ?? null) : null;
+        $relatedField = is_array($col) ? ($col['relatedField'] ?? null) : null;
+
+        if (is_string($relation) && $relation !== '' && is_string($relatedField) && $relatedField !== '') {
+            $parts = array_values(array_filter(explode('.', $relation), fn ($p) => $p !== ''));
+            $parts[] = $relatedField;
+
+            return $parts;
+        }
+
+        if (str_contains($field, '.')) {
+            return array_values(array_filter(explode('.', $field), fn ($p) => $p !== ''));
+        }
+
+        return [$field];
+    }
+
+    private function modelUsesFilterable(Model $model): bool
+    {
+        return method_exists($model, 'scopeFilter')
+            || in_array(\Abbasudo\Purity\Traits\Filterable::class, class_uses_recursive($model), true);
+    }
+
+    private function modelUsesSortable(Model $model): bool
+    {
+        return method_exists($model, 'scopeSort')
+            || in_array(\Abbasudo\Purity\Traits\Sortable::class, class_uses_recursive($model), true);
     }
 }
