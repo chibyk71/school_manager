@@ -158,10 +158,19 @@ final class ColumnDefinitionHelper
                 continue;
             }
 
-            // Detect relation fields (dot notation)
-            $isRelation = str_contains($field, '.');
-            $relationPath = $isRelation ? implode('.', explode('.', $field, -1)) : null;
-            $relatedField = $isRelation ? substr(strrchr($field, '.'), 1) : null;
+            // Detect relation fields: explicit config wins, else dot notation
+            $relationPath = null;
+            $relatedField = null;
+            if (! empty($userConfig['relation']) && is_string($userConfig['relation'])) {
+                $relationPath = $userConfig['relation'];
+                $relatedField = is_string($userConfig['relatedField'] ?? null)
+                    ? $userConfig['relatedField']
+                    : (str_contains($field, '.') ? substr(strrchr($field, '.'), 1) : null);
+            } elseif (str_contains($field, '.')) {
+                $relationPath = implode('.', explode('.', $field, -1));
+                $relatedField = substr(strrchr($field, '.'), 1);
+            }
+            $isRelation = $relationPath !== null && $relationPath !== '';
 
             // Check if field is configurable (HasConfig)
             $isConfigurable = isset($configurableOptions[$field]);
@@ -178,11 +187,25 @@ final class ColumnDefinitionHelper
                 $filterOptions = self::resolveFilterOptions($model, $field, $filterOptions);
             }
 
-            // Capability flags (independent of presentation visibility)
-            $filterable = $userConfig['filterable'] ?? true;
-            $sortable = $userConfig['sortable'] ?? ! $isRelation;
-            $searchable = $userConfig['searchable'] ?? ($filterable && $filterType === 'text');
-            $exportable = $userConfig['exportable'] ?? true;
+            // Capability flags (independent of presentation visibility).
+            // Real DB columns and relation fields get sensible query defaults.
+            // Presentation-only virtual/extra fields (not in schema, no relation)
+            // default to non-queryable unless explicitly opted in.
+            $inSchema = in_array($field, $tableColumns, true);
+            $isPresentationOnlyVirtual = ! $inSchema && ! $isRelation;
+
+            $filterable = array_key_exists('filterable', $userConfig)
+                ? (bool) $userConfig['filterable']
+                : ! $isPresentationOnlyVirtual;
+            $sortable = array_key_exists('sortable', $userConfig)
+                ? (bool) $userConfig['sortable']
+                : ($isPresentationOnlyVirtual ? false : ! $isRelation);
+            $searchable = array_key_exists('searchable', $userConfig)
+                ? (bool) $userConfig['searchable']
+                : ($filterable && $filterType === 'text');
+            $exportable = array_key_exists('exportable', $userConfig)
+                ? (bool) $userConfig['exportable']
+                : true;
 
             // Build and add column definition
             $columns[] = [
