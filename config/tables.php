@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'default_per_page' => env('TABLES_DEFAULT_PER_PAGE', 20),
+    'default_per_page' => env('TABLES_DEFAULT_PER_PAGE', 50),
     'max_per_page' => env('TABLES_MAX_PER_PAGE', 100),
     'prefetch_pages' => env('TABLES_PREFETCH_PAGES', 2),
     'column_definition_cache_hours' => 1,
