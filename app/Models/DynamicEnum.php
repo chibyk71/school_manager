@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use Abbasudo\Purity\Traits\Filterable;
+use Abbasudo\Purity\Traits\Sortable;
+use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,11 +20,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * presentation of the definition itself. Option ownership is on DynamicEnumOption.
  *
  * Identity (immutable): id, key (and school_id when set for presentation rows).
+ *
+ * Catalogue listing uses HasTableQuery (tenant definitions only: school_id IS NULL).
  */
 class DynamicEnum extends Model
 {
     use HasFactory;
     use HasUuids;
+    use HasTableQuery;
+    use Filterable;
+    use Sortable;
 
     protected $table = 'dynamic_enums';
 
@@ -30,6 +38,37 @@ class DynamicEnum extends Model
         'key',
         'label',
         'description',
+    ];
+
+    /**
+     * Fields included in the global free-text search box in AdvancedDataTable.
+     *
+     * @var array<string>
+     */
+    protected array $globalFilterFields = [
+        'key',
+        'label',
+        'description',
+    ];
+
+    /**
+     * Columns that are NEVER sent to the frontend in DataTable responses.
+     *
+     * @var array<string>
+     */
+    protected array $hiddenTableColumns = [
+        'school_id',
+    ];
+
+    /**
+     * Columns sent to the frontend but hidden by default.
+     *
+     * @var array<string>
+     */
+    protected array $defaultHiddenColumns = [
+        'id',
+        'created_at',
+        'updated_at',
     ];
 
     protected static function booted(): void

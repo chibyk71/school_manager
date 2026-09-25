@@ -20,12 +20,13 @@ use App\Models\DynamicEnum;
 use App\Models\DynamicEnumOption;
 use App\Services\DynamicEnum\DynamicEnumAdministrationService;
 use App\Services\DynamicEnum\DynamicEnumNotConfiguredException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
-use Inertia\Response;
+use Inertia\Response as InertiaResponse;
 
 class DynamicEnumsController extends Controller
 {
@@ -34,25 +35,54 @@ class DynamicEnumsController extends Controller
     ) {
     }
 
-    public function index(Request $request): Response
+    /**
+     * Definition catalogue (tenant definitions only: school_id IS NULL).
+     *
+     * Inertia page load returns initialData + columns for AdvancedDataTable.
+     * Axios refetch (wantsJson) returns the same tableQuery payload as JSON.
+     */
+    public function index(Request $request): InertiaResponse|JsonResponse
     {
         Gate::authorize('viewAny', DynamicEnum::class);
 
-        $definitions = $this->admin->catalogue()->map(fn (DynamicEnum $d) => [
-            'id' => $d->id,
-            'key' => $d->key,
-            'label' => $d->label,
-            'description' => $d->description,
-        ]);
+        $result = DynamicEnum::query()
+            ->whereNull('school_id')
+            ->tableQuery($request, [
+                'key' => [
+                    'header' => 'Key',
+                    'sortable' => true,
+                    'filterable' => true,
+                    'filterType' => 'text',
+                ],
+                'label' => [
+                    'header' => 'Label',
+                    'sortable' => true,
+                    'filterable' => true,
+                    'filterType' => 'text',
+                ],
+                'description' => [
+                    'header' => 'Description',
+                    'sortable' => false,
+                    'filterable' => true,
+                    'filterType' => 'text',
+                ],
+            ]);
+
+        if ($request->wantsJson()) {
+            return response()->json($result);
+        }
 
         return Inertia::render('Settings/System/DynamicEnums/Index', [
-            'definitions' => $definitions,
+            'initialData' => $result['data'],
+            'totalRecords' => $result['totalRecords'],
+            'columns' => $result['columns'],
+            'globalFilterables' => $result['globalFilterables'] ?? [],
             'canManage' => Gate::allows('manage', DynamicEnum::class),
             'canManageGlobals' => Gate::allows('manageGlobals', DynamicEnum::class),
         ]);
     }
 
-    public function show(string $key): Response
+    public function show(string $key): InertiaResponse
     {
         Gate::authorize('view', DynamicEnum::class);
 
@@ -100,119 +130,140 @@ class DynamicEnumsController extends Controller
         } catch (DynamicEnumNotConfiguredException $e) {
             abort(404, $e->getMessage());
         } catch (ValidationException $e) {
-            return back()->withErrors($e->errors());
+            throw $e;
         }
 
-        return back()->with('success', 'Definition presentation updated.');
+        return back();
     }
 
     public function storeOption(StoreOptionRequest $request, string $key): RedirectResponse
     {
-        $data = $request->validated();
         $school = GetSchoolModel();
-        $mode = $data['mode'] ?? 'option';
-        $attributes = array_intersect_key($data, array_flip(['sort_order', 'color', 'icon', 'is_active', 'is_required']));
 
         try {
             if ($request->boolean('tenant') || $school === null) {
                 Gate::authorize('manageGlobals', DynamicEnum::class);
-                $this->admin->createTenantOption($key, $data['value'], $data['label'], $attributes);
+                $this->admin->createTenantOption($key, $request->validated());
             } else {
                 Gate::authorize('manage', DynamicEnum::class);
-                unset($attributes['is_required']);
-                if ($mode === 'override') {
-                    $this->admin->createSchoolOverride($school, $key, $data['value'], $data['label'], $attributes);
-                } else {
-                    $this->admin->createSchoolOption($school, $key, $data['value'], $data['label'], $attributes);
-                }
+                $this->admin->createSchoolOption($school, $key, $request->validated());
             }
         } catch (DynamicEnumNotConfiguredException $e) {
             abort(404, $e->getMessage());
+        } catch (ValidationException $e) {
+            throw $e;
         }
 
-        return back()->with('success', 'Option created.');
+        return back();
     }
 
     public function updateOption(UpdateOptionPresentationRequest $request, string $key, DynamicEnumOption $option): RedirectResponse
     {
         $school = GetSchoolModel();
 
-        if ($option->isTenantOption()) {
-            Gate::authorize('manageGlobals', DynamicEnum::class);
-            $this->admin->updateTenantOption($key, $option, $request->validated());
-        } else {
-            Gate::authorize('manage', DynamicEnum::class);
-            if ($school === null || $option->school_id !== $school->id) {
-                abort(403, 'Cannot modify another school\'s option.');
+        try {
+            if ($option->school_id === null) {
+                Gate::authorize('manageGlobals', DynamicEnum::class);
+                $this->admin->updateTenantOptionPresentation($key, $option, $request->validated());
+            } else {
+                Gate::authorize('manage', DynamicEnum::class);
+                $this->admin->updateSchoolOptionPresentation($school, $key, $option, $request->validated());
             }
-            $this->admin->updateSchoolOption($school, $key, $option, $request->validated());
+        } catch (DynamicEnumNotConfiguredException $e) {
+            abort(404, $e->getMessage());
+        } catch (ValidationException $e) {
+            throw $e;
         }
 
-        return back()->with('success', 'Option updated.');
+        return back();
     }
 
     public function activateOption(string $key, DynamicEnumOption $option): RedirectResponse
     {
         $school = GetSchoolModel();
 
-        if ($option->isTenantOption()) {
-            Gate::authorize('manageGlobals', DynamicEnum::class);
-            $this->admin->activateTenantOption($key, $option);
-        } else {
-            Gate::authorize('manage', DynamicEnum::class);
-            if ($school === null || $option->school_id !== $school->id) {
-                abort(403);
+        try {
+            if ($option->school_id === null) {
+                Gate::authorize('manageGlobals', DynamicEnum::class);
+                $this->admin->activateTenantOption($key, $option);
+            } else {
+                Gate::authorize('manage', DynamicEnum::class);
+                $this->admin->activateSchoolOption($school, $key, $option);
             }
-            $this->admin->activateSchoolOption($school, $key, $option);
+        } catch (DynamicEnumNotConfiguredException $e) {
+            abort(404, $e->getMessage());
+        } catch (ValidationException $e) {
+            throw $e;
         }
 
-        return back()->with('success', 'Option activated.');
+        return back();
     }
 
     public function deactivateOption(string $key, DynamicEnumOption $option): RedirectResponse
     {
         $school = GetSchoolModel();
 
-        if ($option->isTenantOption()) {
-            Gate::authorize('manageGlobals', DynamicEnum::class);
-            $this->admin->deactivateTenantOption($key, $option);
-        } else {
-            Gate::authorize('manage', DynamicEnum::class);
-            if ($school === null || $option->school_id !== $school->id) {
-                abort(403);
+        try {
+            if ($option->school_id === null) {
+                Gate::authorize('manageGlobals', DynamicEnum::class);
+                $this->admin->deactivateTenantOption($key, $option);
+            } else {
+                Gate::authorize('manage', DynamicEnum::class);
+                $this->admin->deactivateSchoolOption($school, $key, $option);
             }
-            $this->admin->deactivateSchoolOption($school, $key, $option);
+        } catch (DynamicEnumNotConfiguredException $e) {
+            abort(404, $e->getMessage());
+        } catch (ValidationException $e) {
+            throw $e;
         }
 
-        return back()->with('success', 'Option deactivated.');
+        return back();
     }
 
     public function makeRequired(string $key, DynamicEnumOption $option): RedirectResponse
     {
         Gate::authorize('manageGlobals', DynamicEnum::class);
-        $this->admin->makeTenantOptionRequired($key, $option);
 
-        return back()->with('success', 'Option marked required.');
+        try {
+            $this->admin->makeOptionRequired($key, $option);
+        } catch (DynamicEnumNotConfiguredException $e) {
+            abort(404, $e->getMessage());
+        } catch (ValidationException $e) {
+            throw $e;
+        }
+
+        return back();
     }
 
     public function removeRequired(string $key, DynamicEnumOption $option): RedirectResponse
     {
         Gate::authorize('manageGlobals', DynamicEnum::class);
-        $this->admin->removeTenantOptionRequired($key, $option);
 
-        return back()->with('success', 'Option requiredness removed.');
+        try {
+            $this->admin->removeOptionRequired($key, $option);
+        } catch (DynamicEnumNotConfiguredException $e) {
+            abort(404, $e->getMessage());
+        } catch (ValidationException $e) {
+            throw $e;
+        }
+
+        return back();
     }
 
     public function resetOverride(string $key, DynamicEnumOption $option): RedirectResponse
     {
-        Gate::authorize('manage', DynamicEnum::class);
         $school = GetSchoolModel();
-        if ($school === null || $option->school_id !== $school->id) {
-            abort(403);
-        }
-        $this->admin->removeSchoolOverride($school, $key, $option);
+        Gate::authorize('manage', DynamicEnum::class);
 
-        return back()->with('success', 'Override reset; tenant configuration is effective again.');
+        try {
+            $this->admin->resetSchoolOverride($school, $key, $option);
+        } catch (DynamicEnumNotConfiguredException $e) {
+            abort(404, $e->getMessage());
+        } catch (ValidationException $e) {
+            throw $e;
+        }
+
+        return back();
     }
 
     public function destroyOption(string $key, DynamicEnumOption $option): RedirectResponse
@@ -220,20 +271,19 @@ class DynamicEnumsController extends Controller
         $school = GetSchoolModel();
 
         try {
-            if ($option->isTenantOption()) {
+            if ($option->school_id === null) {
                 Gate::authorize('manageGlobals', DynamicEnum::class);
                 $this->admin->deleteTenantOption($key, $option);
             } else {
                 Gate::authorize('manage', DynamicEnum::class);
-                if ($school === null || $option->school_id !== $school->id) {
-                    abort(403);
-                }
                 $this->admin->deleteSchoolOption($school, $key, $option);
             }
+        } catch (DynamicEnumNotConfiguredException $e) {
+            abort(404, $e->getMessage());
         } catch (ValidationException $e) {
-            return back()->withErrors($e->errors());
+            throw $e;
         }
 
-        return back()->with('success', 'Option permanently deleted.');
+        return back();
     }
 }
