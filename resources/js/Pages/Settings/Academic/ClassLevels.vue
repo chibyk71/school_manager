@@ -374,7 +374,7 @@ const openFormModal = (classLevel: ClassLevel) => {
                     :actions="actions"
                     :bulk-actions="bulkActions"
                     :initial-params="initialParams"
-                    :initial-data="classLevels.data"
+                    
                 />
             </template>
         </SettingsLayout>

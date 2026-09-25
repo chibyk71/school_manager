@@ -11,8 +11,12 @@ import { usePopup } from '@/helpers'
 const props = defineProps<{
     students: any
     columns: ColumnDefinition<any>[]
-    totalRecords: number
-    globalFilterFields: string[]
+    meta?: {
+        currentPage: number
+        perPage: number
+        total: number
+        lastPage: number
+    }
     can: {
         create: boolean
         edit: boolean
@@ -20,6 +24,12 @@ const props = defineProps<{
         export: boolean
     }
 }>()
+
+const initialTableResponse = computed(() => {
+    const data = Array.isArray(props.students) ? props.students : (props.students?.data ?? [])
+    if (!props.meta || !props.columns?.length) return null
+    return { data, columns: props.columns as any, meta: props.meta }
+})
 
 const viewMode = ref<'table' | 'grid'>('table')
 const { toggle: exportMenu } = usePopup('exportMenu')
@@ -69,7 +79,7 @@ const { can } = props
         <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div class="flex items-center gap-3">
                 <h2 class="text-xl font-semibold">Students</h2>
-                <span class="text-sm text-gray-500">({{ totalRecords }} total)</span>
+                <span class="text-sm text-gray-500">({{ props.meta?.total ?? 0 }} total)</span>
             </div>
         </div>
 
@@ -80,7 +90,7 @@ const { can } = props
             <AdvancedDataTable
                 endpoint="/student"
                 :columns="enhancedColumns"
-                :initial-data="studentsArray"
+                :initial-response="initialTableResponse"
                 :initial-params="{ with: 'user,schoolSection,classSections' }"
                 :bulk-actions="[
                     {

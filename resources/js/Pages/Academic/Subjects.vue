@@ -16,6 +16,7 @@ const tableRef = ref()
 const showTrashed = ref(false)
 
 const enhancedColumns = computed(() => props.columns ?? [])
+const initialData = computed(() => props.initialData ?? [])
 
 const rowActions = computed<TableAction<any>[]>(() => [
     {

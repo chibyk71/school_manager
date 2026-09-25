@@ -25,11 +25,22 @@ const { restoreResource } = useRestoreResource()
 const props = defineProps<{
     data: any
     roles: Array<{ id: string; display_name: string }>
-    totalRecords: number
     columns: ColumnDefinition<any>[]
-    globalFilterables: string[]
+    meta?: {
+        currentPage: number
+        perPage: number
+        total: number
+        lastPage: number
+    }
     stats?: { total?: number; active?: number; trashed?: number }
 }>()
+
+const initialTableResponse = computed(() => {
+    const data = Array.isArray(props.data) ? props.data : (props.data?.data ?? [])
+    const columns = props.columns ?? []
+    if (!columns.length || !props.meta) return null
+    return { data, columns: columns as any, meta: props.meta }
+})
 
 const showTrashed = ref(false)
 
@@ -133,7 +144,7 @@ const openCreate = () => modals.open('department', { mode: 'create', roles: prop
             <Card>
                 <template #content>
                     <div class="text-sm text-gray-500">Total</div>
-                    <div class="text-2xl font-semibold">{{ stats.total ?? totalRecords ?? 0 }}</div>
+                    <div class="text-2xl font-semibold">{{ stats.total ?? props.meta?.total ?? 0 }}</div>
                 </template>
             </Card>
             <Card>
@@ -152,7 +163,7 @@ const openCreate = () => modals.open('department', { mode: 'create', roles: prop
 
         <AdvancedDataTable
             :endpoint="route('departments.index')"
-            :initial-data="departmentsArray"
+            :initial-response="initialTableResponse"
             :columns="enhancedColumns"
             :bulk-actions="bulkActions"
             @bulk-action="handleBulkAction"

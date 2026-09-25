@@ -25,6 +25,16 @@ import type { BulkAction, TableAction } from '@/types/datatables'
 
 const props = defineProps<SchoolSectionsPageProps>()
 
+const initialTableResponse = computed(() => {
+    const data = props.data ?? props.initialData ?? []
+    const columns = props.columns ?? []
+    if (!columns.length) return null
+    if (props.meta) {
+        return { data, columns: columns as any, meta: props.meta }
+    }
+    return null
+})
+
 const modal = useModal()
 const toast = useToast()
 const confirm = useConfirm()
@@ -284,7 +294,7 @@ function bulkToggle(ids: string[], isActive: boolean): void {
         <AdvancedDataTable
             ref="tableRef"
             :endpoint="route('settings.school.sections.index')"
-            :initial-data="props.initialData"
+            :initial-response="initialTableResponse"
             :columns="enhancedColumns"
             :actions="rowActions"
             :bulk-actions="bulkActions"

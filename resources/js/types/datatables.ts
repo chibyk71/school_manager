@@ -324,12 +324,27 @@ export interface TableAction<T = any> {
     };
 }
 
+/**
+ * Inertia page props from DataTableQueryEngine / HasTableQuery.
+ * Canonical shape is data + columns + meta.
+ * Flat pagination fields remain optional for gradual consumer migration.
+ * globalFilterables removed — search capability is columns[].searchable.
+ */
 export interface TableQueryProps<T = unknown> {
     data: T[];
-    totalRecords: number;
-    currentPage: number;
-    lastPage: number;
-    perPage: number;
     columns: ColumnDefinition<T>[];
-    globalFilterables: string[]; // ← Added for frontend
+    meta?: {
+        currentPage: number;
+        perPage: number;
+        total: number;
+        lastPage: number;
+    };
+    /** @deprecated Prefer meta.total */
+    totalRecords?: number;
+    /** @deprecated Prefer meta.currentPage */
+    currentPage?: number;
+    /** @deprecated Prefer meta.lastPage */
+    lastPage?: number;
+    /** @deprecated Prefer meta.perPage */
+    perPage?: number;
 }

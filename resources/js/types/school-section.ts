@@ -250,10 +250,17 @@ export interface BulkSectionResponse {
  * Columns come from HasTableQuery — same shape as other DataTable pages.
  */
 export interface SchoolSectionsPageProps {
-    initialData: SchoolSection[];
-    totalRecords: number;
+    data: SchoolSection[];
     columns: ColumnDefinition<SchoolSection>[];
-    globalFilterables: string[];
+    meta?: {
+        currentPage: number;
+        perPage: number;
+        total: number;
+        lastPage: number;
+    };
+    /** @deprecated Prefer data + meta — kept for transitional reloads */
+    initialData?: SchoolSection[];
+    totalRecords?: number;
 }
 
 /**

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { useModal } from '@/composables/useModal'
@@ -22,6 +22,32 @@ const props = defineProps<{
     schoolSections: { id: number; name: string }[]
     crumbs: Array<{ label: string }>
 }>()
+
+const initialTableResponse = computed(() => {
+    const g = props.grades
+    if (!g?.columns?.length) return null
+    if (g.meta) {
+        return { data: g.data ?? [], columns: g.columns as any, meta: g.meta }
+    }
+    if (
+        typeof g.totalRecords === 'number' &&
+        typeof g.currentPage === 'number' &&
+        typeof g.perPage === 'number' &&
+        typeof g.lastPage === 'number'
+    ) {
+        return {
+            data: g.data ?? [],
+            columns: g.columns as any,
+            meta: {
+                currentPage: g.currentPage,
+                perPage: g.perPage,
+                total: g.totalRecords,
+                lastPage: g.lastPage,
+            },
+        }
+    }
+    return null
+})
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -141,7 +167,7 @@ const bulkActions = ref<BulkAction<GradeListItem>[]>([
                     <AdvancedDataTable
                         :endpoint="route('grades.index')"
                         :columns="enhancedColumns"
-                        :initial-data="grades.data"
+                        :initial-response="initialTableResponse"
                         :actions="TableActions"
                         :bulk-actions="bulkActions"
                     />

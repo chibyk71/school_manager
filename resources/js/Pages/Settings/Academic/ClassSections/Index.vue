@@ -23,6 +23,16 @@ import axios from 'axios'
 
 const props = defineProps<ClassSectionsPageProps>()
 
+const initialTableResponse = computed(() => {
+    const data = props.data ?? props.initialData ?? []
+    const columns = props.columns ?? []
+    if (!columns.length) return null
+    if (props.meta) {
+        return { data, columns: columns as any, meta: props.meta }
+    }
+    return null
+})
+
 const toast = useToast()
 const modal = useModal()
 const { deleteResource } = useDeleteResource()
@@ -151,7 +161,7 @@ const bulkActions: BulkAction<ClassSection>[] = [
                 is_active: true,
             })
             toast.add({ severity: 'success', summary: 'Activated', detail: `${rows.length} section(s) activated.`, life: 3000 })
-            router.reload({ only: ['initialData', 'totalRecords'] })
+            router.reload({ only: ['data', 'meta', 'columns'] })
         },
     },
     {
@@ -166,7 +176,7 @@ const bulkActions: BulkAction<ClassSection>[] = [
                 is_active: false,
             })
             toast.add({ severity: 'success', summary: 'Deactivated', detail: `${rows.length} section(s) deactivated.`, life: 3000 })
-            router.reload({ only: ['initialData', 'totalRecords'] })
+            router.reload({ only: ['data', 'meta', 'columns'] })
         },
     },
     {
@@ -201,7 +211,7 @@ const openBulkGenerateModal = () => {
 }
 
 modal.emitter.value?.on('close', () => {
-    router.reload({ only: ['initialData', 'totalRecords'] })
+    router.reload({ only: ['data', 'meta', 'columns'] })
 })
 </script>
 
@@ -224,6 +234,12 @@ modal.emitter.value?.on('close', () => {
             onClick: openCreateModal,
         },
     ]" :can-see-trashed="true">
-        <AdvancedDataTable :endpoint="route('settings.academic.class-sections.index')" :initial-data="initialData" :columns="enhancedColumns" :actions="rowActions" :bulk-actions="bulkActions" />
+        <AdvancedDataTable
+            :endpoint="route('settings.academic.class-sections.index')"
+            :initial-response="initialTableResponse"
+            :columns="enhancedColumns"
+            :actions="rowActions"
+            :bulk-actions="bulkActions"
+        />
     </AuthenticatedLayout>
 </template>

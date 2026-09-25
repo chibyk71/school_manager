@@ -14,12 +14,17 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 
 const props = defineProps<{
     sessions: AcademicSession[]
-    totalRecords: number
-    currentPage: number
-    lastPage: number
-    perPage: number
+    totalRecords?: number
+    currentPage?: number
+    lastPage?: number
+    perPage?: number
     columns: ColumnDefinition<any>[]
-    globalFilterables: string[]
+    meta?: {
+        currentPage: number
+        perPage: number
+        total: number
+        lastPage: number
+    }
 }>()
 
 const modal = useModal()
@@ -28,16 +33,31 @@ const { deleteResource } = useDeleteResource()
 const { restoreResource } = useRestoreResource()
 
 const sessions = computed(() => props.sessions || [])
-const initialTableResponse = computed(() => ({
-    data: sessions.value,
-    columns: props.columns as any,
-    meta: {
-        currentPage: props.currentPage ?? 1,
-        perPage: props.perPage ?? 50,
-        total: props.totalRecords ?? sessions.value.length,
-        lastPage: props.lastPage ?? 1,
-    },
-}))
+const initialTableResponse = computed(() => {
+    const cols = props.columns ?? []
+    if (!cols.length) return null
+    if (props.meta) {
+        return { data: sessions.value, columns: cols as any, meta: props.meta }
+    }
+    if (
+        typeof props.totalRecords === 'number' &&
+        typeof props.currentPage === 'number' &&
+        typeof props.perPage === 'number' &&
+        typeof props.lastPage === 'number'
+    ) {
+        return {
+            data: sessions.value,
+            columns: cols as any,
+            meta: {
+                currentPage: props.currentPage,
+                perPage: props.perPage,
+                total: props.totalRecords,
+                lastPage: props.lastPage,
+            },
+        }
+    }
+    return null
+})
 const columns = computed(() => props.columns || [])
 const currentSession = computed(() => usePage().props.currentSession || null)
 

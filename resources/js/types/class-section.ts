@@ -307,11 +307,19 @@ export interface BulkSectionResponse {
  * Mirrors ClassSectionController::index() render call.
  */
 export interface ClassSectionsPageProps {
-    initialData: ClassSection[];
-    totalRecords: number;
+    data?: ClassSection[];
     columns: ColumnDefinition<ClassSection>[];
+    meta?: {
+        currentPage: number;
+        perPage: number;
+        total: number;
+        lastPage: number;
+    };
     namingPresets: NamingPresetsMap;
-    showTrashed: boolean;
+    /** @deprecated Prefer data + meta */
+    initialData?: ClassSection[];
+    totalRecords?: number;
+    showTrashed?: boolean;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

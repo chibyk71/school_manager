@@ -66,9 +66,26 @@ type School = {
 const props = defineProps<{
     data: School[];
     columns: ColumnDefinition<School>[];
-    globalFilterables: string[];
-    totalRecords: number;
+    /** Canonical pagination meta from DataTableQueryEngine (when present). */
+    meta?: {
+        currentPage: number;
+        perPage: number;
+        total: number;
+        lastPage: number;
+    };
 }>();
+
+/** Prefer engine meta; do not invent totals from data.length alone. */
+const initialTableResponse = computed(() => {
+    if (!props.meta || !Array.isArray(props.columns) || props.columns.length === 0) {
+        return null;
+    }
+    return {
+        data: props.data ?? [],
+        columns: props.columns as any,
+        meta: props.meta,
+    };
+});
 
 const toast = useToast();
 const { deleteResource } = useDeleteResource();
@@ -78,7 +95,7 @@ const { hasPermission } = usePermissions();
 
 // Partial reload after mutations
 const refreshTable = () => {
-    router.reload({ only: ['data', 'totalRecords'] });
+    router.reload({ only: ['data', 'meta', 'columns'] });
 };
 
 // Enhanced columns: logo preview + inline status toggle
@@ -279,9 +296,13 @@ const schoolBulkActions: BulkAction<School>[] = [
                 </p>
             </div>
 
-            <AdvancedDataTable endpoint="settings/schools" :columns="enhancedColumns" :bulk-actions="schoolBulkActions"
-                :initial-data="props.data"
-                :actions="schoolActions" />
+            <AdvancedDataTable
+                endpoint="settings/schools"
+                :columns="enhancedColumns"
+                :bulk-actions="schoolBulkActions"
+                :initial-response="initialTableResponse"
+                :actions="schoolActions"
+            />
         </div>
     </AuthenticatedLayout>
 </template>
