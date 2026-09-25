@@ -178,22 +178,31 @@ final class ColumnDefinitionHelper
                 $filterOptions = self::resolveFilterOptions($model, $field, $filterOptions);
             }
 
+            // Capability flags (independent of presentation visibility)
+            $filterable = $userConfig['filterable'] ?? true;
+            $sortable = $userConfig['sortable'] ?? ! $isRelation;
+            $searchable = $userConfig['searchable'] ?? ($filterable && $filterType === 'text');
+            $exportable = $userConfig['exportable'] ?? true;
+
             // Build and add column definition
             $columns[] = [
                 'field' => $field,
                 'header' => $userConfig['header'] ?? self::makeHeader($field),
 
-                'sortable' => $userConfig['sortable'] ?? !$isRelation,
-                'filterable' => $userConfig['filterable'] ?? true,
+                // Capabilities (backend-authoritative; independent of UI visibility)
+                'sortable' => $sortable,
+                'filterable' => $filterable,
+                'searchable' => $searchable,
+                'exportable' => $exportable,
 
                 'filterType' => $filterType,
                 'filterOptions' => $filterOptions,
                 'filterMatchMode' => self::resolveFilterMatchMode($filterType),
                 'filterPlaceholder' => $userConfig['filterPlaceholder'] ?? 'Search ' . self::makeHeader($field),
 
-                // Visibility: 'hidden' for initial state, 'defaultHidden' flag for frontend logic
+                // Presentation: initial visibility only — never controls query capability
                 'hidden' => $userConfig['hidden'] ?? in_array($field, $defaultHidden, true),
-                'defaultHidden' => in_array($field, $defaultHidden, true), // for frontend to know
+                'defaultHidden' => in_array($field, $defaultHidden, true),
 
                 'headerClass' => $userConfig['headerClass'] ?? 'font-medium text-left',
                 'bodyClass' => $userConfig['bodyClass'] ?? 'text-sm',
