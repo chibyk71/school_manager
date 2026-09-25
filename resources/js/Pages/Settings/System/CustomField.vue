@@ -64,12 +64,18 @@ import { useTrashedToggle } from '@/composables/useTrashedToggle'
 import { usePermissions } from '@/composables/usePermissions'
 import { useRestoreResource } from '@/composables/useRestoreResource'
 
+// ────────────────────────────────────────────────
+// Inertia page props from CustomFieldsController::index
+// ────────────────────────────────────────────────
 const props = defineProps<TableQueryProps<CustomField> & {
     fieldTypes: FieldTypeMap[]
     currentResource: string
     error?: string
 }>()
 
+// ────────────────────────────────────────────────
+// State & composables
+// ────────────────────────────────────────────────
 const toast = useToast()
 const confirm = useConfirm()
 const modal = useModal()
@@ -80,6 +86,9 @@ const {  restoreResource } = useRestoreResource()
 
 const selectedResource = ref(props.currentResource || 'student')
 
+// ────────────────────────────────────────────────
+// Table columns
+// ────────────────────────────────────────────────
 const { enhancedColumns } = useEnhancedColumns(props.columns, {
     required: {
         field: 'required',
@@ -89,6 +98,7 @@ const { enhancedColumns } = useEnhancedColumns(props.columns, {
         render: (row) => row.required ? 'Yes' : 'No'
     }
 })
+
 
 const actionsButtons: TableAction<CustomField>[] = [
     {
@@ -132,7 +142,26 @@ const bulkActions: BulkAction<CustomField>[] = [
         }
     }
 ]
+// ────────────────────────────────────────────────
+// Resource change → reload page with query param
+// ────────────────────────────────────────────────
+// watch(selectedResource, (newVal) => {
+//         router.get(
+//             route('settings.custom-fields'),
+//             { resource: newVal },
+//             {
+//                 preserveState: true,
+//                 preserveScroll: true,
+//                 onSuccess: () => {
+//                     selectedRows.value = []
+//                 }
+//             }
+//         )
+//     })
 
+// ────────────────────────────────────────────────
+// Actions
+// ────────────────────────────────────────────────
 const openCreate = () => {
     modal.open('custom-field', {
         field: null,
@@ -202,13 +231,19 @@ const handleReorder = async (event: { newIndex: number; oldIndex: number; value:
     <AuthenticatedLayout title="Custom Fields" :crumb="[{ label: 'Settings' }, { label: 'System' }, { label: 'Custom Fields' }]"
         :buttons="[{ icon: 'ti ti-refresh', severity: 'secondary', size: 'small' }, { label: 'Create New', icon: 'ti ti-plus', onClick: openCreate }]">
 
+        <!-- Error message from server -->
         <Message v-if="error" severity="error" :closable="false" class="mb-6">
             {{ props.error }}
         </Message>
 
+        <!-- TODO: Filter by resource, add a dropdown to list supported resources, to filter by -->
+
+        <!-- Main content -->
         <AdvancedDataTable :endpoint="route('settings.system.custom-fields', { resource: selectedResource })"
             :columns="enhancedColumns" :initial-data="props.data"
-            :initial-params="{ resource: selectedResource }" @row-reorder="handleReorder" data-key="id" :actions="actionsButtons" :bulk-actions="bulkActions">
+            :initial-params="{ resource: selectedResource }" @row-reorder="handleReorder" data-key="id"
+            :export-filename="`custom-fields-${selectedResource}`" :actions="actionsButtons" :bulk-actions="bulkActions">
+            <!-- Custom empty state -->
             <template #empty>
                 <div class="text-center py-16 text-gray-500 dark:text-gray-400">
                     <p class="text-lg mb-4">
@@ -222,6 +257,7 @@ const handleReorder = async (event: { newIndex: number; oldIndex: number; value:
 </template>
 
 <style scoped>
+/* Optional table styling overrides */
 :deep(.p-datatable .p-datatable-thead > tr > th) {
     @apply bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 uppercase text-xs;
 }
