@@ -3,12 +3,20 @@
 /**
  * Dynamic Enum Phase 2R — option lifecycle & sparse school overlays.
  *
- * Tenant options (school_id NULL) form the baseline.
- * School options (school_id set) are sparse overlays: overrides of tenant values
- * by canonical value, or school-only additions.
+ * Responsibilities:
+ *   - Create application definitions (key identity)
+ *   - Create tenant baseline options (school_id NULL)
+ *   - Create school overlays: school-only options OR overrides of tenant values
+ *   - Presentation updates (label, sort_order, color, icon)
+ *   - Activation / deactivation / requiredness (tenant only for required)
+ *   - Permanent deletion with dependency protection
  *
- * value is immutable after create. is_required is tenant-level only.
- * Permanent deletion is dependency-protected via DynamicEnumConsumerRegistry.
+ * School overlay rules:
+ *   - same value as tenant → school override via createSchoolOverride()
+ *   - new value → school-only option via createSchoolOption()
+ *   - is_required is tenant-level only; school rows must not set is_required true
+ *
+ * value is immutable after create. Canonicalization: trim + lowercase.
  */
 
 namespace App\Services\DynamicEnum;
@@ -36,6 +44,14 @@ class DynamicEnumLifecycleService
         if ($existing) {
             return $existing;
         }
+
+        return $this->createDefinition($key, $label, $description);
+    }
+
+    public function createDefinition(string $key, string $label, ?string $description = null): DynamicEnum
+    {
+        $this->assertNonEmptyKey($key);
+        $this->assertNonEmptyLabel($label);
 
         return DynamicEnum::query()->create([
             'school_id' => null,
@@ -127,11 +143,7 @@ class DynamicEnumLifecycleService
 
     public function makeOptionRequired(DynamicEnumOption $option): DynamicEnumOption
     {
-        if (! $option->isTenantOption()) {
-            throw ValidationException::withMessages([
-                'is_required' => 'is_required is tenant-level configuration only; school options and overrides cannot set is_required.',
-            ]);
-        }
+        $this->assertIsTenantOption($option);
 
         $option->is_required = true;
         $option->is_active = true;
@@ -140,13 +152,9 @@ class DynamicEnumLifecycleService
         return $option->refresh();
     }
 
-    public function removeOptionRequired(DynamicEnumOption $option): DynamicEnumOption
+    public function makeOptionOptional(DynamicEnumOption $option): DynamicEnumOption
     {
-        if (! $option->isTenantOption()) {
-            throw ValidationException::withMessages([
-                'is_required' => 'is_required is tenant-level configuration only.',
-            ]);
-        }
+        $this->assertIsTenantOption($option);
 
         $option->is_required = false;
         $option->save();
@@ -203,7 +211,60 @@ class DynamicEnumLifecycleService
             ->where('value', $canonical)
             ->exists();
 
-        return $this->createOptionRow($definition, $school->id, $value, $label, $attributes, allowOverride: $tenantExists);
+        if ($tenantExists) {
+            throw ValidationException::withMessages([
+                'value' => "Tenant option [{$canonical}] already exists. Use createSchoolOverride() for school overrides of tenant values.",
+            ]);
+        }
+
+        return $this->createOptionRow($definition, $school->id, $value, $label, $attributes);
+    }
+
+    public function createSchoolOverride(
+        DynamicEnum $definition,
+        School $school,
+        string $tenantValue,
+        string $label,
+        array $attributes = []
+    ): DynamicEnumOption {
+        $this->assertApplicationDefinition($definition);
+        $this->assertSchoolOptionRejectsRequired($attributes);
+
+        $canonical = DynamicEnumValue::canonicalize($tenantValue);
+
+        $tenantOption = DynamicEnumOption::query()
+            ->where('dynamic_enum_id', $definition->id)
+            ->whereNull('school_id')
+            ->where('value', $canonical)
+            ->first();
+
+        if ($tenantOption === null) {
+            throw ValidationException::withMessages([
+                'value' => "No tenant option [{$canonical}] to override. Use createSchoolOption() for school-only values.",
+            ]);
+        }
+
+        return $this->createOptionRow($definition, $school->id, $tenantValue, $label, $attributes);
+    }
+
+    public function removeSchoolOverride(DynamicEnumOption $option): void
+    {
+        if ($option->isTenantOption()) {
+            throw ValidationException::withMessages([
+                'option' => 'Expected a school overlay option.',
+            ]);
+        }
+
+        DB::transaction(function () use ($option) {
+            $locked = DynamicEnumOption::query()->whereKey($option->id)->lockForUpdate()->firstOrFail();
+            $definition = $locked->dynamicEnum()->firstOrFail();
+
+            // Soft removal of overlay: delete the school row so tenant baseline reappears.
+            // Dependency check still applies if business data references this scalar.
+            $this->assertNoBusinessReferences($definition->key, $locked->value);
+
+            $locked->delete();
+        });
     }
 
     public function permanentlyDeleteSchoolOption(DynamicEnumOption $option): void
@@ -225,13 +286,39 @@ class DynamicEnumLifecycleService
         });
     }
 
+    public function assertApplicationDefinition(DynamicEnum $definition): void
+    {
+        if ($definition->school_id !== null) {
+            throw ValidationException::withMessages([
+                'definition' => 'Options must be attached to an application (tenant) definition.',
+            ]);
+        }
+    }
+
+    public function assertSchoolOwnsOption(DynamicEnumOption $option, School $school): void
+    {
+        if ($option->school_id === null || $option->school_id !== $school->id) {
+            throw ValidationException::withMessages([
+                'option' => 'Option does not belong to the authorized school.',
+            ]);
+        }
+    }
+
+    public function assertIsTenantOption(DynamicEnumOption $option): void
+    {
+        if (! $option->isTenantOption()) {
+            throw ValidationException::withMessages([
+                'option' => 'Expected a tenant baseline option.',
+            ]);
+        }
+    }
+
     private function createOptionRow(
         DynamicEnum $definition,
         ?string $schoolId,
         string $value,
         string $label,
-        array $attributes = [],
-        bool $allowOverride = false,
+        array $attributes = []
     ): DynamicEnumOption {
         $canonical = DynamicEnumValue::canonicalize($value);
 
@@ -243,17 +330,28 @@ class DynamicEnumLifecycleService
 
         $this->assertNonEmptyLabel($label);
 
-        if ($schoolId === null) {
-            $this->assertUniqueTenantValue($definition, $canonical);
-        } else {
-            $this->assertUniqueSchoolValue($definition, $schoolId, $canonical, $allowOverride);
+        $exists = DynamicEnumOption::query()
+            ->where('dynamic_enum_id', $definition->id)
+            ->when(
+                $schoolId === null,
+                fn ($q) => $q->whereNull('school_id'),
+                fn ($q) => $q->where('school_id', $schoolId)
+            )
+            ->where('value', $canonical)
+            ->exists();
+
+        if ($exists) {
+            $scope = $schoolId === null ? 'tenant' : 'school';
+            throw ValidationException::withMessages([
+                'value' => "An option with value [{$canonical}] already exists in this {$scope} scope.",
+            ]);
         }
 
         if ($schoolId !== null) {
             $this->assertSchoolOptionRejectsRequired($attributes);
         }
 
-        $payload = [
+        return DynamicEnumOption::query()->create([
             'dynamic_enum_id' => $definition->id,
             'school_id' => $schoolId,
             'value' => $canonical,
@@ -263,53 +361,7 @@ class DynamicEnumLifecycleService
             'is_required' => $schoolId === null ? (bool) ($attributes['is_required'] ?? false) : false,
             'color' => $attributes['color'] ?? null,
             'icon' => $attributes['icon'] ?? null,
-        ];
-
-        return DynamicEnumOption::query()->create($payload);
-    }
-
-    private function assertApplicationDefinition(DynamicEnum $definition): void
-    {
-        if ($definition->school_id !== null) {
-            throw ValidationException::withMessages([
-                'definition' => 'Options must be attached to an application (tenant) definition.',
-            ]);
-        }
-    }
-
-    private function assertUniqueTenantValue(DynamicEnum $definition, string $value): void
-    {
-        $exists = DynamicEnumOption::query()
-            ->where('dynamic_enum_id', $definition->id)
-            ->whereNull('school_id')
-            ->where('value', $value)
-            ->exists();
-
-        if ($exists) {
-            throw ValidationException::withMessages([
-                'value' => "An option with value [{$value}] already exists in this tenant scope.",
-            ]);
-        }
-    }
-
-    private function assertUniqueSchoolValue(
-        DynamicEnum $definition,
-        string $schoolId,
-        string $value,
-        bool $allowOverride
-    ): void {
-        $exists = DynamicEnumOption::query()
-            ->where('dynamic_enum_id', $definition->id)
-            ->where('school_id', $schoolId)
-            ->where('value', $value)
-            ->exists();
-
-        if ($exists) {
-            $scope = $allowOverride ? 'school' : 'school';
-            throw ValidationException::withMessages([
-                'value' => "An option with value [{$value}] already exists in this {$scope} scope.",
-            ]);
-        }
+        ]);
     }
 
     private function assertNoBusinessReferences(string $key, string $value): void
@@ -368,6 +420,13 @@ class DynamicEnumLifecycleService
     {
         if (trim($key) === '') {
             throw ValidationException::withMessages(['key' => 'Definition key is required.']);
+        }
+    }
+
+    private function assertNonEmptyValue(string $value): void
+    {
+        if (trim($value) === '') {
+            throw ValidationException::withMessages(['value' => 'Option value is required.']);
         }
     }
 
