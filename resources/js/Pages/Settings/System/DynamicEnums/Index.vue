@@ -8,6 +8,7 @@
  *
  * Uses AdvancedDataTable + HasTableQuery for server-side catalogue querying
  * (filter, sort, global search) consistent with other Settings list pages.
+ * Phase 5: canonical initialResponse (data + columns + meta).
  */
 
 import { computed, ref } from 'vue'
@@ -25,15 +26,28 @@ interface DefinitionRow {
 }
 
 const props = defineProps<{
-  initialData: DefinitionRow[]
-  totalRecords: number
+  data: DefinitionRow[]
   columns: ColumnDefinition<DefinitionRow>[]
-  globalFilterables: string[]
+  meta?: {
+    currentPage: number
+    perPage: number
+    total: number
+    lastPage: number
+  }
   canManage: boolean
   canManageGlobals: boolean
 }>()
 
 const tableRef = ref<{ refresh: () => void; exportData: (all?: boolean, visible?: boolean) => void } | null>(null)
+
+const initialTableResponse = computed(() => {
+  if (!props.meta || !props.columns?.length) return null
+  return {
+    data: props.data ?? [],
+    columns: props.columns as any,
+    meta: props.meta,
+  }
+})
 
 const { enhancedColumns } = useEnhancedColumns<DefinitionRow>(
   props.columns,
@@ -94,12 +108,9 @@ const rowActions = computed<TableAction<DefinitionRow>[]>(() => [
     <AdvancedDataTable
       ref="tableRef"
       :endpoint="route('settings.system.dynamic-enums.index')"
-      :initial-data="props.initialData"
-      :total-records="props.totalRecords"
+      :initial-response="initialTableResponse"
       :columns="enhancedColumns"
-      :global-filter-fields="props.globalFilterables"
       :actions="rowActions"
-      data-property="data"
     />
   </AuthenticatedLayout>
 </template>
