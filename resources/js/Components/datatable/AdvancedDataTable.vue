@@ -42,11 +42,6 @@ const props = defineProps<{
      * Incomplete shapes are ignored — TanStack Query will fetch the real page.
      */
     initialResponse?: DataTableResponse<T> | null
-    /**
-     * @deprecated Prefer initialResponse. Rows alone are NOT seeded into TanStack Query
-     * (no fabricated meta). Kept only so existing Inertia pages keep compiling during migration.
-     */
-    initialData?: T[]
     initialParams?: Record<string, any>
     /** Presentation overlays (renderers, formatters). Merged onto matching server fields. */
     columns: ColumnDefinition<T>[]
@@ -58,9 +53,8 @@ const props = defineProps<{
 const extraParams = computed(() => props.initialParams ?? {})
 
 /**
- * Seed TanStack Query only with a complete canonical response.
- * initialData alone is intentionally ignored — it has no real meta/columns
- * and must not invent pagination totals.
+ * Seed TanStack Query only with a complete canonical response
+ * (data + columns + meta). Incomplete shapes are ignored.
  */
 const seedResponse = computed((): DataTableResponse<T> | null => {
     const r = props.initialResponse
@@ -246,15 +240,10 @@ function onFilter() {
     applyFiltersFromPrimeVue()
 }
 
-const showTrashed = ref(false)
-function toggleTrashed() {
-    showTrashed.value = !showTrashed.value
-    refresh()
-}
-
+// Resource-specific state (e.g. trash) is owned by the page, not the generic table.
+// expose refresh only — PageHeader inject looks upward and will not see this provide;
+// kept for any in-tree consumers that need a table refresh handle.
 provide('dataTableApi', {
-    showTrashed,
-    toggleTrashed,
     refresh,
 })
 
