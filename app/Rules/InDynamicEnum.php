@@ -27,7 +27,11 @@ class InDynamicEnum implements ValidationRule
 {
     /**
      * @param  string  $key  Explicit Dynamic Enum definition key (e.g. profile.gender)
-     * @param  School|null  $school  Explicit school for resolution; null → GetSchoolModel() / tenant
+     * @param  School|null  $school  Explicit school for resolution.
+     *                               Prefer passing GetSchoolModel() from school-scoped FormRequests
+     *                               so validation cannot silently fall back to tenant baseline.
+     *                               When null: uses GetSchoolModel(); if that is also null, validates
+     *                               against tenant/default configuration (intentional tenant-only path).
      */
     public function __construct(
         protected string $key,
