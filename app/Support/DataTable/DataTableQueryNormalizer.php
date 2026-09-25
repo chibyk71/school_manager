@@ -11,14 +11,14 @@ use Illuminate\Http\Request;
 final class DataTableQueryNormalizer
 {
     public function __construct(
-        private readonly int $defaultPerPage = 20,
+        private readonly int $defaultPerPage = 50,
         private readonly int $maxPerPage = 100,
     ) {}
 
     public static function fromConfig(): self
     {
         return new self(
-            defaultPerPage: (int) config('tables.default_per_page', 20),
+            defaultPerPage: (int) config('tables.default_per_page', 50),
             maxPerPage: (int) config('tables.max_per_page', 100),
         );
     }
@@ -130,9 +130,10 @@ final class DataTableQueryNormalizer
             if (! is_string($field) || $field === '') {
                 continue;
             }
-            $operator = $this->resolveOperator($condition['operator'] ?? $condition['matchMode'] ?? 'equals');
+            $rawOperator = $condition['operator'] ?? $condition['matchMode'] ?? 'equals';
+            $operator = $this->resolveOperator($rawOperator);
             if ($operator === null) {
-                continue;
+                throw DataTableQueryException::malformed('Filter operator is required for field ['.$field.'].');
             }
             $value = $condition['value'] ?? null;
             if ($this->isNoOpFilter($operator, $value)) {
@@ -157,20 +158,28 @@ final class DataTableQueryNormalizer
         }
         if (is_array($spec) && array_key_exists('value', $spec) && (isset($spec['matchMode']) || isset($spec['operator']))) {
             $operator = $this->resolveOperator($spec['matchMode'] ?? $spec['operator'] ?? 'equals');
-            if ($operator === null || $this->isNoOpFilter($operator, $spec['value'])) {
+            if ($operator === null) {
+                throw DataTableQueryException::malformed('Filter operator is required for field ['.$field.'].');
+            }
+            if ($this->isNoOpFilter($operator, $spec['value'])) {
                 return null;
             }
 
             return ['field' => $field, 'operator' => $operator, 'value' => $this->normalizeFilterValue($operator, $spec['value'])];
         }
         if (is_array($spec) && ! array_is_list($spec)) {
+            $sawOperator = false;
             foreach ($spec as $opKey => $value) {
                 $operator = $this->resolveOperator((string) $opKey);
+                $sawOperator = true;
                 if ($operator === null || $this->isNoOpFilter($operator, $value)) {
                     continue;
                 }
 
                 return ['field' => $field, 'operator' => $operator, 'value' => $this->normalizeFilterValue($operator, $value)];
+            }
+            if ($sawOperator) {
+                return null;
             }
 
             return null;
@@ -182,6 +191,10 @@ final class DataTableQueryNormalizer
         return ['field' => $field, 'operator' => DataTableOperators::EQUALS, 'value' => $this->normalizeFilterValue(DataTableOperators::EQUALS, $spec)];
     }
 
+    /**
+     * Resolve a raw operator token to a canonical operator.
+     * Unknown non-empty operators raise DataTableQueryException (never silently dropped).
+     */
     private function resolveOperator(mixed $raw): ?string
     {
         if (! is_string($raw) || $raw === '') {
@@ -191,8 +204,11 @@ final class DataTableQueryNormalizer
         if (isset($map[$raw])) {
             return $map[$raw];
         }
+        if (DataTableOperators::isValid($raw)) {
+            return $raw;
+        }
 
-        return DataTableOperators::isValid($raw) ? $raw : null;
+        throw DataTableQueryException::unsupportedOperator('*', $raw);
     }
 
     private function isNoOpFilter(string $operator, mixed $value): bool
