@@ -76,12 +76,15 @@ const { restoreResource } = useRestoreResource();
 const { showTrashed } = useTrashedToggle();
 const { hasPermission } = usePermissions();
 
+// Partial reload after mutations
 const refreshTable = () => {
     router.reload({ only: ['data', 'totalRecords'] });
 };
 
+// Enhanced columns: logo preview + inline status toggle
 const enhancedColumns = computed<ColumnDefinition<School>[]>(() => {
     return props.columns.map((col) => {
+        // Logo column → render as rounded image with fallback
         if (col.field === 'logo_url') {
             return {
                 ...col,
@@ -94,6 +97,7 @@ const enhancedColumns = computed<ColumnDefinition<School>[]>(() => {
             };
         }
 
+        // Status column → inline toggle switch
         if (col.field === 'is_active') {
             return {
                 ...col,
@@ -106,6 +110,7 @@ const enhancedColumns = computed<ColumnDefinition<School>[]>(() => {
                     on: {
                         'update:modelValue': (newValue: boolean) => toggleStatus(row, newValue),
                     },
+                    // Tooltip for disabled state on trashed records
                     pt: {
                         root: {
                             'data-pc-tooltip': !!row.deleted_at ? 'Cannot toggle status on trashed schools' : undefined,
@@ -119,6 +124,7 @@ const enhancedColumns = computed<ColumnDefinition<School>[]>(() => {
     });
 });
 
+// Navigate to full-page create/edit form
 const openSchoolForm = (school?: School) => {
     const canEdit = school ? hasPermission('schools.update') : hasPermission('schools.create');
     if (!canEdit) {
@@ -136,9 +142,10 @@ const openSchoolForm = (school?: School) => {
     router.visit(route(routeName, params));
 };
 
+// Optimistic inline status toggle with rollback on error
 const toggleStatus = async (school: School, newValue: boolean) => {
     const original = school.is_active;
-    school.is_active = newValue;
+    school.is_active = newValue; // Optimistic UI update
 
     try {
         await router.patch(
@@ -154,7 +161,7 @@ const toggleStatus = async (school: School, newValue: boolean) => {
             life: 3000,
         });
     } catch {
-        school.is_active = original;
+        school.is_active = original; // Rollback
         toast.add({
             severity: 'error',
             summary: 'Update Failed',
@@ -273,7 +280,8 @@ const schoolBulkActions: BulkAction<School>[] = [
             </div>
 
             <AdvancedDataTable endpoint="settings/schools" :columns="enhancedColumns" :bulk-actions="schoolBulkActions"
-                :initial-data="props.data" :actions="schoolActions" />
+                :initial-data="props.data"
+                :actions="schoolActions" />
         </div>
     </AuthenticatedLayout>
 </template>
@@ -287,6 +295,7 @@ const schoolBulkActions: BulkAction<School>[] = [
     @apply bg-primary-50 dark:bg-gray-800 text-primary-900 dark:text-primary-100 font-semibold;
 }
 
+/* Small action buttons */
 :deep(.p-button.p-button-sm) {
     @apply h-8 w-8;
 }
