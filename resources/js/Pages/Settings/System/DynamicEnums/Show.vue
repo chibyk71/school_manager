@@ -119,7 +119,8 @@ function submitCreate() {
 }
 
 function openEdit(opt: OptionRow) {
-  editingOptionId.value = optionIdForAction(opt)
+  // Prefer school row when school mutation is allowed; otherwise tenant row.
+  editingOptionId.value = optionIdForLifecycle(opt)
   editForm.label = opt.label
   editForm.sort_order = opt.sort_order
   editForm.color = opt.color
@@ -195,9 +196,24 @@ function resetOverride(optionId: string) {
   })
 }
 
-/** Primary row for edit/activate/deactivate/delete/reset: school overlay when present, else tenant. */
-const optionIdForAction = (opt: OptionRow) =>
-  opt.school_option_id || opt.tenant_option_id || ''
+/**
+ * Lifecycle target for edit/activate/deactivate/delete.
+ * Prefer school mutation when the actor may mutate the school row; otherwise
+ * target the tenant row (so globals-only admins can act on overridden values).
+ */
+const optionIdForLifecycle = (opt: OptionRow) => {
+  if (opt.capabilities.can_edit_school && opt.school_option_id) {
+    return opt.school_option_id
+  }
+  if (opt.capabilities.can_edit_tenant && opt.tenant_option_id) {
+    return opt.tenant_option_id
+  }
+  // Fallback for reset/delete paths that key off school ownership alone.
+  return opt.school_option_id || opt.tenant_option_id || ''
+}
+
+/** School overlay row id (reset always targets the school option). */
+const schoolOptionId = (opt: OptionRow) => opt.school_option_id || ''
 
 /** Requiredness is always a tenant-option operation. */
 const tenantOptionId = (opt: OptionRow) => opt.tenant_option_id || ''
@@ -321,14 +337,14 @@ const tenantOptionId = (opt: OptionRow) => opt.tenant_option_id || ''
                     label="Activate"
                     size="small"
                     text
-                    @click="postAction('activate', optionIdForAction(opt))"
+                    @click="postAction('activate', optionIdForLifecycle(opt))"
                   />
                   <Button
                     v-if="opt.capabilities.can_deactivate && opt.is_active"
                     label="Deactivate"
                     size="small"
                     text
-                    @click="postAction('deactivate', optionIdForAction(opt))"
+                    @click="postAction('deactivate', optionIdForLifecycle(opt))"
                   />
                   <Button
                     v-if="opt.capabilities.can_make_required && !opt.is_required && tenantOptionId(opt)"
@@ -345,12 +361,12 @@ const tenantOptionId = (opt: OptionRow) => opt.tenant_option_id || ''
                     @click="postAction('remove-required', tenantOptionId(opt))"
                   />
                   <Button
-                    v-if="opt.capabilities.can_reset"
+                    v-if="opt.capabilities.can_reset && schoolOptionId(opt)"
                     label="Reset"
                     size="small"
                     text
                     severity="warn"
-                    @click="resetOverride(optionIdForAction(opt))"
+                    @click="resetOverride(schoolOptionId(opt))"
                   />
                   <Button
                     v-if="opt.capabilities.can_delete"
@@ -358,7 +374,7 @@ const tenantOptionId = (opt: OptionRow) => opt.tenant_option_id || ''
                     size="small"
                     text
                     severity="danger"
-                    @click="destroyOption(optionIdForAction(opt))"
+                    @click="destroyOption(optionIdForLifecycle(opt))"
                   />
                 </div>
               </td>
