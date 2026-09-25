@@ -3,45 +3,7 @@
  * Settings/Academic/ClassSections/Index.vue
  *
  * Standalone index page for the ClassSection module.
- *
- * ── Page Overview ─────────────────────────────────────────────────────────────
- * A single page that shows ALL class sections across the school, filterable
- * by class level, status, school section, and via global search.
- *
- * Visiting from a ClassLevel row automatically pre-applies a Purity filter:
- *   ?filters[class_level_id][$eq]=uuid
- * The DataTable renders with that filter active. The user can clear it to
- * see all sections, or change it to a different level — without leaving the page.
- *
- * ── Layout ────────────────────────────────────────────────────────────────────
- * AuthenticatedLayout → PageHeader (title + breadcrumb + header buttons)
- *                     → AdvancedDataTable (with column defs from Inertia props)
- *
- * ── Header Buttons ────────────────────────────────────────────────────────────
- * [Bulk Generate]   → opens BulkGenerateSectionsModal (ModalDirectory)
- * [Add Section]     → opens ClassSectionFormModal (ModalDirectory)
- *
- * ── Columns ───────────────────────────────────────────────────────────────────
- * display_name  → section name (primary identifier)
- * class_level   → parent class level name (linked to filter)
- * status        → Active/Inactive badge (ClassSectionStatusBadge)
- * capacity      → "40" or "Uncapped", with enrollment count if available
- * students_count → enrolled students
- * form_teacher   → form teacher name
- * room           → physical room (hidden by default)
- * sort_order     → display order (hidden by default)
- *
- * ── Bulk Actions ─────────────────────────────────────────────────────────────
- * Delete selected / Restore selected / Activate / Deactivate
- *
- * ── Row Actions ──────────────────────────────────────────────────────────────
- * Edit → opens ClassSectionFormModal
- * Delete → confirm + soft-delete
- * Restore (trashed rows) → restore
- *
- * ── Trashed Toggle ───────────────────────────────────────────────────────────
- * PageHeader uses useTrashedToggle() (injected from AdvancedDataTable)
- * to toggle ?trashed=1 and switch the DataTable to show archived sections.
+ * Restored from master; Phase 5: removed total-records, global-filter-fields, data-property.
  */
 
 import { computed, h } from 'vue'
@@ -59,7 +21,6 @@ import type { BulkAction, TableAction } from '@/types/datatables'
 import type { ClassSection, ClassSectionsPageProps } from '@/types/class-section'
 import axios from 'axios'
 
-// ── Page props ────────────────────────────────────────────────────────────────
 const props = defineProps<ClassSectionsPageProps>()
 
 const toast = useToast()
@@ -67,11 +28,9 @@ const modal = useModal()
 const { deleteResource } = useDeleteResource()
 const { restoreResource } = useRestoreResource()
 
-// ── Enhanced columns ──────────────────────────────────────────────────────────
 const { enhancedColumns } = useEnhancedColumns<ClassSection>(
     props.columns,
     {
-        // Display name — primary cell with school section context
         display_name: {
             render: (row) => h('div', { class: 'flex flex-col' }, [
                 h('span', {
@@ -84,8 +43,6 @@ const { enhancedColumns } = useEnhancedColumns<ClassSection>(
                     : null,
             ]),
         },
-
-        // Class level — clickable chip that applies a filter
         class_level_id: {
             header: 'Class Level',
             render: (row) => row.class_level
@@ -95,7 +52,6 @@ const { enhancedColumns } = useEnhancedColumns<ClassSection>(
                         'text-gray-600 dark:text-gray-400 hover:border-primary-400 hover:text-primary-600 ' +
                         'dark:hover:text-primary-400 transition-colors',
                     onClick: () => {
-                        // Navigate to filtered view for this level
                         router.get(route('settings.academic.class-sections.index'), {
                             filters: { class_level_id: { $eq: row.class_level_id } },
                         }, { preserveState: true, replace: true })
@@ -103,16 +59,12 @@ const { enhancedColumns } = useEnhancedColumns<ClassSection>(
                 }, row.class_level.name)
                 : h('span', { class: 'text-gray-400 text-xs' }, '—'),
         },
-
-        // Status badge
         status: {
             render: (row) => h(ClassSectionStatusBadge, {
                 section: row,
                 showCapacity: false,
             }),
         },
-
-        // Capacity column
         capacity: {
             header: 'Capacity',
             render: (row) => h('div', { class: 'flex flex-col' }, [
@@ -126,8 +78,6 @@ const { enhancedColumns } = useEnhancedColumns<ClassSection>(
                     : null,
             ]),
         },
-
-        // Students count
         students_count: {
             header: 'Students',
             render: (row) => row.students_count !== undefined
@@ -135,8 +85,6 @@ const { enhancedColumns } = useEnhancedColumns<ClassSection>(
                     String(row.students_count))
                 : h('span', { class: 'text-gray-400 text-xs' }, '—'),
         },
-
-        // Form teacher
         form_teacher: {
             header: 'Form Teacher',
             sortable: false,
@@ -149,7 +97,6 @@ const { enhancedColumns } = useEnhancedColumns<ClassSection>(
     }
 )
 
-// ── Row actions ───────────────────────────────────────────────────────────────
 const rowActions: TableAction<ClassSection>[] = [
     {
         label: 'Edit',
@@ -191,7 +138,6 @@ const rowActions: TableAction<ClassSection>[] = [
     },
 ]
 
-// ── Bulk actions ──────────────────────────────────────────────────────────────
 const bulkActions: BulkAction<ClassSection>[] = [
     {
         label: 'Activate',
@@ -243,7 +189,6 @@ const bulkActions: BulkAction<ClassSection>[] = [
     },
 ]
 
-// ── Header button handlers ────────────────────────────────────────────────────
 const openCreateModal = () => {
     modal.open('class-section-form', { classLevelId: null })
 }
@@ -251,13 +196,10 @@ const openCreateModal = () => {
 const openBulkGenerateModal = () => {
     modal.open('class-section-generate', {
         namingPresets: props.namingPresets,
-        // Available levels are fetched inside the modal via async call
-        // to avoid bloating the Inertia page props
         availableLevels: [],
     })
 }
 
-// Refresh when modal saves
 modal.emitter.value?.on('close', () => {
     router.reload({ only: ['initialData', 'totalRecords'] })
 })
@@ -282,8 +224,6 @@ modal.emitter.value?.on('close', () => {
             onClick: openCreateModal,
         },
     ]" :can-see-trashed="true">
-        <AdvancedDataTable :endpoint="route('settings.academic.class-sections.index')" :initial-data="initialData"
-            :total-records="totalRecords" :columns="enhancedColumns" :actions="rowActions" :bulk-actions="bulkActions"
-            :global-filter-fields="['display_name', 'name', 'room']" data-property="initialData" />
+        <AdvancedDataTable :endpoint="route('settings.academic.class-sections.index')" :initial-data="initialData" :columns="enhancedColumns" :actions="rowActions" :bulk-actions="bulkActions" />
     </AuthenticatedLayout>
 </template>

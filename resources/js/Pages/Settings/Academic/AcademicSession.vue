@@ -1,11 +1,3 @@
-<!--
-resources/js/Pages/Settings/Academic/AcademicSession/Index.vue
-================================================================================
-Main listing & management screen for Academic Sessions.
-Phase 2: lifecycle actions (plan/activate/pause/resume/close/reopen); no Set Current.
-Preserves AdvancedDataTable, bulk delete/restore, columns, filtering.
--->
-
 <script setup lang="ts">
 import { computed, markRaw } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
@@ -36,6 +28,16 @@ const { deleteResource } = useDeleteResource()
 const { restoreResource } = useRestoreResource()
 
 const sessions = computed(() => props.sessions || [])
+const initialTableResponse = computed(() => ({
+    data: sessions.value,
+    columns: props.columns as any,
+    meta: {
+        currentPage: props.currentPage ?? 1,
+        perPage: props.perPage ?? 50,
+        total: props.totalRecords ?? sessions.value.length,
+        lastPage: props.lastPage ?? 1,
+    },
+}))
 const columns = computed(() => props.columns || [])
 const currentSession = computed(() => usePage().props.currentSession || null)
 
@@ -88,7 +90,7 @@ const deleteSession = async (row: AcademicSession) => {
     const canForce = !row.terms_count && !isCurrentOperational(row) && row.state !== 'closed'
     const result = modal.open('delete-session', {
         session: row,
-        canForceDelete: canForce
+        canForceDelete: canForce,
     }, { async: true })
     result?.on('deleted', () => router.reload({ only: ['sessions'] }))
 }
@@ -98,16 +100,16 @@ const viewTerms = (row: AcademicSession) => {
 }
 
 const handleBulkDelete = (selectedRows: AcademicSession[]) => {
-    const ids = selectedRows.map(row => row.id)
+    const ids = selectedRows.map((row) => row.id)
     deleteResource('academic-sessions', ids, {
-        onSuccess: () => router.reload({ only: ['sessions'] })
+        onSuccess: () => router.reload({ only: ['sessions'] }),
     })
 }
 
 const handleBulkRestore = (selectedRows: any[]) => {
-    const ids = selectedRows.map(row => row.id)
+    const ids = selectedRows.map((row) => row.id)
     restoreResource('academic-sessions', ids, {
-        onSuccess: () => router.reload({ only: ['sessions'] })
+        onSuccess: () => router.reload({ only: ['sessions'] }),
     })
 }
 
@@ -140,7 +142,10 @@ const enhancedColumns = computed(() => {
         sortable: true,
         render: (row: any) => ({
             component: markRaw(SessionStatusBadge) as any,
-            props: { status: row.state ?? row.status, isCurrent: row.state === 'active' || row.state === 'paused' },
+            props: {
+                status: row.state ?? row.status,
+                isCurrent: row.state === 'active' || row.state === 'paused',
+            },
         }),
     })
     upsert('terms_count', {
@@ -148,8 +153,8 @@ const enhancedColumns = computed(() => {
         sortable: true,
         align: 'center',
         render: (row: any) => ({
-            template: `<span>${row.terms_count > 0 ? row.terms_count : '—'}</span>`
-        })
+            template: `<span>${row.terms_count > 0 ? row.terms_count : '—'}</span>`,
+        }),
     })
     return cols
 })
@@ -172,7 +177,8 @@ const tableActions = computed<TableAction<AcademicSession>[]>(() => [
         label: 'Activate',
         icon: 'pi pi-check-circle',
         severity: 'success',
-        show: (row) => hasPermission('academic-sessions.update') && (row.state === 'draft' || row.state === 'planned'),
+        show: (row) =>
+            hasPermission('academic-sessions.update') && (row.state === 'draft' || row.state === 'planned'),
         handler: (row) => activateSession(row),
     },
     {
@@ -193,7 +199,8 @@ const tableActions = computed<TableAction<AcademicSession>[]>(() => [
         label: 'Close',
         icon: 'pi pi-lock',
         severity: 'warn',
-        show: (row) => hasPermission('academic-sessions.update') && (row.state === 'active' || row.state === 'paused'),
+        show: (row) =>
+            hasPermission('academic-sessions.update') && (row.state === 'active' || row.state === 'paused'),
         handler: (row) => closeSession(row),
     },
     {
@@ -214,35 +221,39 @@ const tableActions = computed<TableAction<AcademicSession>[]>(() => [
         label: 'Delete Session',
         icon: 'pi pi-trash',
         severity: 'danger',
-        show: (row) => hasPermission('academic-sessions.delete') && !isCurrentOperational(row) && row.state !== 'closed',
+        show: (row) =>
+            hasPermission('academic-sessions.delete') && !isCurrentOperational(row) && row.state !== 'closed',
         handler: (row) => deleteSession(row),
-    }
+    },
 ])
 </script>
 
 <template>
-    <AuthenticatedLayout title="Academic Sessions"
-        :crumb="[{ label: 'Dashboard' }, { label: 'Academic' }, { label: 'Academic Sessions' }]" :buttons="[{
-            label: 'Create New Session',
-            icon: 'pi pi-plus',
-            onClick: createNew,
-            class: { 'hidden': !hasPermission('academic-sessions.create') }
-        }]">
-        <CurrentSessionBanner v-if="currentSession" :session="currentSession"
-            :showLink="hasPermission('academic-sessions.index')" />
+    <AuthenticatedLayout
+        title="Academic Sessions"
+        :crumb="[{ label: 'Dashboard' }, { label: 'Academic' }, { label: 'Academic Sessions' }]"
+        :buttons="[
+            {
+                label: 'Create New Session',
+                icon: 'pi pi-plus',
+                onClick: createNew,
+                class: { hidden: !hasPermission('academic-sessions.create') },
+            },
+        ]"
+    >
+        <CurrentSessionBanner
+            v-if="currentSession"
+            :session="currentSession"
+            :showLink="hasPermission('academic-sessions.index')"
+        />
 
         <div class="mt-4">
             <AdvancedDataTable
-                :data="sessions"
+                :endpoint="route('settings.academic-sessions.index')"
                 :columns="enhancedColumns"
                 :actions="tableActions"
                 :bulk-actions="bulkActions"
-                :total-records="totalRecords"
-                :current-page="currentPage"
-                :last-page="lastPage"
-                :per-page="perPage"
-                :global-filterables="globalFilterables"
-                resource-name="academic-sessions"
+                :initial-response="initialTableResponse"
             />
         </div>
     </AuthenticatedLayout>
