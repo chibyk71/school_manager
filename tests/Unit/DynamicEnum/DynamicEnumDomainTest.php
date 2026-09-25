@@ -188,11 +188,14 @@ test('deleting a definition cascades to its options', function () {
     expect(DynamicEnumOption::count())->toBe(0);
 });
 
-test('InDynamicEnum rule does not call removed DynamicEnum scopes', function () {
-    $rule = new \App\Rules\InDynamicEnum('type', \App\Models\Address::class);
+test('InDynamicEnum rule is a thin adapter that requires an explicit key', function () {
+    $rule = new \App\Rules\InDynamicEnum('address.type');
     $failed = false;
-    $rule->validate('type', 'residential', function () use (&$failed) {
+    $message = null;
+    $rule->validate('type', 'residential', function ($msg) use (&$failed, &$message) {
         $failed = true;
+        $message = $msg;
     });
-    expect($failed)->toBeFalse();
+    expect($failed)->toBeTrue();
+    expect($message)->toContain('configuration is unavailable');
 });
