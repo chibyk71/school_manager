@@ -158,10 +158,19 @@ final class ColumnDefinitionHelper
                 continue;
             }
 
-            // Detect relation fields (dot notation)
-            $isRelation = str_contains($field, '.');
-            $relationPath = $isRelation ? implode('.', explode('.', $field, -1)) : null;
-            $relatedField = $isRelation ? substr(strrchr($field, '.'), 1) : null;
+            // Detect relation fields: explicit config wins, else dot notation
+            $relationPath = null;
+            $relatedField = null;
+            if (! empty($userConfig['relation']) && is_string($userConfig['relation'])) {
+                $relationPath = $userConfig['relation'];
+                $relatedField = is_string($userConfig['relatedField'] ?? null)
+                    ? $userConfig['relatedField']
+                    : (str_contains($field, '.') ? substr(strrchr($field, '.'), 1) : null);
+            } elseif (str_contains($field, '.')) {
+                $relationPath = implode('.', explode('.', $field, -1));
+                $relatedField = substr(strrchr($field, '.'), 1);
+            }
+            $isRelation = $relationPath !== null && $relationPath !== '';
 
             // Check if field is configurable (HasConfig)
             $isConfigurable = isset($configurableOptions[$field]);
@@ -178,22 +187,45 @@ final class ColumnDefinitionHelper
                 $filterOptions = self::resolveFilterOptions($model, $field, $filterOptions);
             }
 
+            // Capability flags (independent of presentation visibility).
+            // Real DB columns and relation fields get sensible query defaults.
+            // Presentation-only virtual/extra fields (not in schema, no relation)
+            // default to non-queryable unless explicitly opted in.
+            $inSchema = in_array($field, $tableColumns, true);
+            $isPresentationOnlyVirtual = ! $inSchema && ! $isRelation;
+
+            $filterable = array_key_exists('filterable', $userConfig)
+                ? (bool) $userConfig['filterable']
+                : ! $isPresentationOnlyVirtual;
+            $sortable = array_key_exists('sortable', $userConfig)
+                ? (bool) $userConfig['sortable']
+                : ($isPresentationOnlyVirtual ? false : ! $isRelation);
+            $searchable = array_key_exists('searchable', $userConfig)
+                ? (bool) $userConfig['searchable']
+                : ($filterable && $filterType === 'text');
+            $exportable = array_key_exists('exportable', $userConfig)
+                ? (bool) $userConfig['exportable']
+                : true;
+
             // Build and add column definition
             $columns[] = [
                 'field' => $field,
                 'header' => $userConfig['header'] ?? self::makeHeader($field),
 
-                'sortable' => $userConfig['sortable'] ?? !$isRelation,
-                'filterable' => $userConfig['filterable'] ?? true,
+                // Capabilities (backend-authoritative; independent of UI visibility)
+                'sortable' => $sortable,
+                'filterable' => $filterable,
+                'searchable' => $searchable,
+                'exportable' => $exportable,
 
                 'filterType' => $filterType,
                 'filterOptions' => $filterOptions,
                 'filterMatchMode' => self::resolveFilterMatchMode($filterType),
                 'filterPlaceholder' => $userConfig['filterPlaceholder'] ?? 'Search ' . self::makeHeader($field),
 
-                // Visibility: 'hidden' for initial state, 'defaultHidden' flag for frontend logic
+                // Presentation: initial visibility only — never controls query capability
                 'hidden' => $userConfig['hidden'] ?? in_array($field, $defaultHidden, true),
-                'defaultHidden' => in_array($field, $defaultHidden, true), // for frontend to know
+                'defaultHidden' => in_array($field, $defaultHidden, true),
 
                 'headerClass' => $userConfig['headerClass'] ?? 'font-medium text-left',
                 'bodyClass' => $userConfig['bodyClass'] ?? 'text-sm',
