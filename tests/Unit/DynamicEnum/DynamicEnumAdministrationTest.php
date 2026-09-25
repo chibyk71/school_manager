@@ -385,13 +385,34 @@ test('manageGlobals only with active school exposes tenant option actions on inh
 test('manageGlobals only with active school can administer tenant option under school override', function () {
     phase4SeedGender();
     $school = phase4School('A');
-    $override = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
+    $tenantMale = DynamicEnumOption::whereNull('school_id')->where('value', 'male')->firstOrFail();
+    $this->admin->updateTenantOption('profile.gender', $tenantMale, [
+        'label' => 'Male',
+        'sort_order' => 10,
+        'color' => '#111111',
+        'icon' => 'tenant-icon',
+    ]);
+    $override = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy', [
+        'sort_order' => 99,
+        'color' => '#222222',
+        'icon' => 'school-icon',
+    ]);
 
     $detail = $this->admin->detail('profile.gender', $school, false, true);
     $male = collect($detail['options'])->firstWhere('value', 'male');
 
     // Overlay present: tenant actions still available; school actions not (no manage).
+    // Effective label is school; ownership presentation fields stay distinct.
     expect($male['overridden'])->toBeTrue()
+        ->and($male['label'])->toBe('Boy')
+        ->and($male['tenant_label'])->toBe('Male')
+        ->and($male['tenant_sort_order'])->toBe(10)
+        ->and($male['tenant_color'])->toBe('#111111')
+        ->and($male['tenant_icon'])->toBe('tenant-icon')
+        ->and($male['school_label'])->toBe('Boy')
+        ->and($male['school_sort_order'])->toBe(99)
+        ->and($male['school_color'])->toBe('#222222')
+        ->and($male['school_icon'])->toBe('school-icon')
         ->and($male['tenant_option_id'])->not->toBeNull()
         ->and($male['school_option_id'])->toBe($override->id)
         ->and($male['capabilities']['can_edit_tenant'])->toBeTrue()
@@ -404,11 +425,19 @@ test('manageGlobals only with active school can administer tenant option under s
         ->and($male['capabilities']['can_delete'])->toBeFalse();
 
     $tenantOpt = DynamicEnumOption::findOrFail($male['tenant_option_id']);
-    $originalTenantLabel = $tenantOpt->label;
 
-    // Tenant mutations target tenant_option_id and leave the school override unchanged.
-    $updated = $this->admin->updateTenantOption('profile.gender', $tenantOpt, ['label' => 'Male (tenant)']);
+    // Tenant mutations target tenant_option_id using tenant presentation values,
+    // leaving the school override presentation unchanged.
+    $updated = $this->admin->updateTenantOption('profile.gender', $tenantOpt, [
+        'label' => 'Male (tenant)',
+        'sort_order' => 11,
+        'color' => '#333333',
+        'icon' => 'tenant-updated',
+    ]);
     expect($updated->label)->toBe('Male (tenant)')
+        ->and($updated->sort_order)->toBe(11)
+        ->and($updated->color)->toBe('#333333')
+        ->and($updated->icon)->toBe('tenant-updated')
         ->and($updated->id)->toBe($tenantOpt->id);
 
     $deactivated = $this->admin->deactivateTenantOption('profile.gender', $tenantOpt);
@@ -422,11 +451,60 @@ test('manageGlobals only with active school can administer tenant option under s
 
     $override->refresh();
     expect($override->label)->toBe('Boy')
+        ->and($override->sort_order)->toBe(99)
+        ->and($override->color)->toBe('#222222')
+        ->and($override->icon)->toBe('school-icon')
         ->and($override->is_active)->toBeTrue()
         ->and($override->id)->not->toBe($tenantOpt->id);
+});
 
-    // Restore tenant label for isolation (optional cleanliness).
-    expect($originalTenantLabel)->not->toBe('');
+test('detail exposes ownership presentation distinct from effective under school override', function () {
+    phase4SeedGender();
+    $school = phase4School('A');
+    $tenantMale = DynamicEnumOption::whereNull('school_id')->where('value', 'male')->firstOrFail();
+    $this->admin->updateTenantOption('profile.gender', $tenantMale, [
+        'label' => 'Male baseline',
+        'sort_order' => 1,
+        'color' => 'blue',
+        'icon' => 'user',
+    ]);
+    $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy override', [
+        'sort_order' => 50,
+        'color' => 'red',
+        'icon' => 'boy',
+    ]);
+
+    // Globals-only: UI must seed edit form from tenant_* fields, not effective label.
+    $globalsDetail = $this->admin->detail('profile.gender', $school, false, true);
+    $maleGlobals = collect($globalsDetail['options'])->firstWhere('value', 'male');
+    expect($maleGlobals['label'])->toBe('Boy override')
+        ->and($maleGlobals['tenant_label'])->toBe('Male baseline')
+        ->and($maleGlobals['tenant_sort_order'])->toBe(1)
+        ->and($maleGlobals['tenant_color'])->toBe('blue')
+        ->and($maleGlobals['tenant_icon'])->toBe('user')
+        ->and($maleGlobals['school_label'])->toBe('Boy override')
+        ->and($maleGlobals['capabilities']['can_edit_tenant'])->toBeTrue()
+        ->and($maleGlobals['capabilities']['can_edit_school'])->toBeFalse();
+
+    // School-only: UI must seed edit form from school_* fields.
+    $schoolDetail = $this->admin->detail('profile.gender', $school, true, false);
+    $maleSchool = collect($schoolDetail['options'])->firstWhere('value', 'male');
+    expect($maleSchool['label'])->toBe('Boy override')
+        ->and($maleSchool['school_label'])->toBe('Boy override')
+        ->and($maleSchool['school_sort_order'])->toBe(50)
+        ->and($maleSchool['school_color'])->toBe('red')
+        ->and($maleSchool['school_icon'])->toBe('boy')
+        ->and($maleSchool['tenant_label'])->toBe('Male baseline')
+        ->and($maleSchool['capabilities']['can_edit_school'])->toBeTrue()
+        ->and($maleSchool['capabilities']['can_edit_tenant'])->toBeFalse();
+
+    // Both permissions: primary Edit targets school; tenant presentation still exposed.
+    $bothDetail = $this->admin->detail('profile.gender', $school, true, true);
+    $maleBoth = collect($bothDetail['options'])->firstWhere('value', 'male');
+    expect($maleBoth['capabilities']['can_edit_school'])->toBeTrue()
+        ->and($maleBoth['capabilities']['can_edit_tenant'])->toBeTrue()
+        ->and($maleBoth['tenant_label'])->toBe('Male baseline')
+        ->and($maleBoth['school_label'])->toBe('Boy override');
 });
 
 test('manage only with active school cannot mutate tenant options; school overlays remain editable', function () {
