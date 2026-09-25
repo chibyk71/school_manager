@@ -64,6 +64,8 @@ final class DataTableQueryEngine
             'lastPage' => $paginator->lastPage(),
         ];
 
+        // Canonical V1 response. Temporary legacy pagination keys remain for
+        // still-unmigrated consumers; searchable fields come from columns[].searchable.
         return [
             'data' => $paginator->items(),
             'columns' => $columns,
@@ -72,7 +74,6 @@ final class DataTableQueryEngine
             'currentPage' => $meta['currentPage'],
             'lastPage' => $meta['lastPage'],
             'perPage' => $meta['perPage'],
-            'globalFilterables' => $searchFields,
         ];
     }
 
