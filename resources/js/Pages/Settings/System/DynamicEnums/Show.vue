@@ -18,8 +18,15 @@ interface OptionRow {
   overridden: boolean
   enforced: boolean
   enforcement_reason: string | null
+  /** Ownership-specific presentation (seed edit form from mutation target, not effective). */
   tenant_label: string | null
+  tenant_sort_order: number | null
+  tenant_color: string | null
+  tenant_icon: string | null
   school_label: string | null
+  school_sort_order: number | null
+  school_color: string | null
+  school_icon: string | null
   tenant_option_id: string | null
   school_option_id: string | null
   capabilities: Record<string, boolean>
@@ -120,11 +127,20 @@ function submitCreate() {
 
 function openEdit(opt: OptionRow) {
   // Prefer school row when school mutation is allowed; otherwise tenant row.
+  // Seed the form from the same ownership presentation that will be mutated —
+  // never copy effective (merged) values onto the opposite ownership row.
   editingOptionId.value = optionIdForLifecycle(opt)
-  editForm.label = opt.label
-  editForm.sort_order = opt.sort_order
-  editForm.color = opt.color
-  editForm.icon = opt.icon
+  if (opt.capabilities.can_edit_school && opt.school_option_id) {
+    editForm.label = opt.school_label ?? opt.label
+    editForm.sort_order = opt.school_sort_order ?? opt.sort_order
+    editForm.color = opt.school_color ?? null
+    editForm.icon = opt.school_icon ?? null
+  } else {
+    editForm.label = opt.tenant_label ?? opt.label
+    editForm.sort_order = opt.tenant_sort_order ?? opt.sort_order
+    editForm.color = opt.tenant_color ?? null
+    editForm.icon = opt.tenant_icon ?? null
+  }
   showEdit.value = true
 }
 
