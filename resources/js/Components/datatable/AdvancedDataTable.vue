@@ -36,11 +36,19 @@ import { formatDate } from '@/helpers'
 
 const props = defineProps<{
     endpoint: string
-    /** Canonical first-page response from Inertia (data + columns + meta). */
+    /**
+     * Canonical first-page response from Inertia.
+     * MUST include data + columns + meta (currentPage, perPage, total, lastPage).
+     * Incomplete shapes are ignored — TanStack Query will fetch the real page.
+     */
     initialResponse?: DataTableResponse<T> | null
-    /** Convenience when only rows are available. Prefer initialResponse. Does NOT invent total from data.length. */
+    /**
+     * @deprecated Prefer initialResponse. Rows alone are NOT seeded into TanStack Query
+     * (no fabricated meta). Kept only so existing Inertia pages keep compiling during migration.
+     */
     initialData?: T[]
     initialParams?: Record<string, any>
+    /** Presentation overlays (renderers, formatters). Merged onto matching server fields. */
     columns: ColumnDefinition<T>[]
     bulkActions?: BulkAction[]
     virtualScroller?: boolean
@@ -49,23 +57,26 @@ const props = defineProps<{
 
 const extraParams = computed(() => props.initialParams ?? {})
 
+/**
+ * Seed TanStack Query only with a complete canonical response.
+ * initialData alone is intentionally ignored — it has no real meta/columns
+ * and must not invent pagination totals.
+ */
 const seedResponse = computed((): DataTableResponse<T> | null => {
-    if (props.initialResponse?.data) {
-        return props.initialResponse
+    const r = props.initialResponse
+    if (!r?.data || !Array.isArray(r.data)) return null
+    if (!Array.isArray(r.columns) || r.columns.length === 0) return null
+    const m = r.meta
+    if (
+        !m ||
+        typeof m.currentPage !== 'number' ||
+        typeof m.perPage !== 'number' ||
+        typeof m.total !== 'number' ||
+        typeof m.lastPage !== 'number'
+    ) {
+        return null
     }
-    if (props.initialData?.length) {
-        return {
-            data: props.initialData,
-            columns: (props.columns ?? []) as any,
-            meta: {
-                currentPage: 1,
-                perPage: DEFAULT_PER_PAGE,
-                total: 0,
-                lastPage: 1,
-            },
-        }
-    }
-    return null
+    return r
 })
 
 const {
@@ -100,24 +111,40 @@ const filters = ref<Record<string, { value: any; matchMode: string }>>({
     global: { value: '', matchMode: 'contains' },
 })
 
-/** Server columns are the authoritative DataTable universe (respects hiddenTableColumns). */
+/**
+ * Server columns are the authoritative DataTable universe (hiddenTableColumns).
+ * Presentation props only overlay renderers/formatters onto matching server fields.
+ * Before the first response: presentation is used for first paint only.
+ * After a response with empty columns: empty universe (do not resurrect page columns).
+ */
 const displayColumns = computed(() => {
     const presentation = Array.isArray(props.columns) ? props.columns : []
     const server = serverColumns.value
-    const universe = server?.length
-        ? server
-        : presentation.map((c) => ({
-              field: String(c.field),
-              header: c.header,
-              sortable: c.sortable,
-              filterable: c.filterable,
-              searchable: (c as any).searchable,
-              exportable: c.exportable,
-              filterType: c.filterType,
-              filterOptions: c.filterOptions,
-              filterMatchMode: c.filterMatchMode,
-              hidden: c.hidden,
-          }))
+
+    let universe: any[]
+    if (server?.length) {
+        universe = server
+    } else if (isPending.value || isPlaceholderData.value) {
+        universe = presentation.map((c) => ({
+            field: String(c.field),
+            header: c.header,
+            sortable: c.sortable,
+            filterable: c.filterable,
+            searchable: (c as any).searchable,
+            exportable: c.exportable,
+            filterType: c.filterType,
+            filterOptions: c.filterOptions,
+            filterMatchMode: c.filterMatchMode,
+            hidden: c.hidden,
+        }))
+    } else {
+        if (import.meta.env?.DEV) {
+            console.warn(
+                '[AdvancedDataTable] Server response has no column metadata; presentation columns will not be used.',
+            )
+        }
+        universe = []
+    }
 
     return universe.map((s: any) => {
         const col = presentation.find((c) => String(c.field) === String(s.field))
