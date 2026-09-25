@@ -23,8 +23,9 @@ export interface UseDataTableQueryOptions<T = Record<string, unknown>> {
     /**
      * Optional Inertia-hydrated first page. Seeded into TanStack Query as
      * initialData for the default query identity only — never a parallel mode.
+     * May be a Ref/ComputedRef so it stays reactive.
      */
-    initialResponse?: DataTableResponse<T> | null
+    initialResponse?: DataTableResponse<T> | null | Ref<DataTableResponse<T> | null | undefined>
     /** Prefetch N pages ahead (default 2). Set 0 to disable. */
     prefetchPages?: number
     enabled?: boolean | Ref<boolean>
@@ -58,9 +59,11 @@ export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataT
         getDataTableQueryKey(resource.value, queryState.value) as unknown as unknown[],
     )
 
-    /** Seed default query only when query identity matches the initial page-1 identity. */
     const seededInitialData = computed((): DataTableResponse<T> | undefined => {
-        const seed = options.initialResponse
+        const raw = options.initialResponse
+        const seed = raw && typeof raw === 'object' && 'value' in raw
+            ? (raw as Ref<DataTableResponse<T> | null | undefined>).value
+            : (raw as DataTableResponse<T> | null | undefined)
         if (!seed?.data) return undefined
         const q = queryState.value
         if (q.page !== 1) return undefined
@@ -122,7 +125,6 @@ export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataT
         queryState.value = normalizeQuery({ ...queryState.value, sorts, page: 1 })
     }
 
-    /** Single coherent update for search + filters (one query transition). */
     function setSearchAndFilters(search: string | undefined, filters: DataTableFilters | undefined) {
         queryState.value = normalizeQuery({
             ...queryState.value,
