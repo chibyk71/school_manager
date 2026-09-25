@@ -158,7 +158,8 @@ export interface ColumnDefinition<T = Record<string, unknown>> {
 }
 
 /**
- * Comprehensive filter operator set – matches Laravel Scout / Query Builder style
+ * Comprehensive filter operator set – used by the legacy useDataTable composable.
+ * Phase 5 query operators live in @/datatable/types (DataTableFilterOperator).
  */
 export type FilterOperator =
     | '$eq' | '$eqc'
@@ -172,22 +173,8 @@ export type FilterOperator =
     | '$between' | '$notBetween'
     | '$or' | '$and'
 
-export interface FilterCondition {
-    field: string
-    operator: FilterOperator
-    value: any
-}
-
-export interface FilterGroup {
-    operator: '$and' | '$or'
-    conditions: Array<FilterCondition | FilterGroup>
-}
-
-export type Filter = FilterCondition | FilterGroup
-export type Filters = Record<string, Filter>
-
 /**
- * Sorting
+ * Sorting (legacy useDataTable). Phase 5 sorts: DataTableSort in @/datatable/types.
  */
 export type SortOrder = 'asc' | 'desc'
 
@@ -197,53 +184,9 @@ export interface Sort {
 }
 
 /**
- * Pagination
+ * Phase 5 DataTable API contracts (query, response, meta, column capabilities)
+ * live exclusively in @/datatable/types — do not re-define DataTableResponse here.
  */
-export interface Pagination {
-    page: number
-    pageSize: number
-}
-
-/**
- * API Contracts
- */
-export interface DataTableRequest<T = Record<string, unknown>> {
-    filters?: Filters
-    sort?: Sort[]
-    pagination?: Pagination
-    globalSearch?: string
-    columns?: ColumnDefinition<T>[]
-    with?: string[] // eager-loaded relations
-}
-
-export interface DataTableResponse<T = Record<string, unknown>> {
-    data: T[]
-    totalRecords: number
-    page: number
-    pageSize: number
-    /** Optional metadata (e.g. aggregations, summaries) */
-    meta?: Record<string, any>
-}
-
-/**
- * Local table state (for Pinia/localStorage persistence)
- */
-export interface DataTableState<T = Record<string, unknown>> {
-    request: DataTableRequest<T>
-    response: DataTableResponse<T>
-}
-
-export interface DataTableColumnState {
-    field: string
-    visible: boolean
-    width?: string
-    sortOrder?: SortOrder
-    filterValue?: any
-}
-
-export interface DataTableStateWithColumns<T = Record<string, unknown>> extends DataTableState<T> {
-    columns: DataTableColumnState[]
-}
 
 /**
  * Bulk actions configuration
