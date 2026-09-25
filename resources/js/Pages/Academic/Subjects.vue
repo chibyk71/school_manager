@@ -7,9 +7,7 @@ import { usePermissions } from '@/composables/usePermissions'
 import { useDeleteResource } from '@/composables/useDelete'
 
 const props = defineProps<{
-    initialData: any[]
     columns: ColumnDefinition<any>[]
-    globalFilterables?: string[]
 }>()
 
 const { hasPermission } = usePermissions()
@@ -18,7 +16,6 @@ const tableRef = ref()
 const showTrashed = ref(false)
 
 const enhancedColumns = computed(() => props.columns ?? [])
-const initialData = computed(() => props.initialData ?? [])
 
 const rowActions = computed<TableAction<any>[]>(() => [
     {
@@ -50,7 +47,6 @@ const bulkActions = computed<BulkAction[]>(() => [
         <AdvancedDataTable
             ref="tableRef"
             :endpoint="route('settings.academic.subjects.index')"
-            :initial-data="initialData"
             :columns="enhancedColumns"
             :bulk-actions="bulkActions"
             :actions="rowActions"
