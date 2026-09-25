@@ -1,3 +1,8 @@
+/**
+ * @deprecated Phase 5: use useDataTableQuery + DataTableDataSource instead.
+ * This legacy composable retains LRU/window/full_load and will be removed once all consumers migrate.
+ * AdvancedDataTable no longer depends on this file.
+ */
 import axios from 'axios';
 import type {
     ColumnDefinition,

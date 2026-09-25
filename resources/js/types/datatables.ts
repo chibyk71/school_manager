@@ -98,6 +98,9 @@ export interface ColumnDefinition<T = Record<string, unknown>> {
     /** Enable filtering UI */
     filterable?: boolean
 
+    /** Backend capability: included in global search when true */
+    searchable?: boolean
+
     /** Type of filter input to render */
     filterType?: ColumnFilterType
 
@@ -216,13 +219,22 @@ export interface DataTableRequest<T = Record<string, unknown>> {
     with?: string[] // eager-loaded relations
 }
 
+/** @deprecated Prefer canonical DataTableResponse from @/datatable/types */
 export interface DataTableResponse<T = Record<string, unknown>> {
     data: T[]
-    totalRecords: number
-    page: number
-    pageSize: number
-    /** Optional metadata (e.g. aggregations, summaries) */
-    meta?: Record<string, any>
+    columns?: any[]
+    meta?: {
+        currentPage: number
+        perPage: number
+        total: number
+        lastPage: number
+    }
+    /** @deprecated use meta.total */
+    totalRecords?: number
+    /** @deprecated use meta.currentPage */
+    page?: number
+    /** @deprecated use meta.perPage */
+    pageSize?: number
 }
 
 /**
