@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import UsersDataTable from '../components/UsersDataTable.vue'
 
-const props = defineProps<{
+defineProps<{
     users: any[]
-    totalRecords?: number
     columns: any[]
-    globalFilterables?: string[]
 }>()
 </script>
 
