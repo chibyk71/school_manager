@@ -1,48 +1,64 @@
 <?php
 
 /**
- * Temporary Phase 1 stub for the legacy Dynamic Enum admin/API controller.
+ * Dynamic Enum consumer options API (Phase 5).
  *
- * Phase 1 establishes the normalized schema only. Admin CRUD, option editing,
- * and option listing belong to Phase 4. This controller remains routable so the
- * application boots, but every action returns HTTP 501 with a clear message
- * instead of calling removed model methods (visibleToSchool, options JSON, etc.).
+ * Provides selectable options for frontend form fields by explicit definition key.
+ * Resolution uses the authenticated school context (GetSchoolModel) when present,
+ * otherwise tenant/default baseline.
+ *
+ * Admin CRUD lives on Settings\System\DynamicEnumsController (Phase 4).
  */
 
 namespace App\Http\Controllers;
 
-use App\Models\DynamicEnum;
+use App\Services\DynamicEnum\DynamicEnumNotConfiguredException;
+use App\Services\DynamicEnum\DynamicEnumResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class DynamicEnumController extends Controller
 {
-    private const PHASE_MESSAGE = 'Dynamic Enum administration is unavailable until Phase 4. Phase 1 only establishes the domain schema foundation.';
+    public function __construct(
+        private readonly DynamicEnumResolver $resolver,
+    ) {}
 
-    public function index(Request $request): JsonResponse
+    /**
+     * Active/selectable options for a definition key.
+     *
+     * GET /dynamic-enums/{key}/options
+     * Query: include_inactive=1 to include inactive options (historical recognition).
+     */
+    public function options(Request $request, string $key): JsonResponse
     {
-        return $this->notImplemented();
-    }
+        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+        $includeInactive = $request->boolean('include_inactive');
 
-    public function updateMetadata(Request $request, DynamicEnum $dynamicEnum): JsonResponse
-    {
-        return $this->notImplemented();
-    }
+        try {
+            $resolved = $school !== null
+                ? $this->resolver->resolveForSchool($school, $key)
+                : $this->resolver->resolve($key);
+        } catch (DynamicEnumNotConfiguredException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'options' => [],
+            ], 404);
+        }
 
-    public function updateOptions(Request $request, DynamicEnum $dynamicEnum): JsonResponse
-    {
-        return $this->notImplemented();
-    }
+        $options = $includeInactive
+            ? $resolved->options
+            : $resolved->activeOptions();
 
-    public function options(string $appliesTo, string $name): JsonResponse
-    {
-        return $this->notImplemented();
-    }
-
-    private function notImplemented(): JsonResponse
-    {
         return response()->json([
-            'message' => self::PHASE_MESSAGE,
-        ], 501);
+            'key' => $resolved->key,
+            'label' => $resolved->label,
+            'options' => $options->map(static fn ($opt) => [
+                'value' => $opt->value,
+                'label' => $opt->label,
+                'is_active' => $opt->isActive,
+                'color' => $opt->color,
+                'icon' => $opt->icon,
+            ])->values()->all(),
+        ]);
     }
 }
