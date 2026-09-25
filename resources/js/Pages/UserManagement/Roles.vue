@@ -16,9 +16,18 @@ import RoleActionsDropdown from './components/roles/RoleActionsDropdown.vue';
 const props = defineProps<{
     columns: ColumnDefinition<any>[];
     data: any[];
-    totalRecords: number
-    globalFilters: string[]
+    meta?: {
+        currentPage: number;
+        perPage: number;
+        total: number;
+        lastPage: number;
+    };
 }>();
+
+const initialTableResponse = computed(() => {
+    if (!props.meta || !props.columns?.length) return null
+    return { data: props.data ?? [], columns: props.columns as any, meta: props.meta }
+});
 
 const toast = useToast();
 
@@ -85,9 +94,13 @@ const enhancedColumns = computed(() => {
         }
     ]">
         <div class="space-y-6">
-            <AdvancedDataTable :actions="roleActions" endpoint="/admin/roles" :columns="enhancedColumns" :initial-data="data"
-                :bulk-actions="bulkActions">
-            </AdvancedDataTable>
+            <AdvancedDataTable
+                :actions="roleActions"
+                endpoint="/admin/roles"
+                :columns="enhancedColumns"
+                :initial-response="initialTableResponse"
+                :bulk-actions="bulkActions"
+            />
         </div>
     </AuthenticatedLayout>
 </template>
