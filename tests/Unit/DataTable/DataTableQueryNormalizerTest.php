@@ -4,7 +4,7 @@ use App\Support\DataTable\DataTableOperators;
 use App\Support\DataTable\DataTableQueryNormalizer;
 
 beforeEach(function () {
-    $this->normalizer = new DataTableQueryNormalizer(defaultPerPage: 20, maxPerPage: 100);
+    $this->normalizer = new DataTableQueryNormalizer(defaultPerPage: 50, maxPerPage: 100);
 });
 
 it('normalizes page to at least 1', function () {
@@ -16,8 +16,8 @@ it('normalizes page to at least 1', function () {
 it('clamps perPage to max and defaults invalid values', function () {
     expect($this->normalizer->normalizePerPage(50))->toBe(50);
     expect($this->normalizer->normalizePerPage(500))->toBe(100);
-    expect($this->normalizer->normalizePerPage(0))->toBe(20);
-    expect($this->normalizer->normalizePerPage('abc'))->toBe(20);
+    expect($this->normalizer->normalizePerPage(0))->toBe(50);
+    expect($this->normalizer->normalizePerPage('abc'))->toBe(50);
 });
 
 it('treats empty search as null for deterministic keys', function () {
@@ -65,7 +65,7 @@ it('produces equivalent normalized filters for equivalent semantics', function (
     expect($a)->toBe($b);
 });
 
-it('normalizes multi-sort preserving order and deduping fields', function () {
+it('normalizes multi-sort and dedupes fields', function () {
     $sorts = $this->normalizer->normalizeSorts([
         ['field' => 'name', 'direction' => 'asc'],
         ['field' => 'created_at', 'order' => -1],
@@ -84,4 +84,24 @@ it('accepts isNull without value', function () {
     ]);
     expect($filters)->toHaveCount(1);
     expect($filters[0]['operator'])->toBe(DataTableOperators::IS_NULL);
+});
+
+it('rejects unknown operators instead of silently dropping them', function () {
+    expect(fn () => $this->normalizer->normalizeFilters([
+        'conditions' => [
+            ['field' => 'name', 'operator' => 'invalidOperator', 'value' => 'x'],
+        ],
+    ]))->toThrow(\App\Support\DataTable\DataTableQueryException::class);
+});
+
+it('rejects unknown purity-style operator keys', function () {
+    expect(fn () => $this->normalizer->normalizeFilters([
+        'name' => ['$bogus' => 'x'],
+    ]))->toThrow(\App\Support\DataTable\DataTableQueryException::class);
+});
+
+it('defaults perPage to 50 when omitted', function () {
+    $q = $this->normalizer->fromArray([]);
+    expect($q->perPage)->toBe(50);
+    expect($q->page)->toBe(1);
 });
