@@ -38,7 +38,7 @@ class DynamicEnumsController extends Controller
     /**
      * Definition catalogue (tenant definitions only: school_id IS NULL).
      *
-     * Inertia page load returns initialData + columns for AdvancedDataTable.
+     * Inertia page load returns canonical data + columns + meta for AdvancedDataTable.
      * Axios refetch (wantsJson) returns the same tableQuery payload as JSON.
      */
     public function index(Request $request): InertiaResponse|JsonResponse
@@ -73,10 +73,14 @@ class DynamicEnumsController extends Controller
         }
 
         return Inertia::render('Settings/System/DynamicEnums/Index', [
-            'initialData' => $result['data'],
-            'totalRecords' => $result['totalRecords'],
+            'data' => $result['data'],
             'columns' => $result['columns'],
-            'globalFilterables' => $result['globalFilterables'] ?? [],
+            'meta' => $result['meta'] ?? [
+                'currentPage' => $result['currentPage'] ?? 1,
+                'perPage' => $result['perPage'] ?? 15,
+                'total' => $result['totalRecords'] ?? 0,
+                'lastPage' => $result['lastPage'] ?? 1,
+            ],
             'canManage' => Gate::allows('manage', DynamicEnum::class),
             'canManageGlobals' => Gate::allows('manageGlobals', DynamicEnum::class),
         ]);
