@@ -94,6 +94,22 @@ class DynamicEnumSeeder extends Seeder
                     ['value' => 'general', 'label' => 'General', 'color' => 'bg-gray-100 text-gray-700'],
                 ],
             ],
+            [
+                'key' => 'guardian.relationship',
+                'label' => 'Guardian Relationship',
+                'description' => 'Relationship of a guardian to a student (stored on guardian_student pivot).',
+                'options' => [
+                    ['value' => 'father', 'label' => 'Father'],
+                    ['value' => 'mother', 'label' => 'Mother'],
+                    ['value' => 'guardian', 'label' => 'Guardian'],
+                    ['value' => 'parent', 'label' => 'Parent'],
+                    ['value' => 'stepfather', 'label' => 'Stepfather'],
+                    ['value' => 'stepmother', 'label' => 'Stepmother'],
+                    ['value' => 'sibling', 'label' => 'Sibling'],
+                    ['value' => 'grandparent', 'label' => 'Grandparent'],
+                    ['value' => 'other', 'label' => 'Other'],
+                ],
+            ],
         ];
 
         foreach ($definitions as $definition) {
@@ -112,11 +128,12 @@ class DynamicEnumSeeder extends Seeder
             );
 
             foreach ($options as $index => $option) {
+                $canonicalValue = \App\Services\DynamicEnum\DynamicEnumValue::canonicalize($option['value']);
                 DynamicEnumOption::query()->firstOrCreate(
                     [
                         'dynamic_enum_id' => $enum->id,
                         'school_id' => null,
-                        'value' => $option['value'],
+                        'value' => $canonicalValue,
                     ],
                     [
                         'label' => $option['label'],
