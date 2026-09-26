@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Student;
 
 use App\Rules\InDynamicEnum;
+use App\Services\DynamicEnum\DynamicEnumValue;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -127,6 +128,23 @@ class EnrollStudentRequest extends FormRequest
         // Default portal_access structure
         if (!$this->has('portal_access')) {
             $this->merge(['portal_access' => ['create_account' => false]]);
+        }
+
+        // Canonicalize Dynamic Enum scalars before validation/persistence
+        $personal = $this->input('personal');
+        if (is_array($personal) && isset($personal['gender']) && is_string($personal['gender'])) {
+            $personal['gender'] = DynamicEnumValue::canonicalize($personal['gender']);
+            $this->merge(['personal' => $personal]);
+        }
+
+        $guardians = $this->input('guardians');
+        if (is_array($guardians)) {
+            foreach ($guardians as $i => $guardian) {
+                if (is_array($guardian) && isset($guardian['relationship']) && is_string($guardian['relationship'])) {
+                    $guardians[$i]['relationship'] = DynamicEnumValue::canonicalize($guardian['relationship']);
+                }
+            }
+            $this->merge(['guardians' => $guardians]);
         }
     }
 

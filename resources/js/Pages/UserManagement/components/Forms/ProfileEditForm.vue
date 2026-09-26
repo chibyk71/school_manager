@@ -213,7 +213,7 @@ const uploadAvatar = () => {
                         <TextInput label="User Name" name="username" v-model="form.username" :error="form.errors.username" placeholder="Enter User Name" disabled required />
 
                         <!-- gender -->
-                         <DynamicEnumField model="Profile" v-model="form.gender" name="gender" label="Gender" :error="form.errors.gender" property="gender" />
+                         <DynamicEnumField v-model="form.gender" enum-key="profile.gender" label="Gender" :form-error="form.errors.gender" />
 
                         <CustomFieldRenderer v-model="form.date_of_birth" :error="form.errors.date_of_birth" :field="{
                             label: 'Date of birth',

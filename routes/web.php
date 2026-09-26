@@ -70,23 +70,14 @@ Route::get('/', function () {
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth'])->name('dashboard');
 
-Route::get('/dynamic-enums/options/{appliesTo}/{name}', [DynamicEnumController::class, 'options'])
+// Phase 5 consumer options by definition key (scalar values, school-scoped via GetSchoolModel).
+// Admin catalogue/CRUD lives under settings.system.dynamic-enums.* (routes/dynamic_enums.php).
+Route::get('/dynamic-enums/{key}/options', [DynamicEnumController::class, 'options'])
+    ->where('key', '[a-z0-9_.\-]+')
+    ->middleware('auth')
     ->name('dynamic-enums.options');
 
 Route::middleware('auth')->group(function () {
-
-    Route::prefix('admin')
-        ->name('admin.')
-        ->group(function () {
-            Route::get('dynamic-enums', [DynamicEnumController::class, 'index'])
-                ->name('dynamic-enums.index');
-
-            Route::patch('dynamic-enums/{dynamicEnum}/metadata', [DynamicEnumController::class, 'updateMetadata'])
-                ->name('dynamic-enums.metadata');
-
-            Route::patch('dynamic-enums/{dynamicEnum}/options', [DynamicEnumController::class, 'updateOptions'])
-                ->name('dynamic-enums.options');
-        });
 
     // Academics
     Route::resource('schools', SchoolController::class)->only(['index', 'store', 'show', 'update']);

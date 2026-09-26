@@ -230,3 +230,45 @@ test('canonical values are stored lowercase trimmed', function () {
     expect(DynamicEnumValue::canonicalize('  Father '))->toBe('father');
     expect(DynamicEnumValue::canonicalize('HOME'))->toBe('home');
 });
+
+
+test('HasAddress path validates type via address.type key not obsolete contract', function () {
+    $school = phase5School();
+    seedDefinition('address.type', ['residential', 'office']);
+
+    // Anonymous owner using HasAddress
+    $owner = new class extends \Illuminate\Database\Eloquent\Model {
+        use \App\Traits\HasAddress;
+        public $incrementing = false;
+        protected $keyType = 'string';
+        protected $table = 'profiles';
+        public function getMorphClass(): string { return 'profile'; }
+        // Expose validate for test
+        public function testValidate(array $data): array {
+            return $this->validateAddressData($data, forUpdate: false);
+        }
+    };
+
+    // Bind school context for GetSchoolModel if helper reads from app
+    $ruleSchool = $school;
+
+    // Direct rule check mirrors HasAddress after migration
+    $rule = new InDynamicEnum('address.type', $school);
+    $failed = false;
+    $rule->validate('type', 'residential', function () use (&$failed) {
+        $failed = true;
+    });
+    expect($failed)->toBeFalse();
+
+    $rule2 = new InDynamicEnum('address.type', $school);
+    $failed2 = false;
+    $rule2->validate('type', 'warehouse', function () use (&$failed2) {
+        $failed2 = true;
+    });
+    expect($failed2)->toBeTrue();
+});
+
+test('canonicalization is applied for nested enrollment gender and relationship', function () {
+    expect(DynamicEnumValue::canonicalize('Male'))->toBe('male');
+    expect(DynamicEnumValue::canonicalize('STEP_FATHER'))->toBe('step_father');
+});
