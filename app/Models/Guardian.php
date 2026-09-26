@@ -8,7 +8,6 @@ use App\Models\School;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasAddress;
 use App\Traits\HasCustomFields;
-use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -57,7 +56,6 @@ class Guardian extends Model
         SoftDeletes,
         BelongsToSchool,
         HasCustomFields,
-        HasDynamicEnum,
         Notifiable,
         HasAddress,           // Guardians often need addresses (home, work, etc.)
         HasTableQuery;
@@ -78,11 +76,6 @@ class Guardian extends Model
         'notes',
     ];
 
-    // Dynamic enums (add fields here when you make them dynamic)
-    public function getDynamicEnumProperties(): array
-    {
-        return []; // e.g. ['guardian_type'] if needed later
-    }
 
     // =================================================================
     // RELATIONSHIPS

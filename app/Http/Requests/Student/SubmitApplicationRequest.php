@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Student;
 
 use App\Rules\InDynamicEnum;
+use App\Services\DynamicEnum\DynamicEnumValue;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -81,6 +82,21 @@ class SubmitApplicationRequest extends FormRequest
 
         if (! $this->has('source')) {
             $this->merge(['source' => 'public_portal']);
+        }
+
+        // Canonicalize Dynamic Enum scalars before validation/persistence
+        if ($this->has('gender') && is_string($this->input('gender'))) {
+            $this->merge(['gender' => DynamicEnumValue::canonicalize($this->input('gender'))]);
+        }
+
+        $guardians = $this->input('guardians_data');
+        if (is_array($guardians)) {
+            foreach ($guardians as $i => $guardian) {
+                if (is_array($guardian) && isset($guardian['relationship']) && is_string($guardian['relationship'])) {
+                    $guardians[$i]['relationship'] = DynamicEnumValue::canonicalize($guardian['relationship']);
+                }
+            }
+            $this->merge(['guardians_data' => $guardians]);
         }
     }
 
