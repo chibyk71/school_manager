@@ -13,6 +13,19 @@ import { DialogService, Tooltip, ToastService, ConfirmationService } from 'prime
 import VueApexCharts from "vue3-apexcharts";
 import Aura from '@primeuix/themes/aura';
 import { ModalPlugin } from './Components/Modals/ModalService';
+import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query';
+
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            staleTime: 30_000,
+            gcTime: 5 * 60_000,
+            retry: 1,
+            refetchOnWindowFocus: false,
+        },
+    },
+});
+
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -45,6 +58,7 @@ createInertiaApp({
             .use(ConfirmationService)
             .use(VueApexCharts)
             .use(ModalPlugin)
+            .use(VueQueryPlugin, { queryClient })
             .directive('tooltip', Tooltip)
             .mount(el);
     },

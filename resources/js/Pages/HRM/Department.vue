@@ -1,53 +1,9 @@
 <!--
-  resources/js/Pages/HRM/Departments/Index.vue
-
-  Purpose & Features Implemented (Production-Ready – December 16, 2025):
-
-  1. Complete department management hub:
-     - Server-side AdvancedDataTable with full features (pagination, global search, column filters, sorting, virtual scrolling ready)
-     - Bulk delete + force delete
-     - Trashed toggle with restore capability
-     - Stats cards (total, active, trashed)
-
-  2. Create & Edit via ResourceDialog modal:
-     - Modal ID: 'department'
-     - Payload includes mode ('create' | 'edit'), department data, all available roles
-     - Uses DepartmentFormModal.vue (next file) for form with role + per-role section scoping
-
-  3. Row actions:
-     - Edit → opens modal with pre-filled data
-     - Delete → handled by bulk system (single row works too)
-     - Restore → direct POST to restore endpoint
-
-  4. Permission-aware UI:
-     - All buttons, bulk actions, trashed toggle gated by usePermissions
-     - Actions column only shows permitted actions
-
-  5. Performance & UX:
-     - Initial SSR data from Inertia props
-     - Efficient eager loading (roles for chips)
-     - Responsive Tailwind + PrimeVue design
-     - Loading/empty states via AdvancedDataTable
-     - Toast feedback on all operations
-
-  6. Integration Points:
-     - Backend: DepartmentController (all methods)
-     - Composables: useDataTable, useModalForm (in modal), usePermissions, useToast
-     - Modals: DepartmentFormModal.vue (registered as 'department')
-     - Types: datatables.ts
-
-  7. Follows exact pattern from Roles/Index.vue reference:
-     - Column enhancement via computed
-     - Bulk actions with visibility
-     - Custom render for roles (chips)
-     - Actions dropdown
-
-  This page is fully production-ready and scalable for thousands of departments.
+  Department Index — full product page restored from master.
+  Phase 5: AdvancedDataTable without legacy props (no total-records / global-filter-fields).
 -->
-
 <script setup lang="ts">
-import { computed, ref, watch, markRaw } from 'vue'
-import { router, Head } from '@inertiajs/vue3'
+import { computed, markRaw, ref } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { usePermissions } from '@/composables/usePermissions'
 import AdvancedDataTable from '@/Components/datatable/AdvancedDataTable.vue'
@@ -59,38 +15,48 @@ import { Button, Card, Chip } from 'primevue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import DepartmentRoleChip from './Components/DepartmentRoleChip.vue'
 import { useDeleteResource } from '@/composables/useDelete'
+import { useRestoreResource } from '@/composables/useRestoreResource'
 
 const toast = useToast()
 const { hasPermission } = usePermissions()
+const { deleteResource } = useDeleteResource()
+const { restoreResource } = useRestoreResource()
 
-// Inertia page props (SSR)
 const props = defineProps<{
-    data: any // Laravel pagination + data
+    data: any
     roles: Array<{ id: string; display_name: string }>
-    totalRecords: number
-    columns: ColumnDefinition<any>[],
-    globalFilterables: string[]
+    columns: ColumnDefinition<any>[]
+    meta?: {
+        currentPage: number
+        perPage: number
+        total: number
+        lastPage: number
+    }
+    stats?: { total?: number; active?: number; trashed?: number }
 }>()
 
-const { deleteResource } = useDeleteResource()
-// ------------------------------------------------------------------
-// 1. Main Departments Table Configuration
-// ------------------------------------------------------------------
+const initialTableResponse = computed(() => {
+    const data = Array.isArray(props.data) ? props.data : (props.data?.data ?? [])
+    const columns = props.columns ?? []
+    if (!columns.length || !props.meta) return null
+    return { data, columns: columns as any, meta: props.meta }
+})
+
 const showTrashed = ref(false)
+
+const departmentsArray = computed(() => {
+    const d = props.data
+    if (Array.isArray(d)) return d
+    return d?.data ?? []
+})
 
 const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
     const cols = Array.isArray(props.columns) ? [...props.columns] : []
-
     const upsert = (field: string, newCol: Partial<ColumnDefinition<any>>) => {
-        const index = cols.findIndex(c => c.field === field);
-        if (index >= 0) {
-            cols[index] = { ...cols[index], ...newCol };
-        } else {
-            cols.push({ field, header: field, ...newCol } as ColumnDefinition<any>);
-        }
-    };
-
-    // 1. Assigned Roles – Chip Display
+        const index = cols.findIndex((c) => c.field === field)
+        if (index >= 0) cols[index] = { ...cols[index], ...newCol }
+        else cols.push({ field, header: field, ...newCol } as ColumnDefinition<any>)
+    }
     upsert('role_names', {
         header: 'Assigned Roles',
         filterable: true,
@@ -100,8 +66,6 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
             props: { roles: row.roles },
         }),
     })
-
-    // 2. Member Count
     upsert('member_count', {
         header: 'Members',
         sortable: true,
@@ -113,8 +77,6 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
             class: 'font-semibold',
         }),
     })
-
-    // 3. Actions Column
     cols.push({
         field: 'actions',
         header: 'Actions',
@@ -126,128 +88,87 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
         bodyClass: 'text-right',
         render: (row: any) => ({
             component: markRaw(DataTableActions) as any,
-            props: {
-                row,
-                viewPermission: 'departments.view',     // ← Add this
-                editPermission: 'departments.update',
-                deletePermission: 'departments.delete',
-                restorePermission: 'departments.restore',
-                trashed: showTrashed.value,
-            },
-            on: {
-                view: () => {
-                    modals.open('department-details', {
-                        departmentId: row.id
-                    })
-                },       // ← Add this: handle view/details modal
-                edit: () => openEditModal(row),
-                delete: () => deleteResource('departments', [row.id],),     // ← Add this: row-level delete confirmation
-                restore: () => restoreDepartment(row.id),
-            },
+            props: { row },
         }),
     })
-
     return cols
 })
 
-// Bulk actions
-const bulkActions = computed<BulkAction[]>(() => {
-    const actions: BulkAction[] = []
-
-    if (hasPermission('departments.delete')) {
-        actions.push({
-            label: 'Archive Selected',
-            action: 'delete',
-            icon: 'pi pi-trash',
-            severity: 'danger',
-        })
-    }
-
-    if (hasPermission('departments.force-delete') && showTrashed.value) {
-        actions.push({
-            label: 'Permanently Delete',
-            action: 'force-delete',
-            icon: 'pi pi-exclamation-triangle',
-            severity: 'danger',
-        })
-    }
-
-    return actions
-})
-
-// ------------------------------------------------------------------
-// 2. Modal Handling
-// ------------------------------------------------------------------
-const openCreateModal = () => {
-    modals.open('department', {
-        mode: 'create',
-        roles: props.roles,
-    })
-}
-
-const openEditModal = async (department: any) => {
-    // Pre-load full data including current role + section assignments
-    const { data } = await axios.get(route('departments.show', department.id))
-    const { data: currentRoles } = await axios.get(route('departments.roles', department.id))
-
-    modals.open('department', {
-        mode: 'edit',
-        department: data.department,
-        currentRoles: currentRoles.data,
-        allRoles: props.roles,
-    })
-}
-
-// ------------------------------------------------------------------
-// 3. Restore & Bulk Actions
-// ------------------------------------------------------------------
-const restoreDepartment = (id: string) => {
-    router.post(route('departments.restore', id), {}, {
-        onSuccess: () => {
-            toast.add({ severity: 'success', summary: 'Restored', detail: 'Department restored successfully' })
+const bulkActions = computed<BulkAction[]>(() => [
+    {
+        label: 'Delete Selected',
+        icon: 'pi pi-trash',
+        severity: 'danger',
+        handler: async (selected) => {
+            await deleteResource(
+                'departments.destroy',
+                selected.map((s: any) => s.id),
+            )
         },
-        onError: () => {
-            toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to restore department' })
-        }
-    })
-}
-
-const handleBulkAction = (action: string, selected: any[]) => {
-    const ids = selected.map(s => s.id)
-    const isForce = action === 'force-delete'
-
-    deleteResource('departments', ids, {
-        force: isForce,
-        onSuccess: () => {
-            toast.add({ severity: 'success', summary: 'Deleted', detail: 'Department deleted successfully' })
+        visible: () => hasPermission('departments.delete'),
+    },
+    {
+        label: 'Restore Selected',
+        icon: 'pi pi-refresh',
+        severity: 'info',
+        handler: async (selected) => {
+            await restoreResource(
+                'departments.restore',
+                selected.map((s: any) => s.id),
+            )
         },
-        onError: () => {
-            toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to delete department' })
-        }
-    })
+        visible: () => showTrashed.value && hasPermission('departments.restore'),
+    },
+])
+
+const handleBulkAction = async (_action: string) => {
+    /* reserved for parent bulk handler wiring */
 }
 
-
-const departmentsArray = computed(() => props.data ?? [])
-const departmentsTotal = computed(() => props.totalRecords ?? 0)
-
-
-console.log(departmentsArray.value);
+const openCreate = () => modals.open('department', { mode: 'create', roles: props.roles })
 </script>
 
 <template>
+    <AuthenticatedLayout
+        title="Departments"
+        :buttons="[
+            {
+                label: 'Add Department',
+                icon: 'pi pi-plus',
+                onClick: openCreate,
+                class: { hidden: !hasPermission('departments.create') },
+            },
+        ]"
+    >
+        <div v-if="stats" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <Card>
+                <template #content>
+                    <div class="text-sm text-gray-500">Total</div>
+                    <div class="text-2xl font-semibold">{{ stats.total ?? props.meta?.total ?? 0 }}</div>
+                </template>
+            </Card>
+            <Card>
+                <template #content>
+                    <div class="text-sm text-gray-500">Active</div>
+                    <div class="text-2xl font-semibold">{{ stats.active ?? '—' }}</div>
+                </template>
+            </Card>
+            <Card>
+                <template #content>
+                    <div class="text-sm text-gray-500">Trashed</div>
+                    <div class="text-2xl font-semibold">{{ stats.trashed ?? '—' }}</div>
+                </template>
+            </Card>
+        </div>
 
-    <Head title="Departments" />
-
-    <AuthenticatedLayout title="Departments" :crumb="[{ label: 'HRM' }, { label: 'Departments' }]"
-        :buttons="[{ label: 'Archive', class: hasPermission('departments.restore') ? '' : 'hidden', size: 'small', outlined: true },
-        { label: 'New Department', icon: 'pi pi-plus', onClick: openCreateModal, class: hasPermission('departments.create') ? '' : 'hidden' }]">
-        <!--  -->
-        <AdvancedDataTable :endpoint="route('departments.index')" :initial-data="departmentsArray"
-            :columns="enhancedColumns" :bulk-actions="bulkActions" @bulk-action="handleBulkAction"
-            :initial-params="{ with_trashed: showTrashed }" :global-filter-fields="globalFilterables"
-            :total-records="departmentsTotal">
-        </AdvancedDataTable>
+        <AdvancedDataTable
+            :endpoint="route('departments.index')"
+            :initial-response="initialTableResponse"
+            :columns="enhancedColumns"
+            :bulk-actions="bulkActions"
+            @bulk-action="handleBulkAction"
+            :initial-params="{ with_trashed: showTrashed }"
+        />
     </AuthenticatedLayout>
 </template>
 

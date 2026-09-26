@@ -2,32 +2,9 @@
   resources/js/Pages/Admin/Users/components/UsersDataTable.vue
 
   Main reusable DataTable for the Admin → Users index page.
-
-  Features / Problems Solved:
-  ────────────────────────────────────────────────────────────────
-  • Displays users with enhanced columns: avatar + name + email, type badge, status toggle
-  • Supports server-side lazy loading via AdvancedDataTable
-  • Single-row status toggle (PATCH to api.users.toggle-status)
-  • Bulk actions: activate / deactivate / reset-password / delete
-    → Uses standard Laravel resource routes with { ids: [...] } payload
-    → No special "bulk-xxx" routes needed (matches your backend design)
-  • Global loading overlay during any long-running operation
-  • Toast notifications for success/error states
-  • Fully typed with your datatables.ts interfaces
-  • No per-row actions dropdown (replaced by table-level action menu via TableAction[])
-  • Responsive, accessible, dark-mode ready
-
-  Integration:
-  ─────────────
-  • Expects Inertia props: users, totalRecords, columns, globalFilterFields
-  • Uses AdvancedDataTable as the rendering engine
-  • Communicates with backend via Inertia router + axios for bulk non-GET requests
-  • Designed to work with ProfileController bulk methods (destroy, toggle status, etc.)
-
-  Future extensions:
-  • Add "Restore" bulk action when trashed view is implemented
-  • Add "Assign Role" bulk modal
-  • Add export button / CSV action
+  Phase 5: ADT owns selection/pagination/loading internally.
+  Unsupported external props removed (v-model:selected-rows, selection-mode, loading, rows, paginator).
+  Legacy totalRecords / globalFilterFields dropped from page contract.
 -->
 
 <script setup lang="ts">
@@ -44,25 +21,15 @@ import type { ColumnDefinition, TableAction, BulkAction } from '@/types/datatabl
 import { useSelectedResources } from '@/helpers'
 import axios from 'axios'
 
-// ────────────────────────────────────────────────
-// Props & Composition
-// ────────────────────────────────────────────────
-
 const props = defineProps<{
     columns: ColumnDefinition<any>[]
     users: any[]
-    totalRecords?: number
-    globalFilterFields?: string[]
 }>()
 
 const toast = useToast()
 const loading = ref(false)
 
 const { selectedResourceIds, selectedResources: selectedUsers } = useSelectedResources()
-
-// ────────────────────────────────────────────────
-// Enhanced Columns (immutable, clean upsert pattern)
-// ────────────────────────────────────────────────
 
 const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
     const cols = [...(Array.isArray(props.columns) ? props.columns : [])]
@@ -127,10 +94,6 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
     return cols
 })
 
-// ────────────────────────────────────────────────
-// Row Actions (passed to AdvancedDataTable as TableAction[])
-// ────────────────────────────────────────────────
-
 const rowActions = computed<TableAction<any>[]>(() => [
     {
         label: row => row.is_active ? 'Deactivate' : 'Activate',
@@ -170,7 +133,6 @@ const rowActions = computed<TableAction<any>[]>(() => [
         icon: 'pi pi-eye',
         severity: 'info',
         handler: row => {
-            // TODO: open details modal when implemented
             toast.add({ severity: 'info', summary: 'View', detail: `Viewing ${row.full_name} details...` })
         }
     },
@@ -179,7 +141,6 @@ const rowActions = computed<TableAction<any>[]>(() => [
         icon: 'pi pi-pencil',
         severity: 'primary',
         handler: row => {
-            // TODO: open edit modal (admin version)
             toast.add({ severity: 'info', summary: 'Edit', detail: `Editing ${row.full_name}...` })
         }
     },
@@ -188,7 +149,6 @@ const rowActions = computed<TableAction<any>[]>(() => [
         icon: 'pi pi-key',
         severity: 'help',
         handler: row => {
-            // TODO: open reset password modal
             toast.add({ severity: 'info', summary: 'Reset', detail: `Resetting password for ${row.full_name}...` })
         }
     },
@@ -203,14 +163,10 @@ const rowActions = computed<TableAction<any>[]>(() => [
             acceptClass: 'p-button-danger'
         },
         handler: async row => {
-            // TODO: implement single delete (or defer to bulk logic)
+            // TODO: implement single delete
         }
     }
 ])
-
-// ────────────────────────────────────────────────
-// Bulk Actions
-// ────────────────────────────────────────────────
 
 const bulkActions = computed<BulkAction<any>[]>(() => [
     {
@@ -241,10 +197,6 @@ const bulkActions = computed<BulkAction<any>[]>(() => [
         handler: selected => handleBulkDelete(selected)
     }
 ])
-
-// ────────────────────────────────────────────────
-// Bulk Handlers (aligned with your backend: DELETE /profiles { ids: [...] })
-// ────────────────────────────────────────────────
 
 const handleBulkStatusChange = async (selected: any[], activate: boolean) => {
     if (!selected.length) return
@@ -334,13 +286,14 @@ const handleBulkDelete = async (selected: any[]) => {
 
 <template>
     <div class="relative min-h-[400px]">
-        <AdvancedDataTable endpoint="/users" :columns="enhancedColumns" :initial-data="props.users"
-            :total-records="props.totalRecords" :initial-params="{ with: 'profiles,roles,schools' }"
-            :row-actions="rowActions" :bulk-actions="bulkActions" v-model:selected-rows="selectedUsers"
-            selection-mode="multiple" :loading="loading" :global-filter-fields="props.globalFilterFields" lazy paginator
-            :rows="20" responsive-layout="scroll" />
+        <AdvancedDataTable
+            endpoint="/users"
+            :columns="enhancedColumns"
+            :initial-params="{ with: 'profiles,roles,schools' }"
+            :actions="rowActions"
+            :bulk-actions="bulkActions"
+        />
 
-        <!-- Global processing overlay -->
         <transition name="fade">
             <div v-if="loading"
                 class="absolute inset-0 bg-white/70 dark:bg-gray-900/70 backdrop-blur-sm flex items-center justify-center z-40 rounded-xl"

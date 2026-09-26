@@ -86,6 +86,33 @@ const {  restoreResource } = useRestoreResource()
 
 const selectedResource = ref(props.currentResource || 'student')
 
+const initialTableResponse = computed(() => {
+    const data = props.data ?? []
+    const columns = props.columns ?? []
+    if (!columns.length) return null
+    if (props.meta) {
+        return { data, columns: columns as any, meta: props.meta }
+    }
+    if (
+        typeof props.totalRecords === 'number' &&
+        typeof props.currentPage === 'number' &&
+        typeof props.perPage === 'number' &&
+        typeof props.lastPage === 'number'
+    ) {
+        return {
+            data,
+            columns: columns as any,
+            meta: {
+                currentPage: props.currentPage,
+                perPage: props.perPage,
+                total: props.totalRecords,
+                lastPage: props.lastPage,
+            },
+        }
+    }
+    return null
+})
+
 // ────────────────────────────────────────────────
 // Table columns
 // ────────────────────────────────────────────────
@@ -240,9 +267,9 @@ const handleReorder = async (event: { newIndex: number; oldIndex: number; value:
 
         <!-- Main content -->
         <AdvancedDataTable :endpoint="route('settings.system.custom-fields', { resource: selectedResource })"
-            :columns="enhancedColumns" :initial-data="props.data" :total-records="props.totalRecords"
+            :columns="enhancedColumns" :initial-response="initialTableResponse"
             :initial-params="{ resource: selectedResource }" @row-reorder="handleReorder" data-key="id"
-            :global-filter-fields="globalFilterables" :export-filename="`custom-fields-${selectedResource}`" :actions="actionsButtons" :bulk-actions="bulkActions">
+            :export-filename="`custom-fields-${selectedResource}`" :actions="actionsButtons" :bulk-actions="bulkActions">
             <!-- Custom empty state -->
             <template #empty>
                 <div class="text-center py-16 text-gray-500 dark:text-gray-400">
