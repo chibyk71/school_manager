@@ -66,9 +66,26 @@ type School = {
 const props = defineProps<{
     data: School[];
     columns: ColumnDefinition<School>[];
-    globalFilterables: string[];
-    totalRecords: number;
+    /** Canonical pagination meta from DataTableQueryEngine (when present). */
+    meta?: {
+        currentPage: number;
+        perPage: number;
+        total: number;
+        lastPage: number;
+    };
 }>();
+
+/** Prefer engine meta; do not invent totals from data.length alone. */
+const initialTableResponse = computed(() => {
+    if (!props.meta || !Array.isArray(props.columns) || props.columns.length === 0) {
+        return null;
+    }
+    return {
+        data: props.data ?? [],
+        columns: props.columns as any,
+        meta: props.meta,
+    };
+});
 
 const toast = useToast();
 const { deleteResource } = useDeleteResource();
@@ -78,7 +95,7 @@ const { hasPermission } = usePermissions();
 
 // Partial reload after mutations
 const refreshTable = () => {
-    router.reload({ only: ['data', 'totalRecords'] });
+    router.reload({ only: ['data', 'meta', 'columns'] });
 };
 
 // Enhanced columns: logo preview + inline status toggle
@@ -161,7 +178,7 @@ const toggleStatus = async (school: School, newValue: boolean) => {
             life: 3000,
         });
     } catch {
-        school.is_active = original; // Rollback on failure
+        school.is_active = original; // Rollback
         toast.add({
             severity: 'error',
             summary: 'Update Failed',
@@ -171,9 +188,6 @@ const toggleStatus = async (school: School, newValue: boolean) => {
     }
 };
 
-/**
- * Row Actions – Powered by composables for consistent dialogs/toasts
- */
 const schoolActions: TableAction<School>[] = [
     {
         label: 'Edit',
@@ -213,9 +227,6 @@ const schoolActions: TableAction<School>[] = [
     },
 ];
 
-/**
- * Bulk Actions – Consistent UX via composables where possible
- */
 const schoolBulkActions: BulkAction<School>[] = [
     {
         label: 'Delete Selected',
@@ -278,7 +289,6 @@ const schoolBulkActions: BulkAction<School>[] = [
             onClick: () => openSchoolForm()
         }] : []">
         <div class="space-y-6">
-            <!-- Info banner -->
             <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
                 <p class="text-sm text-blue-800 dark:text-blue-200">
                     Manage your organization's schools. Super admins see all schools; school owners see only their
@@ -286,16 +296,18 @@ const schoolBulkActions: BulkAction<School>[] = [
                 </p>
             </div>
 
-            <!-- Main data table -->
-            <AdvancedDataTable endpoint="settings/schools" :columns="enhancedColumns" :bulk-actions="schoolBulkActions"
-                :initial-data="props.data" :total-records="props.totalRecords"
-                :global-filter-fields="props.globalFilterables" :actions="schoolActions" />
+            <AdvancedDataTable
+                endpoint="settings/schools"
+                :columns="enhancedColumns"
+                :bulk-actions="schoolBulkActions"
+                :initial-response="initialTableResponse"
+                :actions="schoolActions"
+            />
         </div>
     </AuthenticatedLayout>
 </template>
 
 <style scoped lang="postcss">
-/* Table header styling */
 :deep(.p-datatable .p-datatable-header) {
     @apply bg-primary-600 text-white rounded-t-lg;
 }

@@ -24,10 +24,6 @@ const getErrorMessage = (field: keyof AddressFormData): string | undefined => {
     return Array.isArray(err) ? err[0] : err;
 };
 
-const onTypeUpdate = (value: string | null | undefined) => {
-    form.value.type = value ?? null;
-};
-
 // Cascade: clear dependents when parent changes
 watch(
     () => form.value.country_id,
@@ -53,12 +49,11 @@ watch(
         <div>
             <label class="block text-sm font-medium mb-1">Address type</label>
             <DynamicEnumField
-                :model-value="form.type ?? ''"
-                model="App\\Models\\Address"
-                property="type"
+                v-model="form.type"
+                enum-key="address.type"
+                label="Address type"
                 :disabled="disabled"
                 placeholder="Select type"
-                @update:model-value="onTypeUpdate"
             />
             <Message v-if="getErrorMessage('type')" severity="error" size="small" class="mt-1">
                 {{ getErrorMessage('type') }}

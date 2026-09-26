@@ -4,31 +4,15 @@ namespace App\Http\Requests;
 
 use App\Models\Academic\Subject;
 use App\Rules\InDynamicEnum;
+use App\Services\DynamicEnum\DynamicEnumValue;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
  * UpdateSubjectRequest – v1.0
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * WHAT IT IMPLEMENTS
- * ─────────────────────────────────────────────────────────────────────────────
- * Validates all incoming data when updating an existing Subject. Uses 'sometimes'
- * for most fields to allow partial updates from the modal form without sending
- * all fields on every save.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * FEATURES / PROBLEMS SOLVED
- * ─────────────────────────────────────────────────────────────────────────────
- * • Subject code uniqueness scoped to school, ignoring the subject being updated
- * • Partial update safe: 'sometimes' on non-required fields
- * • All same relationship validation as Store request
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * FITS INTO THE MODULE
- * ─────────────────────────────────────────────────────────────────────────────
- * • Used by SubjectController::update()
- * • Validated data passed directly to SubjectService::update()
+ * Validates subject updates. Type and category use Dynamic Enum keys
+ * academic.subject_type and academic.subject_category with explicit school context.
  */
 class UpdateSubjectRequest extends FormRequest
 {
@@ -58,8 +42,8 @@ class UpdateSubjectRequest extends FormRequest
             ],
 
             'description'  => 'nullable|string|max:1000',
-            'type'         => ['sometimes', 'required', 'string', new InDynamicEnum('subject_type', Subject::class)],
-            'category'     => ['sometimes', 'required', 'string', new InDynamicEnum('subject_category', Subject::class)],
+            'type'         => ['sometimes', 'required', 'string', new InDynamicEnum('academic.subject_type', GetSchoolModel())],
+            'category'     => ['sometimes', 'required', 'string', new InDynamicEnum('academic.subject_category', GetSchoolModel())],
             'is_active'    => 'sometimes|boolean',
             'pass_mark'    => 'nullable|integer|min:0|max:100',
             'credit_hours' => 'nullable|integer|min:1|max:40',
@@ -84,5 +68,18 @@ class UpdateSubjectRequest extends FormRequest
             'pass_mark.max'  => 'Pass mark cannot exceed 100.',
             'color.regex'    => 'Color must be a valid hex code (e.g. #3B82F6).',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $payload = [];
+        foreach (['type', 'category'] as $field) {
+            if ($this->has($field) && is_string($this->input($field))) {
+                $payload[$field] = DynamicEnumValue::canonicalize($this->input($field));
+            }
+        }
+        if ($payload !== []) {
+            $this->merge($payload);
+        }
     }
 }

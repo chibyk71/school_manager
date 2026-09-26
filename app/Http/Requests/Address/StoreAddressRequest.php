@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Address;
 
-use App\Models\Address;
 use App\Rules\InDynamicEnum;
+use App\Services\DynamicEnum\DynamicEnumValue;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -46,7 +46,7 @@ class StoreAddressRequest extends FormRequest
             'landmark' => ['nullable', 'string', 'max:255'],
             'city_text' => ['nullable', 'string', 'max:100'],
             'postal_code' => ['nullable', 'string', 'max:20'],
-            'type' => ['required', 'string', new InDynamicEnum('type', Address::class)],
+            'type' => ['required', 'string', new InDynamicEnum('address.type', GetSchoolModel())],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'is_primary' => ['sometimes', 'boolean'],
@@ -68,5 +68,12 @@ class StoreAddressRequest extends FormRequest
             'city_id' => 'city',
             'type' => 'address type',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('type') && is_string($this->input('type'))) {
+            $this->merge(['type' => DynamicEnumValue::canonicalize($this->input('type'))]);
+        }
     }
 }

@@ -4,6 +4,7 @@ namespace App\Traits;
 
 use App\Models\Address;
 use App\Rules\InDynamicEnum;
+use App\Services\DynamicEnum\DynamicEnumValue;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -273,6 +274,11 @@ trait HasAddress
      */
     protected function validateAddressData(array $data, bool $forUpdate = false, ?Address $existing = null): array
     {
+        // Canonical scalar storage for Dynamic Enum fields
+        if (isset($data['type']) && is_string($data['type'])) {
+            $data['type'] = DynamicEnumValue::canonicalize($data['type']);
+        }
+
         $presence = $forUpdate ? 'sometimes' : 'required';
 
         // Effective location for hierarchy: existing attrs + incoming overrides.
@@ -315,7 +321,7 @@ trait HasAddress
             'postal_code' => ['nullable', 'string', 'max:20'],
 
             // Dynamic Enum — authoritative for type
-            'type' => [$presence, 'string', new InDynamicEnum('type', Address::class)],
+            'type' => [$presence, 'string', new InDynamicEnum('address.type', function_exists('GetSchoolModel') ? GetSchoolModel() : null)],
 
             // Coordinates
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],

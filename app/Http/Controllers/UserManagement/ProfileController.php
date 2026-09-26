@@ -400,6 +400,7 @@ class ProfileController extends Controller
         return Inertia::render('Profiles/Edit', [
             'profile' => $profile->only([
                 'id',
+                'title',
                 'first_name',
                 'middle_name',
                 'last_name',
@@ -408,8 +409,6 @@ class ProfileController extends Controller
                 'phone',
                 'email',
                 'notes',
-                // Add any custom fields here if needed
-                // 'custom_fields' => $profile->custom_fields,
             ]),
 
             // Pass avatar URL for preview

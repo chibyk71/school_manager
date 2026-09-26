@@ -4,6 +4,9 @@ namespace App\Services\Student;
 
 use App\Models\Academic\Student;
 use App\Models\Guardian;
+use App\Services\DynamicEnum\DynamicEnumValidationStatus;
+use App\Services\DynamicEnum\DynamicEnumValidator;
+use App\Services\DynamicEnum\DynamicEnumValue;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -46,8 +49,13 @@ class StudentGuardianService
                 $this->unsetPrimaryContact($student);
             }
 
+            $relationship = $this->resolveCanonicalRelationship(
+                $student,
+                $pivotData['relationship'] ?? 'guardian',
+            );
+
             $student->guardians()->attach($guardian->id, [
-                'relationship' => $pivotData['relationship'] ?? 'guardian',
+                'relationship' => $relationship,
                 'is_primary_contact' => $pivotData['is_primary_contact'] ?? false,
                 'can_pickup' => $pivotData['can_pickup'] ?? true,
                 'can_access_portal' => $pivotData['can_access_portal'] ?? true,
@@ -59,7 +67,7 @@ class StudentGuardianService
             Log::info('Guardian attached to student', [
                 'student_id' => $student->id,
                 'guardian_id' => $guardian->id,
-                'relationship' => $pivotData['relationship'] ?? 'guardian',
+                'relationship' => $relationship,
             ]);
         });
     }
@@ -76,15 +84,26 @@ class StudentGuardianService
                 $this->unsetPrimaryContact($student);
             }
 
-            $student->guardians()->updateExistingPivot($guardian->id, [
-                'relationship' => $pivotData['relationship'] ?? null,
+            $payload = [
                 'is_primary_contact' => $pivotData['is_primary_contact'] ?? null,
                 'can_pickup' => $pivotData['can_pickup'] ?? null,
                 'can_access_portal' => $pivotData['can_access_portal'] ?? null,
                 'is_emergency_contact' => $pivotData['is_emergency_contact'] ?? null,
                 'emergency_contact_priority' => $pivotData['emergency_contact_priority'] ?? null,
                 'notes' => $pivotData['notes'] ?? null,
-            ]);
+            ];
+
+            if (array_key_exists('relationship', $pivotData) && $pivotData['relationship'] !== null) {
+                $payload['relationship'] = $this->resolveCanonicalRelationship(
+                    $student,
+                    $pivotData['relationship'],
+                );
+            }
+
+            $student->guardians()->updateExistingPivot($guardian->id, array_filter(
+                $payload,
+                static fn ($v) => $v !== null,
+            ));
 
             Log::info('Guardian link updated', [
                 'student_id' => $student->id,
@@ -135,6 +154,45 @@ class StudentGuardianService
     {
         $student->guardians()->updateExistingPivot(null, [
             'is_primary_contact' => false,
+        ]);
+    }
+
+    /**
+     * Canonicalize and validate guardian_student.relationship via Dynamic Enum.
+     *
+     * Uses the student's school context when available; otherwise tenant baseline.
+     *
+     * @throws ValidationException
+     */
+    private function resolveCanonicalRelationship(Student $student, mixed $relationship): string
+    {
+        if (! is_string($relationship) || trim($relationship) === '') {
+            throw ValidationException::withMessages([
+                'relationship' => 'Guardian relationship is required.',
+            ]);
+        }
+
+        $canonical = DynamicEnumValue::canonicalize($relationship);
+        /** @var DynamicEnumValidator $validator */
+        $validator = app(DynamicEnumValidator::class);
+
+        $school = $student->school_id !== null ? $student->school : null;
+        $result = $school !== null
+            ? $validator->validate($school, 'guardian.relationship', $canonical)
+            : $validator->validateTenant('guardian.relationship', $canonical);
+
+        if ($result->isValid()) {
+            return $canonical;
+        }
+
+        $message = match ($result->status) {
+            DynamicEnumValidationStatus::DefinitionNotConfigured => 'Guardian relationship configuration is unavailable.',
+            DynamicEnumValidationStatus::InactiveOption => 'The selected guardian relationship is no longer available.',
+            default => 'The selected guardian relationship is invalid.',
+        };
+
+        throw ValidationException::withMessages([
+            'relationship' => $message,
         ]);
     }
 }

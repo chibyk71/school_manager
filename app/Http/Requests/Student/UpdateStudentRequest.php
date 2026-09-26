@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Student;
 
 use App\Models\Academic\Student;
-use App\Rules\InDynamicEnum;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -31,26 +30,17 @@ use Illuminate\Validation\Rule;
 
 class UpdateStudentRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
-        // Route middleware usually handles permission: students.update
-        // Additional check: ensure the student belongs to current school (via BelongsToSchool)
         return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     */
     public function rules(): array
     {
         /** @var Student $student */
         $student = $this->route('student');
 
         return [
-            // ── Core Enrollment Fields (sometimes = partial update) ─────────────
             'admission_number' => [
                 'sometimes',
                 'string',
@@ -66,40 +56,30 @@ class UpdateStudentRequest extends FormRequest
                 'sometimes',
                 'string',
                 'max:30',
-                new InDynamicEnum('admission_type', Student::class),
             ],
 
-            // ── Status (highly sensitive – controlled via StudentStatusService in most cases) ──
             'status' => [
                 'sometimes',
                 'string',
                 'max:50',
-                new InDynamicEnum('status', Student::class),
             ],
 
-            // Status change metadata (usually set by service, but allowed here for direct updates)
             'status_reason' => 'sometimes|nullable|string|max:1000',
             'status_date' => 'sometimes|nullable|date',
             'status_until' => 'sometimes|nullable|date|after:status_date',
 
-            // ── Transfer / Previous School Fields ─────────────────────────────
             'previous_school' => 'sometimes|nullable|string|max:255',
             'previous_class' => 'sometimes|nullable|string|max:100',
             'previous_school_address' => 'sometimes|nullable|string|max:500',
             'transfer_destination' => 'sometimes|nullable|string|max:255',
             'transfer_certificate_number' => 'sometimes|nullable|string|max:100',
 
-            // ── Notes (always allowed for updates)
             'notes' => 'sometimes|nullable|string|max:2000',
 
-            // ── Custom Fields (from HasCustomFields trait)
             'custom_data' => 'sometimes|nullable|array',
         ];
     }
 
-    /**
-     * Custom validation messages
-     */
     public function messages(): array
     {
         return [
@@ -110,30 +90,18 @@ class UpdateStudentRequest extends FormRequest
         ];
     }
 
-    /**
-     * Prepare validated data for the controller/service layer
-     * (removes fields that should never be directly updated)
-     */
     public function validatedData(): array
     {
         $data = $this->validated();
-
-        // Never allow changing these core immutable fields via this request
         unset($data['profile_id'], $data['school_id']);
-
         return $data;
     }
 
-    /**
-     * Additional validation after basic rules
-     */
     protected function withValidator($validator): void
     {
         $validator->after(function ($validator) {
             $student = $this->route('student');
 
-            // Prevent changing status to 'transferred' or 'graduated' directly here
-            // These should go through dedicated status services for proper side effects
             if ($this->filled('status')) {
                 $restrictedStatuses = ['transferred', 'graduated', 'deceased'];
 
@@ -145,7 +113,6 @@ class UpdateStudentRequest extends FormRequest
                 }
             }
 
-            // If changing admission_number, ensure it's not empty
             if ($this->filled('admission_number') && empty(trim($this->input('admission_number')))) {
                 $validator->errors()->add('admission_number', 'Admission number cannot be empty.');
             }

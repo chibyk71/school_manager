@@ -23,14 +23,15 @@ class DynamicEnumSeeder extends Seeder
                 'label' => 'Title',
                 'description' => 'Prefix that appears before a person\'s name (Mr, Mrs, Dr, …).',
                 'options' => [
-                    ['value' => 'Mr', 'label' => 'Mr'],
-                    ['value' => 'Mrs', 'label' => 'Mrs'],
-                    ['value' => 'Miss', 'label' => 'Miss'],
-                    ['value' => 'Ms', 'label' => 'Ms'],
-                    ['value' => 'Dr', 'label' => 'Dr'],
-                    ['value' => 'Prof', 'label' => 'Prof'],
-                    ['value' => 'Rev', 'label' => 'Rev'],
-                    ['value' => 'Engr', 'label' => 'Engr'],
+                    // Stored canonical scalars (lowercase); labels keep display casing
+                    ['value' => 'mr', 'label' => 'Mr'],
+                    ['value' => 'mrs', 'label' => 'Mrs'],
+                    ['value' => 'miss', 'label' => 'Miss'],
+                    ['value' => 'ms', 'label' => 'Ms'],
+                    ['value' => 'dr', 'label' => 'Dr'],
+                    ['value' => 'prof', 'label' => 'Prof'],
+                    ['value' => 'rev', 'label' => 'Rev'],
+                    ['value' => 'engr', 'label' => 'Engr'],
                 ],
             ],
             [
@@ -94,6 +95,25 @@ class DynamicEnumSeeder extends Seeder
                     ['value' => 'general', 'label' => 'General', 'color' => 'bg-gray-100 text-gray-700'],
                 ],
             ],
+            [
+                'key' => 'guardian.relationship',
+                'label' => 'Guardian Relationship',
+                'description' => 'Relationship of a guardian to a student (stored on guardian_student pivot).',
+                'options' => [
+                    // Align with guardian_student migration domain vocabulary
+                    ['value' => 'father', 'label' => 'Father'],
+                    ['value' => 'mother', 'label' => 'Mother'],
+                    ['value' => 'guardian', 'label' => 'Guardian'],
+                    ['value' => 'grandparent', 'label' => 'Grandparent'],
+                    ['value' => 'step_father', 'label' => 'Stepfather'],
+                    ['value' => 'step_mother', 'label' => 'Stepmother'],
+                    ['value' => 'foster_parent', 'label' => 'Foster Parent'],
+                    ['value' => 'uncle', 'label' => 'Uncle'],
+                    ['value' => 'aunt', 'label' => 'Aunt'],
+                    ['value' => 'sibling', 'label' => 'Sibling'],
+                    ['value' => 'other', 'label' => 'Other'],
+                ],
+            ],
         ];
 
         foreach ($definitions as $definition) {
@@ -112,11 +132,12 @@ class DynamicEnumSeeder extends Seeder
             );
 
             foreach ($options as $index => $option) {
+                $canonicalValue = \App\Services\DynamicEnum\DynamicEnumValue::canonicalize($option['value']);
                 DynamicEnumOption::query()->firstOrCreate(
                     [
                         'dynamic_enum_id' => $enum->id,
                         'school_id' => null,
-                        'value' => $option['value'],
+                        'value' => $canonicalValue,
                     ],
                     [
                         'label' => $option['label'],

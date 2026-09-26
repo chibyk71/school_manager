@@ -29,7 +29,7 @@
   • As modal: register in ModalDirectory → open via useModal().open('edit-profile-self', { profile })
 
   TODO / Future:
-  • Add dynamic enums (gender, title) via HasDynamicEnum trait
+  • title / gender use DynamicEnumField (profile.title, profile.gender)
   • Add country/state/city dropdowns with nnjeim/world integration
   • Add email verification status badge
   • Add 2FA toggle if implemented
@@ -197,7 +197,7 @@ const uploadAvatar = () => {
                         </div>
                     </template>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <TextInput label="Title" name="title" v-model="form.title" :error="form.errors.title" placeholder="Enter Title (MR, Mrs, Dr)" required />
+                        <DynamicEnumField v-model="form.title" enum-key="profile.title" label="Title" :form-error="form.errors.title" placeholder="Select title" />
 
                         <TextInput label="First name" name="first_name" v-model="form.first_name" :error="form.errors.first_name" placeholder="Enter First Name" required />
 
@@ -213,7 +213,7 @@ const uploadAvatar = () => {
                         <TextInput label="User Name" name="username" v-model="form.username" :error="form.errors.username" placeholder="Enter User Name" disabled required />
 
                         <!-- gender -->
-                         <DynamicEnumField model="Profile" v-model="form.gender" name="gender" label="Gender" :error="form.errors.gender" property="gender" />
+                         <DynamicEnumField v-model="form.gender" enum-key="profile.gender" label="Gender" :form-error="form.errors.gender" />
 
                         <CustomFieldRenderer v-model="form.date_of_birth" :error="form.errors.date_of_birth" :field="{
                             label: 'Date of birth',

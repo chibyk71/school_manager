@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Traits\HasAddress;
 use App\Traits\HasCustomFields;
-use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -30,7 +29,7 @@ use Spatie\Image\Enums\Fit;
  * - Role flexibility: hasMany relationships to Student, Staff, Guardian models allow multiple roles over time/schools.
  * - Optional login: hasOne User relationship → not every profile needs app access (e.g., young students, some guardians).
  * - Multi-tenant readiness: No direct BelongsToSchool (tenant-wide), but role models (Student/Staff/Guardian) apply school scoping.
- * - Rich personal data: Supports HasAddress (multiple addresses), HasCustomFields (school-specific extensions), HasDynamicEnum (title, gender, etc.).
+ * - Rich personal data: Supports HasAddress (multiple addresses), HasCustomFields (school-specific extensions), Dynamic Enum scalars (title, gender via profile.title / profile.gender).
  * - Media handling: Single avatar via Spatie Media Library with thumb/medium conversions + gender-based fallback.
  * - Activity logging: Full audit trail via Spatie LogsActivity (useful for admin review, compliance).
  * - Soft deletes: Safe archival of inactive profiles without losing historical role links.
@@ -48,7 +47,7 @@ use Spatie\Image\Enums\Fit;
  * - Integrates with traits:
  *   - HasAddress → multiple addresses per person (home, work, temporary).
  *   - HasCustomFields → school-defined fields (e.g., blood_group, allergies for students; qualifications for staff).
- *   - HasDynamicEnum → title (Mr/Mrs), gender (male/female/other/prefer_not_to_say), etc.
+ *   - title / gender are Dynamic Enum–backed scalars (profile.title, profile.gender).
  * - Security: No sensitive auth data here (lives in User); school scoping delegated to role models.
  * - Performance: Indexes on searchable fields; eager loading recommended for role joins.
  *
@@ -65,7 +64,6 @@ class Profile extends Model implements HasMedia
         SoftDeletes,
         HasAddress,
         HasCustomFields,
-        HasDynamicEnum,
         InteractsWithMedia,
         HasTableQuery,
         LogsActivity;
@@ -104,11 +102,6 @@ class Profile extends Model implements HasMedia
         'title',
     ];
 
-    // For HasDynamicEnum trait – declare dynamic enum properties
-    public function getDynamicEnumProperties(): array
-    {
-        return ['title', 'gender'];
-    }
 
     // =================================================================
     // RELATIONSHIPS

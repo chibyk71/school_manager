@@ -145,10 +145,14 @@ class SchoolSectionController extends Controller
 
         // Inertia page load — render full page with initial data
         return Inertia::render('Settings/Sections/Index', [
-            'initialData' => $result['data'],
-            'totalRecords' => $result['totalRecords'],
+            'data' => $result['data'],
             'columns' => $result['columns'],
-            'globalFilterables' => $result['globalFilterables'] ?? [],
+            'meta' => $result['meta'] ?? [
+                'currentPage' => $result['currentPage'] ?? 1,
+                'perPage' => $result['perPage'] ?? 15,
+                'total' => $result['totalRecords'] ?? 0,
+                'lastPage' => $result['lastPage'] ?? 1,
+            ],
         ]);
     }
 

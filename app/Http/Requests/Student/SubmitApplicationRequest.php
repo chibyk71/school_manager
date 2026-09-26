@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Student;
 
 use App\Rules\InDynamicEnum;
+use App\Services\DynamicEnum\DynamicEnumValue;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -29,12 +30,12 @@ class SubmitApplicationRequest extends FormRequest
             'last_name' => 'required|string|max:100',
             'middle_name' => 'nullable|string|max:100',
             'date_of_birth' => 'nullable|date|before:today',
-            'gender' => ['nullable', 'string', 'max:30', new InDynamicEnum('gender', \App\Models\Profile::class)],
+            'gender' => ['nullable', 'string', 'max:30', new InDynamicEnum('profile.gender', GetSchoolModel())],
             'phone' => 'nullable|string|max:30',
             'email' => 'nullable|email|max:191',
             'nationality' => 'nullable|string|max:100',
             'state_of_origin' => 'nullable|string|max:100',
-            'religion' => ['nullable', 'string', 'max:50', new InDynamicEnum('religion', \App\Models\Profile::class)],
+            'religion' => ['nullable', 'string', 'max:50'],
             'blood_group' => 'nullable|string|max:10',
 
             'previous_school' => 'nullable|string|max:255',
@@ -45,7 +46,7 @@ class SubmitApplicationRequest extends FormRequest
             'guardians_data.*.name' => 'required|string|max:150',
             'guardians_data.*.phone' => 'required|string|max:30',
             'guardians_data.*.email' => 'nullable|email|max:191',
-            'guardians_data.*.relationship' => 'required|string|max:50',
+            'guardians_data.*.relationship' => ['required', 'string', new InDynamicEnum('guardian.relationship', GetSchoolModel())],
             'guardians_data.*.is_primary' => 'boolean',
 
             'documents' => 'nullable|array',
@@ -81,6 +82,21 @@ class SubmitApplicationRequest extends FormRequest
 
         if (! $this->has('source')) {
             $this->merge(['source' => 'public_portal']);
+        }
+
+        // Canonicalize Dynamic Enum scalars before validation/persistence
+        if ($this->has('gender') && is_string($this->input('gender'))) {
+            $this->merge(['gender' => DynamicEnumValue::canonicalize($this->input('gender'))]);
+        }
+
+        $guardians = $this->input('guardians_data');
+        if (is_array($guardians)) {
+            foreach ($guardians as $i => $guardian) {
+                if (is_array($guardian) && isset($guardian['relationship']) && is_string($guardian['relationship'])) {
+                    $guardians[$i]['relationship'] = DynamicEnumValue::canonicalize($guardian['relationship']);
+                }
+            }
+            $this->merge(['guardians_data' => $guardians]);
         }
     }
 

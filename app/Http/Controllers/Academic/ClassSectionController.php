@@ -120,16 +120,17 @@ class ClassSectionController extends Controller
         );
 
         return Inertia::render('Settings/Academic/ClassSections/Index', [
-            'initialData'  => ClassSectionResource::collection(
+            'data' => ClassSectionResource::collection(
                 collect($result['data'])
-            ),
-            'totalRecords' => $result['totalRecords'],
-            'columns'      => $result['columns'],
-
-            // Shared data for the page header and bulk generate modal
+            )->resolve(),
+            'columns' => $result['columns'],
+            'meta' => $result['meta'] ?? [
+                'currentPage' => $result['currentPage'] ?? 1,
+                'perPage' => $result['perPage'] ?? 15,
+                'total' => $result['totalRecords'] ?? 0,
+                'lastPage' => $result['lastPage'] ?? 1,
+            ],
             'namingPresets' => ClassSectionNamePresets::toFrontendArray(),
-
-            // Whether the trashed toggle is currently active
             'showTrashed' => $request->boolean('trashed'),
         ]);
     }

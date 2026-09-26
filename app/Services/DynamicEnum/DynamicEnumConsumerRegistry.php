@@ -1,11 +1,15 @@
 <?php
 
 /**
- * Known Dynamic Enum business consumers (Phase 2R).
+ * Known Dynamic Enum business consumers (Phase 5).
  *
- * Maps definition key → model class + column that store the option scalar value.
+ * Maps definition key → actual storage locations that hold the option scalar value.
  * Used for dependency-protected permanent deletion only.
  * Not a generic dependency graph.
+ *
+ * Storage descriptors:
+ *   - model + column  → Eloquent model table + column
+ *   - table + column  → explicit table (e.g. pivot) + column
  *
  * Unregistered keys must not be permanently deleted (fail closed):
  * missing consumer metadata means dependency status is unknown.
@@ -14,13 +18,13 @@
 namespace App\Services\DynamicEnum;
 
 use App\Models\Address;
-use App\Models\Guardian;
+use App\Models\Academic\Subject;
 use App\Models\Profile;
 
 class DynamicEnumConsumerRegistry
 {
     /**
-     * @return array<string, list<array{model: class-string, column: string}>>
+     * @return array<string, list<array{model?: class-string, table?: string, column: string}>>
      */
     public static function map(): array
     {
@@ -34,14 +38,21 @@ class DynamicEnumConsumerRegistry
             'address.type' => [
                 ['model' => Address::class, 'column' => 'type'],
             ],
+            'academic.subject_type' => [
+                ['model' => Subject::class, 'column' => 'type'],
+            ],
+            'academic.subject_category' => [
+                ['model' => Subject::class, 'column' => 'category'],
+            ],
+            // Pivot storage — not Guardian::relationship
             'guardian.relationship' => [
-                ['model' => Guardian::class, 'column' => 'relationship'],
+                ['table' => 'guardian_student', 'column' => 'relationship'],
             ],
         ];
     }
 
     /**
-     * @return list<array{model: class-string, column: string}>
+     * @return list<array{model?: class-string, table?: string, column: string}>
      */
     public static function consumersFor(string $key): array
     {
