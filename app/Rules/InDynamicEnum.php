@@ -7,9 +7,12 @@
  * or enforce requiredness itself — those belong to the domain validator.
  *
  * Consumers must pass an explicit definition key (e.g. profile.gender, address.type).
- * School context is taken from an explicit School argument when provided, otherwise
- * from GetSchoolModel(). When no school is available, tenant/default configuration
- * is used (validateTenant).
+ *
+ * School context is explicit only:
+ *   - Pass a School instance for school-scoped validation (validate against school overlay).
+ *   - Pass null for intentional tenant/default validation (validateTenant).
+ * There is no implicit GetSchoolModel() fallback. School-scoped FormRequests must
+ * supply GetSchoolModel() (or another resolved School) as the constructor argument.
  *
  * Null values are always accepted by this rule; consumer field requiredness is
  * expressed separately via Laravel's required / nullable rules.
@@ -27,11 +30,9 @@ class InDynamicEnum implements ValidationRule
 {
     /**
      * @param  string  $key  Explicit Dynamic Enum definition key (e.g. profile.gender)
-     * @param  School|null  $school  Explicit school for resolution.
-     *                               Prefer passing GetSchoolModel() from school-scoped FormRequests
-     *                               so validation cannot silently fall back to tenant baseline.
-     *                               When null: uses GetSchoolModel(); if that is also null, validates
-     *                               against tenant/default configuration (intentional tenant-only path).
+     * @param  School|null  $school  Explicit school for school-scoped resolution.
+     *                               Null means intentional tenant/default validation only —
+     *                               never silently derived from GetSchoolModel().
      */
     public function __construct(
         protected string $key,
@@ -49,14 +50,12 @@ class InDynamicEnum implements ValidationRule
         /** @var string|null $stringValue */
         $stringValue = $value;
 
-        $school = $this->school ?? (function_exists('GetSchoolModel') ? GetSchoolModel() : null);
-
         /** @var DynamicEnumValidator $validator */
         $validator = app(DynamicEnumValidator::class);
 
-        $result = $school === null
+        $result = $this->school === null
             ? $validator->validateTenant($this->key, $stringValue)
-            : $validator->validate($school, $this->key, $stringValue);
+            : $validator->validate($this->school, $this->key, $stringValue);
 
         if ($result->isValid()) {
             return;
