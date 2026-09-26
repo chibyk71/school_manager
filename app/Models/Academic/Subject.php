@@ -7,7 +7,6 @@ use Abbasudo\Purity\Traits\Sortable;
 use App\Models\School;
 use App\Models\SchoolSection;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasDynamicEnum;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -36,7 +35,6 @@ class Subject extends Model
     use Filterable;
     use Sortable;
     use LogsActivity;
-    use HasDynamicEnum;
 
     protected $fillable = [
         'school_id',
@@ -122,8 +120,4 @@ class Subject extends Model
             ->dontSubmitEmptyLogs();
     }
 
-    public function getDynamicEnumProperties()
-    {
-        return ['type', 'category'];
-    }
 }
