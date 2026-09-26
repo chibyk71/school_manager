@@ -23,14 +23,15 @@ class DynamicEnumSeeder extends Seeder
                 'label' => 'Title',
                 'description' => 'Prefix that appears before a person\'s name (Mr, Mrs, Dr, …).',
                 'options' => [
-                    ['value' => 'Mr', 'label' => 'Mr'],
-                    ['value' => 'Mrs', 'label' => 'Mrs'],
-                    ['value' => 'Miss', 'label' => 'Miss'],
-                    ['value' => 'Ms', 'label' => 'Ms'],
-                    ['value' => 'Dr', 'label' => 'Dr'],
-                    ['value' => 'Prof', 'label' => 'Prof'],
-                    ['value' => 'Rev', 'label' => 'Rev'],
-                    ['value' => 'Engr', 'label' => 'Engr'],
+                    // Stored canonical scalars (lowercase); labels keep display casing
+                    ['value' => 'mr', 'label' => 'Mr'],
+                    ['value' => 'mrs', 'label' => 'Mrs'],
+                    ['value' => 'miss', 'label' => 'Miss'],
+                    ['value' => 'ms', 'label' => 'Ms'],
+                    ['value' => 'dr', 'label' => 'Dr'],
+                    ['value' => 'prof', 'label' => 'Prof'],
+                    ['value' => 'rev', 'label' => 'Rev'],
+                    ['value' => 'engr', 'label' => 'Engr'],
                 ],
             ],
             [

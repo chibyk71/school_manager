@@ -29,7 +29,7 @@
   • As modal: register in ModalDirectory → open via useModal().open('edit-profile-self', { profile })
 
   TODO / Future:
-  • Add dynamic enums (gender, title) via HasDynamicEnum trait
+  • title / gender use DynamicEnumField (profile.title, profile.gender)
   • Add country/state/city dropdowns with nnjeim/world integration
   • Add email verification status badge
   • Add 2FA toggle if implemented
@@ -197,7 +197,7 @@ const uploadAvatar = () => {
                         </div>
                     </template>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <TextInput label="Title" name="title" v-model="form.title" :error="form.errors.title" placeholder="Enter Title (MR, Mrs, Dr)" required />
+                        <DynamicEnumField v-model="form.title" enum-key="profile.title" label="Title" :form-error="form.errors.title" placeholder="Select title" />
 
                         <TextInput label="First name" name="first_name" v-model="form.first_name" :error="form.errors.first_name" placeholder="Enter First Name" required />
 

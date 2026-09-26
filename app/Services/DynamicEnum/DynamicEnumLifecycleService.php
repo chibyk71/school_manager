@@ -390,14 +390,22 @@ class DynamicEnumLifecycleService
         }
 
         foreach (DynamicEnumConsumerRegistry::consumersFor($key) as $consumer) {
-            $column = $consumer['column'];
+            $column = $consumer['column'] ?? null;
+            if ($column === null || $column === '') {
+                throw ValidationException::withMessages([
+                    'option' => "Cannot permanently delete [{$value}]: registered consumer for [{$key}] is missing column metadata.",
+                ]);
+            }
+
             $table = $consumer['table'] ?? null;
             $label = $table !== null ? "{$table}.{$column}" : null;
 
             if ($table === null && isset($consumer['model'])) {
                 $modelClass = $consumer['model'];
-                if (! class_exists($modelClass)) {
-                    continue;
+                if (! is_string($modelClass) || ! class_exists($modelClass)) {
+                    throw ValidationException::withMessages([
+                        'option' => "Cannot permanently delete [{$value}]: registered model consumer for [{$key}] cannot be inspected.",
+                    ]);
                 }
                 /** @var \Illuminate\Database\Eloquent\Model $instance */
                 $instance = new $modelClass;
@@ -406,11 +414,16 @@ class DynamicEnumLifecycleService
             }
 
             if ($table === null || $label === null) {
-                continue;
+                throw ValidationException::withMessages([
+                    'option' => "Cannot permanently delete [{$value}]: registered consumer for [{$key}] has incomplete storage metadata.",
+                ]);
             }
 
+            // Fail closed: declared storage must be inspectable
             if (! Schema::hasTable($table) || ! Schema::hasColumn($table, $column)) {
-                continue;
+                throw ValidationException::withMessages([
+                    'option' => "Cannot permanently delete [{$value}]: registered consumer storage [{$label}] is not inspectable.",
+                ]);
             }
 
             $exists = DB::table($table)->where($column, $value)->exists();

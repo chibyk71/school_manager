@@ -272,3 +272,48 @@ test('canonicalization is applied for nested enrollment gender and relationship'
     expect(DynamicEnumValue::canonicalize('Male'))->toBe('male');
     expect(DynamicEnumValue::canonicalize('STEP_FATHER'))->toBe('step_father');
 });
+
+
+test('lifecycle fails closed when registered consumer storage is not inspectable', function () {
+    seedDefinition('profile.gender', ['male']);
+    $option = \App\Models\DynamicEnumOption::query()
+        ->whereNull('school_id')
+        ->where('value', 'male')
+        ->firstOrFail();
+
+    // profiles table is not created in this suite — registry maps profile.gender → profiles.gender
+    $service = app(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class);
+
+    expect(fn () => $service->permanentlyDeleteTenantOption($option))
+        ->toThrow(\Illuminate\Validation\ValidationException::class);
+});
+
+test('InDynamicEnum does not implicitly resolve school from GetSchoolModel', function () {
+    $school = phase5School();
+    seedDefinition('profile.gender', ['male', 'female']);
+
+    // null school → tenant path only; school-only overlay is not visible
+    DynamicEnumOption::query()->create([
+        'id' => (string) Str::uuid(),
+        'dynamic_enum_id' => DynamicEnum::query()->where('key', 'profile.gender')->whereNull('school_id')->value('id'),
+        'school_id' => $school->id,
+        'value' => 'school_only',
+        'label' => 'School Only',
+        'sort_order' => 0,
+        'is_active' => true,
+    ]);
+
+    $ruleTenant = new InDynamicEnum('profile.gender', null);
+    $failed = false;
+    $ruleTenant->validate('gender', 'school_only', function () use (&$failed) {
+        $failed = true;
+    });
+    expect($failed)->toBeTrue();
+
+    $ruleSchool = new InDynamicEnum('profile.gender', $school);
+    $failedSchool = false;
+    $ruleSchool->validate('gender', 'school_only', function () use (&$failedSchool) {
+        $failedSchool = true;
+    });
+    expect($failedSchool)->toBeFalse();
+});
