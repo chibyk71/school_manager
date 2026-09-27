@@ -15,7 +15,7 @@ import { debounce } from 'lodash'
 
 const props = defineProps<{
     selectedRows: T[]
-    bulkActions?: BulkAction[]
+    bulkActions?: BulkAction<T>[]
     columns: ColumnDefinition<T>[]
     refreshing?: boolean
 }>()
@@ -69,13 +69,13 @@ const updateSearch = debounce((value: string) => {
 watch(globalSearch, (val) => updateSearch(val), { immediate: true })
 
 // Handle bulk action execution
-const isVisible = (action: BulkAction, selected: T[]) => {
+const isVisible = (action: BulkAction<T>, selected: T[]) => {
     if (typeof action.visible === 'function') return action.visible(selected)
     if (typeof action.visible === 'boolean') return action.visible
     return selected.length > 0
 }
 
-const handleBulkAction = async (action: BulkAction) => {
+const handleBulkAction = async (action: BulkAction<T>) => {
     const selected = props.selectedRows
     if (selected.length === 0 && !isVisible(action, selected)) return
 
