@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import type { DynamicEnumDetail, DynamicEnumDetailOption } from '@/types/dynamic-enums'
 import { Head, Link, router, useForm } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
-import { Button, InputText, Textarea, Tag, Dialog } from 'primevue'
+import { Button, InputText, InputNumber, Textarea, Tag, Dialog } from 'primevue'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 
@@ -200,7 +200,15 @@ const tenantOptionId = (opt: DynamicEnumDetailOption) => opt.tenant_option_id ||
 
 <template>
   <Head :title="`Dynamic Enum — ${detail.label}`" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout
+    :title="`Dynamic Enum — ${detail.label}`"
+    :crumb="[
+      { label: 'Settings' },
+      { label: 'System' },
+      { label: 'Dynamic Enums' },
+      { label: detail.label },
+    ]"
+  >
     <template #header>
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -404,7 +412,7 @@ const tenantOptionId = (opt: DynamicEnumDetailOption) => opt.tenant_option_id ||
         </div>
         <div>
           <label class="text-xs">Sort order</label>
-          <InputText v-model.number="editForm.sort_order" type="number" class="w-full" />
+          <InputNumber v-model="editForm.sort_order" :min="0" class="w-full" fluid />
         </div>
         <div>
           <label class="text-xs">Color</label>
