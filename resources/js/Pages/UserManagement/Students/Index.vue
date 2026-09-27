@@ -4,9 +4,10 @@ import DataView from 'primevue/dataview'
 import { computed, ref } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import { Button, Menu } from 'primevue'
-import type { ColumnDefinition } from '@/types/datatables'
+import type { BulkAction, ColumnDefinition } from '@/types/datatables'
 import AdvancedDataTable from '@/Components/datatable/AdvancedDataTable.vue'
 import { usePopup } from '@/helpers'
+import { useDeleteResource } from '@/composables/useDelete'
 
 const props = defineProps<{
     students: any
@@ -51,6 +52,23 @@ const enhancedColumns = computed<ColumnDefinition<any>[]>(() => {
 })
 
 const { can } = props
+const { deleteResource } = useDeleteResource()
+
+const bulkActions = computed<BulkAction[]>(() => [
+    {
+        label: 'Delete Selected',
+        icon: 'pi pi-trash',
+        severity: 'danger',
+        action: 'delete',
+        handler: (selected) =>
+            deleteResource(
+                'students.destroy',
+                selected.map((s: any) => s.id),
+            ),
+        visible: () => !!can?.delete,
+    },
+    // Export remains page-owned (header menu). Phase 6 owns ADT export.
+])
 </script>
 
 <template>
@@ -92,16 +110,7 @@ const { can } = props
                 :columns="enhancedColumns"
                 :initial-response="initialTableResponse"
                 :initial-params="{ with: 'user,schoolSection,classSections' }"
-                :bulk-actions="[
-                    {
-                        label: 'Delete Selected',
-                        icon: 'pi pi-trash',
-                        severity: 'danger',
-                        action: 'delete',
-                        visible: () => can?.delete,
-                    },
-                    { label: 'Export Selected', icon: 'pi pi-download', action: 'export' },
-                ]"
+                :bulk-actions="bulkActions"
             />
         </div>
     </AuthenticatedLayout>
