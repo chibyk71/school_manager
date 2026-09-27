@@ -5,13 +5,14 @@
  */
 import { computed, provide, ref, watch } from 'vue'
 import { useDataTableQuery } from '@/datatable/useDataTableQuery'
+import { useDataTableSelection } from '@/datatable/useDataTableSelection'
 import {
     primeVueFiltersToCanonical,
     primeVueSortToCanonical,
     extractGlobalSearch,
 } from '@/datatable/adapters/primevue'
 import { DEFAULT_PER_PAGE } from '@/datatable/types'
-import type { DataTableResponse } from '@/datatable/types'
+import type { DataTableResponse, BulkActionCapability } from '@/datatable/types'
 
 import DataTableHeader from './DataTableHeader.vue'
 import DataTableEmptyState from './DataTableEmptyState.vue'
@@ -96,11 +97,17 @@ const {
     initialResponse: seedResponse,
 })
 
+const selectionApi = useDataTableSelection({
+    currentQuery: query,
+})
+
 const dtRef = ref<any>(null)
+/** PrimeVue row selection (page-local objects). Canonical selection lives in selectionApi. */
 const selectedRows = ref<T[]>([])
 const hiddenColumns = ref<string[]>([])
 const exportMenu = ref()
 const applyingFilters = ref(false)
+const showSelectAllMatching = ref(false)
 
 const filters = ref<Record<string, { value: any; matchMode: string }>>({
     global: { value: '', matchMode: 'contains' },
@@ -199,6 +206,41 @@ const perPage = computed({
 
 const safeBulkActions = computed(() => props.bulkActions ?? [])
 
+/** Backend-declared capabilities when present on the response */
+const backendBulkCapabilities = computed((): BulkActionCapability[] => {
+    // capabilities may be attached by Phase 6 controllers on the response envelope
+    const caps = (meta.value as any)?.capabilities ?? null
+    return Array.isArray(caps?.bulkActions) ? caps.bulkActions : []
+})
+
+watch(selectedRows, (rows) => {
+    const ids = rows
+        .map((r) => (r as any)?.id)
+        .filter((id) => id !== undefined && id !== null)
+    // Sync page selection into canonical ID selection without wiping cross-page IDs
+    // when the user is only toggling the current page: merge strategy via select/deselect page.
+    if (selectionApi.mode.value === 'query') {
+        return
+    }
+    const pageIds = (tableData.value ?? [])
+        .map((r) => (r as any)?.id)
+        .filter((id: any) => id !== undefined && id !== null)
+    selectionApi.deselectPageIds(pageIds)
+    if (ids.length) {
+        selectionApi.selectPageIds(ids)
+    }
+})
+
+function confirmSelectAllMatching() {
+    selectionApi.convertToQuerySelection(query.value)
+    showSelectAllMatching.value = false
+}
+
+function clearCanonicalSelection() {
+    selectionApi.clearSelection()
+    selectedRows.value = []
+}
+
 const searchableFields = computed(() =>
     displayColumns.value
         .filter((c) => (c as any).searchable === true)
@@ -247,8 +289,11 @@ provide('dataTableApi', {
 
 defineExpose({
     refresh,
+    selectionApi,
+    clearCanonicalSelection,
+    getCanonicalSelection: () => selectionApi.getCanonicalSelection(),
     exportData: () => {
-        console.warn('[AdvancedDataTable] export is owned by Phase 6')
+        console.warn('[AdvancedDataTable] export requires useDataTableExport endpoint wiring')
     },
 })
 
