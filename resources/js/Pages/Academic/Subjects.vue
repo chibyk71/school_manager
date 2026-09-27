@@ -43,7 +43,7 @@ const bulkActions = computed<BulkAction[]>(() => [
 </script>
 
 <template>
-    <AuthenticatedLayout title="Subjects">
+    <AuthenticatedLayout title="Subjects" :crumb="[{ label: 'Academic' }, { label: 'Subjects' }]">
         <AdvancedDataTable
             ref="tableRef"
             :endpoint="route('settings.academic.subjects.index')"
