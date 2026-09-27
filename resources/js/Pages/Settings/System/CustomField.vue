@@ -266,10 +266,20 @@ const handleReorder = async (event: { newIndex: number; oldIndex: number; value:
         <!-- TODO: Filter by resource, add a dropdown to list supported resources, to filter by -->
 
         <!-- Main content -->
-        <AdvancedDataTable :endpoint="route('settings.system.custom-fields', { resource: selectedResource })"
-            :columns="enhancedColumns" :initial-response="initialTableResponse"
-            :initial-params="{ resource: selectedResource }" @row-reorder="handleReorder" data-key="id"
-            :export-filename="`custom-fields-${selectedResource}`" :actions="actionsButtons" :bulk-actions="bulkActions">
+        <!--
+          Phase 5: ADT does not accept data-key, export-filename, or @row-reorder.
+          data-key is internal to ADT's PrimeVue DataTable.
+          Export is Phase 6. Row reorder is page-specific; handleReorder is retained
+          for a future page-owned reorder control (not wired through generic ADT).
+        -->
+        <AdvancedDataTable
+            :endpoint="route('settings.system.custom-fields', { resource: selectedResource })"
+            :columns="enhancedColumns"
+            :initial-response="initialTableResponse"
+            :initial-params="{ resource: selectedResource }"
+            :actions="actionsButtons"
+            :bulk-actions="bulkActions"
+        >
             <!-- Custom empty state -->
             <template #empty>
                 <div class="text-center py-16 text-gray-500 dark:text-gray-400">
