@@ -38,7 +38,8 @@ const toast = useToast()
 const confirm = useConfirm()
 const { hasPermission } = usePermissions()
 const { deleteResource } = useDeleteResource()
-const tableRef = ref<InstanceType<typeof AdvancedDataTable> | null>(null)
+/** Phase 5 ADT only exposes refresh (+ export stub); avoid InstanceType on generic SFC. */
+const tableRef = ref<{ refresh: () => void } | null>(null)
 
 const columns = computed(() => props.columns ?? [])
 const currentTerm = computed(() => props.currentTerm)

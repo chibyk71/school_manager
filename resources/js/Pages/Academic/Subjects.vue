@@ -16,7 +16,6 @@ const tableRef = ref()
 const showTrashed = ref(false)
 
 const enhancedColumns = computed(() => props.columns ?? [])
-const initialData = computed(() => props.initialData ?? [])
 
 const rowActions = computed<TableAction<any>[]>(() => [
     {
@@ -44,7 +43,7 @@ const bulkActions = computed<BulkAction[]>(() => [
 </script>
 
 <template>
-    <AuthenticatedLayout title="Subjects">
+    <AuthenticatedLayout title="Subjects" :crumb="[{ label: 'Academic' }, { label: 'Subjects' }]">
         <AdvancedDataTable
             ref="tableRef"
             :endpoint="route('settings.academic.subjects.index')"

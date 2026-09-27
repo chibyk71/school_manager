@@ -32,6 +32,7 @@ import {
 } from 'primevue'
 
 import type { BulkAction, ColumnDefinition, TableAction } from '@/types/datatables'
+import type { DataTablePageEvent, DataTableSortEvent } from 'primevue/datatable'
 import { formatDate } from '@/helpers'
 
 const props = defineProps<{
@@ -45,7 +46,7 @@ const props = defineProps<{
     initialParams?: Record<string, any>
     /** Presentation overlays (renderers, formatters). Merged onto matching server fields. */
     columns: ColumnDefinition<T>[]
-    bulkActions?: BulkAction[]
+    bulkActions?: BulkAction<T>[]
     virtualScroller?: boolean
     actions?: TableAction<T>[]
 }>()
@@ -204,21 +205,21 @@ const searchableFields = computed(() =>
         .map((c) => String(c.field)),
 )
 
-function onPage(event: { page: number; rows: number }) {
+/**
+ * Use PrimeVue's published event contracts so @page / @sort stay assignable under vue-tsc.
+ */
+function onPage(event: DataTablePageEvent) {
     const nextPage = (event.page ?? 0) + 1
     if (event.rows && event.rows !== query.value.perPage) {
-        setPerPage(event.rows)
+        setPerPage(Number(event.rows))
     } else {
         setPage(nextPage)
     }
 }
 
-function onSortHandler(event: {
-    sortField?: string
-    sortOrder?: number | null
-    multiSortMeta?: Array<{ field: string; order: number | null }>
-}) {
-    const sorts = primeVueSortToCanonical(event.sortField, event.sortOrder, event.multiSortMeta)
+function onSortHandler(event: DataTableSortEvent) {
+    const field = typeof event.sortField === 'string' ? event.sortField : undefined
+    const sorts = primeVueSortToCanonical(field, event.sortOrder, event.multiSortMeta)
     setSorts(sorts.length ? sorts : undefined)
 }
 
@@ -240,9 +241,6 @@ function onFilter() {
     applyFiltersFromPrimeVue()
 }
 
-// Resource-specific state (e.g. trash) is owned by the page, not the generic table.
-// expose refresh only — PageHeader inject looks upward and will not see this provide;
-// kept for any in-tree consumers that need a table refresh handle.
 provide('dataTableApi', {
     refresh,
 })
@@ -270,7 +268,7 @@ const actions = computed(() => props.actions)
 <template>
     <div class="datatable-wrapper">
         <DataTableHeader
-            :selected-rows="selectedRows"
+            :selected-rows="(selectedRows as T[])"
             :bulk-actions="safeBulkActions"
             :columns="displayColumns as any"
             v-model:hidden-columns="hiddenColumns"

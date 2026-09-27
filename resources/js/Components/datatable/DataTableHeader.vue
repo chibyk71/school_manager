@@ -15,7 +15,7 @@ import { debounce } from 'lodash'
 
 const props = defineProps<{
     selectedRows: T[]
-    bulkActions?: BulkAction[]
+    bulkActions?: BulkAction<T>[]
     columns: ColumnDefinition<T>[]
     refreshing?: boolean
 }>()
@@ -50,11 +50,15 @@ const effectiveBulkActions = computed(() =>
 
 // Visible bulk actions based on selection or custom visibility
 const visibleBulkActions = computed(() =>
-    effectiveBulkActions.value.filter(action =>
-        action.visible
-            ? action.visible(props.selectedRows)
-            : props.selectedRows.length > 0
-    )
+    effectiveBulkActions.value.filter((action) => {
+        if (typeof action.visible === 'function') {
+            return action.visible(props.selectedRows)
+        }
+        if (typeof action.visible === 'boolean') {
+            return action.visible && props.selectedRows.length > 0
+        }
+        return props.selectedRows.length > 0
+    })
 )
 
 // Debounced global search
@@ -65,9 +69,15 @@ const updateSearch = debounce((value: string) => {
 watch(globalSearch, (val) => updateSearch(val), { immediate: true })
 
 // Handle bulk action execution
-const handleBulkAction = async (action: BulkAction) => {
+const isVisible = (action: BulkAction<T>, selected: T[]) => {
+    if (typeof action.visible === 'function') return action.visible(selected)
+    if (typeof action.visible === 'boolean') return action.visible
+    return selected.length > 0
+}
+
+const handleBulkAction = async (action: BulkAction<T>) => {
     const selected = props.selectedRows
-    if (selected.length === 0 && !action.visible?.(selected)) return
+    if (selected.length === 0 && !isVisible(action, selected)) return
 
     // If local handler exists → use it (preferred)
     if (action.handler) {
@@ -96,7 +106,8 @@ const handleBulkAction = async (action: BulkAction) => {
 
 // Helper to execute local handler safely
 const executeHandler = async (handler: (rows: any[]) => void | Promise<void>) => {
-    const actionKey = (props.bulkActions || []).find(a => a.handler === handler)?.action || 'unknown'
+    const match = (props.bulkActions || []).find(a => a.handler === handler)
+    const actionKey = match?.action ?? match?.label ?? 'unknown'
     loadingActions.value.add(actionKey)
     try {
         await handler(props.selectedRows)
@@ -178,11 +189,11 @@ const executeHandler = async (handler: (rows: any[]) => void | Promise<void>) =>
         <!-- Bulk Actions -->
         <transition name="fade">
             <div v-if="visibleBulkActions.length" class="flex flex-wrap items-center gap-2">
-                <Button v-for="action in visibleBulkActions" :key="action.action"
+                <Button v-for="action in visibleBulkActions" :key="action.action ?? action.label"
                     :label="selectedRows.length ? `${action.label} (${selectedRows.length})` : action.label"
                     :icon="action.icon" size="small" :severity="action.severity || 'secondary'"
-                    :outlined="!selectedRows.length" :loading="loadingActions.has(action.action)"
-                    :disabled="selectedRows.length === 0 && !action.visible?.(selectedRows)"
+                    :outlined="!selectedRows.length" :loading="loadingActions.has(action.action ?? action.label)"
+                    :disabled="selectedRows.length === 0 && !(typeof action.visible === 'function' ? action.visible(selectedRows) : action.visible !== false)"
                     @click="handleBulkAction(action)" class="transition-all duration-200" />
             </div>
         </transition>

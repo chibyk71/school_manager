@@ -5,15 +5,28 @@
 
 import type { DataTableFilter, DataTableFilterOperator, DataTableFilters, DataTableSort } from '../types'
 
-/** PrimeVue DataTable sort field + order (1 | -1 | 0 | null) */
+/**
+ * PrimeVue multi-sort entry. field may be a function in PrimeVue's published types;
+ * only concrete string field names are admitted into the canonical contract.
+ */
+type PrimeVueSortMetaLike = {
+    field: string | ((item: any) => string) | undefined
+    order?: number | null
+}
+
+/** PrimeVue DataTable sort field + order → canonical DataTableSort[]. */
 export function primeVueSortToCanonical(
     sortField: string | ((item: any) => string) | undefined | null,
     sortOrder: number | null | undefined,
-    multiSortMeta?: Array<{ field: string; order: number | null }> | null,
+    multiSortMeta?: PrimeVueSortMetaLike[] | null,
 ): DataTableSort[] {
     if (multiSortMeta?.length) {
         return multiSortMeta
-            .filter((m) => m.field && (m.order === 1 || m.order === -1))
+            .filter(
+                (m): m is { field: string; order?: number | null } =>
+                    typeof m.field === 'string' && m.field.length > 0,
+            )
+            .filter((m) => m.order === 1 || m.order === -1)
             .map((m) => ({
                 field: m.field,
                 direction: (m.order === -1 ? 'desc' : 'asc') as 'asc' | 'desc',

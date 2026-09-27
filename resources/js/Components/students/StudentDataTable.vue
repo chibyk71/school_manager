@@ -9,7 +9,6 @@ defineProps<{
     columns: ColumnDefinition<Student>[]
     bulkActions?: BulkAction[]
     initialParams?: Record<string, any>
-    initialData?: Student[]
 }>()
 </script>
 
@@ -19,6 +18,5 @@ defineProps<{
         :columns="columns"
         :bulk-actions="bulkActions"
         :initial-params="initialParams"
-        :initial-data="initialData"
     />
 </template>
