@@ -22,7 +22,7 @@
  * • Used for Inertia page props, form v-model, and DataTable row types
  */
 
-import type { ColumnDefinition, TableQueryProps } from "./datatables";
+import type { TableQueryProps } from "./datatables";
 import type { DynamicEnumOption } from "./dynamic-enums";
 
 export type SubjectType     = 'core' | 'elective' | 'optional';
@@ -105,10 +105,6 @@ export interface SelectOption {
 
 /** Inertia page props for Settings/Academic/Subjects.vue */
 export interface SubjectsPageProps extends TableQueryProps<Subject> {
-    initialData: Subject[];
-    totalRecords: number;
-    columns: ColumnDefinition<Subject>[];
-    globalFilterables: string[];
     schoolSections: SelectOption[];
     classLevels: SelectOption[];
     subjectTypes: DynamicEnumOption[];
