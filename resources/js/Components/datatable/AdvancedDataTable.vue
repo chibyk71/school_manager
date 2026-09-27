@@ -101,7 +101,7 @@ const hiddenColumns = ref<string[]>([])
 const exportMenu = ref()
 const applyingFilters = ref(false)
 
-const filters = ref<Record<string, { value: any; matchMode: string }>({
+const filters = ref<Record<string, { value: any; matchMode: string }>>({
     global: { value: '', matchMode: 'contains' },
 })
 
@@ -246,9 +246,6 @@ function onFilter() {
     applyFiltersFromPrimeVue()
 }
 
-// Resource-specific state (e.g. trash) is owned by the page, not the generic table.
-// expose refresh only — PageHeader inject looks upward and will not see this provide;
-// kept for any in-tree consumers that need a table refresh handle.
 provide('dataTableApi', {
     refresh,
 })
