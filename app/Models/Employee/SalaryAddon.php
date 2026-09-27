@@ -5,7 +5,6 @@ namespace App\Models\Employee;
 use App\Models\Model;
 use App\Models\School;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -32,7 +31,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class SalaryAddon extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasConfig, HasUuids;
+    use HasFactory, SoftDeletes, LogsActivity, BelongsToSchool, HasTableQuery, HasUuids;
 
     /**
      * The table associated with the model.

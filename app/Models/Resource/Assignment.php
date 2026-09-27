@@ -6,7 +6,6 @@ use App\Models\Employee\Staff;
 use App\Models\Model;
 use App\Traits\BelongsToSchool;
 use App\Traits\BelongsToSections;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -36,7 +35,7 @@ use Spatie\MediaLibrary\InteractsWithMedia;
  */
 class Assignment extends Model implements \Spatie\MediaLibrary\HasMedia
 {
-    use BelongsToSchool, BelongsToSections, HasConfig, InteractsWithMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
+    use BelongsToSchool, BelongsToSections, InteractsWithMedia, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

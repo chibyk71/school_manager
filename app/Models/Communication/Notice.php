@@ -3,7 +3,6 @@
 namespace App\Models\Communication;
 
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -29,7 +28,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Notice extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasConfig;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool;
 
     /**
      * The attributes that are mass assignable.

@@ -8,7 +8,6 @@ use App\Models\School;
 use App\Traits\BelongsToSchool;
 use App\Traits\HasTableQuery;
 use App\Traits\HasCustomFields;
-use App\Traits\HasConfig;
 use App\Traits\BelongsToSections;
 use App\Traits\HasAddress;
 use App\Traits\HasTransaction;

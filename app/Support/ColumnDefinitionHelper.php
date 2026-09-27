@@ -2,7 +2,6 @@
 
 namespace App\Support;
 
-use App\Traits\HasConfig;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -19,7 +18,6 @@ use BackedEnum;
  * - Base fields from fillable or all table columns
  * - Visibility controls: fully hidden and default hidden columns
  * - Relation fields with dot notation
- * - Configurable options via HasConfig trait
  * - Cast-based filter type detection (booleans, dates, numbers, enums)
  * - DB enum column detection for dropdowns
  * - PHP enum class support for options
@@ -115,30 +113,9 @@ final class ColumnDefinitionHelper
             $fields[] = $extraConfig;
         }
 
-        // Load configurable options if model uses HasConfig trait
-        // These provide per-school dropdowns (e.g., gender, religion)
+        // Phase 6: legacy HasConfig-backed option loading removed with Config infrastructure.
+        // $configurableOptions left empty; filter path below is unchanged. DataTable not redesigned.
         $configurableOptions = [];
-        if (in_array(HasConfig::class, class_uses_recursive($model))) {
-            try {
-                // Fetch visible configs for this model and school
-                $configs = $model->getVisibleConfigs();
-                foreach ($configs as $config) {
-                    // Only include if property is configurable
-                    if (in_array($config->name, $model->getConfigurableProperties(), true)) {
-                        // Normalize options to label/value pairs
-                        $configurableOptions[$config->name] = collect($config->options)->map(function ($option) {
-                            return [
-                                'label' => is_array($option) ? ($option['label'] ?? $option['value'] ?? '') : Str::title(str_replace('_', ' ', $option)),
-                                'value' => is_array($option) ? ($option['value'] ?? $option['label'] ?? '') : $option,
-                            ];
-                        })->values()->toArray();
-                    }
-                }
-            } catch (\Throwable $e) {
-                // Log failure but continue (non-critical)
-                \Log::warning('[ColumnDefinitionHelper] HasConfig load failed', ['error' => $e->getMessage()]);
-            }
-        }
 
         // Final columns array to build
         $columns = [];
@@ -172,7 +149,7 @@ final class ColumnDefinitionHelper
             }
             $isRelation = $relationPath !== null && $relationPath !== '';
 
-            // Check if field is configurable (HasConfig)
+            // Check if field is configurable (legacy path; options empty post-Phase 6)
             $isConfigurable = isset($configurableOptions[$field]);
 
             // Resolve filter type (user override > configurable > cast/DB detection)
