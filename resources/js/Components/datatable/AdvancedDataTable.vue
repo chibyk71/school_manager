@@ -32,6 +32,7 @@ import {
 } from 'primevue'
 
 import type { BulkAction, ColumnDefinition, TableAction } from '@/types/datatables'
+import type { DataTablePageEvent, DataTableSortEvent } from 'primevue/datatable'
 import { formatDate } from '@/helpers'
 
 const props = defineProps<{
@@ -205,10 +206,9 @@ const searchableFields = computed(() =>
 )
 
 /**
- * PrimeVue DataTable event payloads are version-coupled; accept a wide shape so
- * @page / @sort template bindings stay assignable under vue-tsc.
+ * Use PrimeVue's published event contracts so @page / @sort stay assignable under vue-tsc.
  */
-function onPage(event: { page?: number; rows?: number; [key: string]: unknown }) {
+function onPage(event: DataTablePageEvent) {
     const nextPage = (event.page ?? 0) + 1
     if (event.rows && event.rows !== query.value.perPage) {
         setPerPage(Number(event.rows))
@@ -217,12 +217,7 @@ function onPage(event: { page?: number; rows?: number; [key: string]: unknown })
     }
 }
 
-function onSortHandler(event: {
-    sortField?: string | ((item: unknown) => string)
-    sortOrder?: number | null
-    multiSortMeta?: Array<{ field: string; order: number | null }>
-    [key: string]: unknown
-}) {
+function onSortHandler(event: DataTableSortEvent) {
     const field = typeof event.sortField === 'string' ? event.sortField : undefined
     const sorts = primeVueSortToCanonical(field, event.sortOrder, event.multiSortMeta)
     setSorts(sorts.length ? sorts : undefined)
@@ -273,7 +268,7 @@ const actions = computed(() => props.actions)
 <template>
     <div class="datatable-wrapper">
         <DataTableHeader
-            :selected-rows="selectedRows"
+            :selected-rows="(selectedRows as T[])"
             :bulk-actions="safeBulkActions"
             :columns="displayColumns as any"
             v-model:hidden-columns="hiddenColumns"
