@@ -2,12 +2,10 @@
 
 namespace App\Models\Transport\Vehicle;
 
-use App\Models\Configuration\Config;
 use App\Models\School;
 use App\Models\Transport\Route;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -43,7 +41,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Vehicle extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasUuids, HasConfig;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasUuids;
 
     /**
      * The table associated with the model.

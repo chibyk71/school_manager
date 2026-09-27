@@ -4,7 +4,6 @@ namespace App\Models\Finance;
 
 use App\Models\School;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use App\Traits\HasTransaction;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -30,7 +29,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Expense extends Model
 {
-    use BelongsToSchool, HasTableQuery, HasTransaction, LogsActivity, SoftDeletes, HasUuids, HasConfig;
+    use BelongsToSchool, HasTableQuery, HasTransaction, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The attributes that are mass assignable.

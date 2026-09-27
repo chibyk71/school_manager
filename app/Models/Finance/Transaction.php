@@ -6,7 +6,6 @@ use App\Models\Model;
 use App\Models\School;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -38,7 +37,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Transaction extends Model
 {
-    use HasFactory, HasUuids, SoftDeletes, BelongsToSchool, HasTableQuery, LogsActivity, HasConfig, BelongsToSchool;
+    use HasFactory, HasUuids, SoftDeletes, BelongsToSchool, HasTableQuery, LogsActivity, BelongsToSchool;
 
     protected $table = 'transactions';
 

@@ -3,7 +3,6 @@
 namespace App\Models\Communication;
 
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -30,7 +29,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class Feedback extends Model
 {
-    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool, HasConfig;
+    use HasFactory, LogsActivity, HasTableQuery, SoftDeletes, BelongsToSchool;
 
     /**
      * The table associated with the model.

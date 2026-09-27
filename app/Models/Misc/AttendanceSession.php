@@ -6,7 +6,6 @@ use App\Models\Academic\ClassSection;
 use App\Models\Model;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -34,7 +33,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class AttendanceSession extends Model
 {
-    use BelongsToSchool, HasConfig, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
+    use BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The table associated with the model.

@@ -6,7 +6,6 @@ use App\Models\Model;
 use App\Models\School;
 use App\Models\User;
 use App\Traits\BelongsToSchool;
-use App\Traits\HasConfig;
 use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -32,7 +31,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class FeeConcession extends Model
 {
-    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids, HasConfig;
+    use HasFactory, BelongsToSchool, HasTableQuery, LogsActivity, SoftDeletes, HasUuids;
 
     /**
      * The attributes that are mass assignable.
