@@ -45,7 +45,7 @@ const props = defineProps<{
     initialParams?: Record<string, any>
     /** Presentation overlays (renderers, formatters). Merged onto matching server fields. */
     columns: ColumnDefinition<T>[]
-    bulkActions?: BulkAction[]
+    bulkActions?: BulkAction<T>[]
     virtualScroller?: boolean
     actions?: TableAction<T>[]
 }>()
@@ -101,7 +101,7 @@ const hiddenColumns = ref<string[]>([])
 const exportMenu = ref()
 const applyingFilters = ref(false)
 
-const filters = ref<Record<string, { value: any; matchMode: string }>>({
+const filters = ref<Record<string, { value: any; matchMode: string }>({
     global: { value: '', matchMode: 'contains' },
 })
 
@@ -204,21 +204,27 @@ const searchableFields = computed(() =>
         .map((c) => String(c.field)),
 )
 
-function onPage(event: { page: number; rows: number }) {
+/**
+ * PrimeVue DataTable event payloads are version-coupled; accept a wide shape so
+ * @page / @sort template bindings stay assignable under vue-tsc.
+ */
+function onPage(event: { page?: number; rows?: number; [key: string]: unknown }) {
     const nextPage = (event.page ?? 0) + 1
     if (event.rows && event.rows !== query.value.perPage) {
-        setPerPage(event.rows)
+        setPerPage(Number(event.rows))
     } else {
         setPage(nextPage)
     }
 }
 
 function onSortHandler(event: {
-    sortField?: string
+    sortField?: string | ((item: unknown) => string)
     sortOrder?: number | null
     multiSortMeta?: Array<{ field: string; order: number | null }>
+    [key: string]: unknown
 }) {
-    const sorts = primeVueSortToCanonical(event.sortField, event.sortOrder, event.multiSortMeta)
+    const field = typeof event.sortField === 'string' ? event.sortField : undefined
+    const sorts = primeVueSortToCanonical(field, event.sortOrder, event.multiSortMeta)
     setSorts(sorts.length ? sorts : undefined)
 }
 
