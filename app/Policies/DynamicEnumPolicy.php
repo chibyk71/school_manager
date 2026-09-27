@@ -1,15 +1,16 @@
 <?php
 
 /**
- * Dynamic Enum Phase 4 — authorization.
+ * Dynamic Enum Phase 7 — authorization.
  *
- * Permissions:
- *   dynamic-enums.view
- *   dynamic-enums.manage          — school configuration
- *   dynamic-enums.manageGlobals   — tenant/default configuration
+ * Capabilities (scope-neutral):
+ *   dynamic-enums.view   — view definitions and effective configuration
+ *   dynamic-enums.manage — mutate configuration in the current authorization context
  *
- * School scope is enforced by the administration layer (resolved school),
- * not by trusting request school_id.
+ * Scope is not encoded in the permission name. The active application context
+ * (tenant vs school via GetSchoolModel / schoolManager) determines whether a
+ * manage capability applies to tenant baseline or school overlay operations.
+ * Controllers enforce that separation; this policy only answers capability.
  */
 
 namespace App\Policies;
@@ -26,7 +27,6 @@ class DynamicEnumPolicy
     {
         return $user->hasPermission('dynamic-enums.view')
             || $user->hasPermission('dynamic-enums.manage')
-            || $user->hasPermission('dynamic-enums.manageGlobals')
             ? Response::allow()
             : Response::deny('You do not have permission to view Dynamic Enums.');
     }
@@ -36,17 +36,14 @@ class DynamicEnumPolicy
         return $this->viewAny($user);
     }
 
+    /**
+     * Capability to mutate Dynamic Enum configuration in the current context.
+     * Tenant vs school target is decided by the controller from application context.
+     */
     public function manage(User $user): Response
     {
         return $user->hasPermission('dynamic-enums.manage')
             ? Response::allow()
-            : Response::deny('You do not have permission to manage school Dynamic Enum configuration.');
-    }
-
-    public function manageGlobals(User $user): Response
-    {
-        return $user->hasPermission('dynamic-enums.manageGlobals')
-            ? Response::allow()
-            : Response::deny('You do not have permission to manage tenant/default Dynamic Enum configuration.');
+            : Response::deny('You do not have permission to manage Dynamic Enum configuration.');
     }
 }

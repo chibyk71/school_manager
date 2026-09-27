@@ -44,6 +44,71 @@ class DynamicEnumAdministrationService
     }
 
     /**
+     * Effective school catalogue: each application definition with effective options
+     * once (inherited / overridden / school-created). No duplicate tenant+school rows.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function effectiveSchoolCatalogue(School $school): array
+    {
+        $definitions = $this->catalogue();
+        $rows = [];
+
+        foreach ($definitions as $definition) {
+            $resolved = $this->resolver->resolveForSchool($school, $definition->key);
+
+            $tenantValues = DynamicEnumOption::query()
+                ->where('dynamic_enum_id', $definition->id)
+                ->whereNull('school_id')
+                ->pluck('value')
+                ->map(fn ($v) => DynamicEnumValue::canonicalize((string) $v))
+                ->all();
+
+            $schoolValues = DynamicEnumOption::query()
+                ->where('dynamic_enum_id', $definition->id)
+                ->where('school_id', $school->id)
+                ->pluck('value')
+                ->map(fn ($v) => DynamicEnumValue::canonicalize((string) $v))
+                ->all();
+
+            $options = $resolved->options->map(function (ResolvedDynamicEnumOption $opt) use ($tenantValues, $schoolValues) {
+                $hasTenant = in_array($opt->value, $tenantValues, true);
+                $hasSchool = in_array($opt->value, $schoolValues, true);
+
+                if ($hasSchool && $hasTenant) {
+                    $source = 'overridden';
+                } elseif ($hasSchool) {
+                    $source = 'school-created';
+                } else {
+                    $source = 'inherited';
+                }
+
+                return [
+                    'value' => $opt->value,
+                    'label' => $opt->label,
+                    'is_active' => $opt->isActive,
+                    'is_required' => $opt->isRequired,
+                    'sort_order' => $opt->sortOrder,
+                    'color' => $opt->color,
+                    'icon' => $opt->icon,
+                    'source' => $source,
+                ];
+            })->values()->all();
+
+            $rows[] = [
+                'id' => $definition->id,
+                'key' => $definition->key,
+                'label' => $resolved->label,
+                'description' => $resolved->description,
+                'options' => $options,
+                'option_count' => count($options),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
      * Effective configuration for tenant default (no school overlay).
      */
     public function effectiveTenant(string $key): ResolvedDynamicEnum
@@ -64,7 +129,7 @@ class DynamicEnumAdministrationService
      *
      * @return array<string, mixed>
      */
-    public function detail(string $key, ?School $school, bool $canManage, bool $canManageGlobals): array
+    public function detail(string $key, ?School $school, bool $canManage): array
     {
         $definition = DynamicEnum::query()
             ->whereNull('school_id')
@@ -97,7 +162,6 @@ class DynamicEnumAdministrationService
             $tenantOptions,
             $schoolOptions,
             $canManage,
-            $canManageGlobals,
             $school
         ) {
             $tenantRow = $tenantOptions->get($opt->value);
@@ -121,7 +185,6 @@ class DynamicEnumAdministrationService
                     $tenantRow,
                     $schoolRow,
                     $canManage,
-                    $canManageGlobals,
                     $school !== null
                 ),
             ]);
@@ -136,10 +199,11 @@ class DynamicEnumAdministrationService
             'school_id' => $school?->id,
             'options' => $options,
             'capabilities' => [
-                'can_edit_definition' => $canManageGlobals || ($canManage && $school !== null),
-                'can_manage_tenant_options' => $canManageGlobals,
+                // Scope follows application context: no school → tenant ops; school → school ops.
+                'can_edit_definition' => $canManage,
+                'can_manage_tenant_options' => $canManage && $school === null,
                 'can_manage_school_options' => $canManage && $school !== null,
-                'can_make_required' => $canManageGlobals,
+                'can_make_required' => $canManage && $school === null,
             ],
         ];
     }
@@ -150,7 +214,7 @@ class DynamicEnumAdministrationService
      * Effective-view context (whether a school is selected for resolution) is
      * independent of administrative scope. Tenant and school actions are
      * expressed as separate flags so the UI can target the correct option id:
-     * - manageGlobals → tenant row actions even when a school overlay exists
+     * - tenant context → tenant row actions; school context → school row actions
      * - manage + school context → school row actions
      * - tenant permanent delete is blocked while a school overlay exists
      *
@@ -163,7 +227,6 @@ class DynamicEnumAdministrationService
         ?DynamicEnumOption $tenantRow,
         ?DynamicEnumOption $schoolRow,
         bool $canManage,
-        bool $canManageGlobals,
         bool $schoolContext
     ): array {
         $isSchoolOwned = $schoolRow !== null;
@@ -171,17 +234,15 @@ class DynamicEnumAdministrationService
         $isOverride = $isSchoolOwned && $isTenantOwned;
         $isSchoolOnly = $isSchoolOwned && ! $isTenantOwned;
 
-        // Tenant administration is independent of the active school view context.
-        $canTenantMutate = $canManageGlobals && $isTenantOwned;
-        // School administration requires both permission and an active school.
+        // Scope-neutral manage capability + application context:
+        // tenant context → tenant rows; school context → school rows.
+        $canTenantMutate = $canManage && ! $schoolContext && $isTenantOwned;
         $canSchoolMutate = $canManage && $schoolContext && $isSchoolOwned;
 
-        // Tenant permanent delete is blocked while a school overlay row exists.
         $canDeleteTenant = $canTenantMutate && ! $isSchoolOwned;
         $canDeleteSchool = $canManage && $schoolContext && $isSchoolOnly;
 
         return [
-            // Explicit ownership-scoped actions (preferred by the UI).
             'can_edit_tenant' => $canTenantMutate,
             'can_activate_tenant' => $canTenantMutate,
             'can_deactivate_tenant' => $canTenantMutate,
@@ -192,7 +253,6 @@ class DynamicEnumAdministrationService
             'can_deactivate_school' => $canSchoolMutate,
             'can_delete_school' => $canDeleteSchool,
 
-            // Aggregate convenience flags (true if either ownership path applies).
             'can_edit' => $canTenantMutate || $canSchoolMutate,
             'can_activate' => $canTenantMutate || $canSchoolMutate,
             'can_deactivate' => $canTenantMutate || $canSchoolMutate,
@@ -200,8 +260,6 @@ class DynamicEnumAdministrationService
 
             'can_override' => $canManage && $schoolContext && $isTenantOwned && ! $isSchoolOwned,
             'can_reset' => $canManage && $schoolContext && $isOverride,
-            // Requiredness is always a tenant-option operation (uses tenant_option_id in UI).
-            // Lifecycle rejects inactive → required; mirror that precondition in the hint.
             'can_make_required' => $canTenantMutate && ($tenantRow?->is_active ?? false),
             'can_remove_required' => $canTenantMutate && $opt->isRequired,
         ];

@@ -106,3 +106,25 @@ export interface DynamicEnumOptionsResponse {
     options: DynamicEnumEffectiveOption[];
     message?: string;
 }
+
+
+/** Effective school catalogue row (index in school context). */
+export interface DynamicEnumCatalogueOption {
+    value: string;
+    label: string;
+    is_active: boolean;
+    is_required: boolean;
+    sort_order?: number;
+    color?: string | null;
+    icon?: string | null;
+    source: 'inherited' | 'overridden' | 'school-created' | string;
+}
+
+export interface DynamicEnumEffectiveCatalogueRow {
+    id: string;
+    key: string;
+    label: string;
+    description: string | null;
+    options: DynamicEnumCatalogueOption[];
+    option_count?: number;
+}

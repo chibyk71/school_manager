@@ -1,50 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import type { DynamicEnumDetail, DynamicEnumDetailOption } from '@/types/dynamic-enums'
 import { Head, Link, router, useForm } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import { Button, InputText, Textarea, Tag, Dialog } from 'primevue'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 
-interface OptionRow {
-  value: string
-  label: string
-  is_active: boolean
-  is_required: boolean
-  sort_order: number
-  color: string | null
-  icon: string | null
-  source: string
-  overridden: boolean
-  enforced: boolean
-  enforcement_reason: string | null
-  /** Ownership-specific presentation (seed edit form from mutation target, not effective). */
-  tenant_label: string | null
-  tenant_sort_order: number | null
-  tenant_color: string | null
-  tenant_icon: string | null
-  school_label: string | null
-  school_sort_order: number | null
-  school_color: string | null
-  school_icon: string | null
-  tenant_option_id: string | null
-  school_option_id: string | null
-  capabilities: Record<string, boolean>
-}
-
-interface Detail {
-  key: string
-  label: string
-  description: string | null
-  scope: string
-  options: OptionRow[]
-  capabilities: Record<string, boolean>
-}
-
 const props = defineProps<{
-  detail: Detail
+  detail: DynamicEnumDetail
   canManage: boolean
-  canManageGlobals: boolean
   hasSchoolContext: boolean
 }>()
 
@@ -56,18 +21,16 @@ const editingOptionId = ref<string | null>(null)
 
 /**
  * Scope follows permissions independently of school context.
- * - manageGlobals only → tenant operations
- * - manage only (+ school context) → school operations
- * - both → explicit selector; default to school when context exists, else tenant
+ * - tenant context → tenant operations
+ * - school context → school operations
+ * - capability is scope-neutral; application context selects target
  */
-const canCreateTenant = computed(() => props.canManageGlobals)
+const canCreateTenant = computed(() => props.canManage && !props.hasSchoolContext)
 const canCreateSchool = computed(() => props.canManage && props.hasSchoolContext)
 const hasBothScopes = computed(() => canCreateTenant.value && canCreateSchool.value)
 
 function defaultTenantScope(): boolean {
-  if (canCreateTenant.value && !canCreateSchool.value) return true
-  if (!canCreateTenant.value && canCreateSchool.value) return false
-  // Both (or neither): prefer school when context exists, otherwise tenant
+  // Scope follows application context only (no dual-permission selector).
   return !props.hasSchoolContext
 }
 
@@ -92,13 +55,13 @@ const editForm = useForm({
   icon: '' as string | null,
 })
 
-const statusLabel = (opt: OptionRow) => {
+const statusLabel = (opt: DynamicEnumDetailOption) => {
   if (opt.overridden) return 'Customized'
   if (opt.source === 'school' && !opt.overridden) return 'School-only'
   return 'Inherited'
 }
 
-const statusSeverity = (opt: OptionRow) => {
+const statusSeverity = (opt: DynamicEnumDetailOption) => {
   if (opt.overridden) return 'warn'
   if (opt.source === 'school') return 'info'
   return 'secondary'
@@ -125,7 +88,7 @@ function submitCreate() {
   })
 }
 
-function openEdit(opt: OptionRow) {
+function openEdit(opt: DynamicEnumDetailOption) {
   // Prefer school row when school mutation is allowed; otherwise tenant row.
   // Seed the form from the same ownership presentation that will be mutated —
   // never copy effective (merged) values onto the opposite ownership row.
@@ -217,7 +180,7 @@ function resetOverride(optionId: string) {
  * Prefer school mutation when the actor may mutate the school row; otherwise
  * target the tenant row (so globals-only admins can act on overridden values).
  */
-const optionIdForLifecycle = (opt: OptionRow) => {
+const optionIdForLifecycle = (opt: DynamicEnumDetailOption) => {
   if (opt.capabilities.can_edit_school && opt.school_option_id) {
     return opt.school_option_id
   }
@@ -229,10 +192,10 @@ const optionIdForLifecycle = (opt: OptionRow) => {
 }
 
 /** School overlay row id (reset always targets the school option). */
-const schoolOptionId = (opt: OptionRow) => opt.school_option_id || ''
+const schoolOptionId = (opt: DynamicEnumDetailOption) => opt.school_option_id || ''
 
 /** Requiredness is always a tenant-option operation. */
-const tenantOptionId = (opt: OptionRow) => opt.tenant_option_id || ''
+const tenantOptionId = (opt: DynamicEnumDetailOption) => opt.tenant_option_id || ''
 </script>
 
 <template>

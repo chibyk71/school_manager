@@ -107,15 +107,6 @@ export const ModalComponentDirectory: Record<string, ModalRegistration> = {
             maxWidth: 'xl',
         },
     },
-
-
-    'dynamic-enum-metadata': {
-        loader: () => import('@/Components/Modals/Create/DynamicEnumMetadataForm.vue'),
-        config: {
-            title: 'Edit Enum Details',
-            maxWidth: 'lg',
-        },
-    },
     'activate-session': {
         loader() {
             return import('@/Components/Modals/Show/ActivateSessionModal.vue')

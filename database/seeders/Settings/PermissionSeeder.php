@@ -32,8 +32,7 @@ class PermissionSeeder extends Seeder
 
             // dynamic enums (Phase 4)
             ['name' => 'dynamic-enums.view', 'display_name' => 'View Dynamic Enums', 'description' => 'View Dynamic Enum definitions and effective configuration'],
-            ['name' => 'dynamic-enums.manage', 'display_name' => 'Manage School Dynamic Enums', 'description' => 'Manage school-level Dynamic Enum overrides and school-only options'],
-            ['name' => 'dynamic-enums.manageGlobals', 'display_name' => 'Manage Tenant Dynamic Enums', 'description' => 'Manage tenant/default Dynamic Enum configuration and requiredness'],
+            ['name' => 'dynamic-enums.manage', 'display_name' => 'Manage Dynamic Enums', 'description' => 'Manage Dynamic Enum configuration in the current authorization context (tenant or school)'],
 
             // Schools (Tenant Management)
             ['name' => 'schools.view-any', 'display_name' => 'View All Schools', 'description' => 'Access the list of schools'],
