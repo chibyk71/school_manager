@@ -1,97 +1,130 @@
-// resources/js/types/dynamic-enums.ts
 /**
- * types/dynamic-enums.ts
+ * Canonical Dynamic Enum TypeScript contracts (Phase 7).
  *
- * Centralized TypeScript type definitions for the DynamicEnums module.
+ * Backend-aligned models for:
+ *   - Consumer options API: GET /dynamic-enums/{key}/options
+ *   - Administration detail: Settings/System/DynamicEnums/Show
+ *   - Catalogue rows: Settings/System/DynamicEnums/Index
  *
- * Features / Problems Solved:
- * - Provides strict, reusable types for dynamic enum data structures used across the app:
- *     • Backend API responses (controller options endpoint)
- *     • Frontend composables (useDynamicEnums)
- *     • Form components (DynamicEnumField.vue)
- *     • Admin management pages and modals
- * - Ensures consistency between Laravel JSON responses and Vue consumption.
- * - Makes option objects extensible (value + label required; color and future fields optional).
- * - Includes full enum definition type for admin views (includes metadata).
- * - Readonly arrays where appropriate to prevent accidental mutation.
- * - Exportable for easy import: import type { DynamicEnumOption, DynamicEnum } from '@/types/dynamic-enums';
- * - Aligns perfectly with the DynamicEnum Eloquent model casts and validation:
- *     • options: array of objects with string value/label, optional string color.
- *
- * Fits into the DynamicEnums Module:
- * - Single source of truth for all dynamic enum-related types.
- * - Used by:
- *     • useDynamicEnums composable (return type of load(), options ref)
- *     • DynamicEnumField.vue (props, slots, computed renderMode)
- *     • Admin Index.vue (table rows, expansion)
- *     • Future modals (DynamicEnumMetadataForm, DynamicEnumOptionsForm)
- *     • Any form using <DynamicEnumField />
- * - Prevents type mismatches and "any" usage.
- * - Production-ready: clear naming, documentation, extensibility.
+ * Stale JSON/Config-era fields (name, applies_to, school_id on definitions as
+ * primary identity, bulk options arrays) are intentionally absent.
  */
 
-export interface DynamicEnumOption {
-    /** The stored value (machine-readable, unique within the enum) */
+/** Selectable option as returned by the consumer options endpoint. */
+export interface DynamicEnumEffectiveOption {
     value: string;
-
-    /** Human-readable label displayed in dropdowns, radios, badges */
     label: string;
-
-    /** Optional Tailwind color class for visual distinction (e.g., 'bg-indigo-100 text-indigo-800') */
-    color?: string;
-
-    /** Future-proof: add more optional metadata without breaking changes */
-    // icon?: string;
-    // sort_order?: number;
-    // disabled?: boolean;
-}
-
-/**
- * Full dynamic enum definition – as returned by the index endpoint or edit modal payload.
- * Includes metadata (label, description) and the options array.
- */
-export interface DynamicEnum {
-    /** Primary key (UUID) */
-    id: string;
-
-    /** Machine name – immutable, used as property name and in validation */
-    name: string;
-
-    /** Display label – editable by school admins */
-    label: string;
-
-    /** Fully qualified model class this enum applies to (immutable) */
-    applies_to: string;
-
-    /** Optional description for admin reference */
-    description?: string | null;
-
-    /** Optional color for the enum badge in admin table */
+    is_active?: boolean;
     color?: string | null;
+    icon?: string | null;
+}
 
-    /** Array of allowed options – editable (add/edit/delete/reorder) */
-    options: DynamicEnumOption[];
+/**
+ * Alias for consumer/form usage. Prefer DynamicEnumEffectiveOption for clarity;
+ * this name is retained for existing import sites (subject.ts, etc.).
+ */
+export type DynamicEnumOption = DynamicEnumEffectiveOption;
 
-    /** Nullable school_id – null = global default, non-null = school override */
+/** Application-owned definition row (catalogue / index). */
+export interface DynamicEnumDefinition {
+    id: string;
+    key: string;
+    label: string;
+    description: string | null;
+}
+
+/** Per-option capability hints from the administration detail payload. */
+export interface DynamicEnumOptionCapabilities {
+    can_edit_tenant?: boolean;
+    can_activate_tenant?: boolean;
+    can_deactivate_tenant?: boolean;
+    can_delete_tenant?: boolean;
+    can_edit_school?: boolean;
+    can_activate_school?: boolean;
+    can_deactivate_school?: boolean;
+    can_delete_school?: boolean;
+    can_edit?: boolean;
+    can_activate?: boolean;
+    can_deactivate?: boolean;
+    can_delete?: boolean;
+    can_override?: boolean;
+    can_reset?: boolean;
+    can_make_required?: boolean;
+    can_remove_required?: boolean;
+}
+
+/** Effective option row in the administration Show detail. */
+export interface DynamicEnumDetailOption {
+    value: string;
+    label: string;
+    is_active: boolean;
+    is_required: boolean;
+    sort_order: number;
+    color: string | null;
+    icon: string | null;
+    source: string;
+    overridden: boolean;
+    enforced: boolean;
+    enforcement_reason?: string | null;
+    tenant_label: string | null;
+    tenant_sort_order: number | null;
+    tenant_color: string | null;
+    tenant_icon: string | null;
+    school_label: string | null;
+    school_sort_order: number | null;
+    school_color: string | null;
+    school_icon: string | null;
+    tenant_option_id: string | null;
+    school_option_id: string | null;
+    capabilities: DynamicEnumOptionCapabilities;
+}
+
+/** Definition-level capability hints. */
+export interface DynamicEnumDetailCapabilities {
+    can_edit_definition?: boolean;
+    can_manage_tenant_options?: boolean;
+    can_manage_school_options?: boolean;
+    can_make_required?: boolean;
+}
+
+/** Administration Show payload. */
+export interface DynamicEnumDetail {
+    key: string;
+    label: string;
+    description: string | null;
+    definition_id?: string;
+    scope: 'tenant' | 'school' | string;
     school_id?: string | null;
-
-    /** Timestamps */
-    created_at: string;
-    updated_at: string;
+    options: DynamicEnumDetailOption[];
+    capabilities: DynamicEnumDetailCapabilities;
 }
 
-/**
- * API response type for the options endpoint (/api/dynamic-enums/options/{appliesTo}/{name})
- */
+/** Consumer options API response shape. */
 export interface DynamicEnumOptionsResponse {
-    options: DynamicEnumOption[];
+    key?: string;
+    label?: string;
+    options: DynamicEnumEffectiveOption[];
+    message?: string;
 }
 
-/**
- * Optional: Type for partial updates (e.g., metadata only or options only)
- */
-export type DynamicEnumMetadataUpdate = Pick<DynamicEnum, 'label' | 'description' | 'color'>;
 
-export type DynamicEnumOptionsUpdate = {
-    options: DynamicEnumOption[];
-};
+/** Effective school catalogue row (index in school context). */
+export interface DynamicEnumCatalogueOption {
+    value: string;
+    label: string;
+    is_active: boolean;
+    is_required: boolean;
+    sort_order?: number;
+    color?: string | null;
+    icon?: string | null;
+    source: 'inherited' | 'overridden' | 'school-created' | string;
+}
+
+export interface DynamicEnumEffectiveCatalogueRow {
+    id: string;
+    key: string;
+    label: string;
+    description: string | null;
+    options: DynamicEnumCatalogueOption[];
+    option_count?: number;
+}
