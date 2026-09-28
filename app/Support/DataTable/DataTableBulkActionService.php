@@ -3,8 +3,8 @@
 namespace App\Support\DataTable;
 
 use App\Contracts\BulkActions\AuthorizedQueryBulkAction;
+use App\Contracts\BulkActions\PartialBulkAction;
 use App\DataTransferObjects\BulkActions\BulkActionResult;
-use App\Http\Requests\BulkActions\BulkActionRequest;
 use App\Services\BulkActions\BulkActionRegistry;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -15,20 +15,20 @@ use Exception;
 /**
  * Phase 6 bulk-action orchestrator for DataTable selection.
  *
- * Selection → authorization (caller-supplied authorized query) → action dispatch.
+ * Canonical execution model:
+ *
+ *   authorized resource builder
+ *       → selection applied
+ *       → authorized selection builder
+ *       → authorized-query-capable handler
+ *
  * Domain business rules remain in handlers / resource layer — not here.
  *
- * Semantics:
- * - Declared capability semantics ('atomic' | 'partial') are authoritative.
- * - Atomic (default): outer DB transaction; all-or-nothing for the resolved set.
- * - Partial: no outer transaction; only meaningful when the handler supports per-record
- *   success/failure. Existing registry handlers are atomic-style — partial is opt-in.
- *
- * TOCTOU mitigation:
- * Resolved IDs always come from the authorized builder. Handlers still receive IDs
- * (legacy contract) but the ID set was produced under the authorized scope; global
- * scopes on the model further constrain handler queries. Callers must pass the same
- * authorized builder they use for listing.
+ * Invariants:
+ * - $authorizedQuery->getModel()::class must equal $model::class
+ * - Handlers must implement AuthorizedQueryBulkAction (no model->newQuery() rebuild)
+ * - semantics=partial requires PartialBulkAction; otherwise fail clearly
+ * - Atomic (default) wraps execution in DB::transaction
  */
 final class DataTableBulkActionService
 {
@@ -61,12 +61,23 @@ final class DataTableBulkActionService
         mixed $payload = null,
         array $extraFields = [],
     ): BulkActionResult {
+        // Builder/model consistency — selection metadata must not target another resource.
+        $builderModelClass = $authorizedQuery->getModel()::class;
+        $modelClass = $model::class;
+        if ($builderModelClass !== $modelClass) {
+            return BulkActionResult::failure(
+                $action,
+                "Authorized query model [{$builderModelClass}] does not match resource model [{$modelClass}].",
+                ['builder_model' => $builderModelClass, 'resource_model' => $modelClass]
+            );
+        }
+
         $capability = $this->findCapability($action, $capabilities);
         if ($capability === null) {
             return BulkActionResult::failure(
                 $action,
                 "Action [{$action}] is not available for this resource.",
-                ['model' => $model::class]
+                ['model' => $modelClass]
             );
         }
 
@@ -77,26 +88,7 @@ final class DataTableBulkActionService
         $atomic = $this->isAtomic($capability);
 
         try {
-            // Apply selection onto a clone of the authorized builder — this query remains
-            // authoritative through execution (includes non-global section/resource scopes).
-            $authorizedSelectionQuery = $this->selectionResolver->apply(
-                clone $authorizedQuery,
-                $model,
-                $selection,
-                $extraFields
-            );
-
-            // Existence check without discarding the authorized query.
-            if (! (clone $authorizedSelectionQuery)->exists()) {
-                return BulkActionResult::failure(
-                    $action,
-                    'No authorized records matched the selection.',
-                    ['model' => $model::class]
-                );
-            }
-
             $handler = $this->registry->resolve($action);
-            $modelClass = $model::class;
 
             if (! $handler->supports($modelClass)) {
                 return BulkActionResult::failure(
@@ -106,19 +98,41 @@ final class DataTableBulkActionService
                 );
             }
 
+            if (! $handler instanceof AuthorizedQueryBulkAction) {
+                return BulkActionResult::failure(
+                    $action,
+                    "Action [{$action}] does not support authorized-query execution.",
+                    ['model' => $modelClass]
+                );
+            }
+
+            // Partial capability requires a handler that truly supports per-record semantics.
+            if (! $atomic && ! $handler instanceof PartialBulkAction) {
+                return BulkActionResult::failure(
+                    $action,
+                    "Action [{$action}] declares partial semantics but the handler does not support partial execution.",
+                    ['model' => $modelClass]
+                );
+            }
+
+            // Apply selection onto a clone of the authorized builder — remains authoritative.
+            $authorizedSelectionQuery = $this->selectionResolver->apply(
+                clone $authorizedQuery,
+                $model,
+                $selection,
+                $extraFields
+            );
+
+            if (! (clone $authorizedSelectionQuery)->exists()) {
+                return BulkActionResult::failure(
+                    $action,
+                    'No authorized records matched the selection.',
+                    ['model' => $modelClass]
+                );
+            }
+
             $run = function () use ($handler, $authorizedSelectionQuery, $payload, $action, $modelClass) {
-                // Prefer Phase 6 authorized-query path — never reconstruct model->newQuery().
-                if ($handler instanceof AuthorizedQueryBulkAction) {
-                    $result = $handler->handleOnAuthorizedQuery($authorizedSelectionQuery, $payload);
-                } else {
-                    // Handlers that only implement the legacy contract are not safe for
-                    // Phase 6 when authorization is more than global scopes.
-                    return BulkActionResult::failure(
-                        $action,
-                        "Action [{$action}] does not support authorized-query execution.",
-                        ['model' => $modelClass]
-                    );
-                }
+                $result = $handler->handleOnAuthorizedQuery($authorizedSelectionQuery, $payload);
                 $this->logSuccess($action, $modelClass, $result->succeeded, $result);
 
                 return $result;
@@ -128,16 +142,15 @@ final class DataTableBulkActionService
                 return DB::transaction($run);
             }
 
-            // Partial: no outer transaction. Only meaningful when the handler supports
-            // true per-record partial processing — do not claim partial merely by skipping TX.
+            // Genuine partial: handler implements PartialBulkAction; no outer transaction.
             return $run();
         } catch (Exception $e) {
-            $this->logFailure($action, $model::class, $selection, $e);
+            $this->logFailure($action, $modelClass, $selection, $e);
 
             return BulkActionResult::failure(
                 $action,
                 $this->userFriendlyMessage($e, $action),
-                ['model' => $model::class]
+                ['model' => $modelClass]
             );
         }
     }
@@ -179,33 +192,7 @@ final class DataTableBulkActionService
             ? $capability->semantics
             : ($capability['semantics'] ?? null);
 
-        // Only 'partial' opts out of the outer transaction.
         return $semantics !== 'partial';
-    }
-
-    /**
-     * Build a BulkActionRequest that handlers can call getIds()/getAction() on.
-     * FormRequest::validated() requires a resolved validator — create() alone is not enough.
-     *
-     * @param  list<int|string>  $ids
-     */
-    private function makeLegacyRequest(array $ids, string $action, mixed $payload): BulkActionRequest
-    {
-        $data = [
-            'ids' => array_values(array_map(static fn ($id) => is_numeric($id) ? (int) $id : $id, $ids)),
-            'action' => $action,
-            'force' => is_array($payload) ? (bool) ($payload['force'] ?? false) : false,
-        ];
-
-        $request = BulkActionRequest::create('/', 'POST', $data);
-        $request->setContainer(app())->setRedirector(app('redirect'));
-        $request->merge($data);
-
-        // Populate validator so validated() / getIds() work outside an HTTP kernel cycle.
-        $validator = \Illuminate\Support\Facades\Validator::make($data, $request->rules());
-        $request->setValidator($validator);
-
-        return $request;
     }
 
     private function logSuccess(string $action, string $modelClass, int $count, BulkActionResult $result): void
