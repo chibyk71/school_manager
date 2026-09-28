@@ -173,17 +173,26 @@ final class DataTableBulkActionService
     }
 
     /**
+     * Build a BulkActionRequest that handlers can call getIds()/getAction() on.
+     * FormRequest::validated() requires a resolved validator — create() alone is not enough.
+     *
      * @param  list<int|string>  $ids
      */
     private function makeLegacyRequest(array $ids, string $action, mixed $payload): BulkActionRequest
     {
-        $request = BulkActionRequest::create('/', 'POST', [
-            'ids' => array_values($ids),
+        $data = [
+            'ids' => array_values(array_map(static fn ($id) => is_numeric($id) ? (int) $id : $id, $ids)),
             'action' => $action,
             'force' => is_array($payload) ? (bool) ($payload['force'] ?? false) : false,
-        ]);
+        ];
+
+        $request = BulkActionRequest::create('/', 'POST', $data);
         $request->setContainer(app())->setRedirector(app('redirect'));
-        $request->merge(['ids' => array_values($ids), 'action' => $action]);
+        $request->merge($data);
+
+        // Populate validator so validated() / getIds() work outside an HTTP kernel cycle.
+        $validator = \Illuminate\Support\Facades\Validator::make($data, $request->rules());
+        $request->setValidator($validator);
 
         return $request;
     }
