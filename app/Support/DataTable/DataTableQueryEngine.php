@@ -33,10 +33,21 @@ final class DataTableQueryEngine
      * @param  Builder  $query  Already-authorized Eloquent builder
      * @param  Request|DataTableQuery|array<string, mixed>  $input
      * @param  array<string, mixed>  $extraFields
-     * @return array{data: mixed, columns: list<array<string, mixed>>, meta: array{currentPage: int, perPage: int, total: int, lastPage: int}}
+     * @param  list<BulkActionCapability|array{id: string, label: string, icon?: string, requiresConfirmation?: bool, semantics?: string}>  $bulkActions
+     * @return array{
+     *     data: mixed,
+     *     columns: list<array<string, mixed>>,
+     *     meta: array{currentPage: int, perPage: int, total: int, lastPage: int},
+     *     capabilities: array{bulkActions: list<array<string, mixed>>, exportable: bool, maxSelectionIds: int}
+     * }
      */
-    public function process(Builder $query, Model $model, Request|DataTableQuery|array $input, array $extraFields = []): array
-    {
+    public function process(
+        Builder $query,
+        Model $model,
+        Request|DataTableQuery|array $input,
+        array $extraFields = [],
+        array $bulkActions = [],
+    ): array {
         $dtQuery = match (true) {
             $input instanceof DataTableQuery => $input,
             $input instanceof Request => $this->normalizer->fromRequest($input),
@@ -64,12 +75,29 @@ final class DataTableQueryEngine
             'lastPage' => $paginator->lastPage(),
         ];
 
-        // Canonical V1 response. Temporary legacy pagination keys remain for
-        // still-unmigrated consumers; searchable fields come from columns[].searchable.
+        $exportEnabled = (bool) config('tables.enable_export', true);
+        $exportable = $exportEnabled && count($capabilities->exportableFields()) > 0;
+
+        $bulkActionPayload = [];
+        foreach ($bulkActions as $action) {
+            if ($action instanceof BulkActionCapability) {
+                $bulkActionPayload[] = $action->toArray();
+            } elseif (is_array($action) && isset($action['id'], $action['label'])) {
+                $bulkActionPayload[] = $action;
+            }
+        }
+
+        // Canonical response. capabilities lives at response root (not under meta).
+        // Temporary legacy pagination keys remain for still-unmigrated consumers.
         return [
             'data' => $paginator->items(),
             'columns' => $columns,
             'meta' => $meta,
+            'capabilities' => [
+                'bulkActions' => $bulkActionPayload,
+                'exportable' => $exportable,
+                'maxSelectionIds' => (int) config('tables.selection.max_ids', 5000),
+            ],
             'totalRecords' => $meta['total'],
             'currentPage' => $meta['currentPage'],
             'lastPage' => $meta['lastPage'],

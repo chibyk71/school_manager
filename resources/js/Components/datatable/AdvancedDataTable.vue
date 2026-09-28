@@ -3,15 +3,24 @@
  * AdvancedDataTable — presentation + orchestration over useDataTableQuery.
  * HTTP/cache/retry owned by TanStack Query via DataTableDataSource.
  */
-import { computed, provide, ref, watch } from 'vue'
+import { computed, provide, ref, watch, nextTick } from 'vue'
 import { useDataTableQuery } from '@/datatable/useDataTableQuery'
+import { useDataTableSelection } from '@/datatable/useDataTableSelection'
+import { useDataTableBulkActions } from '@/datatable/useDataTableBulkActions'
+import { useDataTableExport } from '@/datatable/useDataTableExport'
 import {
     primeVueFiltersToCanonical,
     primeVueSortToCanonical,
     extractGlobalSearch,
 } from '@/datatable/adapters/primevue'
 import { DEFAULT_PER_PAGE } from '@/datatable/types'
-import type { DataTableResponse } from '@/datatable/types'
+import type {
+    DataTableResponse,
+    BulkActionCapability,
+    DataTableExportTarget,
+} from '@/datatable/types'
+import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 
 import DataTableHeader from './DataTableHeader.vue'
 import DataTableEmptyState from './DataTableEmptyState.vue'
@@ -46,10 +55,21 @@ const props = defineProps<{
     initialParams?: Record<string, any>
     /** Presentation overlays (renderers, formatters). Merged onto matching server fields. */
     columns: ColumnDefinition<T>[]
+    /**
+     * @deprecated Prefer backend-declared capabilities.bulkActions.
+     * Presentation-only fallback when the response has no capabilities.
+     */
     bulkActions?: BulkAction<T>[]
+    /** POST endpoint for capability-driven bulk actions (Phase 6). */
+    bulkActionEndpoint?: string
+    /** POST endpoint for backend export (Phase 6). */
+    exportEndpoint?: string
     virtualScroller?: boolean
     actions?: TableAction<T>[]
 }>()
+
+const toast = useToast()
+const confirm = useConfirm()
 
 const extraParams = computed(() => props.initialParams ?? {})
 
@@ -79,6 +99,7 @@ const {
     rows,
     columns: serverColumns,
     meta,
+    capabilities,
     isPending,
     isFetching,
     isError,
@@ -96,11 +117,45 @@ const {
     initialResponse: seedResponse,
 })
 
+const selectionApi = useDataTableSelection({
+    currentQuery: query,
+})
+
+const bulkApi = props.bulkActionEndpoint
+    ? useDataTableBulkActions({
+          endpoint: props.bulkActionEndpoint,
+          resource: props.endpoint,
+          onSuccess: () => {
+              clearCanonicalSelection()
+          },
+      })
+    : null
+
+const exportApi = props.exportEndpoint
+    ? useDataTableExport({
+          endpoint: props.exportEndpoint,
+          onError: (e: unknown) => {
+              const msg =
+                  e && typeof e === 'object' && 'response' in e
+                      ? ((e as any).response?.data?.message ?? 'Export failed')
+                      : 'Export failed'
+              toast.add({ severity: 'error', summary: 'Export failed', detail: String(msg), life: 5000 })
+          },
+      })
+    : null
+
 const dtRef = ref<any>(null)
+/**
+ * PrimeVue selectedRows = current page visual selection only.
+ * Canonical selection (cross-page) lives in selectionApi.
+ */
 const selectedRows = ref<T[]>([])
 const hiddenColumns = ref<string[]>([])
 const exportMenu = ref()
 const applyingFilters = ref(false)
+const showSelectAllMatching = ref(false)
+/** Guard against feedback loops while rehydrating page selection from canonical IDs. */
+const rehydratingSelection = ref(false)
 
 const filters = ref<Record<string, { value: any; matchMode: string }>>({
     global: { value: '', matchMode: 'contains' },
@@ -197,7 +252,181 @@ const perPage = computed({
     set: (v: number) => setPerPage(v),
 })
 
-const safeBulkActions = computed(() => props.bulkActions ?? [])
+/**
+ * Backend-declared capabilities are the only authoritative executable actions.
+ * props.bulkActions is intentionally not an executable Phase 6 fallback.
+ */
+const backendBulkCapabilities = computed((): BulkActionCapability[] => {
+    return capabilities.value?.bulkActions ?? []
+})
+
+const canExport = computed(() => capabilities.value?.exportable === true && !!props.exportEndpoint)
+
+/**
+ * Phase 6 executable bulk actions: backend capabilities + bulkActionEndpoint only.
+ * No props.bulkActions fallback — frontend must not invent action identifiers.
+ */
+const effectiveBulkActions = computed((): BulkAction<T>[] => {
+    if (!props.bulkActionEndpoint) return []
+    const caps = backendBulkCapabilities.value
+    if (!caps.length) return []
+    return caps.map((cap) => ({
+        label: cap.label,
+        icon: cap.icon,
+        action: cap.id,
+        confirm: cap.requiresConfirmation
+            ? {
+                  message: `Apply "${cap.label}" to the selected records?`,
+                  header: 'Confirm bulk action',
+                  acceptLabel: 'Confirm',
+                  rejectLabel: 'Cancel',
+              }
+            : undefined,
+        handler: async () => {
+            await runCapabilityBulkAction(cap)
+        },
+    }))
+})
+
+/** Canonical selection is the source of truth for bulk UI (survives page navigation). */
+const hasCanonicalSelection = computed(
+    () => selectionApi.mode.value === 'ids' || selectionApi.mode.value === 'query',
+)
+
+/**
+ * Sync page-local PrimeVue selection → canonical selection (ids mode only).
+ * Does not wipe IDs from other pages.
+ */
+watch(selectedRows, (pageRows) => {
+    if (rehydratingSelection.value) return
+    if (selectionApi.mode.value === 'query') return
+
+    const pageIds = (tableData.value ?? [])
+        .map((r) => (r as any)?.id)
+        .filter((id: any) => id !== undefined && id !== null)
+    const selectedOnPage = pageRows
+        .map((r) => (r as any)?.id)
+        .filter((id) => id !== undefined && id !== null)
+
+    selectionApi.deselectPageIds(pageIds)
+    if (selectedOnPage.length) {
+        selectionApi.selectPageIds(selectedOnPage)
+    }
+
+    // Offer "select all matching" when the full page is selected and more records exist
+    if (
+        pageIds.length > 0 &&
+        selectedOnPage.length === pageIds.length &&
+        meta.value.total > pageIds.length
+    ) {
+        showSelectAllMatching.value = true
+    } else if (selectedOnPage.length === 0) {
+        showSelectAllMatching.value = false
+    }
+})
+
+/**
+ * Rehydrate PrimeVue page selection from canonical IDs when rows change (page nav).
+ * selectedRows represents only the current page; canonical IDs survive across pages.
+ */
+watch(
+    tableData,
+    (pageRows) => {
+        if (selectionApi.mode.value === 'query') {
+            // Query selection: visually select all rows on the page
+            rehydratingSelection.value = true
+            selectedRows.value = [...(pageRows ?? [])]
+            nextTick(() => {
+                rehydratingSelection.value = false
+            })
+            return
+        }
+        const canonical = new Set(selectionApi.selectedIds.value.map(String))
+        rehydratingSelection.value = true
+        selectedRows.value = (pageRows ?? []).filter((r) =>
+            canonical.has(String((r as any)?.id)),
+        )
+        nextTick(() => {
+            rehydratingSelection.value = false
+        })
+    },
+    { flush: 'post' },
+)
+
+function confirmSelectAllMatching() {
+    selectionApi.convertToQuerySelection(query.value)
+    showSelectAllMatching.value = false
+}
+
+function clearCanonicalSelection() {
+    selectionApi.clearSelection()
+    selectedRows.value = []
+    showSelectAllMatching.value = false
+}
+
+async function runCapabilityBulkAction(cap: BulkActionCapability) {
+    if (!bulkApi) {
+        toast.add({
+            severity: 'warn',
+            summary: 'Bulk actions unavailable',
+            detail: 'No bulk action endpoint configured.',
+            life: 4000,
+        })
+        return
+    }
+    const selection = selectionApi.getCanonicalSelection()
+    if (!selection) {
+        toast.add({
+            severity: 'warn',
+            summary: 'No selection',
+            detail: 'Select at least one record.',
+            life: 3000,
+        })
+        return
+    }
+    try {
+        const result = await bulkApi.execute(
+            selection,
+            cap.id,
+            undefined,
+            backendBulkCapabilities.value,
+        )
+        toast.add({
+            severity: result.failed > 0 ? 'warn' : 'success',
+            summary: cap.label,
+            detail: result.message ?? `${result.succeeded} succeeded`,
+            life: 4000,
+        })
+    } catch (e: any) {
+        toast.add({
+            severity: 'error',
+            summary: 'Bulk action failed',
+            detail: e?.response?.data?.message ?? e?.message ?? 'Unknown error',
+            life: 5000,
+        })
+    }
+}
+
+async function runExport(target: DataTableExportTarget) {
+    if (!exportApi || !canExport.value) return
+    const exportableCols = displayColumns.value
+        .filter((c) => c.exportable !== false)
+        .map((c) => String(c.field))
+    if (!exportableCols.length) {
+        toast.add({
+            severity: 'warn',
+            summary: 'Nothing to export',
+            detail: 'No exportable columns.',
+            life: 3000,
+        })
+        return
+    }
+    try {
+        await exportApi.exportData(query.value, target, exportableCols, 'csv')
+    } catch {
+        /* onError already toasted */
+    }
+}
 
 const searchableFields = computed(() =>
     displayColumns.value
@@ -247,35 +476,109 @@ provide('dataTableApi', {
 
 defineExpose({
     refresh,
-    exportData: () => {
-        console.warn('[AdvancedDataTable] export is owned by Phase 6')
-    },
+    selectionApi,
+    clearCanonicalSelection,
+    getCanonicalSelection: () => selectionApi.getCanonicalSelection(),
+    exportData: (target?: DataTableExportTarget) =>
+        runExport(target ?? { type: 'page' }),
 })
 
 function toggleExportMenu(e: Event) {
     exportMenu.value?.toggle(e)
 }
-function handleExportVisible() {
-    console.warn('[AdvancedDataTable] export is owned by Phase 6')
-}
-function handleExportAll() {
-    console.warn('[AdvancedDataTable] export is owned by Phase 6')
+
+function handleExportPage() {
+    void runExport({ type: 'page' })
 }
 
+function handleExportSelection() {
+    const sel = selectionApi.getCanonicalSelection()
+    if (!sel) {
+        toast.add({
+            severity: 'warn',
+            summary: 'No selection',
+            detail: 'Select records or use Export page / Export all matching.',
+            life: 3000,
+        })
+        return
+    }
+    if (sel.type === 'ids') {
+        void runExport({ type: 'ids', ids: sel.ids })
+    } else {
+        void runExport({ type: 'query', query: sel.query })
+    }
+}
+
+function handleExportAllMatching() {
+    // Current live membership (not a prior snapshot)
+    const q: { search?: string; filters?: typeof query.value.filters } = {}
+    if (query.value.search) q.search = query.value.search
+    if (query.value.filters?.conditions?.length) q.filters = query.value.filters
+    void runExport({ type: 'query', query: q })
+}
+
+const exportMenuItems = computed(() => {
+    const items = [
+        { label: 'Export this page', icon: 'pi pi-file', command: handleExportPage },
+        { label: 'Export selection', icon: 'pi pi-check-square', command: handleExportSelection },
+        { label: 'Export all matching', icon: 'pi pi-globe', command: handleExportAllMatching },
+    ]
+    return items
+})
+
 const actions = computed(() => props.actions)
+
+const selectionSummaryLabel = computed(() => {
+    if (selectionApi.mode.value === 'query') {
+        const total = meta.value.total
+        const note = selectionApi.isSelectionBasedOnDifferentQuery.value
+            ? ' (previous filters)'
+            : ''
+        return total > 0 ? `All matching selected${note}` : 'All matching selected'
+    }
+    const n = selectionApi.selectedCount.value
+    return n > 0 ? `${n} selected` : ''
+})
 </script>
 
 <template>
     <div class="datatable-wrapper">
         <DataTableHeader
             :selected-rows="(selectedRows as T[])"
-            :bulk-actions="safeBulkActions"
+            :selection-count="selectionApi.selectedCount.value"
+            :has-canonical-selection="hasCanonicalSelection"
+            :selection-label="selectionSummaryLabel || undefined"
+            :bulk-actions="effectiveBulkActions"
             :columns="displayColumns as any"
             v-model:hidden-columns="hiddenColumns"
             v-model:global-search="filters.global.value"
             @refresh="refresh"
             @update:global-search="applyFiltersFromPrimeVue"
         />
+
+        <div
+            v-if="selectionSummaryLabel || showSelectAllMatching"
+            class="flex flex-wrap items-center gap-3 px-6 py-2 text-sm border-b border-surface-200 dark:border-surface-700 bg-primary/5"
+        >
+            <span v-if="selectionSummaryLabel" class="font-medium text-primary">
+                {{ selectionSummaryLabel }}
+            </span>
+            <Button
+                v-if="showSelectAllMatching && selectionApi.mode.value === 'ids'"
+                link
+                size="small"
+                :label="`Select all ${meta.total} matching records`"
+                @click="confirmSelectAllMatching"
+            />
+            <Button
+                v-if="selectionApi.mode.value !== 'none'"
+                link
+                size="small"
+                label="Clear selection"
+                severity="secondary"
+                @click="clearCanonicalSelection"
+            />
+        </div>
 
         <div v-if="isError" class="p-4 text-sm text-red-600 dark:text-red-400" role="alert">
             {{ error?.message ?? 'Failed to load table data.' }}
@@ -426,15 +729,16 @@ const actions = computed(() => props.actions)
                 <DataTableLoadingState />
             </template>
             <template #paginatorend>
-                <Button label="Export" icon="pi pi-file-excel" severity="contrast" @click="(e) => toggleExportMenu(e)" />
-                <Menu
-                    :model="[
-                        { label: 'Export Visible', icon: 'pi pi-eye', command: handleExportVisible },
-                        { label: 'Export All', icon: 'pi pi-globe', command: handleExportAll },
-                    ]"
-                    popup
-                    ref="exportMenu"
-                />
+                <template v-if="canExport">
+                    <Button
+                        label="Export"
+                        icon="pi pi-file-excel"
+                        severity="contrast"
+                        :loading="exportApi?.pending.value"
+                        @click="(e) => toggleExportMenu(e)"
+                    />
+                    <Menu :model="exportMenuItems" popup ref="exportMenu" />
+                </template>
             </template>
         </DataTable>
     </div>

@@ -96,6 +96,7 @@ export const DataTableDataSource = {
 /** Map backend (canonical + temporary legacy keys) → frontend DataTableResponse */
 export function mapResponse<T>(raw: any): DataTableResponse<T> {
     const meta = raw?.meta ?? {}
+    const caps = raw?.capabilities
     return {
         data: Array.isArray(raw?.data) ? raw.data : [],
         columns: Array.isArray(raw?.columns) ? raw.columns : [],
@@ -105,5 +106,14 @@ export function mapResponse<T>(raw: any): DataTableResponse<T> {
             total: Number(meta.total ?? raw?.totalRecords ?? 0) || 0,
             lastPage: Number(meta.lastPage ?? raw?.lastPage ?? 1) || 1,
         },
+        // Canonical location: response root (not meta)
+        capabilities: caps
+            ? {
+                  bulkActions: Array.isArray(caps.bulkActions) ? caps.bulkActions : [],
+                  exportable: caps.exportable === true,
+                  maxSelectionIds:
+                      typeof caps.maxSelectionIds === 'number' ? caps.maxSelectionIds : undefined,
+              }
+            : undefined,
     }
 }
