@@ -50,12 +50,38 @@ trait HasTableQuery
     }
 
     /**
+     * Resource-declared bulk actions for DataTable capability surface.
+     * Override on the model or pass via scopeTableQuery bulkActions argument.
+     *
+     * @return list<\App\Support\DataTable\BulkActionCapability|array{id: string, label: string}>
+     */
+    public function getDataTableBulkActions(): array
+    {
+        if (property_exists($this, 'dataTableBulkActions') && is_array($this->dataTableBulkActions)) {
+            return $this->dataTableBulkActions;
+        }
+
+        return [];
+    }
+
+    /**
      * @param  Builder  $query  Must already include authorization / school / section scopes
      * @param  array<callable>  $customModifiers
-     * @return array{data: mixed, columns: list<array>, meta: array{currentPage: int, perPage: int, total: int, lastPage: int}}
+     * @param  list<\App\Support\DataTable\BulkActionCapability|array{id: string, label: string}>|null  $bulkActions
+     * @return array{
+     *     data: mixed,
+     *     columns: list<array>,
+     *     meta: array{currentPage: int, perPage: int, total: int, lastPage: int},
+     *     capabilities: array{bulkActions: list<array>, exportable: bool, maxSelectionIds: int}
+     * }
      */
-    public function scopeTableQuery(Builder $query, Request $request, array $extraFields = [], array $customModifiers = []): array
-    {
+    public function scopeTableQuery(
+        Builder $query,
+        Request $request,
+        array $extraFields = [],
+        array $customModifiers = [],
+        ?array $bulkActions = null,
+    ): array {
         try {
             foreach ($customModifiers as $modifier) {
                 if (is_callable($modifier)) {
@@ -65,7 +91,15 @@ trait HasTableQuery
                 }
             }
 
-            return DataTableQueryEngine::make()->process($query, $this, $request, $extraFields);
+            $actions = $bulkActions ?? $this->getDataTableBulkActions();
+
+            return DataTableQueryEngine::make()->process(
+                $query,
+                $this,
+                $request,
+                $extraFields,
+                $actions,
+            );
         } catch (DataTableQueryException $e) {
             Log::notice('DataTable query validation failed', [
                 'model' => get_class($this),

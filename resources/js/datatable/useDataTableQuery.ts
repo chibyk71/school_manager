@@ -10,6 +10,7 @@ import type {
     DataTableFilters,
     DataTableSort,
     DataTableColumnMeta,
+    DataTableCapabilities,
 } from './types'
 import { DEFAULT_PER_PAGE, DEFAULT_PREFETCH_PAGES } from './types'
 import { DataTableDataSource } from './DataTableDataSource'
@@ -158,12 +159,17 @@ export function useDataTableQuery<T = Record<string, unknown>>(options: UseDataT
                 lastPage: 1,
             },
     )
+    /** Canonical capabilities from response root (Phase 6). */
+    const capabilities = computed((): DataTableCapabilities | undefined => {
+        return queryResult.data.value?.capabilities
+    })
 
     return {
         query: queryState,
         rows,
         columns,
         meta,
+        capabilities,
         pagination: meta,
 
         isPending: queryResult.isPending,

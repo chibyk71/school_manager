@@ -2,7 +2,6 @@
 
 namespace App\Support\DataTable;
 
-use App\Contracts\BulkActions\BulkActionHandler;
 use App\DataTransferObjects\BulkActions\BulkActionResult;
 use App\Http\Requests\BulkActions\BulkActionRequest;
 use App\Services\BulkActions\BulkActionRegistry;
@@ -18,15 +17,23 @@ use Exception;
  * Selection → authorization (caller-supplied authorized query) → action dispatch.
  * Domain business rules remain in handlers / resource layer — not here.
  *
- * Bridges the existing BulkActionRegistry handlers while accepting
- * DataTableSelection (ids | query) instead of raw ID-only requests.
+ * Semantics:
+ * - Declared capability semantics ('atomic' | 'partial') are authoritative.
+ * - Atomic (default): outer DB transaction; all-or-nothing for the resolved set.
+ * - Partial: no outer transaction; only meaningful when the handler supports per-record
+ *   success/failure. Existing registry handlers are atomic-style — partial is opt-in.
+ *
+ * TOCTOU mitigation:
+ * Resolved IDs always come from the authorized builder. Handlers still receive IDs
+ * (legacy contract) but the ID set was produced under the authorized scope; global
+ * scopes on the model further constrain handler queries. Callers must pass the same
+ * authorized builder they use for listing.
  */
 final class DataTableBulkActionService
 {
     public function __construct(
         private readonly BulkActionRegistry $registry,
         private readonly DataTableSelectionResolver $selectionResolver = new DataTableSelectionResolver(),
-        private readonly DataTableSelectionNormalizer $selectionNormalizer = new DataTableSelectionNormalizer(),
     ) {}
 
     public static function make(?BulkActionRegistry $registry = null): self
@@ -34,7 +41,6 @@ final class DataTableBulkActionService
         return new self(
             $registry ?? app(BulkActionRegistry::class),
             DataTableSelectionResolver::make(),
-            DataTableSelectionNormalizer::fromConfig(),
         );
     }
 
@@ -42,7 +48,7 @@ final class DataTableBulkActionService
      * Execute a capability-approved bulk action against an authorized resource query.
      *
      * @param  Builder  $authorizedQuery  Tenant/school/section/policy scopes already applied
-     * @param  list<BulkActionCapability>  $capabilities  Resource-declared actions
+     * @param  list<BulkActionCapability|array{id: string, label: string, semantics?: string}>  $capabilities
      * @param  array<string, mixed>  $extraFields
      */
     public function execute(
@@ -53,9 +59,9 @@ final class DataTableBulkActionService
         array $capabilities,
         mixed $payload = null,
         array $extraFields = [],
-        bool $atomic = true,
     ): BulkActionResult {
-        if (! $this->isActionDeclared($action, $capabilities)) {
+        $capability = $this->findCapability($action, $capabilities);
+        if ($capability === null) {
             return BulkActionResult::failure(
                 $action,
                 "Action [{$action}] is not available for this resource.",
@@ -67,7 +73,10 @@ final class DataTableBulkActionService
             return BulkActionResult::failure($action, 'No records selected for this bulk action.');
         }
 
+        $atomic = $this->isAtomic($capability);
+
         try {
+            // Resolve IDs exclusively through the authorized builder (never trust raw client IDs alone).
             $ids = $this->selectionResolver->resolveIds(
                 clone $authorizedQuery,
                 $model,
@@ -94,7 +103,6 @@ final class DataTableBulkActionService
                 );
             }
 
-            // Adapt to legacy BulkActionRequest shape for existing handlers
             $legacyRequest = $this->makeLegacyRequest($ids, $action, $payload);
 
             if ($atomic) {
@@ -106,7 +114,8 @@ final class DataTableBulkActionService
                 });
             }
 
-            // Partial: no outer transaction — handler decides per-record behaviour
+            // Partial: no outer transaction. Only use when the handler truly supports
+            // per-record partial processing; existing core handlers are atomic-style.
             $result = $handler->handle($legacyRequest, $modelClass);
             $this->logSuccess($action, $modelClass, count($ids), $result);
 
@@ -123,20 +132,44 @@ final class DataTableBulkActionService
     }
 
     /**
-     * @param  list<BulkActionCapability>  $capabilities
+     * @param  list<BulkActionCapability|array{id: string, label: string, semantics?: string}>  $capabilities
+     * @return BulkActionCapability|array{id: string, label: string, semantics?: string}|null
      */
-    public function isActionDeclared(string $action, array $capabilities): bool
+    public function findCapability(string $action, array $capabilities): BulkActionCapability|array|null
     {
         foreach ($capabilities as $cap) {
             if ($cap instanceof BulkActionCapability && $cap->id === $action) {
-                return true;
+                return $cap;
             }
             if (is_array($cap) && ($cap['id'] ?? null) === $action) {
-                return true;
+                return $cap;
             }
         }
 
-        return false;
+        return null;
+    }
+
+    /**
+     * @param  list<BulkActionCapability|array{id: string, label: string}>  $capabilities
+     */
+    public function isActionDeclared(string $action, array $capabilities): bool
+    {
+        return $this->findCapability($action, $capabilities) !== null;
+    }
+
+    /**
+     * Declared capability semantics are authoritative. Default is atomic.
+     *
+     * @param  BulkActionCapability|array{semantics?: string}  $capability
+     */
+    public function isAtomic(BulkActionCapability|array $capability): bool
+    {
+        $semantics = $capability instanceof BulkActionCapability
+            ? $capability->semantics
+            : ($capability['semantics'] ?? null);
+
+        // Only 'partial' opts out of the outer transaction.
+        return $semantics !== 'partial';
     }
 
     /**
@@ -150,7 +183,6 @@ final class DataTableBulkActionService
             'force' => is_array($payload) ? (bool) ($payload['force'] ?? false) : false,
         ]);
         $request->setContainer(app())->setRedirector(app('redirect'));
-        // Mark as validated so getIds()/getAction() work without full HTTP validation cycle
         $request->merge(['ids' => array_values($ids), 'action' => $action]);
 
         return $request;
