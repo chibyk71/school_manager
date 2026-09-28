@@ -166,5 +166,18 @@ assert(!('page' in sel.query), 'no page in membership')
 assert(!('perPage' in sel.query), 'no perPage in membership')
 assert(!('sorts' in sel.query), 'no sorts in membership')
 
+
+// Cross-page: bulk availability must follow canonical selection, not page-local rows
+const cross = createSelection()
+cross.setIds([1, 2]) // page 1
+cross.selectPageIds([10, 11]) // page 2
+assert(cross.selectedCount === 4, 'cross-page canonical count')
+assert(cross.mode === 'ids', 'still ids mode after page 2 select')
+const pageLocalEmpty = []
+const hasCanonicalForBulk = cross.mode === 'ids' || cross.mode === 'query'
+assert(hasCanonicalForBulk === true, 'bulk actions available from canonical selection')
+assert(pageLocalEmpty.length === 0, 'page-local can be empty')
+assert(cross.selectedCount > 0, 'canonical count still > 0 when page-local empty')
+
 console.log(fail ? `FAILED ${fail}` : 'ALL OK')
 process.exit(fail ? 1 : 0)

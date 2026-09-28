@@ -2,6 +2,7 @@
 
 namespace App\Support\DataTable;
 
+use App\Contracts\BulkActions\AuthorizedQueryBulkAction;
 use App\DataTransferObjects\BulkActions\BulkActionResult;
 use App\Http\Requests\BulkActions\BulkActionRequest;
 use App\Services\BulkActions\BulkActionRegistry;
@@ -76,15 +77,17 @@ final class DataTableBulkActionService
         $atomic = $this->isAtomic($capability);
 
         try {
-            // Resolve IDs exclusively through the authorized builder (never trust raw client IDs alone).
-            $ids = $this->selectionResolver->resolveIds(
+            // Apply selection onto a clone of the authorized builder — this query remains
+            // authoritative through execution (includes non-global section/resource scopes).
+            $authorizedSelectionQuery = $this->selectionResolver->apply(
                 clone $authorizedQuery,
                 $model,
                 $selection,
                 $extraFields
             );
 
-            if ($ids === []) {
+            // Existence check without discarding the authorized query.
+            if (! (clone $authorizedSelectionQuery)->exists()) {
                 return BulkActionResult::failure(
                     $action,
                     'No authorized records matched the selection.',
@@ -103,23 +106,31 @@ final class DataTableBulkActionService
                 );
             }
 
-            $legacyRequest = $this->makeLegacyRequest($ids, $action, $payload);
+            $run = function () use ($handler, $authorizedSelectionQuery, $payload, $action, $modelClass) {
+                // Prefer Phase 6 authorized-query path — never reconstruct model->newQuery().
+                if ($handler instanceof AuthorizedQueryBulkAction) {
+                    $result = $handler->handleOnAuthorizedQuery($authorizedSelectionQuery, $payload);
+                } else {
+                    // Handlers that only implement the legacy contract are not safe for
+                    // Phase 6 when authorization is more than global scopes.
+                    return BulkActionResult::failure(
+                        $action,
+                        "Action [{$action}] does not support authorized-query execution.",
+                        ['model' => $modelClass]
+                    );
+                }
+                $this->logSuccess($action, $modelClass, $result->succeeded, $result);
+
+                return $result;
+            };
 
             if ($atomic) {
-                return DB::transaction(function () use ($handler, $legacyRequest, $modelClass, $action, $ids) {
-                    $result = $handler->handle($legacyRequest, $modelClass);
-                    $this->logSuccess($action, $modelClass, count($ids), $result);
-
-                    return $result;
-                });
+                return DB::transaction($run);
             }
 
-            // Partial: no outer transaction. Only use when the handler truly supports
-            // per-record partial processing; existing core handlers are atomic-style.
-            $result = $handler->handle($legacyRequest, $modelClass);
-            $this->logSuccess($action, $modelClass, count($ids), $result);
-
-            return $result;
+            // Partial: no outer transaction. Only meaningful when the handler supports
+            // true per-record partial processing — do not claim partial merely by skipping TX.
+            return $run();
         } catch (Exception $e) {
             $this->logFailure($action, $model::class, $selection, $e);
 

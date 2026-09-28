@@ -159,10 +159,16 @@ final class DataTableExportService
     private function buildRows(Builder $query, array $columns): array
     {
         $chunkSize = (int) config('tables.export_chunk_size', 1000);
+        $syncMax = (int) config('tables.export.sync_max_rows', 5000);
         $rows = [];
 
-        $query->chunk($chunkSize, function (Collection $models) use (&$rows, $columns) {
+        $query->chunk($chunkSize, function (Collection $models) use (&$rows, $columns, $syncMax) {
             foreach ($models as $model) {
+                if (count($rows) >= $syncMax) {
+                    throw DataTableQueryException::malformed(
+                        "Synchronous export exceeds maximum of {$syncMax} rows. Narrow filters or enable queued export."
+                    );
+                }
                 $row = [];
                 foreach ($columns as $field) {
                     $row[] = data_get($model, $field);

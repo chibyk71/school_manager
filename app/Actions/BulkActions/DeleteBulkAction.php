@@ -2,10 +2,11 @@
 
 namespace App\Actions\BulkActions;
 
+use App\Contracts\BulkActions\AuthorizedQueryBulkAction;
 use App\Contracts\BulkActions\BulkActionHandler;
 use App\Http\Requests\BulkActions\BulkActionRequest;
 use App\DataTransferObjects\BulkActions\BulkActionResult;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -42,15 +43,11 @@ use Illuminate\Support\Facades\Log;
  * the service or existing actions.
  */
 
-class DeleteBulkAction implements BulkActionHandler
+class DeleteBulkAction implements BulkActionHandler, AuthorizedQueryBulkAction
 {
     /**
-     * Execute the delete action.
-     *
-     * @param BulkActionRequest $request
-     * @param string $modelClass
-     * @return BulkActionResult
-     * @throws \Exception
+     * Legacy path: rebuilds query from model class (global scopes only).
+     * Prefer handleOnAuthorizedQuery for Phase 6 DataTable bulk.
      */
     public function handle(BulkActionRequest $request, string $modelClass): BulkActionResult
     {
@@ -61,28 +58,12 @@ class DeleteBulkAction implements BulkActionHandler
             throw new \Exception('No records selected for deletion.');
         }
 
-        // Instantiate model to use its query builder (respects global scopes like SchoolScope)
         $model = new $modelClass();
 
         try {
             $query = $model->newQuery()->whereIn('id', $ids);
 
-            $count = $isForce
-                ? $query->forceDelete()
-                : $query->delete();
-
-            $message = $this->buildSuccessMessage($count, $isForce);
-
-            return BulkActionResult::success(
-                action: $this->getName(),
-                count: $count,
-                message: $message,
-                meta: [
-                    'force' => $isForce,
-                    'model' => $modelClass,
-                ]
-            );
-
+            return $this->executeDelete($query, $isForce, $modelClass);
         } catch (\Exception $e) {
             Log::error('DeleteBulkAction failed', [
                 'model' => $modelClass,
@@ -91,8 +72,47 @@ class DeleteBulkAction implements BulkActionHandler
                 'error' => $e->getMessage(),
             ]);
 
-            throw new \Exception("Failed to delete records: " . $e->getMessage());
+            throw new \Exception('Failed to delete records: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Phase 6 path: operate on the caller-supplied authorized selection query.
+     * Must not reconstruct (new $model)->newQuery().
+     */
+    public function handleOnAuthorizedQuery(Builder $authorizedSelectionQuery, mixed $payload = null): BulkActionResult
+    {
+        $isForce = is_array($payload) ? (bool) ($payload['force'] ?? false) : false;
+        $modelClass = $authorizedSelectionQuery->getModel()::class;
+
+        try {
+            return $this->executeDelete(clone $authorizedSelectionQuery, $isForce, $modelClass);
+        } catch (\Exception $e) {
+            Log::error('DeleteBulkAction (authorized) failed', [
+                'model' => $modelClass,
+                'force' => $isForce,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \Exception('Failed to delete records: '.$e->getMessage());
+        }
+    }
+
+    private function executeDelete(Builder $query, bool $isForce, string $modelClass): BulkActionResult
+    {
+        $count = $isForce
+            ? $query->forceDelete()
+            : $query->delete();
+
+        return BulkActionResult::success(
+            action: $this->getName(),
+            count: $count,
+            message: $this->buildSuccessMessage($count, $isForce),
+            meta: [
+                'force' => $isForce,
+                'model' => $modelClass,
+            ]
+        );
     }
 
     /**

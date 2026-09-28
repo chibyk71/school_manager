@@ -4,7 +4,6 @@ namespace App\Http\Requests\DataTable;
 
 use App\Support\DataTable\DataTableExportRequest;
 use App\Support\DataTable\DataTableExportTarget;
-use App\Support\DataTable\DataTableQuery;
 use App\Support\DataTable\DataTableQueryNormalizer;
 use App\Support\DataTable\DataTableSelectionNormalizer;
 use App\Support\DataTable\DataTableQueryException;
@@ -14,6 +13,7 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 /**
  * Canonical DataTable export form request (Phase 6).
+ * Explicit-ID targets use the same selection normalizer / max_ids as bulk selection.
  */
 class DataTableExportFormRequest extends FormRequest
 {
@@ -48,7 +48,13 @@ class DataTableExportFormRequest extends FormRequest
 
             $target = match ($type) {
                 'page' => DataTableExportTarget::page(),
-                'ids' => DataTableExportTarget::ids($targetRaw['ids'] ?? []),
+                // Same max_ids + dedupe path as bulk selection — never bypass the normalizer.
+                'ids' => DataTableExportTarget::ids(
+                    $selectionNormalizer->fromRequest([
+                        'type' => 'ids',
+                        'ids' => $targetRaw['ids'] ?? [],
+                    ])->ids
+                ),
                 'query' => DataTableExportTarget::query(
                     $selectionNormalizer->normalizeMembershipQuery($targetRaw['query'] ?? null)
                 ),

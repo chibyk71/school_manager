@@ -2,9 +2,11 @@
 
 namespace App\Actions\BulkActions;
 
+use App\Contracts\BulkActions\AuthorizedQueryBulkAction;
 use App\Contracts\BulkActions\BulkActionHandler;
 use App\Http\Requests\BulkActions\BulkActionRequest;
 use App\DataTransferObjects\BulkActions\BulkActionResult;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 
@@ -41,16 +43,8 @@ use Illuminate\Support\Facades\Log;
  * This same pattern will be used later for ActivateBulkAction, ApproveBulkAction, etc.
  */
 
-class RestoreBulkAction implements BulkActionHandler
+class RestoreBulkAction implements BulkActionHandler, AuthorizedQueryBulkAction
 {
-    /**
-     * Execute the restore action.
-     *
-     * @param BulkActionRequest $request
-     * @param string $modelClass
-     * @return BulkActionResult
-     * @throws \Exception
-     */
     public function handle(BulkActionRequest $request, string $modelClass): BulkActionResult
     {
         $ids = $request->getIds();
@@ -59,26 +53,12 @@ class RestoreBulkAction implements BulkActionHandler
             throw new \Exception('No records selected for restoration.');
         }
 
-        // Instantiate model to use its query builder (respects global scopes)
         $model = new $modelClass();
 
         try {
-            $count = $model->newQuery()
-                ->withTrashed()
-                ->whereIn('id', $ids)
-                ->restore();
+            $query = $model->newQuery()->withTrashed()->whereIn('id', $ids);
 
-            $message = $this->buildSuccessMessage($count);
-
-            return BulkActionResult::success(
-                action: $this->getName(),
-                count: $count,
-                message: $message,
-                meta: [
-                    'model' => $modelClass,
-                ]
-            );
-
+            return $this->executeRestore($query, $modelClass);
         } catch (\Exception $e) {
             Log::error('RestoreBulkAction failed', [
                 'model' => $modelClass,
@@ -86,8 +66,38 @@ class RestoreBulkAction implements BulkActionHandler
                 'error' => $e->getMessage(),
             ]);
 
-            throw new \Exception("Failed to restore records: " . $e->getMessage());
+            throw new \Exception('Failed to restore records: '.$e->getMessage());
         }
+    }
+
+    public function handleOnAuthorizedQuery(Builder $authorizedSelectionQuery, mixed $payload = null): BulkActionResult
+    {
+        $modelClass = $authorizedSelectionQuery->getModel()::class;
+
+        try {
+            $query = (clone $authorizedSelectionQuery)->withTrashed();
+
+            return $this->executeRestore($query, $modelClass);
+        } catch (\Exception $e) {
+            Log::error('RestoreBulkAction (authorized) failed', [
+                'model' => $modelClass,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \Exception('Failed to restore records: '.$e->getMessage());
+        }
+    }
+
+    private function executeRestore(Builder $query, string $modelClass): BulkActionResult
+    {
+        $count = $query->restore();
+
+        return BulkActionResult::success(
+            action: $this->getName(),
+            count: $count,
+            message: $this->buildSuccessMessage($count),
+            meta: ['model' => $modelClass]
+        );
     }
 
     /**

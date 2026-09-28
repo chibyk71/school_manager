@@ -2,9 +2,11 @@
 
 namespace App\Actions\BulkActions;
 
+use App\Contracts\BulkActions\AuthorizedQueryBulkAction;
 use App\Contracts\BulkActions\BulkActionHandler;
 use App\Http\Requests\BulkActions\BulkActionRequest;
 use App\DataTransferObjects\BulkActions\BulkActionResult;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 
@@ -43,16 +45,8 @@ use Illuminate\Support\Facades\Log;
  * 'deactivate', 'approve', etc.
  */
 
-class ForceDeleteBulkAction implements BulkActionHandler
+class ForceDeleteBulkAction implements BulkActionHandler, AuthorizedQueryBulkAction
 {
-    /**
-     * Execute the force delete action.
-     *
-     * @param BulkActionRequest $request
-     * @param string $modelClass
-     * @return BulkActionResult
-     * @throws \Exception
-     */
     public function handle(BulkActionRequest $request, string $modelClass): BulkActionResult
     {
         $ids = $request->getIds();
@@ -61,36 +55,54 @@ class ForceDeleteBulkAction implements BulkActionHandler
             throw new \Exception('No records selected for permanent deletion.');
         }
 
-        // Instantiate model to use its query builder (respects global scopes)
         $model = new $modelClass();
 
         try {
-            $count = $model->newQuery()
-                ->withTrashed()
-                ->whereIn('id', $ids)
-                ->forceDelete();
+            $query = $model->newQuery()->withTrashed()->whereIn('id', $ids);
 
-            $message = $this->buildSuccessMessage($count);
-
-            return BulkActionResult::success(
-                action: $this->getName(),
-                count: $count,
-                message: $message,
-                meta: [
-                    'force' => true,
-                    'model' => $modelClass,
-                ]
-            );
-
+            return $this->executeForceDelete($query, $modelClass);
         } catch (\Exception $e) {
             Log::error('ForceDeleteBulkAction failed', [
                 'model' => $modelClass,
-                'ids'   => $ids,
+                'ids' => $ids,
                 'error' => $e->getMessage(),
             ]);
 
-            throw new \Exception("Failed to permanently delete records: " . $e->getMessage());
+            throw new \Exception('Failed to permanently delete records: '.$e->getMessage());
         }
+    }
+
+    public function handleOnAuthorizedQuery(Builder $authorizedSelectionQuery, mixed $payload = null): BulkActionResult
+    {
+        $modelClass = $authorizedSelectionQuery->getModel()::class;
+
+        try {
+            $query = (clone $authorizedSelectionQuery)->withTrashed();
+
+            return $this->executeForceDelete($query, $modelClass);
+        } catch (\Exception $e) {
+            Log::error('ForceDeleteBulkAction (authorized) failed', [
+                'model' => $modelClass,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw new \Exception('Failed to permanently delete records: '.$e->getMessage());
+        }
+    }
+
+    private function executeForceDelete(Builder $query, string $modelClass): BulkActionResult
+    {
+        $count = $query->forceDelete();
+
+        return BulkActionResult::success(
+            action: $this->getName(),
+            count: $count,
+            message: $this->buildSuccessMessage($count),
+            meta: [
+                'force' => true,
+                'model' => $modelClass,
+            ]
+        );
     }
 
     /**

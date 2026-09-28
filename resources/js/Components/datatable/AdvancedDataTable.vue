@@ -253,8 +253,8 @@ const perPage = computed({
 })
 
 /**
- * Backend-declared capabilities are authoritative for executable actions.
- * Frontend bulkActions prop is presentation-only fallback when no capabilities.
+ * Backend-declared capabilities are the only authoritative executable actions.
+ * props.bulkActions is intentionally not an executable Phase 6 fallback.
  */
 const backendBulkCapabilities = computed((): BulkActionCapability[] => {
     return capabilities.value?.bulkActions ?? []
@@ -263,32 +263,35 @@ const backendBulkCapabilities = computed((): BulkActionCapability[] => {
 const canExport = computed(() => capabilities.value?.exportable === true && !!props.exportEndpoint)
 
 /**
- * Effective bulk actions for the header:
- * - Prefer backend capability list (executable via bulkActionEndpoint)
- * - Fall back to legacy props.bulkActions handlers when no capabilities
+ * Phase 6 executable bulk actions: backend capabilities + bulkActionEndpoint only.
+ * No props.bulkActions fallback — frontend must not invent action identifiers.
  */
 const effectiveBulkActions = computed((): BulkAction<T>[] => {
+    if (!props.bulkActionEndpoint) return []
     const caps = backendBulkCapabilities.value
-    if (caps.length && props.bulkActionEndpoint) {
-        return caps.map((cap) => ({
-            label: cap.label,
-            icon: cap.icon,
-            action: cap.id,
-            confirm: cap.requiresConfirmation
-                ? {
-                      message: `Apply "${cap.label}" to the selected records?`,
-                      header: 'Confirm bulk action',
-                      acceptLabel: 'Confirm',
-                      rejectLabel: 'Cancel',
-                  }
-                : undefined,
-            handler: async () => {
-                await runCapabilityBulkAction(cap)
-            },
-        }))
-    }
-    return props.bulkActions ?? []
+    if (!caps.length) return []
+    return caps.map((cap) => ({
+        label: cap.label,
+        icon: cap.icon,
+        action: cap.id,
+        confirm: cap.requiresConfirmation
+            ? {
+                  message: `Apply "${cap.label}" to the selected records?`,
+                  header: 'Confirm bulk action',
+                  acceptLabel: 'Confirm',
+                  rejectLabel: 'Cancel',
+              }
+            : undefined,
+        handler: async () => {
+            await runCapabilityBulkAction(cap)
+        },
+    }))
 })
+
+/** Canonical selection is the source of truth for bulk UI (survives page navigation). */
+const hasCanonicalSelection = computed(
+    () => selectionApi.mode.value === 'ids' || selectionApi.mode.value === 'query',
+)
 
 /**
  * Sync page-local PrimeVue selection → canonical selection (ids mode only).
@@ -542,6 +545,9 @@ const selectionSummaryLabel = computed(() => {
     <div class="datatable-wrapper">
         <DataTableHeader
             :selected-rows="(selectedRows as T[])"
+            :selection-count="selectionApi.selectedCount.value"
+            :has-canonical-selection="hasCanonicalSelection"
+            :selection-label="selectionSummaryLabel || undefined"
             :bulk-actions="effectiveBulkActions"
             :columns="displayColumns as any"
             v-model:hidden-columns="hiddenColumns"
