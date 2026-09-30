@@ -10,6 +10,11 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(
+            \App\Contracts\Authorization\Authorization::class,
+            \App\Services\Permission\AuthorizationService::class
+        );
+
+        $this->app->bind(
             \App\Contracts\Academic\AcademicSessionOperationalDataBoundary::class,
             \App\Services\Academic\RegistryAcademicSessionOperationalData::class
         );
