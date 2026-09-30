@@ -28,21 +28,12 @@ class RolesTableSeeder extends Seeder
             ['name' => 'information_officer', 'display_name' => 'Information Officer', 'description' => 'Responsible for disseminating information within and outside the school'],
             ['name' => 'admin', 'display_name' => 'Super Admin', 'description' => 'Has full system access across all schools and modules'],
             ['name' => 'school-owner', 'display_name' => 'School Owner', 'description' => 'Owner or proprietor of the school with administrative oversight'],
-        ],
-
-        /* --------------------------------------------------------------
-         *  ADMISSIONS AND RECORDS
-         * ------------------------------------------------------------ */
-        "admission_records" => [
-            ['name' => 'auditor', 'display_name' => 'Auditor', 'description' => 'Inspects records and operations for compliance and accuracy'],
-            ['name' => 'records_officer', 'display_name' => 'Records Officer', 'description' => 'Responsible for managing and maintaining school records'],
-            ['name' => 'admissions_officer', 'display_name' => 'Admissions Officer/Registrar', 'description' => 'Handles student admissions and enrollment processes'],
-        ],
-
-        "human_resource" => [
+            ['name' => 'admissions_officer', 'display_name' => 'Admissions Officer', 'description' => 'Manages student admissions and enrollment processes'],
+            ['name' => 'records_officer', 'display_name' => 'Records Officer', 'description' => 'Maintains student and institutional records'],
+            ['name' => 'auditor', 'display_name' => 'Auditor', 'description' => 'Conducts internal audits of school processes and finances'],
             ['name' => 'hr_manager', 'display_name' => 'Human Resource Manager', 'description' => 'Oversees the human resources functions of the school'],
             ['name' => 'hr_officer', 'display_name' => 'Human Resource Officer', 'description' => 'Assists with recruitment, staff welfare, and HR administration'],
-            ['name' => 'hr_assistant', 'display_name' => 'Human Resource Assistant', 'description' => 'Provides support in HR-related tasks and activities']
+            ['name' => 'hr_assistant', 'display_name' => 'Human Resource Assistant', 'description' => 'Provides support in HR-related tasks and activities'],
         ],
 
         /**--------------------------------------------------------------
@@ -99,50 +90,50 @@ class RolesTableSeeder extends Seeder
         ],
 
         /* --------------------------------------------------------------
-         *  WELFARE / STUDENT AFFAIRS
+         *  STUDENT WELFARE / PASTORAL
          * ------------------------------------------------------------ */
         'welfare' => [
-            ['name' => 'head_student_affairs', 'display_name' => 'Head of Student Affairs/Welfare', 'description' => 'Leads the department responsible for student welfare and discipline'],
-            ['name' => 'welfare_officer', 'display_name' => 'Welfare Officer', 'description' => 'Responsible for the well-being and welfare of students'],
-            ['name' => 'discipline_master', 'display_name' => 'Discipline Master/Mistress', 'description' => 'Responsible for maintaining student discipline'],
+            ['name' => 'head_student_affairs', 'display_name' => 'Head of Student Affairs', 'description' => 'Oversees student welfare, discipline, and co-curricular life'],
+            ['name' => 'welfare_officer', 'display_name' => 'Welfare Officer', 'description' => 'Supports student welfare and pastoral care'],
+            ['name' => 'discipline_master', 'display_name' => 'Discipline Master', 'description' => 'Enforces school rules and manages disciplinary processes'],
         ],
 
         /* --------------------------------------------------------------
          *  HOSTEL / BOARDING
          * ------------------------------------------------------------ */
         'hostel' => [
-            ['name' => 'boarding_house_master', 'display_name' => 'Boarding House Master/Mistress', 'description' => 'Responsible for the management and supervision of the boarding house'],
-            ['name' => 'assistant_boarding_master', 'display_name' => 'Assistant Boarding House Master/Mistress', 'description' => 'Assists the Boarding House Master/Mistress'],
-            ['name' => 'warden', 'display_name' => 'Warden', 'description' => 'Supervises students within the boarding house'],
-            ['name' => 'matron', 'display_name' => 'Matron', 'description' => 'Responsible for the care and well-being of female students in the boarding house'],
-            ['name' => 'caretaker_boarding', 'display_name' => 'Boarding House Caretaker', 'description' => 'Provides general support and maintenance in the boarding house'],
+            ['name' => 'boarding_house_master', 'display_name' => 'Boarding House Master', 'description' => 'Manages a boarding house'],
+            ['name' => 'assistant_boarding_master', 'display_name' => 'Assistant Boarding House Master', 'description' => 'Assists with boarding house management'],
+            ['name' => 'warden', 'display_name' => 'Warden', 'description' => 'Oversees boarding students'],
+            ['name' => 'matron', 'display_name' => 'Matron', 'description' => 'Oversees boarding welfare'],
+            ['name' => 'caretaker_boarding', 'display_name' => 'Boarding Caretaker', 'description' => 'Supports boarding house operations'],
         ],
 
         /* --------------------------------------------------------------
          *  CLINIC / HEALTH
          * ------------------------------------------------------------ */
         'clinic' => [
-            ['name' => 'head_clinic', 'display_name' => 'Head of School Clinic', 'description' => 'Responsible for overseeing and managing the school clinic'],
-            ['name' => 'nurse', 'display_name' => 'School Nurse', 'description' => 'Provides medical care and health education to students'],
-            ['name' => 'clinic_attendant', 'display_name' => 'Clinic Attendant', 'description' => 'Assists the School Nurse in providing basic medical care and maintaining the school clinic'],
+            ['name' => 'head_clinic', 'display_name' => 'Head of Clinic', 'description' => 'Leads the school clinic'],
+            ['name' => 'nurse', 'display_name' => 'Nurse', 'description' => 'Provides health care to students'],
+            ['name' => 'clinic_attendant', 'display_name' => 'Clinic Attendant', 'description' => 'Supports clinic operations'],
         ],
 
         /* --------------------------------------------------------------
          *  SECURITY
          * ------------------------------------------------------------ */
         'security' => [
-            ['name' => 'head_security', 'display_name' => 'Head of Security', 'description' => 'Responsible for the overall security of the school premises'],
-            ['name' => 'security_officer', 'display_name' => 'Security Officer', 'description' => 'Responsible for maintaining security and order within the school'],
-            ['name' => 'security_guard', 'display_name' => 'Security Guard', 'description' => 'Patrols the school premises and ensures security'],
+            ['name' => 'head_security', 'display_name' => 'Head of Security', 'description' => 'Leads school security'],
+            ['name' => 'security_officer', 'display_name' => 'Security Officer', 'description' => 'Provides security on school premises'],
+            ['name' => 'security_guard', 'display_name' => 'Security Guard', 'description' => 'Guards school premises'],
         ],
 
         /* --------------------------------------------------------------
          *  MAINTENANCE
          * ------------------------------------------------------------ */
         'maintenance' => [
-            ['name' => 'head_maintenance', 'display_name' => 'Head of Maintenance Department', 'description' => 'Responsible for overseeing the maintenance of school facilities'],
-            ['name' => 'electrician', 'display_name' => 'Electrician', 'description' => 'Responsible for electrical repairs and maintenance'],
-            ['name' => 'groundskeeper', 'display_name' => 'Groundskeeper', 'description' => 'Responsible for maintaining the school grounds'],
+            ['name' => 'head_maintenance', 'display_name' => 'Head of Maintenance', 'description' => 'Leads facilities maintenance'],
+            ['name' => 'electrician', 'display_name' => 'Electrician', 'description' => 'Handles electrical maintenance'],
+            ['name' => 'groundskeeper', 'display_name' => 'Groundskeeper', 'description' => 'Maintains school grounds'],
         ],
 
         /* --------------------------------------------------------------
@@ -175,15 +166,15 @@ class RolesTableSeeder extends Seeder
          *  STUDENT (virtual)
          * ------------------------------------------------------------ */
         'student' => [
-            // No explicit student roles – they are assigned via user type / enrollment
-            // (you can add prefect, head-boy, etc. later if needed)
             ['name' => 'student', 'display_name' => 'Student', 'description' => 'Enrolled student of the school']
         ],
     ];
 
     public function run(): void
     {
-        // Pick a school – change to your tenant logic if needed
+        // Phase 2: seed tenant/global role definitions (school_id = NULL).
+        // School-local roles are created later via role management / Phase 3 customization.
+        // Department linking remains for HRM presentation; departments may be school-scoped.
         $school = \App\Models\School::first();
 
         foreach ($this->rolesByDepartment as $category => $roleList) {
@@ -206,22 +197,27 @@ class RolesTableSeeder extends Seeder
             }
 
             // --------------------------------------------------------------
-            // 2. Create each Role
+            // 2. Create each Role as a tenant/global definition
             // --------------------------------------------------------------
             foreach ($roleList as $data) {
                 $role = Role::updateOrCreate(
-                    ['name' => $data['name']],
+                    [
+                        'name' => $data['name'],
+                        'school_id' => null,
+                    ],
                     [
                         'display_name' => $data['display_name'],
                         'description' => $data['description'],
-                        'school_id' => $school?->id ?? null,
+                        'disabled' => false,
                     ]
                 );
 
                 // --------------------------------------------------------------
                 // 3. Link Role → Department (department_role pivot)
                 // --------------------------------------------------------------
-                $role->departments()->attach($department->id);
+                if (!$role->departments()->where('department_id', $department->id)->exists()) {
+                    $role->departments()->attach($department->id);
+                }
             }
         }
     }
