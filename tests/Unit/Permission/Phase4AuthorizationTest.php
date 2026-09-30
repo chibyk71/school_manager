@@ -115,15 +115,18 @@ function phase4DropSchema(): void
 
 function phase4User(string $username = 'user'): User
 {
-    $user = new User();
-    $user->forceFill([
-        'id' => (string) Str::uuid(),
+    // User::$with includes profile; ephemeral schema has no profiles table.
+    // Insert then load without the default eager load so production $with stays intact.
+    $id = (string) Str::uuid();
+    DB::table('users')->insert([
+        'id' => $id,
         'username' => $username,
         'password' => 'secret',
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
-    $user->save();
 
-    return $user->fresh();
+    return User::without('profile')->findOrFail($id);
 }
 
 function phase4School(string $name = 'School A'): School
