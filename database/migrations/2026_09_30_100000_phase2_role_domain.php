@@ -51,41 +51,49 @@ return new class extends Migration
         $this->addScopedNameUniquenessIndexes();
     }
 
+    /**
+     * Roll back only when the previous global unique(name) invariant can be restored.
+     *
+     * If the same role name exists in more than one authorization scope, dropping
+     * the Phase 2 scoped indexes would leave roles with no name uniqueness at all.
+     * That is refused: fail closed before destroying scoped protection.
+     *
+     * Order:
+     * 1. Detect cross-scope name duplicates
+     * 2. Throw if restore of global unique(name) is impossible
+     * 3. Drop scoped uniqueness indexes
+     * 4. Restore roles.name uniqueness
+     * 5. Drop disabled
+     */
     public function down(): void
     {
         if (! Schema::hasTable('roles')) {
             return;
         }
 
-        $this->dropScopedNameUniquenessIndexes();
-
-        // Restore global unique(name) only when safe (no duplicate names across scopes).
-        $driver = Schema::getConnection()->getDriverName();
         $duplicates = DB::table('roles')
             ->select('name', DB::raw('COUNT(*) as cnt'))
             ->groupBy('name')
             ->havingRaw('COUNT(*) > 1')
-            ->count();
+            ->orderBy('name')
+            ->get();
 
-        if ($duplicates === 0) {
-            if (in_array($driver, ['sqlite', 'pgsql'], true)) {
-                try {
-                    Schema::table('roles', function (Blueprint $table) {
-                        $table->unique('name', 'roles_name_unique');
-                    });
-                } catch (\Throwable) {
-                    // Index may already exist or name differs
-                }
-            } else {
-                try {
-                    Schema::table('roles', function (Blueprint $table) {
-                        $table->unique('name', 'roles_name_unique');
-                    });
-                } catch (\Throwable) {
-                    // ignore
-                }
-            }
+        if ($duplicates->isNotEmpty()) {
+            $sample = $duplicates->take(5)->map(function ($row) {
+                return sprintf('%s (×%d)', $row->name, $row->cnt);
+            })->implode(', ');
+
+            throw new \RuntimeException(
+                'Cannot roll back Phase 2 role domain migration: '
+                .$duplicates->count().' role name(s) exist in more than one authorization scope. '
+                .'Dropping scoped uniqueness would leave roles without a name uniqueness constraint. '
+                .'Resolve or remove cross-scope duplicate names before rolling back. '
+                ."Sample: {$sample}"
+            );
         }
+
+        $this->dropScopedNameUniquenessIndexes();
+        $this->restoreGlobalNameUnique();
 
         if (Schema::hasColumn('roles', 'disabled')) {
             Schema::table('roles', function (Blueprint $table) {
@@ -117,13 +125,35 @@ return new class extends Migration
             }
         }
 
-        // SQLite: table rebuild style drop via doctrine-less approach
         if ($driver === 'sqlite') {
             try {
                 DB::statement('DROP INDEX IF EXISTS roles_name_unique');
             } catch (\Throwable) {
-                // ignore
+                // ignore — may not exist on fresh partial-index-only schemas
             }
+        }
+    }
+
+    /**
+     * Restore the pre-Phase-2 global unique(name) constraint.
+     * Caller must have already verified that no duplicate names exist.
+     *
+     * @throws \RuntimeException if the unique index cannot be created
+     */
+    private function restoreGlobalNameUnique(): void
+    {
+        try {
+            Schema::table('roles', function (Blueprint $table) {
+                $table->unique('name', 'roles_name_unique');
+            });
+        } catch (\Throwable $e) {
+            throw new \RuntimeException(
+                'Cannot roll back Phase 2 role domain migration: failed to restore '
+                .'global unique constraint on roles.name. '
+                .$e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 
@@ -147,7 +177,6 @@ return new class extends Migration
         }
 
         if (in_array($driver, ['mysql', 'mariadb'], true)) {
-            // Map NULL school_id → sentinel so UNIQUE participates for tenant rows.
             if (! Schema::hasColumn('roles', 'ownership_scope')) {
                 DB::statement("
                     ALTER TABLE roles
@@ -165,7 +194,6 @@ return new class extends Migration
             return;
         }
 
-        // Unknown engine: best-effort composite unique (does not fully protect NULL tenant rows).
         Schema::table('roles', function (Blueprint $table) {
             $table->unique(['school_id', 'name'], 'roles_school_name_unique');
         });
@@ -178,13 +206,21 @@ return new class extends Migration
         if (in_array($driver, ['sqlite', 'pgsql'], true)) {
             try {
                 DB::statement('DROP INDEX IF EXISTS roles_tenant_name_unique');
-            } catch (\Throwable) {
-                // ignore
+            } catch (\Throwable $e) {
+                throw new \RuntimeException(
+                    'Cannot drop roles_tenant_name_unique during Phase 2 rollback: '.$e->getMessage(),
+                    0,
+                    $e
+                );
             }
             try {
                 DB::statement('DROP INDEX IF EXISTS roles_school_name_unique');
-            } catch (\Throwable) {
-                // ignore
+            } catch (\Throwable $e) {
+                throw new \RuntimeException(
+                    'Cannot drop roles_school_name_unique during Phase 2 rollback: '.$e->getMessage(),
+                    0,
+                    $e
+                );
             }
 
             return;
@@ -193,14 +229,22 @@ return new class extends Migration
         if (in_array($driver, ['mysql', 'mariadb'], true)) {
             try {
                 DB::statement('DROP INDEX roles_ownership_name_unique ON roles');
-            } catch (\Throwable) {
-                // ignore
+            } catch (\Throwable $e) {
+                throw new \RuntimeException(
+                    'Cannot drop roles_ownership_name_unique during Phase 2 rollback: '.$e->getMessage(),
+                    0,
+                    $e
+                );
             }
             if (Schema::hasColumn('roles', 'ownership_scope')) {
                 try {
                     DB::statement('ALTER TABLE roles DROP COLUMN ownership_scope');
-                } catch (\Throwable) {
-                    // ignore
+                } catch (\Throwable $e) {
+                    throw new \RuntimeException(
+                        'Cannot drop ownership_scope during Phase 2 rollback: '.$e->getMessage(),
+                        0,
+                        $e
+                    );
                 }
             }
 
@@ -211,8 +255,12 @@ return new class extends Migration
             Schema::table('roles', function (Blueprint $table) {
                 $table->dropUnique('roles_school_name_unique');
             });
-        } catch (\Throwable) {
-            // ignore
+        } catch (\Throwable $e) {
+            throw new \RuntimeException(
+                'Cannot drop roles_school_name_unique during Phase 2 rollback: '.$e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 };
