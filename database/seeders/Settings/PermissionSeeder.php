@@ -19,6 +19,9 @@ class PermissionSeeder extends Seeder
             require __DIR__ . '/permission_catalogue_part1.php',
             require __DIR__ . '/permission_catalogue_part2.php',
             require __DIR__ . '/permission_catalogue_part3.php',
+            require __DIR__ . '/permission_catalogue_part4.php',
+            require __DIR__ . '/permission_catalogue_part5.php',
+            require __DIR__ . '/permission_catalogue_part6.php',
         );
 
         // Application-owned catalogue sync (idempotent; no administrator CRUD).
