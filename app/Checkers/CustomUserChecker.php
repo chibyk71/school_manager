@@ -15,20 +15,20 @@ use Laratrust\Contracts\Role;
  * Purpose:
  * --------
  * This class extends Laratrust's default user checker to implement custom scoping behavior
- * for roles and permissions in a multi-section school SaaS application.
+ * for roles and permissions in a multi-school SaaS application.
  *
  * Problem We Are Solving:
  * -----------------------
  * In our system:
  * - Roles and permissions can be assigned in two ways:
- *   1. Scoped to a specific section (team) → e.g., "teacher" only in Primary section
+ *   1. Scoped to a specific school (team) → e.g., "teacher" only in Primary section
  *   2. Globally (no team) → e.g., "sport-director", "bursar" applies school-wide
  *
  * Desired Check Behavior:
  * ----------------------
- * When checking a role/permission with a specific team (current active section):
+ * When checking a role/permission with a specific team (current active school):
  * - First: Look for an exact match in that section (strict scoped check)
- * - If not found: Fall back to global (team_id = null) assignment
+ * - If not found: Fall back to global (school_id = null) assignment
  * - This allows "school-wide" roles to work in any section without duplicating assignments
  *
  * Example:
@@ -74,8 +74,8 @@ class CustomUserChecker extends UserDefaultChecker
      *
      * - When a specific team (section) is provided:
      *   • First: Return roles explicitly assigned to that section (scoped roles)
-     *   • Then: Also include any global roles (team_id = null) because they apply school-wide
-     *   • This ensures that when viewing "roles in current section", school-wide roles (e.g., sport-director, bursar)
+     *   • Then: Also include any global roles (school_id = null) because they apply school-wide
+     *   • This ensures that when viewing "roles in current section", tenant/global roles (e.g., sport-director, bursar)
      *     appear alongside section-specific ones (e.g., teacher in Primary)
      *
      * - When no team is provided (null):
@@ -86,12 +86,12 @@ class CustomUserChecker extends UserDefaultChecker
      * -----------------
      * - Consistency: The roles listed in a section context should match what hasRole(..., $section) would return true for
      * - UX: Admins viewing a user's roles in the Primary section should see both "teacher" (scoped) and "sport-director" (global)
-     * - Prevents confusion: Without global fallback, school-wide roles would disappear when viewing per-section
+     * - Prevents confusion: Without global fallback, tenant/global roles would disappear when viewing per-section
      *
      * Example:
      * - User has:
      *   → "teacher" assigned to Primary section (team_id = 1)
-     *   → "sport-director" assigned globally (team_id = null)
+     *   → "sport-director" assigned globally (school_id = null)
      *
      * $checker->getCurrentUserRoles($primarySection)
      * → Should return ['teacher', 'sport-director']
@@ -123,7 +123,7 @@ class CustomUserChecker extends UserDefaultChecker
 
             $roleNames = $roleNames->merge($scopedRoles->pluck('name'));
 
-            // 2. Add global roles (team_id = null) — they apply everywhere
+            // 2. Add global roles (school_id = null) — they apply everywhere
             $globalRoles = $cachedRoles->filter(function ($role) {
                 return $role['pivot'][\Laratrust\Models\Team::modelForeignKey()] === null;
             });
@@ -151,15 +151,15 @@ class CustomUserChecker extends UserDefaultChecker
      * flexible role assignment model:
      *
      * - Roles can be assigned:
-     *   • Scoped: explicitly to a specific section (team) → e.g., "teacher" only in Primary
-     *   • Global: without a team (team_id = null) → e.g., "sport-director", "bursar" applies school-wide
+     *   • Scoped: explicitly to a specific school (team) → e.g., "teacher" only in Primary
+     *   • Global: without a team (school_id = null) → e.g., "sport-director", "bursar" applies school-wide
      *
      * Desired Check Logic (when a team/section is provided):
      * ------------------------------------------------------
-     * 1. If a specific team (current active section) is passed:
+     * 1. If a specific team (current active school) is passed:
      *    - First: Check if the role is explicitly assigned to that section (strict scoped match)
-     *    - If not found: Fall back to checking if the role is assigned globally (team_id = null)
-     *    - This allows school-wide roles to be valid in any section context
+     *    - If not found: Fall back to checking if the role is assigned globally (school_id = null)
+     *    - This allows tenant/global roles to be valid in any section context
      *
      * 2. If no team is passed (null):
      *    - Use standard Laratrust behavior: check if the role exists anywhere (scoped or global)
@@ -171,14 +171,14 @@ class CustomUserChecker extends UserDefaultChecker
      * Why This Is Important:
      * ----------------------
      * - Consistency with UI: When checking "does user have role X in current section?",
-     *   school-wide roles should return true
+     *   tenant/global roles should return true
      * - Avoids duplication: No need to assign "bursar" to every section individually
      * - Clean & predictable: Admins see expected behavior across the app
      *
      * Example:
      * - User has:
      *   → "teacher" scoped to Primary (team_id = 1)
-     *   → "sport-director" global (team_id = null)
+     *   → "sport-director" global (school_id = null)
      * - Current section = Primary (team_id = 1)
      *
      * $checker->currentUserHasRole('teacher', $primarySection)           → true  (scoped match)
@@ -252,7 +252,7 @@ class CustomUserChecker extends UserDefaultChecker
             }
         }
 
-        // --- Step B: Fallback to global (team_id = null) ---
+        // --- Step B: Fallback to global (school_id = null) ---
         // This applies whether team was provided or not
         foreach ($cachedRoles as $role) {
             $roleTeamId = $role['pivot'][\Laratrust\Models\Team::modelForeignKey()] ?? null;
@@ -281,7 +281,7 @@ class CustomUserChecker extends UserDefaultChecker
      * 1. System-admin bypass: immediate true
      * 2. If a specific team is passed:
      *    - First: Check direct permissions AND role-inherited permissions that are scoped to that team
-     *    - If not found: Fall back to checking direct + inherited permissions that are global (team_id = null)
+     *    - If not found: Fall back to checking direct + inherited permissions that are global (school_id = null)
      * 3. If no team is passed: standard Laratrust behavior (check anywhere)
      *
      * Why This Is Critical:
@@ -392,7 +392,7 @@ class CustomUserChecker extends UserDefaultChecker
             }
         }
 
-        // --- Step B: Global fallback (team_id = null) ---
+        // --- Step B: Global fallback (school_id = null) ---
         // 1. Direct global permissions
         foreach ($cachedPermissions as $perm) {
             if (

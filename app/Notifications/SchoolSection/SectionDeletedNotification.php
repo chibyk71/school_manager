@@ -10,8 +10,8 @@ use Illuminate\Notifications\Notification;
 /**
  * SectionDeletedNotification
  *
- * Notifies school administrators when one or more sections are soft-deleted,
- * warning them about orphaned Laratrust role assignments.
+ * Notifies school administrators when one or more sections are soft-deleted.
+ * Phase 1: Laratrust team scope is School — section delete does not orphan pivots.
  *
  * ── When It Is Sent ───────────────────────────────────────────────────────
  * Dispatched by NotifyAdminOnSectionDeleted listener, which listens to

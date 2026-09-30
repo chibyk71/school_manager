@@ -24,6 +24,12 @@ pest()->extend(Tests\TestCase::class)
     ->in('Unit/DataTable');
 
 /*
+| Permission Phase 1 foundation tests — schema/config without full migrate.
+*/
+pest()->extend(Tests\TestCase::class)
+    ->in('Unit/Permission');
+
+/*
 |--------------------------------------------------------------------------
 | Expectations
 |--------------------------------------------------------------------------
