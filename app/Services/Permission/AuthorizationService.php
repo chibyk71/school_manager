@@ -10,14 +10,17 @@
  * Scopes: tenant (school_id = null) and school (specific school_id).
  * No section-level authorization. No role-name authorization decisions.
  * No DENY permissions. Explicit school target never mutates context.
+ *
+ * Roles have no inherent authorization meaning: capability decisions use
+ * permission identity only (never role names such as system-admin).
  */
 
 namespace App\Services\Permission;
 
 use App\Contracts\Authorization\Authorization;
-use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -37,10 +40,6 @@ class AuthorizationService implements Authorization
 
         $targetSchoolId = $this->resolveTargetSchoolId($schoolId);
 
-        if ($this->isPlatformAdmin($user)) {
-            return true;
-        }
-
         if ($this->hasDirectPermission($user, $permission, $targetSchoolId)) {
             return true;
         }
@@ -59,6 +58,9 @@ class AuthorizationService implements Authorization
      * Explicit $schoolId wins and does not touch active school / session.
      * When omitted, use schoolManager active school if present; otherwise
      * tenant scope (null).
+     *
+     * Unexpected failures from schoolManager (e.g. misconfiguration) are not
+     * swallowed: only the legitimate "no active school" case yields tenant scope.
      */
     private function resolveTargetSchoolId(?string $schoolId): ?string
     {
@@ -68,13 +70,13 @@ class AuthorizationService implements Authorization
             return $id === '' ? null : $id;
         }
 
-        try {
-            $active = app('schoolManager')->getActiveSchool();
-            if ($active !== null && $active->getKey() !== null) {
-                return (string) $active->getKey();
-            }
-        } catch (\Throwable) {
-            // schoolManager may be unavailable in isolated unit tests
+        if (! app()->bound('schoolManager')) {
+            return null;
+        }
+
+        $active = app('schoolManager')->getActiveSchool();
+        if ($active !== null && $active->getKey() !== null) {
+            return (string) $active->getKey();
         }
 
         return null;
@@ -86,32 +88,30 @@ class AuthorizationService implements Authorization
     }
 
     /**
-     * Platform-level bypass: system-admin / super-admin style roles assigned
-     * at tenant scope. Matches CustomUserChecker system-admin bypass intent
-     * without requiring Laratrust checker internals.
+     * Permission match semantics (Laratrust-aligned):
+     * - exact name match, or
+     * - requested string is a Str::is pattern against the stored name
+     *   (e.g. request "students.*" matches stored "students.view").
+     *
+     * Stored wildcards are not treated as patterns against a concrete request
+     * (no reverse Str::is). That keeps the canonical API from inventing a
+     * second permission language beyond the established Laratrust direction.
      */
-    private function isPlatformAdmin(User $user): bool
+    private function permissionMatches(string $requested, string $stored): bool
     {
-        $adminNames = ['system-admin', 'super-admin', 'superadministrator'];
-
-        $assigned = DB::table('role_user')
-            ->join('roles', 'roles.id', '=', 'role_user.role_id')
-            ->where('role_user.user_id', $user->getKey())
-            ->whereNull('role_user.school_id')
-            ->whereIn('roles.name', $adminNames)
-            ->exists();
-
-        return $assigned;
+        return $requested === $stored || Str::is($requested, $stored);
     }
 
     /**
      * Direct permission_user grants at target school and/or tenant.
+     * Constrains polymorphic user_type to User::class.
      */
     private function hasDirectPermission(User $user, string $permission, ?string $targetSchoolId): bool
     {
         $query = DB::table('permission_user')
             ->join('permissions', 'permissions.id', '=', 'permission_user.permission_id')
-            ->where('permission_user.user_id', $user->getKey());
+            ->where('permission_user.user_id', $user->getKey())
+            ->where('permission_user.user_type', User::class);
 
         if ($targetSchoolId !== null) {
             $query->where(function ($q) use ($targetSchoolId) {
@@ -125,7 +125,7 @@ class AuthorizationService implements Authorization
         $names = $query->pluck('permissions.name');
 
         foreach ($names as $name) {
-            if (Str::is($permission, (string) $name) || Str::is((string) $name, $permission)) {
+            if ($this->permissionMatches($permission, (string) $name)) {
                 return true;
             }
         }
@@ -136,6 +136,9 @@ class AuthorizationService implements Authorization
     /**
      * Permissions inherited through assigned roles, resolved via effective
      * role definitions for the target school (local shadows tenant).
+     *
+     * Catalogue is resolved once per call (Phase 3 bulk resolver), then
+     * indexed by name — not resolveByName per assignment.
      *
      * Disabled effective roles do not contribute capabilities.
      */
@@ -148,8 +151,11 @@ class AuthorizationService implements Authorization
         }
 
         if ($targetSchoolId !== null) {
+            $byName = $this->effectiveCatalogueByName($targetSchoolId);
+
             foreach ($roleNames as $name) {
-                $effective = $this->effectiveRoleResolver->resolveByName($targetSchoolId, $name);
+                /** @var EffectiveRole|null $effective */
+                $effective = $byName->get($name);
                 if ($effective === null || $effective->isDisabled()) {
                     continue;
                 }
@@ -163,12 +169,14 @@ class AuthorizationService implements Authorization
         }
 
         // Tenant context: only tenant role definitions (school_id null).
-        foreach ($roleNames as $name) {
-            $role = Role::query()
-                ->tenant()
-                ->where('name', $name)
-                ->first();
+        $tenantByName = Role::query()
+            ->tenant()
+            ->whereIn('name', $roleNames->all())
+            ->get()
+            ->keyBy(fn (Role $role) => (string) $role->name);
 
+        foreach ($roleNames as $name) {
+            $role = $tenantByName->get($name);
             if ($role === null || $role->isDisabled()) {
                 continue;
             }
@@ -182,15 +190,29 @@ class AuthorizationService implements Authorization
     }
 
     /**
-     * Role names the user is assigned at the target scope (school and/or tenant).
+     * Single Phase 3 catalogue resolve, keyed by role name.
      *
-     * @return \Illuminate\Support\Collection<int, string>
+     * @return Collection<string, EffectiveRole>
      */
-    private function assignedRoleNames(User $user, ?string $targetSchoolId)
+    private function effectiveCatalogueByName(string $schoolId): Collection
+    {
+        return $this->effectiveRoleResolver
+            ->resolveForSchool($schoolId)
+            ->keyBy(fn (EffectiveRole $effective) => $effective->name());
+    }
+
+    /**
+     * Role names the user is assigned at the target scope (school and/or tenant).
+     * Constrains polymorphic user_type to User::class.
+     *
+     * @return Collection<int, string>
+     */
+    private function assignedRoleNames(User $user, ?string $targetSchoolId): Collection
     {
         $query = DB::table('role_user')
             ->join('roles', 'roles.id', '=', 'role_user.role_id')
-            ->where('role_user.user_id', $user->getKey());
+            ->where('role_user.user_id', $user->getKey())
+            ->where('role_user.user_type', User::class);
 
         if ($targetSchoolId !== null) {
             $query->where(function ($q) use ($targetSchoolId) {
@@ -206,10 +228,9 @@ class AuthorizationService implements Authorization
 
     private function roleHasPermission(Role $role, string $permission): bool
     {
-        // Prefer in-memory relation if already loaded; otherwise query pivot.
         if ($role->relationLoaded('permissions')) {
             foreach ($role->permissions as $perm) {
-                if (Str::is($permission, (string) $perm->name) || Str::is((string) $perm->name, $permission)) {
+                if ($this->permissionMatches($permission, (string) $perm->name)) {
                     return true;
                 }
             }
@@ -223,7 +244,7 @@ class AuthorizationService implements Authorization
             ->pluck('permissions.name');
 
         foreach ($names as $name) {
-            if (Str::is($permission, (string) $name) || Str::is((string) $name, $permission)) {
+            if ($this->permissionMatches($permission, (string) $name)) {
                 return true;
             }
         }
