@@ -1,1 +1,65 @@
-PLACEHOLDER
+<?php
+
+// Permission catalogue part 2 (Phase 2)
+return [
+    ['name' => 'staff.create', 'display_name' => 'Create Staff', 'description' => 'Create new staff'],
+    ['name' => 'staff.update', 'display_name' => 'Update Staff', 'description' => 'Update staff information'],
+    ['name' => 'staff.delete', 'display_name' => 'Delete Staff', 'description' => 'Soft delete staff'],
+    ['name' => 'staff.restore', 'display_name' => 'Restore Staff', 'description' => 'Restore deleted staff'],
+    ['name' => 'staff.force-delete', 'display_name' => 'Force Delete Staff', 'description' => 'Permanently delete staff'],
+    ['name' => 'guardian.view-any', 'display_name' => 'View All Guardians', 'description' => 'View list of all guardians in a school'],
+    ['name' => 'guardian.view', 'display_name' => 'View Guardian', 'description' => 'View individual guardian details'],
+    ['name' => 'guardian.create', 'display_name' => 'Create Guardian', 'description' => 'Create new guardians'],
+    ['name' => 'guardian.update', 'display_name' => 'Update Guardian', 'description' => 'Update guardian information'],
+    ['name' => 'guardian.delete', 'display_name' => 'Delete Guardian', 'description' => 'Soft delete guardians'],
+    ['name' => 'guardian.restore', 'display_name' => 'Restore Guardian', 'description' => 'Restore deleted guardians'],
+    ['name' => 'guardian.force-delete', 'display_name' => 'Force Delete Guardian', 'description' => 'Permanently delete guardians'],
+    ['name' => 'profile.view-any', 'display_name' => 'View All Profiles', 'description' => 'View the list of all profiles (admin-level access)',],
+    ['name' => 'profile.view', 'display_name' => 'View Profile', 'description' => 'View a specific profile (own profile or permitted others)',],
+    ['name' => 'profile.update-own', 'display_name' => 'Update Own Profile', 'description' => 'Edit personal profile information (name, phone, photo, etc.)',],
+    ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any user\'s profile (admin override)',],
+    ['name' => 'profile.avatar.upload-own', 'display_name' => 'Upload Own Avatar', 'description' => 'Change own profile photo/avatar',],
+    ['name' => 'profile.avatar.upload-any', 'display_name' => 'Upload Avatar for Any Profile', 'description' => 'Change avatar/photo for any user (admin)',],
+    ['name' => 'profile.delete-any', 'display_name' => 'Delete Any Profile', 'description' => 'Soft-delete any profile (admin action)',],
+    ['name' => 'profile.restore', 'display_name' => 'Restore Profile', 'description' => 'Restore a soft-deleted profile (admin)',],
+    ['name' => 'profile.create-login', 'display_name' => 'Create Login for Profile', 'description' => 'Create a User/login account for an existing profile',],
+    ['name' => 'profile.reset-password', 'display_name' => 'Reset Password', 'description' => 'Force reset password or initiate reset for any profile',],
+    ['name' => 'profile.toggle-status', 'display_name' => 'Toggle Profile Status', 'description' => 'Activate/deactivate a profile (admin)',],
+    ['name' => 'profile.merge', 'display_name' => 'Merge Profiles', 'description' => 'Merge duplicate profiles and move associated roles',],
+    [
+                'name' => 'grades.view-any',
+                'display_name' => 'View All Grades',
+                'description' => 'Access the full list of grading scales / grades in the system',
+            ],
+    [
+                'name' => 'grades.view',
+                'display_name' => 'View Grade Details',
+                'description' => 'View detailed information about a specific grade (including score ranges and assigned sections)',
+            ],
+    [
+                'name' => 'grades.create',
+                'display_name' => 'Create New Grade',
+                'description' => 'Create a new grading scale entry (define name, code, score range, remark, and assign sections)',
+            ],
+    [
+                'name' => 'grades.update',
+                'display_name' => 'Update Grade',
+                'description' => 'Edit an existing grade\'s details (name, code, score range, remark, section assignments)',
+            ],
+    [
+                'name' => 'grades.delete',
+                'display_name' => 'Delete Grade',
+                'description' => 'Soft-delete a grade (only allowed if not currently used in any student results/assessments)',
+            ],
+    [
+                'name' => 'grades.restore',
+                'display_name' => 'Restore Deleted Grade',
+                'description' => 'Restore a previously soft-deleted grade back to active status',
+            ],
+    [
+                'name' => 'grades.force-delete',
+                'display_name' => 'Permanently Delete Grade',
+                'description' => 'Force delete (permanently remove) a grade from the system (restricted to super-admins)',
+            ],
+    ['name' => 'class-sections.view-any', 'display_name' => 'View Any Class Section', 'description' => 'View the list and data table of class sections'],
+];
