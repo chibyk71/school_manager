@@ -41,3 +41,11 @@ class PermissionSeeder extends Seeder
             ['name' => 'school.update', 'display_name' => 'Update School', 'description' => 'Update an existing school'],
             ['name' => 'school.delete', 'display_name' => 'Delete School', 'description' => 'Delete a school'],
             ['name' => 'school.forceDelete', 'display_name' => 'Force Delete School', 'description' => 'Force delete a school'],
+            ['name' => 'school.restore', 'display_name' => 'Restore School', 'description' => 'Restore a soft-deleted school'],
+
+            // PLACEHOLDER_CONTINUE - will fix via second approach
+        ];
+
+        PermissionCatalogue::sync($permissions);
+    }
+}
