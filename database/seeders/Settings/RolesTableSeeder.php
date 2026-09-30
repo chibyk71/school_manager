@@ -28,21 +28,37 @@ class RolesTableSeeder extends Seeder
             ['name' => 'information_officer', 'display_name' => 'Information Officer', 'description' => 'Responsible for disseminating information within and outside the school'],
             ['name' => 'admin', 'display_name' => 'Super Admin', 'description' => 'Has full system access across all schools and modules'],
             ['name' => 'school-owner', 'display_name' => 'School Owner', 'description' => 'Owner or proprietor of the school with administrative oversight'],
+            ['name' => 'admissions_officer', 'display_name' => 'Admissions Officer', 'description' => 'Manages student admissions and enrollment processes'],
+            ['name' => 'records_officer', 'display_name' => 'Records Officer', 'description' => 'Maintains student and institutional records'],
+            ['name' => 'auditor', 'display_name' => 'Auditor', 'description' => 'Conducts internal audits of school processes and finances'],
+            ['name' => 'hr_manager', 'display_name' => 'Human Resource Manager', 'description' => 'Oversees the human resources functions of the school'],
+            ['name' => 'hr_officer', 'display_name' => 'Human Resource Officer', 'description' => 'Assists with recruitment, staff welfare, and HR administration'],
+            ['name' => 'hr_assistant', 'display_name' => 'Human Resource Assistant', 'description' => 'Provides support in HR-related tasks and activities'],
+        ],
+
+        /**--------------------------------------------------------------
+         *  FINANCE & ACCOUNTS
+         * ------------------------------------------------------------ */
+        "finance" => [
+            ['name' => 'bursar', 'display_name' => 'Bursar', 'description' => 'Head of the Bursary/Accounts Department, responsible for managing school finances'],
+            ['name' => 'accountant', 'display_name' => 'Accountant', 'description' => 'Responsible for financial record-keeping and reporting'],
+            ['name' => 'assistant_accountant', 'display_name' => 'Assistant Accountant', 'description' => 'Assists the Accountant with financial tasks'],
+            ['name' => 'accounts_clerk', 'display_name' => 'Accounts Clerk', 'description' => 'Provides clerical support to the Bursary/Accounts Department'],
         ],
 
         /* --------------------------------------------------------------
          *  ACADEMIC
          * ------------------------------------------------------------ */
         'academic' => [
-            ['name' => 'dean_of_studies', 'display_name' => 'Dean of Studies', 'description' => 'Oversees academic programs and curriculum'],
-            ['name' => 'head_of_department', 'display_name' => 'Head of Department', 'description' => 'Leads a subject department'],
-            ['name' => 'subject_teacher', 'display_name' => 'Subject Teacher', 'description' => 'Teaches one or more subjects'],
-            ['name' => 'class_teacher', 'display_name' => 'Class Teacher', 'description' => 'Responsible for a class'],
-            ['name' => 'form_tutor', 'display_name' => 'Form Tutor', 'description' => 'Pastoral care for a form group'],
-            ['name' => 'teacher', 'display_name' => 'Teacher', 'description' => 'General teaching staff'],
-            ['name' => 'lab_attendant', 'display_name' => 'Laboratory Attendant', 'description' => 'Supports science laboratory activities'],
-            ['name' => 'exam_officer', 'display_name' => 'Examination Officer', 'description' => 'Coordinates internal and external examinations'],
-            ['name' => 'curriculum_coordinator', 'display_name' => 'Curriculum Coordinator', 'description' => 'Coordinates curriculum planning and delivery'],
+            ['name' => 'teacher', 'display_name' => 'Teacher', 'description' => 'Handles subject teaching and class responsibilities'],
+            ['name' => 'assistant-teacher', 'display_name' => 'Assistant Teacher', 'description' => 'Supports the lead teacher in classroom activities'],
+            ['name' => 'hod', 'display_name' => 'Head of Department (HOD)', 'description' => 'Leads a subject department and coordinates teachers'],
+            ['name' => 'subject-coordinator', 'display_name' => 'Subject Coordinator', 'description' => 'Coordinates subject implementation across multiple classes'],
+            ['name' => 'class-teacher', 'display_name' => 'Class Teacher', 'description' => 'In charge of a specific class, including academic and behavioral monitoring'],
+            ['name' => 'exam-officer', 'display_name' => 'Exam Officer', 'description' => 'Manages school examination logistics and records'],
+            ['name' => 'examinations_officer', 'display_name' => 'Examinations Officer', 'description' => 'Responsible for organizing and managing school examinations'],
+            ['name' => 'lab-assistant', 'display_name' => 'Lab Assistant', 'description' => 'Supports science experiments and maintains laboratory materials'],
+            ['name' => 'patron_club_society', 'display_name' => 'Patron/Matron of Club/Society', 'description' => 'Teacher assigned to oversee and guide a specific student club or society'],
         ],
 
         /* --------------------------------------------------------------
@@ -77,42 +93,47 @@ class RolesTableSeeder extends Seeder
          *  STUDENT WELFARE / PASTORAL
          * ------------------------------------------------------------ */
         'welfare' => [
-            ['name' => 'dean_of_students', 'display_name' => 'Dean of Students', 'description' => 'Oversees student welfare and discipline'],
-            ['name' => 'housemaster', 'display_name' => 'Housemaster', 'description' => 'Responsible for a student house'],
-            ['name' => 'housemistress', 'display_name' => 'Housemistress', 'description' => 'Responsible for a student house'],
-            ['name' => 'prefect', 'display_name' => 'Prefect', 'description' => 'Student leadership role'],
+            ['name' => 'head_student_affairs', 'display_name' => 'Head of Student Affairs', 'description' => 'Oversees student welfare, discipline, and co-curricular life'],
+            ['name' => 'welfare_officer', 'display_name' => 'Welfare Officer', 'description' => 'Supports student welfare and pastoral care'],
+            ['name' => 'discipline_master', 'display_name' => 'Discipline Master', 'description' => 'Enforces school rules and manages disciplinary processes'],
         ],
 
         /* --------------------------------------------------------------
-         *  HOSTEL
+         *  HOSTEL / BOARDING
          * ------------------------------------------------------------ */
         'hostel' => [
-            ['name' => 'hostel_warden', 'display_name' => 'Hostel Warden', 'description' => 'Manages student hostel accommodation'],
-            ['name' => 'assistant_warden', 'display_name' => 'Assistant Warden', 'description' => 'Assists the Hostel Warden'],
+            ['name' => 'boarding_house_master', 'display_name' => 'Boarding House Master', 'description' => 'Manages a boarding house'],
+            ['name' => 'assistant_boarding_master', 'display_name' => 'Assistant Boarding House Master', 'description' => 'Assists with boarding house management'],
+            ['name' => 'warden', 'display_name' => 'Warden', 'description' => 'Oversees boarding students'],
+            ['name' => 'matron', 'display_name' => 'Matron', 'description' => 'Oversees boarding welfare'],
+            ['name' => 'caretaker_boarding', 'display_name' => 'Boarding Caretaker', 'description' => 'Supports boarding house operations'],
         ],
 
         /* --------------------------------------------------------------
          *  CLINIC / HEALTH
          * ------------------------------------------------------------ */
         'clinic' => [
-            ['name' => 'school_nurse', 'display_name' => 'School Nurse', 'description' => 'Provides health services to students'],
-            ['name' => 'matron', 'display_name' => 'Matron', 'description' => 'Oversees student health and welfare'],
+            ['name' => 'head_clinic', 'display_name' => 'Head of Clinic', 'description' => 'Leads the school clinic'],
+            ['name' => 'nurse', 'display_name' => 'Nurse', 'description' => 'Provides health care to students'],
+            ['name' => 'clinic_attendant', 'display_name' => 'Clinic Attendant', 'description' => 'Supports clinic operations'],
         ],
 
         /* --------------------------------------------------------------
          *  SECURITY
          * ------------------------------------------------------------ */
         'security' => [
-            ['name' => 'chief_security_officer', 'display_name' => 'Chief Security Officer', 'description' => 'Leads school security'],
-            ['name' => 'security_guard', 'display_name' => 'Security Guard', 'description' => 'Provides security on school premises'],
+            ['name' => 'head_security', 'display_name' => 'Head of Security', 'description' => 'Leads school security'],
+            ['name' => 'security_officer', 'display_name' => 'Security Officer', 'description' => 'Provides security on school premises'],
+            ['name' => 'security_guard', 'display_name' => 'Security Guard', 'description' => 'Guards school premises'],
         ],
 
         /* --------------------------------------------------------------
          *  MAINTENANCE
          * ------------------------------------------------------------ */
         'maintenance' => [
-            ['name' => 'estate_manager', 'display_name' => 'Estate Manager', 'description' => 'Manages school facilities and maintenance'],
-            ['name' => 'maintenance_officer', 'display_name' => 'Maintenance Officer', 'description' => 'Handles facility maintenance'],
+            ['name' => 'head_maintenance', 'display_name' => 'Head of Maintenance', 'description' => 'Leads facilities maintenance'],
+            ['name' => 'electrician', 'display_name' => 'Electrician', 'description' => 'Handles electrical maintenance'],
+            ['name' => 'groundskeeper', 'display_name' => 'Groundskeeper', 'description' => 'Maintains school grounds'],
         ],
 
         /* --------------------------------------------------------------
