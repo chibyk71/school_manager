@@ -43,7 +43,7 @@ use Illuminate\Auth\Access\HandlesAuthorization;
  * - academic_staff:     can view sections; limited write access (see per-method docs)
  * - teacher:            can view sections they are assigned to (future scope)
  *
- * ── Team (School Section) Scoping ────────────────────────────────────────────
+ * ── School / organizational scoping ────────────────────────────────────────────
  * Laratrust team scoping is handled at the middleware/controller level via
  * GetSchoolModel() + BelongsToSchool global scope. By the time this policy
  * is called, the model has already been scoped to the current school.

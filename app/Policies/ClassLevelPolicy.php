@@ -15,7 +15,7 @@
  * - Permission checks use $user->hasPermission() (Laratrust instance method)
  *   instead of LaratrustFacade::hasPermission(). The facade checks globally
  *   without respecting the current user — the instance method respects the
- *   CustomUserChecker and team/section scoping you have configured.
+ *   CustomUserChecker and school team scoping you have configured.
  *
  * - before() provides an early-return for super-admins so they bypass all
  *   checks. This is the standard Laratrust pattern for system-level access.

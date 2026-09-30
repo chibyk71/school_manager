@@ -23,7 +23,7 @@ use Illuminate\Queue\SerializesModels;
  * ── Expected Listeners ───────────────────────────────────────────────────
  * - InvalidateSectionCache     → clears per-school section cache
  * - SyncLaratrustTeamOnCreate  → ensures SchoolSection is registered as a
- *                                Laratrust Team so roles can be scoped to it
+ *                                domain organization unit (not a Laratrust Team as of Permission Phase 1)
  *
  * @see App\Services\SchoolSectionService::createOne()
  * @see App\Services\SchoolSectionService::createFromTemplates()

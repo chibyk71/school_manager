@@ -90,11 +90,11 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string      $source         template|custom
  * @property string|null $deleted_at
  *
- * @see App\Services\SchoolSectionService   (createFromTemplates, deleteAllForSchool)
+ * @see App\Services\SchoolSectionService   (createFromTemplates, bulk operations)
  * @see App\Observers\SchoolSectionObserver (source mutation, cache invalidation)
  * @see App\Policies\SchoolSectionPolicy    (authorization rules)
  * @see config/school_section_templates.php (predefined template data)
- * @see config/laratrust.php                (teams table = school_sections)
+ * @see config/laratrust.php                (teams table = schools, FK = school_id; Section is not a Team)
  */
 class SchoolSection extends Model
 {

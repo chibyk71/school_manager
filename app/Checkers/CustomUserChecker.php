@@ -21,7 +21,7 @@ use Laratrust\Contracts\Role;
  * -----------------------
  * In our system:
  * - Roles and permissions can be assigned in two ways:
- *   1. Scoped to a specific school (team) → e.g., "teacher" only in Primary section
+ *   1. Scoped to a specific school (team) → e.g., "teacher" only in School A
  *   2. Globally (no team) → e.g., "sport-director", "bursar" applies school-wide
  *
  * Desired Check Behavior:
@@ -75,8 +75,8 @@ class CustomUserChecker extends UserDefaultChecker
      * - When a specific team (section) is provided:
      *   • First: Return roles explicitly assigned to that section (scoped roles)
      *   • Then: Also include any global roles (school_id = null) because they apply school-wide
-     *   • This ensures that when viewing "roles in current section", tenant/global roles (e.g., sport-director, bursar)
-     *     appear alongside section-specific ones (e.g., teacher in Primary)
+     *   • This ensures that when viewing "roles in current school", tenant/global roles (e.g., sport-director, bursar)
+     *     appear alongside school-specific ones (e.g., teacher in Primary)
      *
      * - When no team is provided (null):
      *   • Return all unique role names the user has, regardless of scoping
@@ -85,12 +85,12 @@ class CustomUserChecker extends UserDefaultChecker
      * Why This Matters:
      * -----------------
      * - Consistency: The roles listed in a section context should match what hasRole(..., $section) would return true for
-     * - UX: Admins viewing a user's roles in the Primary section should see both "teacher" (scoped) and "sport-director" (global)
-     * - Prevents confusion: Without global fallback, tenant/global roles would disappear when viewing per-section
+     * - UX: Admins viewing a user's roles in the School A should see both "teacher" (scoped) and "sport-director" (global)
+     * - Prevents confusion: Without global fallback, tenant/global roles would disappear when viewing per-school
      *
      * Example:
      * - User has:
-     *   → "teacher" assigned to Primary section (team_id = 1)
+     *   → "teacher" assigned to School A (team_id = 1)
      *   → "sport-director" assigned globally (school_id = null)
      *
      * $checker->getCurrentUserRoles($primarySection)
@@ -154,12 +154,12 @@ class CustomUserChecker extends UserDefaultChecker
      *   • Scoped: explicitly to a specific school (team) → e.g., "teacher" only in Primary
      *   • Global: without a team (school_id = null) → e.g., "sport-director", "bursar" applies school-wide
      *
-     * Desired Check Logic (when a team/section is provided):
+     * Desired Check Logic (when a school team is provided):
      * ------------------------------------------------------
      * 1. If a specific team (current active school) is passed:
      *    - First: Check if the role is explicitly assigned to that section (strict scoped match)
      *    - If not found: Fall back to checking if the role is assigned globally (school_id = null)
-     *    - This allows tenant/global roles to be valid in any section context
+     *    - This allows tenant/global roles to be valid in any school context
      *
      * 2. If no team is passed (null):
      *    - Use standard Laratrust behavior: check if the role exists anywhere (scoped or global)
@@ -170,7 +170,7 @@ class CustomUserChecker extends UserDefaultChecker
      *
      * Why This Is Important:
      * ----------------------
-     * - Consistency with UI: When checking "does user have role X in current section?",
+     * - Consistency with UI: When checking "does user have role X in current school?",
      *   tenant/global roles should return true
      * - Avoids duplication: No need to assign "bursar" to every section individually
      * - Clean & predictable: Admins see expected behavior across the app
@@ -276,7 +276,7 @@ class CustomUserChecker extends UserDefaultChecker
      *   1. Direct permissions (assigned directly to the user via permission_user pivot)
      *   2. Inherited permissions (coming from the user's roles via permission_role pivot)
      *
-     * Desired Logic (when a team/section is provided):
+     * Desired Logic (when a school team is provided):
      * ------------------------------------------------
      * 1. System-admin bypass: immediate true
      * 2. If a specific team is passed:
@@ -288,7 +288,7 @@ class CustomUserChecker extends UserDefaultChecker
      * ---------------------
      * - Consistency: Permissions must follow the exact same scoping rules as roles
      * - Real-world use: A global role like "sport-director" grants permissions (e.g., "manage-sports")
-     *   → These must be valid in any section context without duplicating assignments
+     *   → These must be valid in any school context without duplicating assignments
      * - Direct permissions: Some users may have extra permissions assigned directly (scoped or global)
      *
      * Example:
