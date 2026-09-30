@@ -367,7 +367,7 @@ it('disabled effective role does not grant capabilities', function () {
     $tenantTeacher = phase4Role('teacher');
     phase4AttachPermissionToRole($tenantTeacher, $perm);
 
-    $localDisabled = phase4Role('teacher', $schoolA->id, disabled: true);
+    phase4Role('teacher', $schoolA->id, disabled: true);
 
     phase4AssignRole($user, $tenantTeacher, $schoolA->id);
 
@@ -426,14 +426,66 @@ it('current context uses active school from schoolManager', function () {
     expect($auth->allows($user, 'students.view'))->toBeTrue();
 });
 
-it('system-admin tenant role bypasses capability checks', function () {
+it('role name alone does not grant capabilities without permissions', function () {
     $auth = phase4Auth();
     $user = phase4User('admin');
     $role = phase4Role('system-admin');
     phase4AssignRole($user, $role, null);
 
-    expect($auth->allows($user, 'students.view'))->toBeTrue()
-        ->and($auth->allows($user, 'anything.goes', phase4School('X')->id))->toBeTrue();
+    expect($auth->allows($user, 'students.view'))->toBeFalse()
+        ->and($auth->allows($user, 'anything.goes', phase4School('X')->id))->toBeFalse();
+});
+
+it('requested wildcard pattern matches stored concrete permission name', function () {
+    $auth = phase4Auth();
+    $user = phase4User();
+    $perm = phase4Permission('students.view');
+    phase4AssignDirectPermission($user, $perm, null);
+
+    expect($auth->allows($user, 'students.*'))->toBeTrue()
+        ->and($auth->allows($user, 'students.view'))->toBeTrue();
+});
+
+it('stored wildcard permission does not reverse-match a concrete request', function () {
+    $auth = phase4Auth();
+    $user = phase4User();
+    $perm = phase4Permission('students.*');
+    phase4AssignDirectPermission($user, $perm, null);
+
+    expect($auth->allows($user, 'students.*'))->toBeTrue()
+        ->and($auth->allows($user, 'students.view'))->toBeFalse();
+});
+
+it('ignores permission_user rows for a different user_type', function () {
+    $auth = phase4Auth();
+    $user = phase4User();
+    $perm = phase4Permission('students.view');
+
+    DB::table('permission_user')->insert([
+        'permission_id' => $perm->id,
+        'user_id' => $user->id,
+        'user_type' => 'App\\Models\\OtherMorph',
+        'school_id' => null,
+    ]);
+
+    expect($auth->allows($user, 'students.view'))->toBeFalse();
+});
+
+it('ignores role_user rows for a different user_type', function () {
+    $auth = phase4Auth();
+    $user = phase4User();
+    $perm = phase4Permission('students.view');
+    $role = phase4Role('teacher');
+    phase4AttachPermissionToRole($role, $perm);
+
+    DB::table('role_user')->insert([
+        'role_id' => $role->id,
+        'user_id' => $user->id,
+        'user_type' => 'App\\Models\\OtherMorph',
+        'school_id' => null,
+    ]);
+
+    expect($auth->allows($user, 'students.view'))->toBeFalse();
 });
 
 it('empty permission string is denied', function () {
