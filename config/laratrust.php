@@ -120,8 +120,11 @@ return [
 
         /**
          * Will be used only if the teams functionality is enabled.
+         *
+         * Phase 1: Team scope is School (not SchoolSection).
+         * Generic authorization scopes are Tenant (school_id = null) and School only.
          */
-        'team' => \App\Models\SchoolSection::class,
+        'team' => \App\Models\School::class,
     ],
 
     /*
@@ -140,8 +143,10 @@ return [
 
         /**
          * Will be used only if the teams functionality is enabled.
+         *
+         * Phase 1: teams table is schools (not school_sections).
          */
-        'teams' => 'school_sections',
+        'teams' => 'schools',
 
         'role_user' => 'role_user',
 
@@ -175,9 +180,12 @@ return [
         'permission' => 'permission_id',
 
         /**
-         * Role foreign key on Laratrust's role_user and permission_user tables.
+         * Team foreign key on Laratrust's role_user and permission_user tables.
+         *
+         * Phase 1: school_id (not school_section_id).
+         * NULL = tenant/global assignment; non-null = school-scoped assignment.
          */
-        'team' => 'school_section_id',
+        'team' => 'school_id',
     ],
 
     /*

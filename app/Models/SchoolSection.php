@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Laratrust\Models\Team;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -41,17 +40,11 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * automatically changes source to 'custom'. Two states only, ever.
  *
  * ── Role in the System ──────────────────────────────────────────────────
- * 1. LARATRUST TEAM
- *    SchoolSection extends Laratrust\Models\Team. This makes sections the
- *    "team" boundary for role/permission scoping. Example:
- *      - "teacher" role scoped to JSS only
- *      - "principal" role scoped to all sections (no team = school-wide)
- *    Laratrust calls SchoolSection::find($id) internally during permission
- *    checks. BelongsToSchool global scope is intentionally active during
- *    these calls — it ensures a user can never use a section from another
- *    school as their team context (correct security behavior).
- *    DO NOT remove BelongsToSchool from this model thinking it conflicts
- *    with Laratrust. It does not — it enforces correct tenant isolation.
+ * 1. DOMAIN ORGANIZATION (not Laratrust Team)
+ *    As of Permission Phase 1, SchoolSection is NOT the Laratrust Team.
+ *    Generic authorization scopes are Tenant (school_id = null) and School
+ *    (school_id = specific school). Sections remain domain concepts for
+ *    academic hierarchy and resource scoping only.
  *
  * 2. HIERARCHICAL PARENT
  *    SchoolSection → ClassLevel → Student/Subject/Timetable/Results
@@ -97,13 +90,13 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string      $source         template|custom
  * @property string|null $deleted_at
  *
- * @see App\Services\SchoolSectionService   (createFromTemplates, deleteAllForSchool)
+ * @see App\Services\SchoolSectionService   (createFromTemplates, bulk operations)
  * @see App\Observers\SchoolSectionObserver (source mutation, cache invalidation)
  * @see App\Policies\SchoolSectionPolicy    (authorization rules)
  * @see config/school_section_templates.php (predefined template data)
- * @see config/laratrust.php                (teams table = school_sections)
+ * @see config/laratrust.php                (teams table = schools, FK = school_id; Section is not a Team)
  */
-class SchoolSection extends Team
+class SchoolSection extends Model
 {
     use HasFactory,
         HasUuids,
@@ -219,22 +212,6 @@ class SchoolSection extends Team
         'deleted_at',
     ];
 
-    // ────────────────────────────────────────────────────────────────────
-    // Laratrust Team Interface
-    // ────────────────────────────────────────────────────────────────────
-
-    /**
-     * The foreign key name Laratrust uses when referencing this team
-     * in the role_user and permission_user pivot tables.
-     * Must match the column name defined in config/laratrust.php
-     * under foreign_keys.team.
-     *
-     * @return string
-     */
-    public static function modelForeignKey(): string
-    {
-        return 'school_section_id';
-    }
 
     // ────────────────────────────────────────────────────────────────────
     // Activity Logging

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
+use Laratrust\Models\Team;
 use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -22,13 +23,21 @@ use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 /**
- * School Model – Central Tenant Representation
+ * School Model – Central Tenant Representation + Laratrust Team
  *
  * Purpose & Context:
  * ------------------
  * This model represents a single school (tenant/branch) in the multi-tenant SaaS application.
  * It serves as the primary scoping entity for almost all other models via the BelongsToSchool trait
  * and SchoolScope global scope.
+ *
+ * Phase 1 Authorization:
+ * ----------------------
+ * School is the Laratrust Team. Authorization pivots (role_user, permission_user) use
+ * school_id as the team foreign key. Generic authorization scopes are:
+ *   - Tenant / global: school_id = NULL
+ *   - School:          school_id = specific school
+ * SchoolSection is NOT a generic authorization scope.
  *
  * Key Features Implemented:
  * -------------------------
@@ -56,7 +65,7 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
  * - Provides clean, reusable accessors for frontend consumption
  * - Maintains data integrity with unique slugs and soft-delete safety
  */
-class School extends \App\Models\Model implements HasMedia
+class School extends Team implements HasMedia
 {
     use HasFactory;
     use HasSettings;
@@ -69,6 +78,13 @@ class School extends \App\Models\Model implements HasMedia
     use InteractsWithMedia;
     use HasTableQuery;
     use LogsActivity;
+
+    /**
+     * Explicit table so Laratrust Team constructor resolution cannot drift.
+     *
+     * @var string
+     */
+    protected $table = 'schools';
 
     /**
      * Mass assignable attributes.
@@ -159,6 +175,19 @@ class School extends \App\Models\Model implements HasMedia
 
             $school->data = array_merge($school->data ?? [], $extra);
         });
+    }
+
+    // =================================================================
+    // LARATRUST TEAM
+    // =================================================================
+
+    /**
+     * Foreign key Laratrust uses on role_user / permission_user pivots.
+     * Must match config/laratrust.php foreign_keys.team.
+     */
+    public static function modelForeignKey(): string
+    {
+        return 'school_id';
     }
 
     // =================================================================

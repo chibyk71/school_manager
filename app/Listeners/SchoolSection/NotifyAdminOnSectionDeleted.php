@@ -15,15 +15,13 @@ use Illuminate\Support\Facades\Log;
  * Notifies school administrators when one or more sections are soft-deleted.
  *
  * ── Why Notify On Delete ─────────────────────────────────────────────────
- * When a section is deleted, Laratrust role assignments scoped to that
- * section (role_user rows with school_section_id = deleted section) become
- * effectively inactive — users still have the pivot rows but the section
- * no longer appears in active queries. Admins need to know so they can
- * decide whether to reassign roles or restore the section.
+ * When a section is deleted, domain resources may need admin attention.
+ * As of Permission Phase 1, Laratrust team scope is School (not SchoolSection),
+ * so section deletion does not orphan authorization pivots (school_id).
  *
  * Note: the service layer blocks deletion when class levels or enrolled
  * students exist. By the time this listener fires, the deleted sections
- * had no children — the orphaned concern is role assignments only.
+ * had no children.
  *
  * ── Who Gets Notified ────────────────────────────────────────────────────
  * Users who have the 'sections.view-any' permission in the current school.
