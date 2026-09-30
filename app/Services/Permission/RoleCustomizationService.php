@@ -7,6 +7,28 @@
  * No parent/source/provenance columns. Permission associations are independent after copy.
  *
  * Deletion is blocked when the exact role_id has assignments in role_user.
+ *
+ * Concurrency protocol (same lock order as AcademicPeriodLock for periods):
+ *
+ *   Role lifecycle (customize / delete):
+ *     BEGIN
+ *       lockRole(roleId)              // roles row FOR UPDATE
+ *       re-check assignment / local-duplicate invariants
+ *       mutate
+ *     COMMIT
+ *
+ *   Future assignment (Phase 6 User Management):
+ *     BEGIN  (owning service transaction)
+ *       lockRole(roleId)              // same roles row FOR UPDATE
+ *       insert role_user
+ *     COMMIT
+ *
+ * Holding the roles row lock serializes lifecycle checks with concurrent
+ * assignment so a role_user row cannot appear after the assignment check
+ * observed empty and before the role is deleted (or customized).
+ *
+ * lockRole() is public so Phase 6 can share the protocol without a second
+ * locking subsystem. Call only inside an open DB transaction.
  */
 
 namespace App\Services\Permission;
@@ -21,6 +43,28 @@ class RoleCustomizationService
     public function __construct(
         private readonly EffectiveRoleResolver $resolver,
     ) {
+    }
+
+    /**
+     * Acquire the role-level serialization lock used by customize/delete and
+     * (future) assignment. Call only inside an open DB transaction.
+     *
+     * @throws ValidationException when the role no longer exists
+     */
+    public function lockRole(string $roleId): Role
+    {
+        $locked = Role::query()
+            ->whereKey($roleId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($locked === null) {
+            throw ValidationException::withMessages([
+                'role' => 'Role does not exist.',
+            ]);
+        }
+
+        return $locked;
     }
 
     /**
@@ -45,37 +89,43 @@ class RoleCustomizationService
         }
 
         $schoolId = (string) $school->getKey();
-        $name = (string) $tenantRole->name;
+        $roleId = (string) $tenantRole->getKey();
 
-        if (Role::query()->forSchool($schoolId)->where('name', $name)->exists()) {
-            throw ValidationException::withMessages([
-                'role' => "School already has a local role named [{$name}].",
-            ]);
-        }
+        return DB::transaction(function () use ($roleId, $schoolId) {
+            $locked = $this->lockRole($roleId);
 
-        if ($this->hasAssignmentsInSchool($tenantRole, $schoolId)) {
-            throw ValidationException::withMessages([
-                'role' => 'Cannot customize: the tenant role is already assigned to users in this school. Resolve assignments first.',
-            ]);
-        }
-
-        return DB::transaction(function () use ($tenantRole, $schoolId) {
-            // Re-check uniqueness inside the transaction (final protection is DB unique index).
-            if (Role::query()->forSchool($schoolId)->where('name', $tenantRole->name)->exists()) {
+            if (! $locked->isTenant()) {
                 throw ValidationException::withMessages([
-                    'role' => "School already has a local role named [{$tenantRole->name}].",
+                    'role' => 'Only tenant/global roles (school_id = NULL) can be customized.',
+                ]);
+            }
+
+            $name = (string) $locked->name;
+
+            // Local duplicate check under the tenant-role lock (DB unique is final safety).
+            if (Role::query()->forSchool($schoolId)->where('name', $name)->exists()) {
+                throw ValidationException::withMessages([
+                    'role' => "School already has a local role named [{$name}].",
+                ]);
+            }
+
+            // Assignment check after role lock: concurrent assignment must also
+            // lock this role row (Phase 6), so it cannot land between check and create.
+            if ($this->hasAssignmentsInSchool($locked, $schoolId)) {
+                throw ValidationException::withMessages([
+                    'role' => 'Cannot customize: the tenant role is already assigned to users in this school. Resolve assignments first.',
                 ]);
             }
 
             $local = Role::create([
-                'name' => $tenantRole->name,
-                'display_name' => $tenantRole->display_name,
-                'description' => $tenantRole->description,
-                'disabled' => $tenantRole->disabled,
+                'name' => $locked->name,
+                'display_name' => $locked->display_name,
+                'description' => $locked->description,
+                'disabled' => $locked->disabled,
                 'school_id' => $schoolId,
             ]);
 
-            $permissionIds = $tenantRole->permissions()->pluck('permissions.id')->all();
+            $permissionIds = $locked->permissions()->pluck('permissions.id')->all();
             if ($permissionIds !== []) {
                 $local->permissions()->sync($permissionIds);
             }
@@ -100,15 +150,21 @@ class RoleCustomizationService
             ]);
         }
 
-        if ($this->hasAnyAssignments($role)) {
-            throw ValidationException::withMessages([
-                'role' => 'Cannot delete role while it is assigned to users. Remove assignments first.',
-            ]);
-        }
+        $roleId = (string) $role->getKey();
 
-        DB::transaction(function () use ($role) {
-            $role->permissions()->detach();
-            $role->delete();
+        DB::transaction(function () use ($roleId) {
+            $locked = $this->lockRole($roleId);
+
+            // Assignment check after role lock: concurrent assignment must also
+            // lock this role row (Phase 6). Prevents CASCADE wiping a race-inserted row.
+            if ($this->hasAnyAssignments($locked)) {
+                throw ValidationException::withMessages([
+                    'role' => 'Cannot delete role while it is assigned to users. Remove assignments first.',
+                ]);
+            }
+
+            $locked->permissions()->detach();
+            $locked->delete();
         });
     }
 
