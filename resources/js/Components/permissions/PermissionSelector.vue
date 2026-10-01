@@ -204,7 +204,7 @@ function labelFor(p: PermissionItem): string {
                 :value="group.key"
             >
                 <AccordionHeader>
-                    <div class="flex items-center gap-3 w-full pr-2" @click.stop>
+                    <div class="flex items-center gap-3 w-full pr-2">
                         <Checkbox
                             :modelValue="groupAllSelected(group)"
                             :indeterminate="groupIndeterminate(group)"

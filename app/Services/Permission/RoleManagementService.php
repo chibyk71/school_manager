@@ -352,4 +352,59 @@ class RoleManagementService
 
         return $code === '23505' || $driverCode === 1062 || str_contains(strtolower($e->getMessage()), 'unique');
     }
+
+    /**
+     * Bulk enable or disable effective roles for the current authorization context.
+     *
+     * Each id is resolved via resolveEffectiveByRoleId (isolation) and then
+     * enable/disableEffective (inherited materialization). Failures for individual
+     * ids are collected; other ids still process.
+     *
+     * @param  list<string>  $roleIds
+     * @return array{processed: int, failed: int, results: list<array{id: string, ok: bool, message?: string, disabled?: bool}>}
+     */
+    public function bulkSetStatus(?string $schoolId, array $roleIds, bool $disabled): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('strval', $roleIds))));
+        $results = [];
+        $processed = 0;
+        $failed = 0;
+
+        foreach ($ids as $id) {
+            try {
+                $effective = $this->resolveEffectiveByRoleId($id, $schoolId);
+                $role = $disabled
+                    ? $this->disableEffective($effective, $schoolId)
+                    : $this->enableEffective($effective, $schoolId);
+
+                $results[] = [
+                    'id' => $id,
+                    'ok' => true,
+                    'disabled' => (bool) $role->disabled,
+                ];
+                $processed++;
+            } catch (ValidationException $e) {
+                $message = collect($e->errors())->flatten()->first() ?? $e->getMessage();
+                $results[] = [
+                    'id' => $id,
+                    'ok' => false,
+                    'message' => (string) $message,
+                ];
+                $failed++;
+            } catch (\Throwable $e) {
+                $results[] = [
+                    'id' => $id,
+                    'ok' => false,
+                    'message' => 'Failed to update role status.',
+                ];
+                $failed++;
+            }
+        }
+
+        return [
+            'processed' => $processed,
+            'failed' => $failed,
+            'results' => $results,
+        ];
+    }
 }

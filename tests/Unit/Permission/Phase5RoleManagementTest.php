@@ -355,3 +355,48 @@ test('permission catalogue is grouped by module', function () {
     expect($keys)->toContain('students')
         ->and($keys)->toContain('staff');
 });
+
+test('bulkSetStatus disables multiple local roles', function () {
+    $svc = phase5Service();
+    $school = phase5MakeSchool('bulk');
+    $a = $svc->create((string) $school->id, ['display_name' => 'Prefect', 'name' => 'prefect']);
+    $b = $svc->create((string) $school->id, ['display_name' => 'Monitor', 'name' => 'monitor']);
+
+    $outcome = $svc->bulkSetStatus((string) $school->id, [(string) $a->id, (string) $b->id], true);
+
+    expect($outcome['processed'])->toBe(2)
+        ->and($outcome['failed'])->toBe(0)
+        ->and($a->fresh()->disabled)->toBeTrue()
+        ->and($b->fresh()->disabled)->toBeTrue();
+});
+
+test('bulkSetStatus materializes inherited roles in school context', function () {
+    $svc = phase5Service();
+    $school = phase5MakeSchool('bulk-inherit');
+    $tenant = $svc->create(null, ['display_name' => 'Teacher', 'name' => 'teacher']);
+
+    $outcome = $svc->bulkSetStatus((string) $school->id, [(string) $tenant->id], true);
+
+    expect($outcome['processed'])->toBe(1)
+        ->and($tenant->fresh()->disabled)->toBeFalse();
+
+    $local = Role::query()->forSchool((string) $school->id)->where('name', 'teacher')->first();
+    expect($local)->not->toBeNull()
+        ->and($local->disabled)->toBeTrue();
+});
+
+test('bulkSetStatus reports failure for cross-school ids without aborting others', function () {
+    $svc = phase5Service();
+    $schoolA = phase5MakeSchool('bulk-a');
+    $schoolB = phase5MakeSchool('bulk-b');
+    $localA = $svc->create((string) $schoolA->id, ['display_name' => 'Prefect', 'name' => 'prefect']);
+    $localB = $svc->create((string) $schoolB->id, ['display_name' => 'Prefect', 'name' => 'prefect']);
+
+    $outcome = $svc->bulkSetStatus((string) $schoolA->id, [(string) $localA->id, (string) $localB->id], true);
+
+    expect($outcome['processed'])->toBe(1)
+        ->and($outcome['failed'])->toBe(1)
+        ->and($localA->fresh()->disabled)->toBeTrue()
+        ->and($localB->fresh()->disabled)->toBeFalse();
+});
+

@@ -51,6 +51,7 @@ Route::prefix('admin')->middleware(['auth'])->group(function () {
     Route::post('roles', [RolesController::class, 'store'])->name('admin.roles.store');
     Route::put('roles/{role}', [RolesController::class, 'update'])->name('admin.roles.update');
     Route::patch('roles/{role}/status', [RolesController::class, 'updateStatus'])->name('admin.roles.status');
+    Route::post('roles/status/bulk', [RolesController::class, 'bulkUpdateStatus'])->name('admin.roles.status.bulk');
     Route::delete('roles/{role}', [RolesController::class, 'destroy'])->name('admin.roles.destroy');
     Route::delete('roles', [RolesController::class, 'destroy'])->name('admin.roles.destroy.bulk');
 

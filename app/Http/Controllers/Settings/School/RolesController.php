@@ -15,6 +15,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\Roles\StoreRoleRequest;
 use App\Http\Requests\Settings\Roles\SyncRolePermissionsRequest;
 use App\Http\Requests\Settings\Roles\UpdateRoleRequest;
+use App\Http\Requests\Settings\Roles\BulkUpdateRoleStatusRequest;
 use App\Http\Requests\Settings\Roles\UpdateRoleStatusRequest;
 use App\Models\Role;
 use App\Services\Permission\EffectiveRole;
@@ -343,6 +344,40 @@ class RolesController extends Controller
             }
 
             return redirect()->back()->with('error', 'Failed to update permissions.');
+        }
+    }
+
+
+    /**
+     * Bulk enable/disable roles via DataTable bulk-action contract.
+     * Applies the same effective-role semantics as individual status updates.
+     */
+    public function bulkUpdateStatus(BulkUpdateRoleStatusRequest $request): JsonResponse
+    {
+        $this->authorizeManage();
+
+        $schoolId = $this->currentSchoolId();
+        $disabled = (bool) $request->validated('disabled');
+        $ids = $request->validated('ids') ?? [];
+
+        try {
+            $outcome = $this->roles->bulkSetStatus($schoolId, $ids, $disabled);
+
+            $verb = $disabled ? 'disabled' : 'enabled';
+            $message = $outcome['failed'] === 0
+                ? "{$outcome['processed']} role(s) {$verb}."
+                : "{$outcome['processed']} role(s) {$verb}; {$outcome['failed']} failed.";
+
+            return response()->json([
+                'message' => $message,
+                'processed' => $outcome['processed'],
+                'failed' => $outcome['failed'],
+                'results' => $outcome['results'],
+            ], $outcome['failed'] > 0 && $outcome['processed'] === 0 ? 422 : 200);
+        } catch (\Throwable $e) {
+            Log::error('RolesController@bulkUpdateStatus failed', ['error' => $e->getMessage()]);
+
+            return response()->json(['message' => 'Failed to update role status.'], 500);
         }
     }
 

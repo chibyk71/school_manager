@@ -297,7 +297,79 @@ const roleActions = computed<TableAction<any>[]>(() => {
     ];
 });
 
-const bulkActions = computed<BulkAction[]>(() => []);
+const bulkActions = computed<BulkAction[]>(() => {
+    if (!canManage.value) return [];
+    return [
+        {
+            label: 'Enable Selected',
+            icon: 'pi pi-check-circle',
+            severity: 'success',
+            action: 'enable',
+            confirm: {
+                message: (rows) =>
+                    `Enable ${rows.length} selected role(s)? They will become available for assignment again.`,
+                header: 'Enable roles',
+                acceptLabel: 'Enable',
+                acceptClass: 'p-button-success',
+            },
+            handler: async (rows) => {
+                try {
+                    const { data } = await axios.post(route('admin.roles.status.bulk'), {
+                        ids: rows.map((r) => r.id),
+                        disabled: false,
+                    });
+                    toast.add({
+                        severity: data.failed ? 'warn' : 'success',
+                        summary: data.message ?? 'Roles enabled',
+                        life: 4000,
+                    });
+                    router.reload({ only: ['data', 'meta'] });
+                } catch (e: any) {
+                    toast.add({
+                        severity: 'error',
+                        summary: 'Bulk enable failed',
+                        detail: e?.response?.data?.message ?? 'Unexpected error',
+                        life: 6000,
+                    });
+                }
+            },
+        },
+        {
+            label: 'Disable Selected',
+            icon: 'pi pi-ban',
+            severity: 'warn',
+            action: 'disable',
+            confirm: {
+                message: (rows) =>
+                    `Disable ${rows.length} selected role(s)? Existing assignments remain, but the roles will no longer be assignable.`,
+                header: 'Disable roles',
+                acceptLabel: 'Disable',
+                acceptClass: 'p-button-warning',
+            },
+            handler: async (rows) => {
+                try {
+                    const { data } = await axios.post(route('admin.roles.status.bulk'), {
+                        ids: rows.map((r) => r.id),
+                        disabled: true,
+                    });
+                    toast.add({
+                        severity: data.failed ? 'warn' : 'success',
+                        summary: data.message ?? 'Roles disabled',
+                        life: 4000,
+                    });
+                    router.reload({ only: ['data', 'meta'] });
+                } catch (e: any) {
+                    toast.add({
+                        severity: 'error',
+                        summary: 'Bulk disable failed',
+                        detail: e?.response?.data?.message ?? 'Unexpected error',
+                        life: 6000,
+                    });
+                }
+            },
+        },
+    ];
+});
 </script>
 
 <template>
