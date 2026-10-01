@@ -44,22 +44,20 @@ use App\Http\Controllers\Settings\School\RolesController;
 use Illuminate\Support\Facades\Route;
 
 // ===================================================================
-// Admin → Roles & Permissions (existing – untouched)
+// Admin → Roles & Permissions (Permission Phase 5)
 // ===================================================================
 Route::prefix('admin')->middleware(['auth'])->group(function () {
     Route::get('roles', [RolesController::class, 'index'])->name('admin.roles.index');
     Route::post('roles', [RolesController::class, 'store'])->name('admin.roles.store');
     Route::put('roles/{role}', [RolesController::class, 'update'])->name('admin.roles.update');
-    Route::delete('roles', [RolesController::class, 'destroy'])->name('admin.roles.destroy');
+    Route::patch('roles/{role}/status', [RolesController::class, 'updateStatus'])->name('admin.roles.status');
+    Route::delete('roles/{role}', [RolesController::class, 'destroy'])->name('admin.roles.destroy');
+    Route::delete('roles', [RolesController::class, 'destroy'])->name('admin.roles.destroy.bulk');
 
-    Route::get('roles/{role}/permissions', [RolesController::class, 'managePermissions'])
-        ->name('admin.roles.permissions.manage');
-    Route::put('roles/{role}/permissions', [RolesController::class, 'updatePermissions'])
+    Route::get('roles/{role}/permissions', [RolesController::class, 'permissions'])
+        ->name('admin.roles.permissions.show');
+    Route::put('roles/{role}/permissions', [RolesController::class, 'syncPermissions'])
         ->name('admin.roles.permissions.update');
-    Route::post('roles/{role}/permissions/merge', [RolesController::class, 'mergePermissionsFrom'])
-        ->name('admin.roles.permissions.merge');
-
-    Route::get('roles/search', [RolesController::class, 'search'])->name('admin.roles.search');
 });
 
 // ===================================================================
