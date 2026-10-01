@@ -131,15 +131,23 @@ function phase4User(string $username = 'user'): User
 
 function phase4School(string $name = 'School A'): School
 {
-    $school = new School();
-    $school->forceFill([
-        'id' => (string) Str::uuid(),
-        'name' => $name,
-        'is_active' => true,
-    ]);
-    $school->save();
+    // School uses LogsActivity; Eloquent save would write activity_log (not in schema).
+    // Mirror Phase 3: insert via query builder, then load the model.
+    $id = (string) Str::uuid();
+    $slug = 'phase4-'.Str::slug($name).'-'.Str::random(6);
 
-    return $school->fresh();
+    DB::table('schools')->insert([
+        'id' => $id,
+        'name' => $name,
+        'slug' => $slug,
+        'email' => $slug.'@example.test',
+        'code' => strtoupper(Str::random(4)),
+        'is_active' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    return School::query()->findOrFail($id);
 }
 
 function phase4Permission(string $name): Permission
