@@ -7,6 +7,8 @@ return [
     ['name' => 'settings.manage', 'display_name' => 'Manage Settings', 'description' => 'Full access to all settings pages'],
     ['name' => 'dynamic-enums.view', 'display_name' => 'View Dynamic Enums', 'description' => 'View Dynamic Enum definitions and effective configuration'],
     ['name' => 'dynamic-enums.manage', 'display_name' => 'Manage Dynamic Enums', 'description' => 'Manage Dynamic Enum configuration in the current authorization context (tenant or school)'],
+    ['name' => 'roles.view', 'display_name' => 'View Roles', 'description' => 'View the effective role catalogue for the current authorization context'],
+    ['name' => 'roles.manage', 'display_name' => 'Manage Roles', 'description' => 'Create, edit, enable/disable, delete/reset roles and manage role permissions in the current authorization context'],
     ['name' => 'schools.view-any', 'display_name' => 'View All Schools', 'description' => 'Access the list of schools'],
     ['name' => 'schools.view', 'display_name' => 'View School', 'description' => 'Access The detail of individual school'],
     ['name' => 'school.create', 'display_name' => 'Create School', 'description' => 'Create a new school'],
