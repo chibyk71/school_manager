@@ -139,7 +139,7 @@ beforeEach(function () {
     $this->sessions = app(AcademicSessionLifecycleService::class);
 });
 
-function makeTerm(array $overrides = []): Term
+function termLifecycleMakeTerm(array $overrides = []): Term
 {
     $session = $overrides['session'] ?? test()->session;
     unset($overrides['session']);
@@ -179,7 +179,7 @@ it('appends subsequent terms with contiguous sequence', function () {
 
 it('activates PLANNED to ACTIVE when session is ACTIVE and dates valid', function () {
     Event::fake([TermActivated::class]);
-    $term = makeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
+    $term = termLifecycleMakeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $activated = $this->terms->activate($term);
     expect($activated->state)->toBeInstanceOf(TermActive::class);
     Event::assertDispatched(TermActivated::class);
@@ -188,7 +188,7 @@ it('activates PLANNED to ACTIVE when session is ACTIVE and dates valid', functio
 it('rejects activation when session is not ACTIVE', function () {
     foreach ([SessionDraft::$name, SessionPlanned::$name, SessionPaused::$name, SessionClosed::$name] as $state) {
         $this->session->forceFill(['state' => $state])->save();
-        $term = makeTerm([
+        $term = termLifecycleMakeTerm([
             'name' => 'T-' . $state,
             'start_date' => '2026-09-01',
             'end_date' => '2026-12-15',
@@ -200,35 +200,35 @@ it('rejects activation when session is not ACTIVE', function () {
 });
 
 it('rejects activation without dates', function () {
-    $term = makeTerm(['name' => 'No Dates']);
+    $term = termLifecycleMakeTerm(['name' => 'No Dates']);
     expect(fn () => $this->terms->activate($term))->toThrow(ValidationException::class);
 });
 
 it('rejects overlapping term activation', function () {
-    makeTerm(['name' => 'Existing', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15', 'state' => TermClosedState::$name]);
-    $overlap = makeTerm(['name' => 'Overlap', 'start_date' => '2026-11-01', 'end_date' => '2027-03-01']);
+    termLifecycleMakeTerm(['name' => 'Existing', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15', 'state' => TermClosedState::$name]);
+    $overlap = termLifecycleMakeTerm(['name' => 'Overlap', 'start_date' => '2026-11-01', 'end_date' => '2027-03-01']);
     expect(fn () => $this->terms->activate($overlap))->toThrow(ValidationException::class);
 });
 
 it('allows adjacent term dates', function () {
-    makeTerm(['name' => 'T1', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15', 'state' => TermClosedState::$name]);
-    $adjacent = makeTerm(['name' => 'T2', 'start_date' => '2026-12-15', 'end_date' => '2027-03-31']);
+    termLifecycleMakeTerm(['name' => 'T1', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15', 'state' => TermClosedState::$name]);
+    $adjacent = termLifecycleMakeTerm(['name' => 'T2', 'start_date' => '2026-12-15', 'end_date' => '2027-03-31']);
     $result = $this->terms->activate($adjacent);
     expect($result->state)->toBeInstanceOf(TermActive::class);
 });
 
 it('rejects second ACTIVE term in the same session', function () {
-    $t1 = makeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
+    $t1 = termLifecycleMakeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $this->terms->activate($t1);
-    $t2 = makeTerm(['name' => 'Second', 'start_date' => '2026-12-15', 'end_date' => '2027-03-31']);
+    $t2 = termLifecycleMakeTerm(['name' => 'Second', 'start_date' => '2026-12-15', 'end_date' => '2027-03-31']);
     expect(fn () => $this->terms->activate($t2))->toThrow(ValidationException::class);
 });
 
 it('closes ACTIVE to CLOSED without activating another term', function () {
     Event::fake([TermClosed::class]);
-    $t1 = makeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
+    $t1 = termLifecycleMakeTerm(['name' => 'First', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $this->terms->activate($t1);
-    $t2 = makeTerm(['name' => 'Second', 'start_date' => '2026-12-15', 'end_date' => '2027-03-31']);
+    $t2 = termLifecycleMakeTerm(['name' => 'Second', 'start_date' => '2026-12-15', 'end_date' => '2027-03-31']);
     $closed = $this->terms->close($t1->fresh());
     expect($closed->state)->toBeInstanceOf(TermClosedState::class)
         ->and($closed->closed_at)->not->toBeNull()
@@ -237,18 +237,18 @@ it('closes ACTIVE to CLOSED without activating another term', function () {
 });
 
 it('rejects closing a PLANNED term', function () {
-    $term = makeTerm(['name' => 'Planned']);
+    $term = termLifecycleMakeTerm(['name' => 'Planned']);
     expect(fn () => $this->terms->close($term))->toThrow(ValidationException::class);
 });
 
 it('rejects session close while an ACTIVE term exists', function () {
-    $term = makeTerm(['name' => 'Active Term', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
+    $term = termLifecycleMakeTerm(['name' => 'Active Term', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $this->terms->activate($term);
     expect(fn () => $this->sessions->close($this->session->fresh()))->toThrow(ValidationException::class);
 });
 
 it('allows session close after all terms are CLOSED', function () {
-    $term = makeTerm(['name' => 'Active Term', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
+    $term = termLifecycleMakeTerm(['name' => 'Active Term', 'start_date' => '2026-09-01', 'end_date' => '2026-12-15']);
     $this->terms->activate($term);
     $this->terms->close($term->fresh());
     $closed = $this->sessions->close($this->session->fresh());
@@ -266,7 +266,7 @@ it('normalizes sequence after deleting a middle term', function () {
 });
 
 it('does not allow CLOSED to ACTIVE via reopen path', function () {
-    $term = makeTerm([
+    $term = termLifecycleMakeTerm([
         'name' => 'Closed',
         'start_date' => '2026-09-01',
         'end_date' => '2026-12-15',

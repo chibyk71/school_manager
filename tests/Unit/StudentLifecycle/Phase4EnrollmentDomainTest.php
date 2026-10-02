@@ -384,7 +384,7 @@ function dropPhase4Schema(): void
     }
 }
 
-function phase4School(array $overrides = []): School
+function enrollmentPhase4School(array $overrides = []): School
 {
     $school = new School();
     $school->forceFill(array_merge([
@@ -395,7 +395,7 @@ function phase4School(array $overrides = []): School
     return $school->fresh();
 }
 
-function phase4User(array $overrides = []): User
+function enrollmentPhase4User(array $overrides = []): User
 {
     $user = new User();
     $user->forceFill(array_merge([
@@ -521,8 +521,8 @@ function phase4Admission(School $school, object $session, array $overrides = [])
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 it('persists biodata to Profile on finalization (not only Enrollment.meta)', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $service = app(EnrollmentService::class);
 
@@ -548,8 +548,8 @@ it('persists biodata to Profile on finalization (not only Enrollment.meta)', fun
 });
 
 it('reuses existing Profile matched by exact email and fills empty biodata slots only', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $existing = phase4Profile([
         'first_name' => 'Old',
@@ -577,8 +577,8 @@ it('reuses existing Profile matched by exact email and fills empty biodata slots
 });
 
 it('blocks finalization without email or explicit profile_id', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $service = app(EnrollmentService::class);
 
@@ -597,8 +597,8 @@ it('blocks finalization without email or explicit profile_id', function () {
 })->throws(ValidationException::class);
 
 it('allows finalization without email when staff supplies explicit profile_id', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $profile = phase4Profile([
         'first_name' => 'Child',
@@ -636,8 +636,8 @@ it('allows finalization without email when staff supplies explicit profile_id', 
 });
 
 it('rejects ambiguous identity when multiple profiles share the same email', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
 
     phase4Profile(['email' => 'dup@example.com', 'first_name' => 'A', 'last_name' => 'One']);
@@ -654,9 +654,9 @@ it('rejects ambiguous identity when multiple profiles share the same email', fun
 })->throws(ValidationException::class);
 
 it('creates separate Student capacity for same Profile in different schools', function () {
-    $schoolA = phase4School(['name' => 'School A']);
-    $schoolB = phase4School(['name' => 'School B']);
-    $actor = phase4User();
+    $schoolA = enrollmentPhase4School(['name' => 'School A']);
+    $schoolB = enrollmentPhase4School(['name' => 'School B']);
+    $actor = enrollmentPhase4User();
     $sessionA = phase4Session($schoolA);
     $sessionB = phase4Session($schoolB);
     $service = app(EnrollmentService::class);
@@ -683,8 +683,8 @@ it('creates separate Student capacity for same Profile in different schools', fu
 });
 
 it('reuses existing Student capacity within the same school (no duplicate Student)', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session1 = phase4Session($school, ['name' => 'Year 1']);
     $session2Id = (string) Str::uuid();
     DB::table('academic_sessions')->insert([
@@ -722,7 +722,7 @@ it('reuses existing Student capacity within the same school (no duplicate Studen
 });
 
 it('enforces unique school+profile at the database layer', function () {
-    $school = phase4School();
+    $school = enrollmentPhase4School();
     $profile = phase4Profile();
 
     $s1 = new Student();
@@ -743,8 +743,8 @@ it('enforces unique school+profile at the database layer', function () {
 })->throws(\Illuminate\Database\QueryException::class);
 
 it('rolls back enrollment activation if student link cannot be established', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $service = app(EnrollmentService::class);
 
@@ -771,8 +771,8 @@ it('rolls back enrollment activation if student link cannot be established', fun
 });
 
 it('reuses explicit profile_id and fills empty biodata slots only', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $profile = phase4Profile([
         'first_name' => 'Before',
@@ -803,8 +803,8 @@ it('reuses explicit profile_id and fills empty biodata slots only', function () 
 });
 
 it('materializes school requirement instances on start', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
 
     $def = new EnrollmentRequirementDefinition();
@@ -832,8 +832,8 @@ it('materializes school requirement instances on start', function () {
 // ─── Admission revalidation at finalize ───────────────────────────────────────
 
 it('finalizes successfully when linked Admission remains accepted', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $admission = phase4Admission($school, $session);
     $service = app(EnrollmentService::class);
@@ -857,8 +857,8 @@ it('finalizes successfully when linked Admission remains accepted', function () 
 });
 
 it('rejects finalization when Admission is no longer accepted', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $admission = phase4Admission($school, $session);
     $service = app(EnrollmentService::class);
@@ -878,9 +878,9 @@ it('rejects finalization when Admission is no longer accepted', function () {
 })->throws(ValidationException::class);
 
 it('rejects finalization when Admission school does not match Enrollment school', function () {
-    $schoolA = phase4School(['name' => 'School A']);
-    $schoolB = phase4School(['name' => 'School B']);
-    $actor = phase4User();
+    $schoolA = enrollmentPhase4School(['name' => 'School A']);
+    $schoolB = enrollmentPhase4School(['name' => 'School B']);
+    $actor = enrollmentPhase4User();
     $sessionA = phase4Session($schoolA);
     $sessionB = phase4Session($schoolB);
     $admission = phase4Admission($schoolB, $sessionB);
@@ -897,8 +897,8 @@ it('rejects finalization when Admission school does not match Enrollment school'
 })->throws(ValidationException::class);
 
 it('rejects starting a second Enrollment for the same Admission', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $admission = phase4Admission($school, $session);
     $service = app(EnrollmentService::class);
@@ -919,9 +919,9 @@ it('rejects starting a second Enrollment for the same Admission', function () {
 // ─── Requirement school integrity ────────────────────────────────────────────
 
 it('materializes only same-school requirement definitions', function () {
-    $schoolA = phase4School(['name' => 'A']);
-    $schoolB = phase4School(['name' => 'B']);
-    $actor = phase4User();
+    $schoolA = enrollmentPhase4School(['name' => 'A']);
+    $schoolB = enrollmentPhase4School(['name' => 'B']);
+    $actor = enrollmentPhase4User();
     $session = phase4Session($schoolA);
 
     $defA = new EnrollmentRequirementDefinition();
@@ -959,9 +959,9 @@ it('materializes only same-school requirement definitions', function () {
 });
 
 it('rejects satisfying a requirement whose definition belongs to another school', function () {
-    $schoolA = phase4School(['name' => 'A']);
-    $schoolB = phase4School(['name' => 'B']);
-    $actor = phase4User();
+    $schoolA = enrollmentPhase4School(['name' => 'A']);
+    $schoolB = enrollmentPhase4School(['name' => 'B']);
+    $actor = enrollmentPhase4User();
     $session = phase4Session($schoolA);
     $service = app(EnrollmentService::class);
 
@@ -998,9 +998,9 @@ it('rejects satisfying a requirement whose definition belongs to another school'
 })->throws(ValidationException::class);
 
 it('model-level guard rejects saving cross-school requirement instance', function () {
-    $schoolA = phase4School(['name' => 'A']);
-    $schoolB = phase4School(['name' => 'B']);
-    $actor = phase4User();
+    $schoolA = enrollmentPhase4School(['name' => 'A']);
+    $schoolB = enrollmentPhase4School(['name' => 'B']);
+    $actor = enrollmentPhase4User();
     $session = phase4Session($schoolA);
     $service = app(EnrollmentService::class);
 
@@ -1031,8 +1031,8 @@ it('model-level guard rejects saving cross-school requirement instance', functio
 })->throws(\InvalidArgumentException::class);
 
 it('required unsatisfied requirement blocks finalization', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
 
     $def = new EnrollmentRequirementDefinition();
@@ -1061,8 +1061,8 @@ it('required unsatisfied requirement blocks finalization', function () {
 })->throws(ValidationException::class);
 
 it('waived required requirement allows finalization', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
 
     $def = new EnrollmentRequirementDefinition();
@@ -1097,8 +1097,8 @@ it('waived required requirement allows finalization', function () {
 // ─── Transaction / rollback ───────────────────────────────────────────────────
 
 it('rejects invalid Admission before Profile/Student side effects (no partial state)', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $admission = phase4Admission($school, $session);
     $service = app(EnrollmentService::class);
@@ -1132,8 +1132,8 @@ it('rejects invalid Admission before Profile/Student side effects (no partial st
 // ─── Explicit Profile workflow + biodata persistence + identity protection ────
 
 it('supports explicit Profile linking via updateBiodata then finalizes without email', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $profile = phase4Profile([
         'first_name' => 'No',
@@ -1164,8 +1164,8 @@ it('supports explicit Profile linking via updateBiodata then finalizes without e
 });
 
 it('persists full permanent biodata and address onto Profile on finalization', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $service = app(EnrollmentService::class);
 
@@ -1205,8 +1205,8 @@ it('persists full permanent biodata and address onto Profile on finalization', f
 });
 
 it('does not silently overwrite established Profile date_of_birth on email match', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $existing = phase4Profile([
         'first_name' => 'Established',
@@ -1227,8 +1227,8 @@ it('does not silently overwrite established Profile date_of_birth on email match
 })->throws(ValidationException::class);
 
 it('allows confirmed identity overwrite when staff sets confirm_identity_update', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $existing = phase4Profile([
         'first_name' => 'Established',
@@ -1259,8 +1259,8 @@ it('allows confirmed identity overwrite when staff sets confirm_identity_update'
 });
 
 it('rejects silently switching an already-linked profile_id', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $p1 = phase4Profile(['email' => 'p1@example.com']);
     $p2 = phase4Profile(['email' => 'p2@example.com']);
@@ -1277,8 +1277,8 @@ it('rejects silently switching an already-linked profile_id', function () {
 })->throws(ValidationException::class);
 
 it('fills empty Profile slots without overwriting established non-critical phone', function () {
-    $school = phase4School();
-    $actor = phase4User();
+    $school = enrollmentPhase4School();
+    $actor = enrollmentPhase4User();
     $session = phase4Session($school);
     $existing = phase4Profile([
         'first_name' => 'Ada',
