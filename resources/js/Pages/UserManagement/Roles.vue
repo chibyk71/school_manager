@@ -17,7 +17,7 @@ import Button from 'primevue/button';
 import axios from 'axios';
 import { computed, reactive, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
-import type { BulkAction, ColumnDefinition, TableAction } from '@/types/datatables';
+import type { ColumnDefinition, TableAction } from '@/types/datatables';
 
 type EffectiveRoleRow = {
     id: string;
@@ -44,6 +44,15 @@ const props = defineProps<{
     };
     capabilities?: {
         can_manage?: boolean;
+        bulkActions?: Array<{
+            id: string;
+            label: string;
+            icon?: string;
+            requiresConfirmation?: boolean;
+            semantics?: string;
+        }>;
+        exportable?: boolean;
+        maxSelectionIds?: number;
     };
 }>();
 
@@ -54,7 +63,18 @@ const canManage = computed(() => props.capabilities?.can_manage !== false);
 
 const initialTableResponse = computed(() => {
     if (!props.meta || !props.columns?.length) return null;
-    return { data: props.data ?? [], columns: props.columns as any, meta: props.meta };
+    return {
+        data: props.data ?? [],
+        columns: props.columns as any,
+        meta: props.meta,
+        capabilities: props.capabilities
+            ? {
+                  bulkActions: props.capabilities.bulkActions,
+                  exportable: props.capabilities.exportable,
+                  maxSelectionIds: props.capabilities.maxSelectionIds,
+              }
+            : undefined,
+    };
 });
 
 const enhancedColumns = computed(() => [...(props.columns || [])]);
@@ -297,79 +317,7 @@ const roleActions = computed<TableAction<any>[]>(() => {
     ];
 });
 
-const bulkActions = computed<BulkAction[]>(() => {
-    if (!canManage.value) return [];
-    return [
-        {
-            label: 'Enable Selected',
-            icon: 'pi pi-check-circle',
-            severity: 'success',
-            action: 'enable',
-            confirm: {
-                message: (rows) =>
-                    `Enable ${rows.length} selected role(s)? They will become available for assignment again.`,
-                header: 'Enable roles',
-                acceptLabel: 'Enable',
-                acceptClass: 'p-button-success',
-            },
-            handler: async (rows) => {
-                try {
-                    const { data } = await axios.post(route('admin.roles.status.bulk'), {
-                        ids: rows.map((r) => r.id),
-                        disabled: false,
-                    });
-                    toast.add({
-                        severity: data.failed ? 'warn' : 'success',
-                        summary: data.message ?? 'Roles enabled',
-                        life: 4000,
-                    });
-                    router.reload({ only: ['data', 'meta'] });
-                } catch (e: any) {
-                    toast.add({
-                        severity: 'error',
-                        summary: 'Bulk enable failed',
-                        detail: e?.response?.data?.message ?? 'Unexpected error',
-                        life: 6000,
-                    });
-                }
-            },
-        },
-        {
-            label: 'Disable Selected',
-            icon: 'pi pi-ban',
-            severity: 'warn',
-            action: 'disable',
-            confirm: {
-                message: (rows) =>
-                    `Disable ${rows.length} selected role(s)? Existing assignments remain, but the roles will no longer be assignable.`,
-                header: 'Disable roles',
-                acceptLabel: 'Disable',
-                acceptClass: 'p-button-warning',
-            },
-            handler: async (rows) => {
-                try {
-                    const { data } = await axios.post(route('admin.roles.status.bulk'), {
-                        ids: rows.map((r) => r.id),
-                        disabled: true,
-                    });
-                    toast.add({
-                        severity: data.failed ? 'warn' : 'success',
-                        summary: data.message ?? 'Roles disabled',
-                        life: 4000,
-                    });
-                    router.reload({ only: ['data', 'meta'] });
-                } catch (e: any) {
-                    toast.add({
-                        severity: 'error',
-                        summary: 'Bulk disable failed',
-                        detail: e?.response?.data?.message ?? 'Unexpected error',
-                        life: 6000,
-                    });
-                }
-            },
-        },
-    ];
-});
+const bulkActionEndpoint = computed(() => (canManage.value ? '/admin/roles/status/bulk' : undefined));
 </script>
 
 <template>
@@ -400,7 +348,7 @@ const bulkActions = computed<BulkAction[]>(() => {
                 endpoint="/admin/roles"
                 :columns="enhancedColumns"
                 :initial-response="initialTableResponse"
-                :bulk-actions="bulkActions"
+                :bulk-action-endpoint="bulkActionEndpoint"
             />
         </div>
 

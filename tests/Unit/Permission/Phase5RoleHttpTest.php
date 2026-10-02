@@ -323,8 +323,8 @@ test('user without roles.manage cannot update status delete or sync permissions'
 
     $this->actingAs($user)
         ->postJson(route('admin.roles.status.bulk'), [
-            'ids' => [(string) $role->id],
-            'disabled' => true,
+            'selection' => ['type' => 'ids', 'ids' => [(string) $role->id]],
+            'action' => 'disable',
         ])
         ->assertForbidden();
 });
@@ -425,12 +425,12 @@ test('bulk status applies to local roles and reports per-id results', function (
 
     $response = $this->actingAs($user)
         ->postJson(route('admin.roles.status.bulk'), [
-            'ids' => [(string) $r1->id, (string) $r2->id],
-            'disabled' => true,
+            'selection' => ['type' => 'ids', 'ids' => [(string) $r1->id, (string) $r2->id]],
+            'action' => 'disable',
         ])
         ->assertOk();
 
-    expect($response->json('processed'))->toBe(2)
+    expect($response->json('succeeded'))->toBe(2)
         ->and($response->json('failed'))->toBe(0);
 
     expect($r1->fresh()->disabled)->toBeTrue();
@@ -447,12 +447,12 @@ test('bulk status mixed origins materializes inherited and updates local', funct
 
     $response = $this->actingAs($user)
         ->postJson(route('admin.roles.status.bulk'), [
-            'ids' => [(string) $tenant->id, (string) $local->id],
-            'disabled' => true,
+            'selection' => ['type' => 'ids', 'ids' => [(string) $tenant->id, (string) $local->id]],
+            'action' => 'disable',
         ])
         ->assertOk();
 
-    expect($response->json('processed'))->toBe(2);
+    expect($response->json('succeeded'))->toBe(2);
 
     // Tenant definition remains enabled; school gets a local disabled copy.
     expect($tenant->fresh()->disabled)->toBeFalse();
@@ -478,3 +478,75 @@ test('effective-role endpoints cannot bypass school scope via foreign id', funct
         ->getJson(route('admin.roles.permissions.show', $localB))
         ->assertStatus(422);
 });
+
+
+test('roles index returns DataTable capabilities for bulk actions when manage is granted', function () {
+    $user = p5HttpUser(['roles.view', 'roles.manage']);
+    p5HttpTenantRole('teacher', 'Teacher');
+
+    $response = $this->actingAs($user)
+        ->getJson(route('admin.roles.index'))
+        ->assertOk();
+
+    $caps = $response->json('capabilities.bulkActions');
+    expect($caps)->toBeArray()
+        ->and(collect($caps)->pluck('id')->all())->toContain('enable', 'disable');
+});
+
+test('roles index respects search and pagination', function () {
+    $user = p5HttpUser(['roles.view', 'roles.manage']);
+    p5HttpTenantRole('teacher', 'Teacher');
+    p5HttpTenantRole('accountant', 'Accountant');
+    p5HttpTenantRole('prefect', 'Prefect');
+
+    $search = $this->actingAs($user)
+        ->getJson(route('admin.roles.index', ['search' => 'teach', 'page' => 1, 'perPage' => 10]))
+        ->assertOk();
+
+    $names = collect($search->json('data'))->pluck('name')->all();
+    expect($names)->toContain('teacher')
+        ->and($names)->not->toContain('accountant');
+
+    $page = $this->actingAs($user)
+        ->getJson(route('admin.roles.index', ['page' => 1, 'perPage' => 2]))
+        ->assertOk();
+
+    expect($page->json('meta.perPage'))->toBe(2)
+        ->and($page->json('meta.total'))->toBeGreaterThanOrEqual(3)
+        ->and($page->json('meta.lastPage'))->toBeGreaterThanOrEqual(2)
+        ->and(count($page->json('data')))->toBe(2);
+});
+
+test('roles index without manage does not expose bulk capabilities', function () {
+    $user = p5HttpUser(['roles.view']);
+    p5HttpTenantRole('teacher', 'Teacher');
+
+    $response = $this->actingAs($user)
+        ->getJson(route('admin.roles.index'))
+        ->assertOk();
+
+    expect($response->json('capabilities.bulkActions') ?? [])->toBe([]);
+});
+
+test('bulk status with selection query resolves matching effective roles', function () {
+    $user = p5HttpUser(['roles.view', 'roles.manage']);
+    $school = p5HttpSchool('School A');
+    p5HttpLocalRole($school, 'prefect', 'Prefect');
+    p5HttpLocalRole($school, 'monitor', 'Monitor');
+    p5HttpSetSchoolContext($school);
+
+    $response = $this->actingAs($user)
+        ->postJson(route('admin.roles.status.bulk'), [
+            'selection' => [
+                'type' => 'query',
+                'query' => ['search' => 'pref'],
+            ],
+            'action' => 'disable',
+        ])
+        ->assertOk();
+
+    expect($response->json('succeeded'))->toBe(1);
+    expect(Role::query()->forSchool((string) $school->id)->where('name', 'prefect')->first()?->disabled)->toBeTrue();
+    expect(Role::query()->forSchool((string) $school->id)->where('name', 'monitor')->first()?->disabled)->toBeFalse();
+});
+
