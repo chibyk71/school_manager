@@ -80,7 +80,7 @@ function phase4BuildPrerequisites(): void
     });
 }
 
-function phase4School(string $name = 'School'): School
+function deAdminMakeSchool(string $name = 'School'): School
 {
     $id = (string) Str::uuid();
     DB::table('schools')->insert([
@@ -105,7 +105,7 @@ function phase4SeedGender(): DynamicEnum
 
 test('catalogue lists application definitions only', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     DynamicEnum::create([
         'school_id' => $school->id,
         'key' => 'profile.gender',
@@ -120,7 +120,7 @@ test('catalogue lists application definitions only', function () {
 
 test('detail exposes effective options with provenance', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
 
     $detail = $this->admin->detail('profile.gender', $school, true);
@@ -146,7 +146,7 @@ test('tenant option create and requiredness via admin service', function () {
 
 test('school cannot create required option via admin service', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
 
     $only = $this->admin->createSchoolOption($school, 'profile.gender', 'student', 'Student', [
         'is_required' => true,
@@ -156,7 +156,7 @@ test('school cannot create required option via admin service', function () {
 
 test('school override create and reset', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $override = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
     expect($override->label)->toBe('Boy')->and($override->school_id)->toBe($school->id);
 
@@ -169,8 +169,8 @@ test('school override create and reset', function () {
 
 test('school isolation: school A cannot update school B option', function () {
     phase4SeedGender();
-    $schoolA = phase4School('A');
-    $schoolB = phase4School('B');
+    $schoolA = deAdminMakeSchool('A');
+    $schoolB = deAdminMakeSchool('B');
     $optB = $this->admin->createSchoolOverride($schoolB, 'profile.gender', 'male', 'Boy B');
 
     expect(fn () => $this->admin->updateSchoolOption($schoolA, 'profile.gender', $optB, ['label' => 'Hacked']))
@@ -186,7 +186,7 @@ test('tenant required + school inactive still effective via detail', function ()
     phase4SeedGender();
     $tenant = DynamicEnumOption::whereNull('school_id')->where('value', 'male')->first();
     $this->admin->makeTenantOptionRequired('profile.gender', $tenant);
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $override = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
     $this->admin->deactivateSchoolOption($school, 'profile.gender', $override);
 
@@ -212,7 +212,7 @@ test('tenant definition presentation update', function () {
 
 test('school-only option deletion path', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $only = $this->admin->createSchoolOption($school, 'profile.gender', 'student', 'Student');
 
     $this->admin->deleteSchoolOption($school, 'profile.gender', $only);
@@ -248,7 +248,7 @@ test('cross-definition option UUID is rejected for school mutation', function ()
     $status = app(DynamicEnumLifecycleService::class)->ensureDefinition('admission.status', 'Admission status');
     app(DynamicEnumLifecycleService::class)->createTenantOption($status, 'pending', 'Pending');
 
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $genderOverride = $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
     $this->admin->createSchoolOverride($school, 'admission.status', 'pending', 'Waiting');
 
@@ -287,7 +287,7 @@ test('tenant definition presentation succeeds when payload includes tenant HTTP 
 
 test('school definition presentation partial update inherits tenant label on first create', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
 
     // Tenant baseline: label "Gender", description null (from seeder helper).
     $tenant = DynamicEnum::query()->whereNull('school_id')->where('key', 'profile.gender')->first();
@@ -313,7 +313,7 @@ test('school definition presentation partial update inherits tenant label on fir
 
 test('school definition presentation can override label while keeping tenant description baseline on create', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $tenant = DynamicEnum::query()->whereNull('school_id')->where('key', 'profile.gender')->first();
     $tenant->update(['label' => 'Gender', 'description' => 'Student gender']);
 
@@ -327,7 +327,7 @@ test('school definition presentation can override label while keeping tenant des
 
 test('detail capabilities follow application context not separate permission names', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
 
     // School context + manage → school options only (not tenant).
     $schoolCtx = $this->admin->detail('profile.gender', $school, true);
@@ -353,7 +353,7 @@ test('detail capabilities follow application context not separate permission nam
 
 test('school context exposes override and school actions not tenant mutations', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
 
     $detail = $this->admin->detail('profile.gender', $school, true);
     $male = collect($detail['options'])->firstWhere('value', 'male');
@@ -381,7 +381,7 @@ test('school context exposes override and school actions not tenant mutations', 
 
 test('school context override row exposes school actions and reset', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $tenantMale = DynamicEnumOption::whereNull('school_id')->where('value', 'male')->firstOrFail();
     $this->admin->updateTenantOption('profile.gender', $tenantMale, [
         'label' => 'Male',
@@ -414,7 +414,7 @@ test('school context override row exposes school actions and reset', function ()
 
 test('school-only option is deletable under school context', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $schoolOnly = $this->admin->createSchoolOption($school, 'profile.gender', 'student', 'Student');
 
     $detail = $this->admin->detail('profile.gender', $school, true);
@@ -428,7 +428,7 @@ test('school-only option is deletable under school context', function () {
 
 test('effective school catalogue returns options once with source indicators', function () {
     phase4SeedGender();
-    $school = phase4School('A');
+    $school = deAdminMakeSchool('A');
     $this->admin->createSchoolOverride($school, 'profile.gender', 'male', 'Boy');
     $this->admin->createSchoolOption($school, 'profile.gender', 'student', 'Student');
 

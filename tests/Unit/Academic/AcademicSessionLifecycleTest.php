@@ -111,7 +111,7 @@ function lifecycle(): AcademicSessionLifecycleService
     return app(AcademicSessionLifecycleService::class);
 }
 
-function makeSession(array $attrs = []): AcademicSession
+function lifecycleMakeSession(array $attrs = []): AcademicSession
 {
     $schoolId = test()->school->id;
     $id = (string) Str::uuid();
@@ -132,27 +132,27 @@ function makeSession(array $attrs = []): AcademicSession
 }
 
 it('operational data boundary returns false for all sessions in Phase 2', function () {
-    $session = makeSession();
+    $session = lifecycleMakeSession();
     expect(app(AcademicSessionOperationalDataBoundary::class)->hasOperationalData($session))->toBeFalse();
 });
 
 it('allows DRAFT sessions with incomplete dates', function () {
-    $session = makeSession(['start_date' => null, 'end_date' => null, 'state' => Draft::$name]);
+    $session = lifecycleMakeSession(['start_date' => null, 'end_date' => null, 'state' => Draft::$name]);
     expect($session->state)->toBeInstanceOf(Draft::class)
         ->and($session->start_date)->toBeNull();
 });
 
 it('ACTIVE and PAUSED are current; DRAFT PLANNED CLOSED are not', function () {
-    expect(makeSession(['state' => Active::$name])->isCurrentOperational())->toBeTrue();
-    expect(makeSession(['state' => Paused::$name])->isCurrentOperational())->toBeTrue();
-    expect(makeSession(['state' => Draft::$name])->isCurrentOperational())->toBeFalse();
-    expect(makeSession(['state' => Planned::$name])->isCurrentOperational())->toBeFalse();
-    expect(makeSession(['state' => Closed::$name])->isCurrentOperational())->toBeFalse();
+    expect(lifecycleMakeSession(['state' => Active::$name])->isCurrentOperational())->toBeTrue();
+    expect(lifecycleMakeSession(['state' => Paused::$name])->isCurrentOperational())->toBeTrue();
+    expect(lifecycleMakeSession(['state' => Draft::$name])->isCurrentOperational())->toBeFalse();
+    expect(lifecycleMakeSession(['state' => Planned::$name])->isCurrentOperational())->toBeFalse();
+    expect(lifecycleMakeSession(['state' => Closed::$name])->isCurrentOperational())->toBeFalse();
 });
 
 it('date mutation is governed by operational-data boundary not hard-coded state', function () {
-    expect(makeSession(['state' => Draft::$name])->canModifyStartDate())->toBeTrue();
-    expect(makeSession(['state' => Active::$name])->canModifyStartDate())->toBeTrue();
+    expect(lifecycleMakeSession(['state' => Draft::$name])->canModifyStartDate())->toBeTrue();
+    expect(lifecycleMakeSession(['state' => Active::$name])->canModifyStartDate())->toBeTrue();
 });
 
 it('has no set-current named route', function () {
@@ -194,17 +194,17 @@ it('rejects activation when another ACTIVE or PAUSED session exists', function (
     $method = new ReflectionMethod($service, 'assertNoCurrentOperationalSession');
     $method->setAccessible(true);
 
-    $active = makeSession(['state' => Active::$name]);
+    $active = lifecycleMakeSession(['state' => Active::$name]);
     expect(fn () => $method->invoke($service, $active->school_id, null))
         ->toThrow(ValidationException::class);
 
-    $paused = makeSession(['state' => Paused::$name, 'name' => 'Paused-1']);
+    $paused = lifecycleMakeSession(['state' => Paused::$name, 'name' => 'Paused-1']);
     expect(fn () => $method->invoke($service, $paused->school_id, null))
         ->toThrow(ValidationException::class);
 });
 
 it('activation never silently closes another session', function () {
-    $active = makeSession(['state' => Active::$name]);
+    $active = lifecycleMakeSession(['state' => Active::$name]);
     $service = lifecycle();
     $method = new ReflectionMethod($service, 'assertNoCurrentOperationalSession');
     $method->setAccessible(true);
@@ -223,13 +223,13 @@ it('rejects overlapping dates and allows adjacent ranges', function () {
     $method = new ReflectionMethod($service, 'assertNoDateOverlap');
     $method->setAccessible(true);
 
-    $a = makeSession([
+    $a = lifecycleMakeSession([
         'start_date' => '2025-01-01',
         'end_date' => '2025-06-30',
         'state' => Planned::$name,
         'name' => 'A',
     ]);
-    $overlap = makeSession([
+    $overlap = lifecycleMakeSession([
         'start_date' => '2025-06-15',
         'end_date' => '2025-12-31',
         'state' => Draft::$name,
@@ -240,7 +240,7 @@ it('rejects overlapping dates and allows adjacent ranges', function () {
     // Remove the overlapping peer so the adjacent case is isolated against A only
     DB::table('academic_sessions')->where('id', $overlap->id)->delete();
 
-    $adjacent = makeSession([
+    $adjacent = lifecycleMakeSession([
         'start_date' => '2025-07-01',
         'end_date' => '2025-12-31',
         'state' => Draft::$name,
@@ -250,7 +250,7 @@ it('rejects overlapping dates and allows adjacent ranges', function () {
 });
 
 it('updateDates refuses start_date change when operational data exists', function () {
-    $session = makeSession(['state' => Active::$name]);
+    $session = lifecycleMakeSession(['state' => Active::$name]);
 
     $this->app->instance(
         AcademicSessionOperationalDataBoundary::class,
@@ -279,7 +279,7 @@ it('lockSchoolSessions locks the school row', function () {
 });
 
 it('pause rejects when locked session is no longer ACTIVE', function () {
-    $session = makeSession([
+    $session = lifecycleMakeSession([
         'state' => Closed::$name,
         'start_date' => '2025-01-01',
         'end_date' => '2025-12-31',
@@ -291,7 +291,7 @@ it('pause rejects when locked session is no longer ACTIVE', function () {
 });
 
 it('resume rejects when locked session is no longer PAUSED', function () {
-    $session = makeSession([
+    $session = lifecycleMakeSession([
         'state' => Closed::$name,
         'start_date' => '2025-01-01',
         'end_date' => '2025-12-31',
@@ -303,7 +303,7 @@ it('resume rejects when locked session is no longer PAUSED', function () {
 });
 
 it('close rejects when locked session is neither ACTIVE nor PAUSED', function () {
-    $session = makeSession([
+    $session = lifecycleMakeSession([
         'state' => Draft::$name,
         'start_date' => '2025-01-01',
         'end_date' => '2025-12-31',

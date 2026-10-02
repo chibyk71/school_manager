@@ -184,7 +184,7 @@ function rollbackAddressApiSchema(): void
     Schema::dropIfExists('dynamic_enums');
 }
 
-function makeSchool(array $overrides = []): School
+function addressApiMakeSchool(array $overrides = []): School
 {
     return School::query()->create(array_merge([
         'id' => (string) Str::uuid(),
@@ -257,7 +257,7 @@ function assertAddressResourceShape(array $row): void
 }
 
 it('allows listing addresses when owner view is granted', function () {
-    $school = makeSchool();
+    $school = addressApiMakeSchool();
     $user = makeUserWithSchoolAbilities($school, ['view']);
 
     $school->addAddress(addressPayload(['address_line_1' => 'Listed Ave']), false);
@@ -272,7 +272,7 @@ it('allows listing addresses when owner view is granted', function () {
 });
 
 it('denies listing addresses without owner view', function () {
-    $school = makeSchool();
+    $school = addressApiMakeSchool();
     $user = makeUserWithSchoolAbilities($school, []);
 
     $this->actingAs($user)
@@ -281,7 +281,7 @@ it('denies listing addresses without owner view', function () {
 });
 
 it('allows create update delete set and unset primary with owner update', function () {
-    $school = makeSchool();
+    $school = addressApiMakeSchool();
     $user = makeUserWithSchoolAbilities($school, ['view', 'update']);
 
     $create = $this->actingAs($user)
@@ -326,7 +326,7 @@ it('allows create update delete set and unset primary with owner update', functi
 });
 
 it('denies mutations with view-only access', function () {
-    $school = makeSchool();
+    $school = addressApiMakeSchool();
     $user = makeUserWithSchoolAbilities($school, ['view']);
 
     $address = $school->addAddress(addressPayload(['address_line_1' => 'Read Only St']), false);
@@ -359,8 +359,8 @@ it('denies mutations with view-only access', function () {
 });
 
 it('cannot mutate an address belonging to another owner', function () {
-    $schoolA = makeSchool(['name' => 'School A']);
-    $schoolB = makeSchool(['name' => 'School B']);
+    $schoolA = addressApiMakeSchool(['name' => 'School A']);
+    $schoolB = addressApiMakeSchool(['name' => 'School B']);
     $user = makeUserWithSchoolAbilities($schoolA, ['view', 'update']);
 
     $foreign = $schoolB->addAddress(addressPayload(['address_line_1' => 'Foreign Rd']), false);
@@ -388,7 +388,7 @@ it('cannot mutate an address belonging to another owner', function () {
 });
 
 it('rejects unsupported owner aliases with validation error', function () {
-    $school = makeSchool();
+    $school = addressApiMakeSchool();
     $user = makeUserWithSchoolAbilities($school, ['view', 'update']);
 
     $this->actingAs($user)
@@ -398,7 +398,7 @@ it('rejects unsupported owner aliases with validation error', function () {
 });
 
 it('preserves primary invariants via API', function () {
-    $school = makeSchool();
+    $school = addressApiMakeSchool();
     $user = makeUserWithSchoolAbilities($school, ['view', 'update']);
 
     $a = $this->actingAs($user)
@@ -441,7 +441,7 @@ it('preserves primary invariants via API', function () {
 });
 
 it('resource representation omits polymorphic ownership fields', function () {
-    $school = makeSchool();
+    $school = addressApiMakeSchool();
     $user = makeUserWithSchoolAbilities($school, ['view', 'update']);
 
     $response = $this->actingAs($user)

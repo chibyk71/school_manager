@@ -159,7 +159,7 @@ beforeEach(function () {
     });
 });
 
-function makeSchool(string $name = 'School A'): School
+function phase2AppMakeSchool(string $name = 'School A'): School
 {
     $school = new School();
     $school->forceFill([
@@ -172,7 +172,7 @@ function makeSchool(string $name = 'School A'): School
     return $school;
 }
 
-function makeSession(School $school, string $name = '2026/2027'): AcademicSession
+function phase2AppMakeSession(School $school, string $name = '2026/2027'): AcademicSession
 {
     $session = new AcademicSession();
     $session->forceFill([
@@ -196,8 +196,8 @@ function makeUser(): User
 }
 
 it('creates public application without profile user or student', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
+    $school = phase2AppMakeSchool();
+    $session = phase2AppMakeSession($school);
     $service = app(StudentApplicationService::class);
 
     $app = $service->submitPublicApplication([
@@ -218,9 +218,9 @@ it('creates public application without profile user or student', function () {
 });
 
 it('rejects cross-school academic session', function () {
-    $schoolA = makeSchool('Alpha');
-    $schoolB = makeSchool('Beta');
-    $sessionB = makeSession($schoolB);
+    $schoolA = phase2AppMakeSchool('Alpha');
+    $schoolB = phase2AppMakeSchool('Beta');
+    $sessionB = phase2AppMakeSession($schoolB);
 
     $app = new StudentApplication();
     $app->fill([
@@ -235,8 +235,8 @@ it('rejects cross-school academic session', function () {
 });
 
 it('rejects cross-school school_section_id even if legacy column is set', function () {
-    $schoolA = makeSchool('Alpha');
-    $schoolB = makeSchool('Beta');
+    $schoolA = phase2AppMakeSchool('Alpha');
+    $schoolB = phase2AppMakeSchool('Beta');
 
     $sectionBId = (string) Str::uuid();
     DB::table('school_sections')->insert([
@@ -260,8 +260,8 @@ it('rejects cross-school school_section_id even if legacy column is set', functi
 });
 
 it('strips school_section_id from Phase 2 submission sanitize path', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
+    $school = phase2AppMakeSchool();
+    $session = phase2AppMakeSession($school);
     $service = app(StudentApplicationService::class);
 
     $app = $service->submitPublicApplication([
@@ -275,7 +275,7 @@ it('strips school_section_id from Phase 2 submission sanitize path', function ()
 });
 
 it('approves without creating student and records reviewer', function () {
-    $school = makeSchool();
+    $school = phase2AppMakeSchool();
     $reviewer = makeUser();
     $service = app(StudentApplicationService::class);
 
@@ -298,8 +298,8 @@ it('approves without creating student and records reviewer', function () {
 });
 
 it('public resource omits staff and internal fields', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
+    $school = phase2AppMakeSchool();
+    $session = phase2AppMakeSession($school);
 
     $app = StudentApplication::query()->create([
         'id' => (string) Str::uuid(),

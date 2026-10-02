@@ -59,7 +59,7 @@ beforeEach(function () {
         $table->softDeletes();
     });
 
-    // School uses Spatie LogsActivity — required when makeSchool() saves.
+    // School uses Spatie LogsActivity — required when periodUsageMakeSchool() saves.
     Schema::create('activity_log', function (Blueprint $table) {
         $table->bigIncrements('id');
         $table->string('log_name')->nullable();
@@ -160,7 +160,7 @@ beforeEach(function () {
     $this->app->singleton(AcademicPeriodUsageRegistry::class);
 });
 
-function makeSchool(string $name = 'School A'): School
+function periodUsageMakeSchool(string $name = 'School A'): School
 {
     $school = new School;
     $school->forceFill([
@@ -172,7 +172,7 @@ function makeSchool(string $name = 'School A'): School
     return $school->fresh();
 }
 
-function makeSession(School $school, string $name = '2026/2027'): AcademicSession
+function periodUsageMakeSession(School $school, string $name = '2026/2027'): AcademicSession
 {
     $session = new AcademicSession;
     $session->forceFill([
@@ -187,7 +187,7 @@ function makeSession(School $school, string $name = '2026/2027'): AcademicSessio
     return $session->fresh();
 }
 
-function makeTerm(AcademicSession $session, string $name = 'Term 1', int $ordinal = 1): Term
+function periodUsageMakeTerm(AcademicSession $session, string $name = 'Term 1', int $ordinal = 1): Term
 {
     $term = new Term;
     $term->forceFill([
@@ -204,8 +204,8 @@ function makeTerm(AcademicSession $session, string $name = 'Term 1', int $ordina
 }
 
 it('registers and unregisters a resource idempotently', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
+    $school = periodUsageMakeSchool();
+    $session = periodUsageMakeSession($school);
     $registry = app(AcademicPeriodUsageRegistry::class);
 
     $app = StudentApplication::query()->create([
@@ -232,9 +232,9 @@ it('registers and unregisters a resource idempotently', function () {
 });
 
 it('rejects cross-school session registration', function () {
-    $schoolA = makeSchool('A');
-    $schoolB = makeSchool('B');
-    $sessionB = makeSession($schoolB);
+    $schoolA = periodUsageMakeSchool('A');
+    $schoolB = periodUsageMakeSchool('B');
+    $sessionB = periodUsageMakeSession($schoolB);
 
     $app = new StudentApplication;
     $app->forceFill([
@@ -249,9 +249,9 @@ it('rejects cross-school session registration', function () {
 });
 
 it('session dependency query includes term-level rows', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
-    $term = makeTerm($session);
+    $school = periodUsageMakeSchool();
+    $session = periodUsageMakeSession($school);
+    $term = periodUsageMakeTerm($session);
     $registry = app(AcademicPeriodUsageRegistry::class);
 
     $resource = new class extends Model implements TracksAcademicUsageContract
@@ -306,8 +306,8 @@ it('session dependency query includes term-level rows', function () {
 });
 
 it('session lifecycle start-date lock uses registry boundary', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
+    $school = periodUsageMakeSchool();
+    $session = periodUsageMakeSession($school);
     $session->forceFill(['state' => SessionPlanned::$name])->save();
 
     StudentApplication::query()->create([
@@ -326,9 +326,9 @@ it('session lifecycle start-date lock uses registry boundary', function () {
 });
 
 it('term delete is blocked when registry has term usage', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
-    $term = makeTerm($session);
+    $school = periodUsageMakeSchool();
+    $session = periodUsageMakeSession($school);
+    $term = periodUsageMakeTerm($session);
     $registry = app(AcademicPeriodUsageRegistry::class);
 
     AcademicPeriodUsage::query()->create([
@@ -347,8 +347,8 @@ it('term delete is blocked when registry has term usage', function () {
 });
 
 it('session delete is blocked when dependencies exist', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
+    $school = periodUsageMakeSchool();
+    $session = periodUsageMakeSession($school);
 
     StudentApplication::query()->create([
         'id' => (string) Str::uuid(),
@@ -365,9 +365,9 @@ it('session delete is blocked when dependencies exist', function () {
 });
 
 it('session delete is blocked while terms exist independent of registry', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
-    makeTerm($session);
+    $school = periodUsageMakeSchool();
+    $session = periodUsageMakeSession($school);
+    periodUsageMakeTerm($session);
 
     expect(app(AcademicPeriodUsageRegistry::class)->hasSessionDependencies($session))->toBeFalse();
 
@@ -376,8 +376,8 @@ it('session delete is blocked while terms exist independent of registry', functi
 });
 
 it('force delete of application removes dependency', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
+    $school = periodUsageMakeSchool();
+    $session = periodUsageMakeSession($school);
 
     $app = StudentApplication::query()->create([
         'id' => (string) Str::uuid(),
@@ -394,8 +394,8 @@ it('force delete of application removes dependency', function () {
 });
 
 it('admission and enrollment create register session-level usage', function () {
-    $school = makeSchool();
-    $session = makeSession($school);
+    $school = periodUsageMakeSchool();
+    $session = periodUsageMakeSession($school);
 
     Admission::query()->create([
         'id' => (string) Str::uuid(),
@@ -416,10 +416,10 @@ it('admission and enrollment create register session-level usage', function () {
 });
 
 it('cross-school isolation: school B session does not see school A usage', function () {
-    $schoolA = makeSchool('A');
-    $schoolB = makeSchool('B');
-    $sessionA = makeSession($schoolA, 'A-26');
-    $sessionB = makeSession($schoolB, 'B-26');
+    $schoolA = periodUsageMakeSchool('A');
+    $schoolB = periodUsageMakeSchool('B');
+    $sessionA = periodUsageMakeSession($schoolA, 'A-26');
+    $sessionB = periodUsageMakeSession($schoolB, 'B-26');
 
     StudentApplication::query()->create([
         'id' => (string) Str::uuid(),
