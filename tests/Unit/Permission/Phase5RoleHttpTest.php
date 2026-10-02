@@ -13,8 +13,6 @@
  * - no Gate::before bypass; AuthorizationService is authoritative
  */
 
-uses(Tests\TestCase::class);
-
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\School;
