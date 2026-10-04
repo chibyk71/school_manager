@@ -13,7 +13,21 @@
 
 pest()->extend(Tests\TestCase::class)
     ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
-    ->in('Feature');
+    ->in('Feature/Auth', 'Feature/Profile', 'Feature/StudentLifecycle');
+
+/*
+| Feature root smoke tests that need the full application schema.
+*/
+pest()->extend(Tests\TestCase::class)
+    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Feature/ExampleTest.php');
+
+/*
+| Documentation Feature tests use a focused schema (no full migrate).
+| SQLite migrate is broken by an unrelated devices migration (drop column vs index).
+*/
+pest()->extend(Tests\TestCase::class)
+    ->in('Feature/Documentation');
 
 /*
 | DataTable unit tests that need Schema / Eloquent without full migrations.
@@ -28,13 +42,6 @@ pest()->extend(Tests\TestCase::class)
 */
 pest()->extend(Tests\TestCase::class)
     ->in('Unit/Permission');
-
-/*
-| Documentation module tests — focused schema (no full migrate).
-*/
-pest()->extend(Tests\TestCase::class)
-    ->in('Unit/Documentation');
-
 
 /*
 |--------------------------------------------------------------------------
