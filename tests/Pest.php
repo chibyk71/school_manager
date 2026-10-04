@@ -30,6 +30,13 @@ pest()->extend(Tests\TestCase::class)
     ->in('Unit/Permission');
 
 /*
+| Documentation module tests — focused schema (no full migrate).
+*/
+pest()->extend(Tests\TestCase::class)
+    ->in('Unit/Documentation');
+
+
+/*
 |--------------------------------------------------------------------------
 | Expectations
 |--------------------------------------------------------------------------
