@@ -30,6 +30,7 @@
         "spatie/laravel-database-mail-templates": "^3.7.1",
         "spatie/laravel-medialibrary": "^11.17.7",
         "spatie/laravel-schemaless-attributes": "^2.5",
+        "stechstudio/laravel-docent": "^1.7",
         "tightenco/ziggy": "^2.6.0"
     },
     "require-dev": {
