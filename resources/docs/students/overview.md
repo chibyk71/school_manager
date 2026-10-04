@@ -2,10 +2,11 @@
 title: Students overview
 description: How student records are organised in School Manager.
 order: 1
-keywords:
-  - students
-  - student list
-  - student records
+search:
+  keywords:
+    - students
+    - student list
+    - student records
 ---
 
 # Students overview

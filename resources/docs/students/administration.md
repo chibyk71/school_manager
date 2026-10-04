@@ -3,10 +3,11 @@ title: Student administration notes
 description: Administrative guidance for staff who can view and manage student records.
 order: 3
 authorize: student.view
-keywords:
-  - student administration
-  - student permissions
-  - manage students
+search:
+  keywords:
+    - student administration
+    - student permissions
+    - manage students
 ---
 
 # Student administration notes

@@ -2,10 +2,11 @@
 title: Introduction
 description: How School Manager documentation is organised and who can see what.
 order: 1
-keywords:
-  - introduction
-  - getting started
-  - help
+search:
+  keywords:
+    - introduction
+    - getting started
+    - help
 ---
 
 # Introduction

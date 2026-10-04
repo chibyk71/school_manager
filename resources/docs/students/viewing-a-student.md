@@ -2,10 +2,11 @@
 title: Viewing a student
 description: Open and read a student profile safely.
 order: 2
-keywords:
-  - view student
-  - student profile
-  - student details
+search:
+  keywords:
+    - view student
+    - student profile
+    - student details
 ---
 
 # Viewing a student

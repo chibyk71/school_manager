@@ -2,10 +2,11 @@
 title: School Manager Documentation
 description: Internal guides for using School Manager day to day.
 order: 0
-keywords:
-  - help
-  - documentation
-  - school manager
+search:
+  keywords:
+    - help
+    - documentation
+    - school manager
 layout: landing
 ---
 

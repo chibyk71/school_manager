@@ -10,7 +10,7 @@ User-facing documentation is separate from the engineering docs in this `docs/` 
 ## Source of truth
 
 - Markdown files under `resources/docs/` are committed to Git.
-- Do **not** use Docent’s optional database authoring CMS for product docs.
+- Do **not** use Docent’s optional database authoring CMS for product docs (`docent.database.enabled` stays `false`).
 - Do **not** invent documentation-specific roles or permissions.
 
 ## Structure
@@ -34,9 +34,24 @@ resources/docs/
 Common keys:
 
 - `title`, `description`, `order`
-- `keywords` — search metadata
+- `search.keywords` — search ranking aliases (not rendered)
 - `authorize: student.view` — page requires an existing School Manager permission name
 - `layout: landing` — optional chrome variant
+
+Example:
+
+```yaml
+---
+title: Viewing a student
+description: Open and read a student profile safely.
+order: 2
+search:
+  keywords:
+    - view student
+    - student profile
+authorize: student.view
+---
+```
 
 Use **real** permission names from the permission catalogue (`permissions.name`). Do not invent `documentation.*` permissions.
 
