@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-label="Student profile layout placeholder">
+  <rect width="640" height="360" fill="#f8fafc"/>
+  <rect x="24" y="24" width="160" height="160" rx="12" fill="#e2e8f0"/>
+  <rect x="208" y="32" width="280" height="24" rx="6" fill="#cbd5e1"/>
+  <rect x="208" y="72" width="200" height="16" rx="4" fill="#e2e8f0"/>
+  <rect x="208" y="100" width="240" height="16" rx="4" fill="#e2e8f0"/>
+  <rect x="24" y="208" width="592" height="120" rx="12" fill="#eef2ff"/>
+  <text x="40" y="240" font-family="system-ui,sans-serif" font-size="14" fill="#475569">Student profile layout (placeholder)</text>
+  <text x="40" y="268" font-family="system-ui,sans-serif" font-size="12" fill="#64748b">No live student data is shown in documentation screenshots.</text>
+</svg>
