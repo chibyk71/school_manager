@@ -52,6 +52,13 @@ return Application::configure(basePath: dirname(__DIR__))
             ->onOneServer()
             ->appendOutputTo(storage_path('logs/enrollment-reminders.log'));
 
+        // Documentation insights: prune events older than configured retention
+        $schedule->command('docent:insights:prune')
+            ->dailyAt('03:15')
+            ->withoutOverlapping()
+            ->onOneServer()
+            ->appendOutputTo(storage_path('logs/docent-insights-prune.log'));
+
         // $schedule->job(new App\Jobs\GenerateMonthlyStudentStatement)
         //  ->monthlyOn(1, '09:00') // 1st of every month at 9 AM
         //  ->name('Generate Monthly Statements')

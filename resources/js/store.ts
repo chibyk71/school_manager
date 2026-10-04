@@ -440,7 +440,7 @@ export const menuItems = ref<SidebarMenu>([
     {
         header: "Help",
         items: [
-            { title: "Documentation", icon: "ti ti-file-text", link: "https://preschool.dreamstechnologies.com/documentation/index.html" },
+            { title: "Documentation", icon: "ti ti-file-text", link: route("docent.docs.home") },
             { title: "Changelog", icon: "ti ti-exchange", link: "https://preschool.dreamstechnologies.com/documentation/changelog.html", badge: "v1.8.3" },
         ],
     },
