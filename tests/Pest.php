@@ -1,5 +1,6 @@
 <?php
 
+require_once __DIR__.'/Stub/ZipArchiveStub.php';
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -28,6 +29,12 @@ pest()->extend(Tests\TestCase::class)
 */
 pest()->extend(Tests\TestCase::class)
     ->in('Feature/Documentation');
+
+/*
+| Settings infrastructure (Phase 1). Focused schema — no full migrate.
+*/
+pest()->extend(Tests\TestCase::class)
+    ->in('Feature/Settings');
 
 /*
 | DataTable unit tests that need Schema / Eloquent without full migrations.
