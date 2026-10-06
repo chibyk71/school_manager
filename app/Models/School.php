@@ -15,7 +15,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use Laratrust\Models\Team;
-use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\MediaLibrary\HasMedia;
@@ -46,7 +45,7 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
  * - Polymorphic multi-address management via HasAddress trait (primary address + additional addresses)
  * - Spatie Media Library for logos, favicons, and dark-mode variants (single-file collections with fallbacks)
  * - Activity logging for audit trails
- * - Settings storage via HasSettings trait
+ * - Settings: OI Laravel Settings infrastructure (Phase 1+)
  * - Advanced table querying (filtering, sorting, global search) via HasTableQuery, Filterable, Sortable
  * - Automatic unique slug generation on creation
  * - Extra data merging into JSON 'data' column for forward compatibility
@@ -68,7 +67,6 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
 class School extends Team implements HasMedia
 {
     use HasFactory;
-    use HasSettings;
     use HasUuids;
     use HasAddress;              // Polymorphic multi-address management (primary + additional)
     use BelongsToSections;
