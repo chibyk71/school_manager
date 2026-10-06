@@ -69,20 +69,63 @@ class AppServiceProvider extends ServiceProvider
             \App\Policies\DynamicEnumPolicy::class
         );
 
+        // School Manager permission identities (permissions.name ∪ catalogue).
+        // Resolved once per process and shared by the Gate bridge and Docent.
+        // The catalogue is the developer-owned source of truth; live DB rows are
+        // merged so seeded or runtime-inserted permissions are included without
+        // shrinking the surface when the table is only partially populated.
+        $permissionAbilities = null;
+        $resolvePermissionAbilities = function () use (&$permissionAbilities): array {
+            if ($permissionAbilities !== null) {
+                return $permissionAbilities;
+            }
+
+            $names = [];
+
+            foreach (glob(database_path('seeders/Settings/permission_catalogue_part*.php')) ?: [] as $file) {
+                $rows = require $file;
+                if (! is_array($rows)) {
+                    continue;
+                }
+                foreach ($rows as $row) {
+                    if (is_array($row) && isset($row['name']) && is_string($row['name'])) {
+                        $names[] = $row['name'];
+                    }
+                }
+            }
+
+            try {
+                $fromDb = Permission::query()
+                    ->orderBy('name')
+                    ->pluck('name')
+                    ->all();
+                if ($fromDb !== []) {
+                    $names = array_merge($names, $fromDb);
+                }
+            } catch (\Throwable) {
+                // Table may not exist yet (migrations / focused test schema).
+            }
+
+            $names = array_values(array_unique($names));
+            sort($names);
+
+            return $permissionAbilities = $names;
+        };
+
         // Bridge Docent's Gate-backed page authorization to the application
-        // Authorization contract. Docent asks Gate::forUser($user)->allows($ability);
-        // we resolve permission identities through AuthorizationService so
-        // tenant/school roles, direct grants, shadowing, and disabled roles
-        // remain authoritative. Return null for non-permission abilities so
-        // Laravel continues to policies / defined gates.
-        Gate::before(function ($user, string $ability, array $arguments = []) {
+        // Authorization contract — but only for known School Manager permission
+        // identities. Docent asks Gate::forUser($user)->allows($ability); we
+        // resolve those through AuthorizationService so tenant/school roles,
+        // direct grants, shadowing, and disabled roles remain authoritative.
+        // Any other ability (including dotted non-permission Gate names) returns
+        // null so Laravel continues to policies / defined gates unchanged.
+        Gate::before(function ($user, string $ability, array $arguments = []) use ($resolvePermissionAbilities) {
             if (! $user instanceof User) {
                 return null;
             }
 
-            // Only intercept permission-style ability names (catalogue identities).
-            // Policies use model class abilities; leave those alone.
-            if (! str_contains($ability, '.')) {
+            $permissions = $resolvePermissionAbilities();
+            if ($permissions === [] || ! in_array($ability, $permissions, true)) {
                 return null;
             }
 
@@ -93,40 +136,9 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Dynamic ability surface for Docent validation / :::can / authorize:
-        // Prefer live permissions.name rows; fall back to the developer-owned
-        // catalogue PHP parts so docent:check works before seed.
+        // same authoritative permission identity list as the Gate bridge.
         if (class_exists(Docent::class)) {
-            Docent::abilities(function (): array {
-                try {
-                    $names = Permission::query()
-                        ->orderBy('name')
-                        ->pluck('name')
-                        ->all();
-                    if ($names !== []) {
-                        return $names;
-                    }
-                } catch (\Throwable) {
-                    // Table may not exist yet.
-                }
-
-                $fromCatalogue = [];
-                foreach (glob(database_path('seeders/Settings/permission_catalogue_part*.php')) ?: [] as $file) {
-                    $rows = require $file;
-                    if (! is_array($rows)) {
-                        continue;
-                    }
-                    foreach ($rows as $row) {
-                        if (is_array($row) && isset($row['name']) && is_string($row['name'])) {
-                            $fromCatalogue[] = $row['name'];
-                        }
-                    }
-                }
-
-                $fromCatalogue = array_values(array_unique($fromCatalogue));
-                sort($fromCatalogue);
-
-                return $fromCatalogue;
-            });
+            Docent::abilities($resolvePermissionAbilities);
         }
 
         Vite::prefetch(concurrency: 3);
