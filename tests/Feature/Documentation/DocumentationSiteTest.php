@@ -337,9 +337,13 @@ it('does not leak restricted pages through navigation for unauthorized users', f
 it('hides restricted conditional content from unauthorized users', function () {
     $user = docsUser();
 
+    // Assert against rendered HTML text (not Markdown source). Bold markers
+    // are not present after CommonMark render, so checking the source string
+    // would pass even if the :::can block leaked.
     $this->docs()->as($user)->page('students/overview')
         ->assertVisible()
-        ->assertDontSee('Administrators with **View Student** access')
+        ->assertDontSee('Administrators with')
+        ->assertDontSee('can open individual profiles')
         ->assertSee('If you cannot open student profiles');
 });
 
@@ -390,4 +394,29 @@ it('exercises AuthorizationService for documentation abilities via Gate', functi
     docsGrantDirect($user, 'student.view');
     expect($auth->allows($user, 'student.view'))->toBeTrue();
     expect(\Illuminate\Support\Facades\Gate::forUser($user)->allows('student.view'))->toBeTrue();
+});
+
+it('does not intercept non-permission dotted Gate abilities', function () {
+    // Regression: Gate::before must only delegate known School Manager
+    // permission identities. A dotted ability that is not in the permission
+    // catalogue must reach its normal Gate definition (not AuthorizationService).
+    \Illuminate\Support\Facades\Gate::define(
+        'custom.dotted.non_permission',
+        fn ($user) => true
+    );
+
+    $user = docsUser();
+
+    // AuthorizationService would deny this identity (it is not a permission).
+    // If the bridge intercepts it, allows() returns false and this fails.
+    expect(\Illuminate\Support\Facades\Gate::forUser($user)->allows('custom.dotted.non_permission'))
+        ->toBeTrue();
+
+    // Permission identities still go through AuthorizationService.
+    expect(\Illuminate\Support\Facades\Gate::forUser($user)->allows('student.view'))
+        ->toBeFalse();
+
+    docsGrantDirect($user, 'student.view');
+    expect(\Illuminate\Support\Facades\Gate::forUser($user)->allows('student.view'))
+        ->toBeTrue();
 });

@@ -127,16 +127,28 @@ export const menuItems = ref<SidebarMenu>([
                     { title: "Return", link: "library-return.html" },
                 ],
             },
+            { title: "Sports", icon: "ti ti-run", link: "sports.html" },
+            { title: "Players", icon: "ti ti-play-football", link: "players.html" },
             {
-                title: "Sports & Athletes",
-                icon: "ti ti-play-football",
+                title: "Hostel",
+                icon: "ti ti-building-fortress",
                 submenu: [
-                    { title: "Sports List", link: "sports.html" },
-                    { title: "Players", link: "players.html" },
+                    { title: "Hostel List", link: "hostel-list.html" },
+                    { title: "Hostel Rooms", link: "hostel-rooms.html" },
+                    { title: "Room Type", link: "hostel-room-type.html" },
                 ],
             },
-            { title: "Hostel", icon: "ti ti-building-cottage", link: "hostel-list.html" },
-            { title: "Transport", icon: "ti ti-bus", link: "transport.html" },
+            {
+                title: "Transport",
+                icon: "ti ti-bus",
+                submenu: [
+                    { title: "Routes", link: "transport-routes.html" },
+                    { title: "Pickup Points", link: "transport-pickup-points.html" },
+                    { title: "Vehicle Drivers", link: "transport-vehicle-drivers.html" },
+                    { title: "Vehicle", link: "transport-vehicle.html" },
+                    { title: "Assign Vehicle", link: "transport-assign-vehicle.html" },
+                ],
+            },
         ],
     },
     {
@@ -144,7 +156,7 @@ export const menuItems = ref<SidebarMenu>([
         items: [
             { title: "Staffs", icon: "ti ti-users-group", link: "staffs.html" },
             { title: "Departments", icon: "ti ti-layout-distribute-horizontal", link: "departments.html" },
-            { title: "Designation", icon: "ti ti-user-cog", link: "designation.html" },
+            { title: "Designation", icon: "ti ti-user-exclamation", link: "designation.html" },
             {
                 title: "Attendance",
                 icon: "ti ti-calendar-share",
@@ -159,114 +171,148 @@ export const menuItems = ref<SidebarMenu>([
                 icon: "ti ti-calendar-stats",
                 submenu: [
                     { title: "List of leaves", link: "list-leaves.html" },
-                    { title: "Approve Leave", link: "approve-leave.html" },
+                    { title: "Approve Request", link: "approve-request.html" },
                 ],
             },
-            { title: "Holidays", icon: "ti ti-calendar-event", link: "holidays.html" },
-            { title: "Payroll", icon: "ti ti-coin", link: "payroll.html" },
+            { title: "Holidays", icon: "ti ti-briefcase", link: "holidays.html" },
+            { title: "Payroll", icon: "ti ti-moneybag", link: "payroll.html" },
         ],
     },
     {
-        header: "Accounts",
+        header: "Finance & Accounts",
         items: [
-            { title: "Accounts Overview", icon: "ti ti-chart-bar", link: "accounts-overview.html" },
             {
-                title: "Expenses",
-                icon: "ti ti-moneybag",
+                title: "Accounts",
+                icon: "ti ti-swipe",
                 submenu: [
                     { title: "Expenses", link: "expenses.html" },
-                    { title: "Expense Category", link: "expense-category.html" },
+                    { title: "Expense Category", link: "expenses-category.html" },
+                    { title: "Income", link: "accounts-income.html" },
+                    { title: "Invoices", link: "accounts-invoices.html" },
+                    { title: "Invoice View", link: "invoice.html" },
+                    { title: "Transactions", link: "accounts-transactions.html" },
                 ],
             },
-            { title: "Income", icon: "ti ti-circle-plus", link: "income.html" },
-            { title: "Invoices", icon: "ti ti-file-invoice", link: "invoices.html" },
-            { title: "Invoice View", icon: "ti ti-file-info", link: "invoice-view.html" },
-            { title: "Transactions", icon: "ti ti-transfer", link: "transactions.html" },
+        ],
+    },
+    {
+        header: "Announcements",
+        items: [
+            { title: "NoticeBoard", icon: "ti ti-clipboard-data", link: "notice-board.html" },
+            { title: "Events", icon: "ti ti-calendar-question", link: "events.html" },
         ],
     },
     {
         header: "Reports",
         items: [
-            { title: "Attendance Report", icon: "ti ti-file-analytics", link: "attendance-report.html" },
-            { title: "Class Report", icon: "ti ti-report-analytics", link: "class-report.html" },
-            { title: "Student Report", icon: "ti ti-report", link: "student-report.html" },
-            { title: "Grade Report", icon: "ti ti-file-certificate", link: "grade-report.html" },
-            { title: "Leave Report", icon: "ti ti-file-time", link: "leave-report.html" },
-            { title: "Fees Report", icon: "ti ti-report-money", link: "fees-report.html" },
+            { title: "AttendanceReport", icon: "ti ti-calendar-due", link: "attendance-report.html" },
+            { title: "Class Report", icon: "ti ti-graph", link: "class-report.html" },
+            { title: "StudentReport", icon: "ti ti-chart-infographic", link: "student-report.html" },
+            { title: "GradeReport", icon: "ti ti-calendar-x", link: "grade-report.html" },
+            { title: "Leave Report", icon: "ti ti-line", link: "leave-report.html" },
+            { title: "Fees Report", icon: "ti ti-mask", link: "fees-report.html" },
         ],
     },
     {
-        header: "User Management Pages",
+        header: "Membership",
         items: [
+            { title: "MembershipPlans", icon: "ti ti-user-plus", link: "membership-plans.html" },
+            { title: "MembershipAddons", icon: "ti ti-cone-plus", link: "membership-addons.html" },
+            { title: "Transactions", icon: "ti ti-file-power", link: "membership-transactions.html" },
+        ],
+    },
+    {
+        header: "Content",
+        items: [
+            { title: "Pages", icon: "ti ti-page-break", link: "pages.html" },
             {
-                title: "Profile",
-                icon: "ti ti-user-circle",
+                title: "Blog",
+                icon: "ti ti-brand-blogger",
                 submenu: [
-                    { title: "Student Profile", link: "student-profile.html" },
-                    { title: "Teacher Profile", link: "teacher-profile.html" },
-                    { title: "Parent Profile", link: "parent-profile.html" },
+                    { title: "All Blogs", link: "blog.html" },
+                    { title: "Categories", link: "blog-categories.html" },
+                    { title: "Comments", link: "blog-comments.html" },
+                    { title: "Tags", link: "blog-tags.html" },
                 ],
             },
-        ],
-    },
-    {
-        header: "Pages",
-        items: [
             {
-                title: "Authentication",
-                icon: "ti ti-lock",
+                title: "Location",
+                icon: "ti ti-map-pin-search",
                 submenu: [
-                    { title: "Login", link: "login.html" },
-                    { title: "Register", link: "register.html" },
-                    { title: "Forgot Password", link: "forgot-password.html" },
-                    { title: "Reset Password", link: "reset-password.html" },
+                    { title: "Countries", link: "countries.html" },
+                    { title: "States", link: "states.html" },
+                    { title: "Cities", link: "cities.html" },
                 ],
             },
-            { title: "Blank Page", icon: "ti ti-file", link: "blank-page.html" },
-            { title: "Coming Soon", icon: "ti ti-file-time", link: "coming-soon.html" },
-            { title: "Under Maintenance", icon: "ti ti-file-broken", link: "under-maintenance.html" },
-            { title: "Error Pages", icon: "ti ti-file-alert", link: "error-404.html" },
-        ],
-    },
-    {
-        header: " annui",
-        items: [
-            {
-                title: "Announcements",
-                icon: "ti ti-speakerphone",
-                link: "announcements.html",
-            },
-            {
-                title: "Events",
-                icon: "ti ti-calendar-check",
-                link: "events.html",
-            },
-        ],
-    },
-    {
-        header: "Settings",
-                items: [
-            { title: "General Settings", icon: "ti ti-settings", link: "general-settings.html" },
-            { title: "School Settings", icon: "ti ti-building-community", link: "school-settings.html" },
-            { title: "Payment Settings", icon: "ti ti-credit-card", link: "payment-settings.html" },
-            { title: "Academic Settings", icon: "ti ti-school", link: "academic-settings.html" },
+            { title: "Testimonials", icon: "ti ti-quote", link: "testimonials.html" },
+            { title: "FAQ", icon: "ti ti-question-mark", link: "faq.html" },
         ],
     },
     {
         header: "Support",
         items: [
+            { title: "ContactMessages", icon: "ti ti-message", link: "contact-messages.html" },
+            { title: "Tickets", icon: "ti ti-ticket", link: "tickets.html" },
+        ],
+    },
+    {
+        header: "Pages",
+        items: [
+            { title: "Profile", icon: "ti ti-user", link: "/profile" },
+            { title: "BlankPage", icon: "ti ti-brand-nuxt", link: "blank-page.html" },
+            { title: "Coming Soon", icon: "ti ti-file", link: "coming-soon.html" },
+            { title: "UnderMaintenance", icon: "ti ti-moon-2", link: "under-maintenance.html" },
+        ],
+    },
+    {
+        header: "Settings",
+        items: [
             {
-                title: "Tickets",
-                icon: "ti ti-ticket",
+                title: "Website Settings",
+                icon: "ti ti-device-laptop",
                 submenu: [
-                    { title: "Ticket List", link: "tickets.html" },
-                    { title: "Ticket Details", link: "ticket-details.html" },
+                    { title: "Company Settings", link: "company-settings.html" },
+                    { title: "Localization", link: route('website.localization') },
+                ],
+            },
+            // {
+            //     title: "App Settings",
+            //     icon: "ti ti-apps",
+            //     submenu: [
+            //         { title: "Invoice Settings", link: "invoice-settings.html" },
+            //         { title: "Custom Fields", link: "custom-fields.html" },
+            //     ],
+            // },
+            {
+                title: "System Settings",
+                icon: "ti ti-file-symlink",
+                submenu: [
+                    { title: "Email Settings", link: route('system.email') },
+                    { title: "Email Templates", link: route("system.email.template") },
+                    { title: "SMS Settings", link: route("system.sms") },
+                    { title: "OTP", link: route("system.otp") },
+                    { title: "GDPR Cookies", link: route('system.gdpr') },
+                    {title: "Custom Fields", link: route('website.custom-field')},
                 ],
             },
             {
-                title: "Contact Messages",
-                icon: "ti ti-messages",
-                link: "contact-messages.html",
+                title: "Financial Settings",
+                icon: "ti ti-zoom-money",
+                submenu: [
+                    { title: "Payment Gateways", link: route("settings.payment-gate-ways") },
+                    { title: "Tax Rates", link: route("settings.tax") },
+                    {title: "Fees Settings", link: route('settings.fees')},
+                    {title: "Invoice Setting", link: route("website.invoice")},
+                ],
+            },
+            {
+                title: "Other Settings",
+                icon: "ti ti-flag-cog",
+                submenu: [
+                    { title: "Storage", link: route('settings.storage') },
+                    {title: "Maintainance", link: "/settings/others/maintainance"},
+                    { title: "Ban IP Address", link: "ban-ip-address.html" },
+                ],
             },
         ],
     },
@@ -275,17 +321,19 @@ export const menuItems = ref<SidebarMenu>([
         items: [
             {
                 title: "Base UI",
-                icon: "ti ti-vector-bezier",
+                icon: "ti ti-hierarchy-2",
                 submenu: [
                     { title: "Alerts", link: "ui-alerts.html" },
-                    { title: "Apexcharts", link: "ui-apexcharts.html" },
+                    { title: "Accordion", link: "ui-accordion.html" },
                     { title: "Avatar", link: "ui-avatar.html" },
                     { title: "Badges", link: "ui-badges.html" },
+                    { title: "Border", link: "ui-borders.html" },
                     { title: "Buttons", link: "ui-buttons.html" },
-                    { title: "Buttons Group", link: "ui-buttons-group.html" },
+                    { title: "Button Group", link: "ui-buttons-group.html" },
                     { title: "Breadcrumb", link: "ui-breadcrumb.html" },
-                    { title: "Cards", link: "ui-cards.html" },
+                    { title: "Card", link: "ui-cards.html" },
                     { title: "Carousel", link: "ui-carousel.html" },
+                    { title: "Colors", link: "ui-colors.html" },
                     { title: "Dropdowns", link: "ui-dropdowns.html" },
                     { title: "Grid", link: "ui-grid.html" },
                     { title: "Images", link: "ui-images.html" },
@@ -294,13 +342,14 @@ export const menuItems = ref<SidebarMenu>([
                     { title: "Modals", link: "ui-modals.html" },
                     { title: "Offcanvas", link: "ui-offcanvas.html" },
                     { title: "Pagination", link: "ui-pagination.html" },
+                    { title: "Popovers", link: "ui-popovers.html" },
                     { title: "Progress", link: "ui-progress.html" },
                     { title: "Placeholders", link: "ui-placeholders.html" },
-                    { title: "Range Slider", link: "ui-range-slider.html" },
                     { title: "Spinner", link: "ui-spinner.html" },
-                    { title: "Tabs", link: "ui-tabs.html" },
+                    { title: "Sweet Alerts", link: "ui-sweetalerts.html" },
+                    { title: "Tabs", link: "ui-nav-tabs.html" },
                     { title: "Toasts", link: "ui-toasts.html" },
-                    { title: "Tooltip", link: "ui-tooltip.html" },
+                    { title: "Tooltips", link: "ui-tooltips.html" },
                     { title: "Typography", link: "ui-typography.html" },
                     { title: "Video", link: "ui-video.html" },
                 ],
@@ -317,19 +366,20 @@ export const menuItems = ref<SidebarMenu>([
                     { title: "Text Editor", link: "ui-text-editor.html" },
                     { title: "Counter", link: "ui-counter.html" },
                     { title: "Scrollbar", link: "ui-scrollbar.html" },
-                    { title: "Sticky Note", link: "ui-sticky-note.html" },
+                    { title: "Sticky Note", link: "ui-stickynote.html" },
                     { title: "Timeline", link: "ui-timeline.html" },
                 ],
             },
             {
                 title: "Charts",
-                icon: "ti ti-chart-pie",
+                icon: "ti ti-chart-line",
                 submenu: [
                     { title: "Apex Charts", link: "chart-apex.html" },
                     { title: "Chart C3", link: "chart-c3.html" },
                     { title: "Chart Js", link: "chart-js.html" },
-                    { title: "Chart Morris", link: "chart-morris.html" },
-                    { title: "Chart Flot", link: "chart-flot.html" },
+                    { title: "Morris Charts", link: "chart-morris.html" },
+                    { title: "Flot Charts", link: "chart-flot.html" },
+                    { title: "Peity Charts", link: "chart-peity.html" },
                 ],
             },
             {
@@ -340,26 +390,41 @@ export const menuItems = ref<SidebarMenu>([
                     { title: "Feather Icons", link: "icon-feather.html" },
                     { title: "Ionic Icons", link: "icon-ionic.html" },
                     { title: "Material Icons", link: "icon-material.html" },
-                    { title: "PE7 Icons", link: "icon-pe7.html" },
+                    { title: "Pe7 Icons", link: "icon-pe7.html" },
                     { title: "Simpleline Icons", link: "icon-simpleline.html" },
                     { title: "Themify Icons", link: "icon-themify.html" },
-                    { title: "Typicon Icons", link: "icon-typicon.html" },
                     { title: "Weather Icons", link: "icon-weather.html" },
+                    { title: "Typicon Icons", link: "icon-typicon.html" },
+                    { title: "Flag Icons", link: "icon-flag.html" },
                 ],
             },
             {
                 title: "Forms",
                 icon: "ti ti-input-search",
                 submenu: [
-                    { title: "Basic Inputs", link: "form-basic-inputs.html" },
-                    { title: "Input Groups", link: "form-input-groups.html" },
-                    { title: "Horizontal Form", link: "form-horizontal.html" },
-                    { title: "Vertical Form", link: "form-vertical.html" },
-                    { title: "Mask Inputs", link: "form-mask.html" },
-                    { title: "File Upload", link: "form-fileupload.html" },
-                    { title: "Form Select", link: "form-select.html" },
-                    { title: "Form Wizard", link: "form-wizard.html" },
+                    {
+                        title: "Form Elements",
+                        submenu: [
+                            { title: "Basic Inputs", link: "form-basic-inputs.html" },
+                            { title: "Checkbox & Radios", link: "form-checkbox-radios.html" },
+                            { title: "Input Groups", link: "form-input-groups.html" },
+                            { title: "Grid & Gutters", link: "form-grid-gutters.html" },
+                            { title: "Form Select", link: "form-select.html" },
+                            { title: "Input Masks", link: "form-mask.html" },
+                            { title: "File Uploads", link: "form-fileupload.html" },
+                        ],
+                    },
+                    {
+                        title: "Layouts",
+                        submenu: [
+                            { title: "Horizontal Form", link: "form-horizontal.html" },
+                            { title: "Vertical Form", link: "form-vertical.html" },
+                            { title: "Floating Labels", link: "form-floating-labels.html" },
+                        ],
+                    },
                     { title: "Form Validation", link: "form-validation.html" },
+                    { title: "Select2", link: "form-select2.html" },
+                    { title: "Form Wizard", link: "form-wizard.html" },
                 ],
             },
             {
@@ -394,30 +459,107 @@ export const quicklinksItems = [
             label: "Calendar"
         },
         {
-            url: "student-attendance.html",
-            sevierity: "bg-blue-200/50",
-            icon: "ti ti-calendar-share",
-            borderClass: "border-blue-500",
-            bgClass: "bg-blue-500",
-            label: "Attendance"
-        },
+            url: "fees-group.html",
+            sevierity: "bg-surface-200/50",
+            icon: "ti ti-license",
+            borderClass: "border-surface-500",
+            bgClass: "bg-surface-500",
+            label: "Fees"
+        }
     ],
     [
         {
-            url: "student-grid.html",
-            sevierity: "bg-red-200/50",
-            icon: "ti ti-school",
-            borderClass: "border-red-500",
-            bgClass: "bg-red-500",
-            label: "Students"
+            url: "exam-results.html",
+            sevierity: "bg-primary/50",
+            icon: "ti ti-hexagonal-prism",
+            borderClass: "border-primary",
+            bgClass: "bg-primary",
+            label: "Exam Result"
         },
         {
-            url: "exam.html",
+            url: "class-home-work.html",
+            sevierity: "bg-red-200/50",
+            icon: "ti ti-report-money",
+            borderClass: "border-red-500",
+            bgClass: "bg-red-500",
+            label: "Home Works"
+        }
+    ],
+    [
+        {
+            url: "student-attendance.html",
             sevierity: "bg-yellow-200/50",
-            icon: "ti ti-hexagonal-prism-plus",
+            icon: "ti ti-calendar-share",
             borderClass: "border-yellow-500",
             bgClass: "bg-yellow-500",
-            label: "Exam"
+            label: "Attendance"
         },
-    ],
+        {
+            url: "attendance-report.html",
+            sevierity: "bg-blue-200/50",
+            icon: "ti ti-file-pencil",
+            borderClass: "border-blue-500",
+            bgClass: "bg-blue-500",
+            label: "Reports"
+        }
+    ]
 ];
+
+export const filterByTimeOptions = ref([
+    { label: "Today", value: "today" },
+    { label: "This Week", value: "thisWeek" },
+    { label: "This Month", value: "thisMonth" },
+    { label: "This Year", value: "thisYear" },
+]);
+
+export const StudentQuickLinks: {
+    label: string,
+    url: string,
+    border_color: string,
+    icon: string,
+}[] = [
+        {
+            label: "Pay Fees",
+            url: "/student-fees",
+            border_color: "border-primary",
+            icon: "ti ti-report-money"
+        },
+        {
+            label: "Exam Result",
+            url: "student-result.html",
+            border_color: "border-green-500",
+            icon: "ti ti-hexagonal-prism-plus"
+        },
+        {
+            label: "Calendar",
+            url: "student-time-table.html",
+            border_color: "border-yellow-500",
+            icon: "ti ti-calendar"
+        },
+        {
+            label: "Attendance",
+            url: "student-leaves.html",
+            border_color: "border-dark",
+            icon: "ti ti-calendar-share"
+        }
+    ];
+
+export const ListOfAcademicYears = (numberofYearsBack: number = 5) => {
+    let cYear = new Date();
+
+    const currentYear = cYear.getFullYear();
+
+    let XYearsAgo = currentYear - numberofYearsBack;
+
+    return Array.from(Array(numberofYearsBack).keys()).map((x) => `${XYearsAgo + x}/${XYearsAgo + x + 1}`);
+}
+
+export const StudentMenu = ref([
+    { label: 'Collect Fees', icon: 'ti ti-money-alt' },
+    { label: 'View Student', icon: 'ti ti-menu' },
+    { label: 'Edit', icon: 'ti ti-edit-circle' },
+    { label: 'Login Details', icon: 'ti ti-lock' },
+    { label: 'Disable', icon: 'ti ti-toggle-right' },
+    { label: 'Promote Student', icon: 'ti ti-arrow-ramp-right-2' },
+    { label: 'Delete', icon: 'ti ti-trash-x' }
+])
