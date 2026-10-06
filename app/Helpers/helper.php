@@ -7,44 +7,8 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Laratrust\LaratrustFacade;
-use RuangDeveloper\LaravelSettings\Facades\Settings;
 use Illuminate\Support\Facades\Log;
 
-if (!function_exists('getMergedSettings')) {
-    /**
-     * Get merged settings with tenant defaults and school-specific overrides.
-     *
-     * @param string $key The settings key to retrieve (e.g., 'tax', 'fees').
-     * @param Model|null $model The school or branch model instance.
-     * @return array The merged settings array.
-     *
-     * @throws \InvalidArgumentException If the key is invalid.
-     * @throws \Exception If settings retrieval fails.
-     */
-    function getMergedSettings(string $key, Model $model): array
-    {
-        try {
-            if (empty($key)) {
-                throw new \InvalidArgumentException('Settings key cannot be empty.');
-            }
-
-            // Fetch tenant-level settings
-            $tenantSettings = Settings::get($key, []);
-
-            // Fetch school-specific settings
-            $schoolSettings = $model ? $model->getSetting($key, []) : [];
-
-            // Merge settings: tenant < school < branch
-            return array_replace_recursive(
-                $tenantSettings,
-                array_filter($schoolSettings, fn($value) => $value !== null)
-            );
-        } catch (\Exception $e) {
-            Log::error("Failed to fetch settings for key '$key': " . $e->getMessage());
-            throw $e;
-        }
-    }
-}
 
 if (!function_exists('GetSchoolModel')) {
 
@@ -93,45 +57,6 @@ if (!function_exists('permitted')) {
                 exit;
             }
             abort(403, 'Unauthorized action.');
-        }
-    }
-}
-
-if (!function_exists('SaveOrUpdateSchoolSettings')) {
-
-    /**
-     * Save or update school-specific or branch-specific settings.
-     *
-     * @param string $key The settings key to save (e.g., 'tax', 'fees').
-     * @param array $validatedData The validated settings data to save.
-     * @param Model|null $model The school or branch model instance.
-     * @param int|null $branchId Optional branch ID for branch-specific settings.
-     * @return void
-     *
-     * @throws \InvalidArgumentException If the key or data is invalid.
-     * @throws \Exception If settings save fails.
-     */
-    function SaveOrUpdateSchoolSettings(string $key, array $validatedData, $model = null): void
-    {
-        try {
-            if (empty($key)) {
-                throw new \InvalidArgumentException('Settings key cannot be empty.');
-            }
-            if (empty($validatedData)) {
-                throw new \InvalidArgumentException('Settings data cannot be empty.');
-            }
-
-            // Determine the model to save settings to
-            $targetModel = ($model ?? GetSchoolModel());
-
-            // Fallback to global settings if no model is provided
-            $targetModel = $targetModel ?? Settings::class;
-
-            // Save settings
-            $targetModel->setSetting($key, $validatedData);
-        } catch (\Exception $e) {
-            Log::error("Failed to save settings for key '$key': " . $e->getMessage());
-            throw $e;
         }
     }
 }
