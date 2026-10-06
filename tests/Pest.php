@@ -30,6 +30,12 @@ pest()->extend(Tests\TestCase::class)
     ->in('Feature/Documentation');
 
 /*
+| Settings infrastructure (Phase 1). Focused schema — no full migrate.
+*/
+pest()->extend(Tests\TestCase::class)
+    ->in('Feature/Settings');
+
+/*
 | DataTable unit tests that need Schema / Eloquent without full migrations.
 | Do NOT use RefreshDatabase here — SQLite migrate is broken by an unrelated
 | devices migration (drop column vs index). Those tests create ephemeral tables.

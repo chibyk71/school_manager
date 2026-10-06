@@ -14,7 +14,6 @@ use Laragear\TwoFactor\Contracts\TwoFactorAuthenticatable;
 use Laragear\TwoFactor\TwoFactorAuthentication;
 use Laratrust\Contracts\LaratrustUser;
 use Laratrust\Traits\HasRolesAndPermissions;
-use RuangDeveloper\LaravelSettings\Traits\HasSettings;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\CausesActivity;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -44,7 +43,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * - Role validation moved to services/controllers → avoids model bloat
  * - Performance: eager loading helpers, scoped queries, global filter fields for tables
  * - Security: hidden sensitive fields, hashed password, two-factor support
- * - Extensibility: HasSettings for user preferences, HasRolesAndPermissions for access control
+ * - Extensibility: HasRolesAndPermissions for access control
  *
  * Fits into User Management Module:
  * - Entry point for login, registration, password reset, profile linking
@@ -65,7 +64,6 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
 {
     use HasFactory,
         Notifiable,
-        HasSettings,
         CausesActivity,
         HasRolesAndPermissions,
         HasUuids,
