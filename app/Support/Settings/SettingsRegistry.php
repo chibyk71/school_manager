@@ -72,6 +72,9 @@ final class SettingsRegistry
     /**
      * Fluent group registration used by definition registrars.
      *
+     * Incomplete builders fail when the group callback returns — they are never
+     * silently discarded.
+     *
      * @param  callable(SettingGroupRegistrar $group): void  $callback
      */
     public function group(string $key, string $label, callable $callback): void
@@ -173,11 +176,17 @@ final class SettingsRegistry
 
 /**
  * Collects definitions for a single group during registration.
+ *
+ * Builders must be completed via intendedScope() or register() before the
+ * group is finalized. Incomplete builders cause registration to fail.
  */
 final class SettingGroupRegistrar
 {
     /** @var array<string, SettingDefinition> */
     private array $definitions = [];
+
+    /** @var list<SettingDefinitionBuilder> */
+    private array $builders = [];
 
     public function __construct(
         private string $groupKey,
@@ -186,7 +195,7 @@ final class SettingGroupRegistrar
 
     public function define(string $key): SettingDefinitionBuilder
     {
-        return new SettingDefinitionBuilder(
+        $builder = new SettingDefinitionBuilder(
             $key,
             $this->groupKey,
             $this->groupLabel,
@@ -200,10 +209,18 @@ final class SettingGroupRegistrar
                 $this->definitions[$definition->key] = $definition;
             }
         );
+
+        $this->builders[] = $builder;
+
+        return $builder;
     }
 
     public function toGroupDefinition(): SettingGroupDefinition
     {
+        foreach ($this->builders as $builder) {
+            $builder->finalize();
+        }
+
         return new SettingGroupDefinition(
             $this->groupKey,
             $this->groupLabel,
@@ -214,6 +231,9 @@ final class SettingGroupRegistrar
 
 /**
  * Fluent builder for one setting definition.
+ *
+ * Completion is explicit: call intendedScope() or register(). There is no
+ * destructor path — incomplete builders fail when the group is finalized.
  */
 final class SettingDefinitionBuilder
 {
@@ -286,6 +306,21 @@ final class SettingDefinitionBuilder
         $this->commit();
     }
 
+    /**
+     * Called by SettingGroupRegistrar when the group callback ends.
+     * Fails if this builder was never completed.
+     *
+     * @throws InvalidSettingDefinitionException
+     */
+    public function finalize(): void
+    {
+        if ($this->committed) {
+            return;
+        }
+
+        $this->commit();
+    }
+
     private function commit(): void
     {
         if ($this->committed) {
@@ -317,19 +352,5 @@ final class SettingDefinitionBuilder
 
         ($this->onComplete)($definition);
         $this->committed = true;
-    }
-
-    public function __destruct()
-    {
-        if (! $this->committed && ($this->type !== null || $this->hasDefault || $this->label !== null)) {
-            // Auto-commit if the chain completed without intendedScope()/register().
-            // Incomplete chains still throw from commit().
-            try {
-                $this->commit();
-            } catch (InvalidSettingDefinitionException) {
-                // Swallow in destructor to avoid fatal errors during stack unwind;
-                // incomplete definitions simply will not be registered.
-            }
-        }
     }
 }
