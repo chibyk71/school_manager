@@ -176,40 +176,42 @@ test('PasswordResetLinkController wires resolver OTP lifetime into Otp::generate
     expect($otpValidity)->toBe(15)
         ->and($capturedValidity)->toBe(15)
         ->and($response->status)->toBeTrue();
-
-    // Guard the production wiring so throttleLock cannot be re-coupled to the pilot key
-    $source = file_get_contents(app_path('Http/Controllers/Auth/PasswordResetLinkController.php'));
-    expect($source)
-        ->toContain("$otpValidity = $resolver->get('authentication.reset_password_token_life', $scope)")
-        ->toContain("$otpInstance->generate($targetEmail, 'numeric', $otpLength, $otpValidity)")
-        ->not->toContain("$throttleLock = $resolver->get('authentication.reset_password_token_life'");
-
-    $newPasswordSource = file_get_contents(app_path('Http/Controllers/Auth/NewPasswordController.php'));
-    expect($newPasswordSource)
-        ->not->toContain("$throttleLock = $resolver->get('authentication.reset_password_token_life'");
 });
 
 test('PasswordResetLinkController store rejects when allow_password_reset is false', function () {
     $scope = SettingsScope::school('42');
     $this->resolver->set('authentication.allow_password_reset', false, $scope);
 
+    $throttleKey = 'password-reset-link|user@example.com|127.0.0.1';
+    RateLimiter::clear($throttleKey);
+
     $controller = app(PasswordResetLinkController::class);
-    $request = Request::create('/forgot-password', 'POST', [
-        'email' => 'user@example.com',
-        'delivery_method' => 'email',
-        'school_id' => 42,
-    ]);
+    $request = Request::create(
+        '/forgot-password',
+        'POST',
+        [
+            'email' => 'user@example.com',
+            'delivery_method' => 'email',
+            'school_id' => 42,
+        ],
+        server: ['REMOTE_ADDR' => '127.0.0.1']
+    );
     $request->headers->set('Accept', 'application/json');
 
     $response = $controller->store($request);
 
     expect($response->getStatusCode())->toBe(400)
-        ->and($response->getData(true)['error'] ?? null)->toBe('Password reset is not allowed.');
+        ->and($response->getData(true)['error'] ?? null)->toBe('Password reset is not allowed.')
+        // Disabled path must not establish/increment a throttle key
+        ->and(RateLimiter::attempts($throttleKey))->toBe(0);
 });
 
 test('NewPasswordController store rejects when allow_password_reset is false', function () {
     $scope = SettingsScope::school('42');
     $this->resolver->set('authentication.allow_password_reset', false, $scope);
+
+    $throttleKey = 'password-reset|user@example.com|127.0.0.1';
+    RateLimiter::clear($throttleKey);
 
     $request = \Mockery::mock(ResetPasswordRequest::class)->shouldIgnoreMissing();
     $request->email = 'user@example.com';
@@ -222,7 +224,8 @@ test('NewPasswordController store rejects when allow_password_reset is false', f
     $response = $controller->store($request);
 
     expect($response->getStatusCode())->toBe(400)
-        ->and($response->getData(true)['error'] ?? null)->toBe('Password reset is not allowed.');
+        ->and($response->getData(true)['error'] ?? null)->toBe('Password reset is not allowed.')
+        ->and(RateLimiter::attempts($throttleKey))->toBe(0);
 });
 
 test('NewPasswordController store rate limit rejects after max attempts without using OTP lifetime', function () {
