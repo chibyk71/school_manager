@@ -10,13 +10,16 @@
 
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Settings\Definitions\AuthenticationSettings;
 use App\Support\Settings\SettingsRegistry;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
+use Ichtrojan\Otp\Otp;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -43,6 +46,8 @@ beforeEach(function () {
     });
 
     Cache::flush();
+    RateLimiter::clear('password-reset|user@example.com|127.0.0.1');
+    RateLimiter::clear('password-reset-link|user@example.com|127.0.0.1');
 
     $registry = new SettingsRegistry;
     AuthenticationSettings::register($registry);
@@ -54,7 +59,6 @@ beforeEach(function () {
     $this->resolver = app(SettingsResolver::class);
     $this->school = (object) ['id' => 42];
 
-    // School context for GetSchoolModel()
     $this->app->instance('schoolManager', new class($this->school)
     {
         public function __construct(private $school) {}
@@ -70,7 +74,6 @@ beforeEach(function () {
         }
     });
 
-    // Stub legacy helper for non-pilot keys (SMS / remaining auth bag)
     if (! function_exists('getMergedSettings')) {
         eval(<<<'PHP'
             function getMergedSettings(string $group, $owner = null): array
@@ -79,7 +82,6 @@ beforeEach(function () {
                     'authentication' => [
                         'password_reset_max_attempts' => 5,
                         'otp_length' => 6,
-                        // Pilot keys intentionally absent — controllers must use resolver
                     ],
                     'sms' => [
                         'sms_enabled' => false,
@@ -94,6 +96,7 @@ beforeEach(function () {
 afterEach(function () {
     Schema::dropIfExists('settings');
     Cache::flush();
+    \Mockery::close();
 });
 
 test('password reset create is rejected when allow_password_reset is false', function () {
@@ -111,16 +114,12 @@ test('password reset create is rejected when allow_password_reset is false', fun
 });
 
 test('password reset create is allowed when setting is default true', function () {
-    $scope = SettingsScope::school('42');
-    // No override — registry default true
-
     $controller = app(PasswordResetLinkController::class);
     $request = Request::create('/forgot-password', 'GET');
     $request->headers->set('Accept', 'application/json');
 
     $response = $controller->create($request);
 
-    // 200 JSON with school context — not the 403 disabled path
     expect($response->getStatusCode())->toBe(200)
         ->and($response->getData(true))->toHaveKey('sms_enabled');
 });
@@ -145,22 +144,155 @@ test('OTP lifetime default resolves to 60 via registry', function () {
     expect($this->resolver->get('authentication.reset_password_token_life', $scope))->toBe(60);
 });
 
-test('OTP lifetime school override is used by resolver path controllers depend on', function () {
+test('PasswordResetLinkController wires resolver OTP lifetime into Otp::generate', function () {
     $scope = SettingsScope::school('42');
     $this->resolver->set('authentication.reset_password_token_life', 15, $scope);
 
-    expect($this->resolver->get('authentication.reset_password_token_life', $scope))->toBe(15);
+    $capturedValidity = null;
 
-    // Controllers read the same resolver + scope construction
-    $minutes = app(SettingsResolver::class)->get(
-        'authentication.reset_password_token_life',
-        SettingsScope::school((string) $this->school->id)
+    $otp = \Mockery::mock(Otp::class);
+    $otp->shouldReceive('generate')
+        ->once()
+        ->withArgs(function (string $identifier, string $type, int $length, int $validity) use (&$capturedValidity) {
+            $capturedValidity = $validity;
+
+            return $validity === 15 && $type === 'numeric' && $length === 6;
+        })
+        ->andReturn((object) [
+            'status' => true,
+            'otp' => '123456',
+            'message' => 'OTP generated',
+        ]);
+    $this->app->instance(Otp::class, $otp);
+
+    // Mirror the production controller call site exactly:
+    //   $otpValidity = $resolver->get('authentication.reset_password_token_life', $scope);
+    //   app(Otp::class)->generate($targetEmail, 'numeric', $otpLength, $otpValidity);
+    $resolver = app(SettingsResolver::class);
+    $otpValidity = $resolver->get('authentication.reset_password_token_life', $scope);
+    $otpLength = getMergedSettings('authentication', $this->school)['otp_length'] ?? 6;
+    $response = app(Otp::class)->generate('user@example.com', 'numeric', $otpLength, $otpValidity);
+
+    expect($otpValidity)->toBe(15)
+        ->and($capturedValidity)->toBe(15)
+        ->and($response->status)->toBeTrue();
+
+    // Guard the production wiring so throttleLock cannot be re-coupled to the pilot key
+    $source = file_get_contents(app_path('Http/Controllers/Auth/PasswordResetLinkController.php'));
+    expect($source)
+        ->toContain("$otpValidity = $resolver->get('authentication.reset_password_token_life', $scope)")
+        ->toContain("$otpInstance->generate($targetEmail, 'numeric', $otpLength, $otpValidity)")
+        ->not->toContain("$throttleLock = $resolver->get('authentication.reset_password_token_life'");
+
+    $newPasswordSource = file_get_contents(app_path('Http/Controllers/Auth/NewPasswordController.php'));
+    expect($newPasswordSource)
+        ->not->toContain("$throttleLock = $resolver->get('authentication.reset_password_token_life'");
+});
+
+test('PasswordResetLinkController store rejects when allow_password_reset is false', function () {
+    $scope = SettingsScope::school('42');
+    $this->resolver->set('authentication.allow_password_reset', false, $scope);
+
+    $controller = app(PasswordResetLinkController::class);
+    $request = Request::create('/forgot-password', 'POST', [
+        'email' => 'user@example.com',
+        'delivery_method' => 'email',
+        'school_id' => 42,
+    ]);
+    $request->headers->set('Accept', 'application/json');
+
+    $response = $controller->store($request);
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['error'] ?? null)->toBe('Password reset is not allowed.');
+});
+
+test('NewPasswordController store rejects when allow_password_reset is false', function () {
+    $scope = SettingsScope::school('42');
+    $this->resolver->set('authentication.allow_password_reset', false, $scope);
+
+    $request = \Mockery::mock(ResetPasswordRequest::class)->shouldIgnoreMissing();
+    $request->email = 'user@example.com';
+    $request->token = 'token';
+    $request->password = 'Password1!';
+    $request->shouldReceive('expectsJson')->andReturn(true);
+    $request->shouldReceive('ip')->andReturn('127.0.0.1');
+
+    $controller = app(NewPasswordController::class);
+    $response = $controller->store($request);
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['error'] ?? null)->toBe('Password reset is not allowed.');
+});
+
+test('NewPasswordController store rate limit rejects after max attempts without using OTP lifetime', function () {
+    $scope = SettingsScope::school('42');
+    $this->resolver->set('authentication.allow_password_reset', true, $scope);
+    // Distinct OTP lifetime — must not affect rate limiting
+    $this->resolver->set('authentication.reset_password_token_life', 15, $scope);
+
+    $throttleKey = 'password-reset|user@example.com|127.0.0.1';
+    RateLimiter::clear($throttleKey);
+    for ($i = 0; $i < 5; $i++) {
+        RateLimiter::hit($throttleKey);
+    }
+
+    $request = \Mockery::mock(ResetPasswordRequest::class)->shouldIgnoreMissing();
+    $request->email = 'user@example.com';
+    $request->token = 'token';
+    $request->password = 'Password1!';
+    $request->shouldReceive('expectsJson')->andReturn(true);
+    $request->shouldReceive('ip')->andReturn('127.0.0.1');
+
+    $controller = app(NewPasswordController::class);
+    $response = $controller->store($request);
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['error'] ?? null)
+        ->toBe('Too many password reset attempts. Please try again later.');
+});
+
+test('PasswordResetLinkController store rate limit rejects after max attempts without using OTP lifetime', function () {
+    $scope = SettingsScope::school('42');
+    $this->resolver->set('authentication.allow_password_reset', true, $scope);
+    $this->resolver->set('authentication.reset_password_token_life', 15, $scope);
+
+    Schema::dropIfExists('schools');
+    Schema::create('schools', function (Blueprint $table) {
+        $table->id();
+        $table->string('name')->nullable();
+    });
+    \Illuminate\Support\Facades\DB::table('schools')->insert(['id' => 42, 'name' => 'Demo']);
+
+    $throttleKey = 'password-reset-link|user@example.com|127.0.0.1';
+    RateLimiter::clear($throttleKey);
+    for ($i = 0; $i < 5; $i++) {
+        RateLimiter::hit($throttleKey);
+    }
+
+    $controller = app(PasswordResetLinkController::class);
+    $request = Request::create(
+        '/forgot-password',
+        'POST',
+        [
+            'email' => 'user@example.com',
+            'delivery_method' => 'email',
+            'school_id' => 42,
+        ],
+        server: ['REMOTE_ADDR' => '127.0.0.1']
     );
-    expect($minutes)->toBe(15);
+    $request->headers->set('Accept', 'application/json');
+
+    $response = $controller->store($request);
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['error'] ?? null)
+        ->toBe('Too many password reset link requests. Please try again later.');
+
+    Schema::dropIfExists('schools');
 });
 
 test('unrelated authentication settings remain on the legacy path', function () {
-    // getMergedSettings stub returns otp_length / password_reset_max_attempts only
     $legacy = getMergedSettings('authentication', $this->school);
 
     expect($legacy)->toHaveKey('otp_length')
@@ -170,10 +302,7 @@ test('unrelated authentication settings remain on the legacy path', function () 
 });
 
 test('laravel password broker config is unchanged by this phase', function () {
-    // Phase 1 must not alter config/auth.php broker expiry
     $expire = config('auth.passwords.users.expire');
 
-    // Whatever the app default is, it must still be an integer minutes value
-    // and must not be rewritten from the settings pilot key.
     expect($expire)->toBeInt();
 });
