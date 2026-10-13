@@ -84,16 +84,18 @@ class NewPasswordController extends Controller
                 throw new \Exception('Password reset is not allowed.');
             }
 
-            // Check rate limiting
+            // Check rate limiting (OTP lifetime is not a rate-limit lock duration)
             $throttleKey = 'password-reset|' . $request->email . '|' . $request->ip();
             $throttleMax = 5; // Hardcoded, can be moved to settings
-            $throttleLock = $resolver->get('authentication.reset_password_token_life', $scope);
+            // hasTooManyAttempts currently ignores lock minutes; keep a fixed default
+            // rather than coupling to authentication.reset_password_token_life.
+            $throttleLock = 60;
             if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
                 throw new \Exception('Too many password reset attempts. Please try again later.');
             }
 
             // Validate OTP and find user
-            $otpInstance = new Otp();
+            $otpInstance = app(Otp::class);
             $response = $otpInstance->validate($request->email, $request->token);
 
             if (!$response->status) {
