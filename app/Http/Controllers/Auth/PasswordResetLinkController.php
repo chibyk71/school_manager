@@ -82,6 +82,9 @@ class PasswordResetLinkController extends Controller
      */
     public function store(Request $request)
     {
+        // Established only once rate limiting applies; catch must not hit an unset key.
+        $throttleKey = null;
+
         try {
             // Check school context
             $school = GetSchoolModel();
@@ -198,7 +201,10 @@ class PasswordResetLinkController extends Controller
             throw $e;
         } catch (\Exception $e) {
             Log::error("Password reset link request failed for email/enrollment {$request->email}/{$request->enrollment_id}: {$e->getMessage()}");
-            $this->incrementAttempts($throttleKey);
+            if ($throttleKey !== null) {
+                $this->incrementAttempts($throttleKey);
+            }
+
             return $this->respondWithError($request, $e->getMessage());
         }
     }
