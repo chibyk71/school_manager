@@ -144,3 +144,51 @@ test('empty label fails', function () {
         ],
     )))->toThrow(InvalidSettingDefinitionException::class);
 });
+
+test('incomplete fluent definition missing type fails on group finalize', function () {
+    $registry = new SettingsRegistry;
+
+    expect(fn () => $registry->group('incomplete', 'Incomplete', function ($group) {
+        $group->define('incomplete.key')
+            ->default(1)
+            ->label('No type');
+    }))->toThrow(InvalidSettingDefinitionException::class);
+});
+
+test('incomplete fluent definition missing default fails on group finalize', function () {
+    $registry = new SettingsRegistry;
+
+    expect(fn () => $registry->group('incomplete', 'Incomplete', function ($group) {
+        $group->define('incomplete.key')
+            ->type('integer')
+            ->label('No default');
+    }))->toThrow(InvalidSettingDefinitionException::class);
+});
+
+test('incomplete fluent definition missing label fails on group finalize', function () {
+    $registry = new SettingsRegistry;
+
+    expect(fn () => $registry->group('incomplete', 'Incomplete', function ($group) {
+        $group->define('incomplete.key')
+            ->type('integer')
+            ->default(1);
+    }))->toThrow(InvalidSettingDefinitionException::class);
+});
+
+test('duplicate key within fluent group fails', function () {
+    $registry = new SettingsRegistry;
+
+    expect(fn () => $registry->group('dup', 'Dup', function ($group) {
+        $group->define('dup.key')
+            ->type('integer')
+            ->default(1)
+            ->label('First')
+            ->intendedScope('school');
+
+        $group->define('dup.key')
+            ->type('integer')
+            ->default(2)
+            ->label('Second')
+            ->intendedScope('school');
+    }))->toThrow(InvalidSettingDefinitionException::class);
+});
