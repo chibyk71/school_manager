@@ -72,6 +72,9 @@ class NewPasswordController extends Controller
      */
     public function store(ResetPasswordRequest $request): RedirectResponse|JsonResponse
     {
+        // Established only once rate limiting applies; catch must not hit an unset key.
+        $throttleKey = null;
+
         try {
             // Check school context
             $school = GetSchoolModel();
@@ -132,7 +135,10 @@ class NewPasswordController extends Controller
                 ->with('status', 'Password reset successfully.');
         } catch (\Exception $e) {
             Log::error("Password reset failed for email {$request->email}: {$e->getMessage()}");
-            $this->incrementAttempts($throttleKey);
+            if ($throttleKey !== null) {
+                $this->incrementAttempts($throttleKey);
+            }
+
             return $this->respondWithError($request, $e->getMessage());
         }
     }
