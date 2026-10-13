@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\Settings\SettingsResolver;
+use App\Support\Settings\SettingsScope;
 use App\Models\User;
 use App\Notifications\ResetPasswordNotification;
 use Ichtrojan\Otp\Otp;
@@ -35,14 +37,16 @@ class PasswordResetLinkController extends Controller
             // Check school context
             $school = GetSchoolModel();
 
-            // Check if password reset is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_password_reset'] ?? false)) {
+            // Check if password reset is allowed (Phase 1 settings capability)
+            $resolver = app(SettingsResolver::class);
+            $scope = SettingsScope::school((string) $school->id);
+            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            if (! $allowPasswordReset) {
                 Log::info("Password reset disabled for school {$school->id} as per settings.");
                 return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
 
-            // Check SMS settings
+            // Check SMS settings (legacy path — not in Phase 1 pilot)
             $smsSettings = getMergedSettings('sms', $school);
             $smsEnabled = $smsSettings['sms_enabled'] ?? false;
 
@@ -82,13 +86,18 @@ class PasswordResetLinkController extends Controller
             // Check school context
             $school = GetSchoolModel();
 
-            // Check if password reset is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_password_reset'] ?? false)) {
+            // Check if password reset is allowed (Phase 1 settings capability)
+            $resolver = app(SettingsResolver::class);
+            $scope = SettingsScope::school((string) $school->id);
+            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            if (! $allowPasswordReset) {
                 throw new \Exception('Password reset is not allowed.');
             }
 
-            // Check SMS settings
+            // Legacy authentication bag for non-pilot keys only
+            $authSettings = getMergedSettings('authentication', $school);
+
+            // Check SMS settings (legacy path — not in Phase 1 pilot)
             $smsSettings = getMergedSettings('sms', $school);
             $smsEnabled = $smsSettings['sms_enabled'] ?? false;
 
@@ -108,7 +117,7 @@ class PasswordResetLinkController extends Controller
             // Check rate limiting
             $throttleKey = 'password-reset-link|' . ($request->email ?: $request->enrollment_id) . '|' . $request->ip();
             $throttleMax = $authSettings['password_reset_max_attempts'] ?? 5;
-            $throttleLock = $authSettings['reset_password_token_life'] ?? 60;
+            $throttleLock = $resolver->get('authentication.reset_password_token_life', $scope);
             if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
                 throw new \Exception('Too many password reset link requests. Please try again later.');
             }
@@ -147,7 +156,7 @@ class PasswordResetLinkController extends Controller
             // Generate OTP
             $otpInstance = new Otp();
             $otpLength = $authSettings['otp_length'] ?? 6;
-            $otpValidity = $authSettings['reset_password_token_life'] ?? 60;
+            $otpValidity = $resolver->get('authentication.reset_password_token_life', $scope);
             $response = $otpInstance->generate($targetEmail, 'numeric', $otpLength, $otpValidity);
 
             if (!$response->status) {

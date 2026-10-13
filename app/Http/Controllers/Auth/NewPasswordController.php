@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\Settings\SettingsResolver;
+use App\Support\Settings\SettingsScope;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\User;
 use Ichtrojan\Otp\Otp;
@@ -34,9 +36,11 @@ class NewPasswordController extends Controller
             // Check school context
             $school = GetSchoolModel();
 
-            // Check if password reset is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_password_reset'] ?? false)) {
+            // Check if password reset is allowed (Phase 1 settings capability)
+            $resolver = app(SettingsResolver::class);
+            $scope = SettingsScope::school((string) $school->id);
+            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            if (! $allowPasswordReset) {
                 Log::info("Password reset disabled for school {$school->id} as per settings.");
                 return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
@@ -72,16 +76,18 @@ class NewPasswordController extends Controller
             // Check school context
             $school = GetSchoolModel();
 
-            // Check if password reset is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_password_reset'] ?? false)) {
+            // Check if password reset is allowed (Phase 1 settings capability)
+            $resolver = app(SettingsResolver::class);
+            $scope = SettingsScope::school((string) $school->id);
+            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            if (! $allowPasswordReset) {
                 throw new \Exception('Password reset is not allowed.');
             }
 
             // Check rate limiting
             $throttleKey = 'password-reset|' . $request->email . '|' . $request->ip();
             $throttleMax = 5; // Hardcoded, can be moved to settings
-            $throttleLock = $authSettings['reset_password_token_life'] ?? 60;
+            $throttleLock = $resolver->get('authentication.reset_password_token_life', $scope);
             if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
                 throw new \Exception('Too many password reset attempts. Please try again later.');
             }
