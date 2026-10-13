@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Phase 1 — SettingsResolver integration coverage (exact-scope isolation via OI own()).
+ * Phase 1 — SettingsResolver integration coverage (exact-scope isolation).
  *
  * Creates the OI settings schema ephemerally (same practice as SettingsInfrastructureTest).
  */
@@ -83,16 +83,14 @@ test('school A override does not leak into school B', function () {
 test('global-only value is ignored for school-scoped pilot keys', function () {
     $scope = SettingsScope::school('school-1');
 
-    // Write directly via OI at global (null) scope
     OiSettings::set(
         'authentication.reset_password_token_life',
         120,
         type: 'integer',
-        label: 'Lifetime reset OTP lifetime (minutes)',
+        label: 'Password reset OTP lifetime (minutes)',
         scope: null,
     );
 
-    // Resolver must return registry default, not global
     expect($this->resolver->get('authentication.reset_password_token_life', $scope))->toBe(60);
 });
 
@@ -115,14 +113,11 @@ test('when both global and school values exist, school value wins', function () 
 test('exact-scope matrix for reset_password_token_life', function () {
     $scope = SettingsScope::school('matrix-school');
 
-    // Absent / Absent → 60
     expect($this->resolver->get('authentication.reset_password_token_life', $scope))->toBe(60);
 
-    // 90 / Absent → 90
     $this->resolver->set('authentication.reset_password_token_life', 90, $scope);
     expect($this->resolver->get('authentication.reset_password_token_life', $scope))->toBe(90);
 
-    // Forget then set global only → still 60
     $this->resolver->forget('authentication.reset_password_token_life', $scope);
     OiSettings::set(
         'authentication.reset_password_token_life',
@@ -133,7 +128,6 @@ test('exact-scope matrix for reset_password_token_life', function () {
     );
     expect($this->resolver->get('authentication.reset_password_token_life', $scope))->toBe(60);
 
-    // 90 / 120 → 90
     $this->resolver->set('authentication.reset_password_token_life', 90, $scope);
     expect($this->resolver->get('authentication.reset_password_token_life', $scope))->toBe(90);
 });
@@ -187,20 +181,90 @@ test('invalid boolean writes throw and preserve existing value', function () {
     expect($this->resolver->get('authentication.allow_password_reset', $scope))->toBeFalse();
 });
 
-test('boolean accepts laravel boolean rule values', function () {
+test('boolean accepts every approved whitelist representation', function () {
     $scope = SettingsScope::school('school-bool-ok');
 
-    $this->resolver->set('authentication.allow_password_reset', '1', $scope);
+    $trueValues = [true, 1, '1', 'true', 'on'];
+    $falseValues = [false, 0, '0', 'false', 'off'];
+
+    foreach ($trueValues as $value) {
+        $this->resolver->set('authentication.allow_password_reset', $value, $scope);
+        expect($this->resolver->get('authentication.allow_password_reset', $scope))
+            ->toBeTrue('Failed for true representation: '.var_export($value, true));
+    }
+
+    foreach ($falseValues as $value) {
+        $this->resolver->set('authentication.allow_password_reset', $value, $scope);
+        expect($this->resolver->get('authentication.allow_password_reset', $scope))
+            ->toBeFalse('Failed for false representation: '.var_export($value, true));
+    }
+});
+
+test('boolean rejects representative invalid values', function () {
+    $scope = SettingsScope::school('school-bool-bad');
+
+    $this->resolver->set('authentication.allow_password_reset', true, $scope);
+
+    foreach (['yes', 'no', 'TRUE', 'FALSE', 2, -1, '', ' '] as $value) {
+        expect(fn () => $this->resolver->set('authentication.allow_password_reset', $value, $scope))
+            ->toThrow(InvalidSettingValueException::class);
+    }
+
     expect($this->resolver->get('authentication.allow_password_reset', $scope))->toBeTrue();
+});
 
-    $this->resolver->set('authentication.allow_password_reset', '0', $scope);
-    expect($this->resolver->get('authentication.allow_password_reset', $scope))->toBeFalse();
+test('malformed stored integer is detected before OI coercion', function () {
+    $scope = SettingsScope::school('school-corrupt-int');
 
-    $this->resolver->set('authentication.allow_password_reset', 'true', $scope);
-    expect($this->resolver->get('authentication.allow_password_reset', $scope))->toBeTrue();
+    \Illuminate\Support\Facades\DB::table('settings')->insert([
+        'scope' => $scope,
+        'key' => 'authentication.reset_password_token_life',
+        'label' => 'Password reset OTP lifetime (minutes)',
+        'type' => 'integer',
+        'value' => 'not-an-integer',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    OiSettings::forget($scope);
 
-    $this->resolver->set('authentication.allow_password_reset', 'off', $scope);
-    expect($this->resolver->get('authentication.allow_password_reset', $scope))->toBeFalse();
+    expect(fn () => $this->resolver->get('authentication.reset_password_token_life', $scope))
+        ->toThrow(\App\Support\Settings\Exceptions\InvalidStoredSettingValueException::class);
+});
+
+test('malformed stored boolean is detected before OI coercion', function () {
+    $scope = SettingsScope::school('school-corrupt-bool');
+
+    \Illuminate\Support\Facades\DB::table('settings')->insert([
+        'scope' => $scope,
+        'key' => 'authentication.allow_password_reset',
+        'label' => 'Allow password reset',
+        'type' => 'boolean',
+        'value' => 'yes',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    OiSettings::forget($scope);
+
+    expect(fn () => $this->resolver->get('authentication.allow_password_reset', $scope))
+        ->toThrow(\App\Support\Settings\Exceptions\InvalidStoredSettingValueException::class);
+});
+
+test('fractional stored integer string is rejected as corrupt', function () {
+    $scope = SettingsScope::school('school-corrupt-float');
+
+    \Illuminate\Support\Facades\DB::table('settings')->insert([
+        'scope' => $scope,
+        'key' => 'authentication.reset_password_token_life',
+        'label' => 'Password reset OTP lifetime (minutes)',
+        'type' => 'integer',
+        'value' => '60.5',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    OiSettings::forget($scope);
+
+    expect(fn () => $this->resolver->get('authentication.reset_password_token_life', $scope))
+        ->toThrow(\App\Support\Settings\Exceptions\InvalidStoredSettingValueException::class);
 });
 
 test('unknown keys fail on get and set', function () {
