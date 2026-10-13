@@ -114,10 +114,12 @@ class PasswordResetLinkController extends Controller
                 'phone_number.required_if' => 'Phone number is required for SMS delivery.',
             ]);
 
-            // Check rate limiting
+            // Check rate limiting (OTP lifetime is not a rate-limit lock duration)
             $throttleKey = 'password-reset-link|' . ($request->email ?: $request->enrollment_id) . '|' . $request->ip();
             $throttleMax = $authSettings['password_reset_max_attempts'] ?? 5;
-            $throttleLock = $resolver->get('authentication.reset_password_token_life', $scope);
+            // hasTooManyAttempts currently ignores lock minutes; keep a fixed default
+            // rather than coupling to authentication.reset_password_token_life.
+            $throttleLock = 60;
             if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
                 throw new \Exception('Too many password reset link requests. Please try again later.');
             }
@@ -153,8 +155,8 @@ class PasswordResetLinkController extends Controller
                 throw new \Exception('SMS delivery is not enabled for this school.');
             }
 
-            // Generate OTP
-            $otpInstance = new Otp();
+            // Generate OTP (lifetime from Phase 1 settings capability only)
+            $otpInstance = app(Otp::class);
             $otpLength = $authSettings['otp_length'] ?? 6;
             $otpValidity = $resolver->get('authentication.reset_password_token_life', $scope);
             $response = $otpInstance->generate($targetEmail, 'numeric', $otpLength, $otpValidity);
