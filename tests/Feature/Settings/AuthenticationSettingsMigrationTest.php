@@ -144,9 +144,60 @@ test('OTP lifetime default resolves to 60 via registry', function () {
     expect($this->resolver->get('authentication.reset_password_token_life', $scope))->toBe(60);
 });
 
-test('PasswordResetLinkController wires resolver OTP lifetime into Otp::generate', function () {
+test('PasswordResetLinkController store passes configured OTP lifetime to Otp::generate', function () {
     $scope = SettingsScope::school('42');
     $this->resolver->set('authentication.reset_password_token_life', 15, $scope);
+    $this->resolver->set('authentication.allow_password_reset', true, $scope);
+
+    // Minimal schema so store() can pass validation + user lookup
+    Schema::dropIfExists('schools');
+    Schema::create('schools', function (Blueprint $table) {
+        $table->id();
+        $table->string('name')->nullable();
+    });
+    \Illuminate\Support\Facades\DB::table('schools')->insert(['id' => 42, 'name' => 'Demo']);
+
+    // Controller queries users.email + users.school_id (legacy columns on this path)
+    Schema::dropIfExists('profiles');
+    Schema::dropIfExists('users');
+    Schema::create('users', function (Blueprint $table) {
+        $table->uuid('id')->primary();
+        $table->string('username')->nullable();
+        $table->string('email')->nullable();
+        $table->unsignedBigInteger('school_id')->nullable();
+        $table->string('password')->nullable();
+        $table->timestamps();
+    });
+    Schema::create('profiles', function (Blueprint $table) {
+        $table->id();
+        $table->uuid('user_id')->nullable();
+        $table->string('email')->nullable();
+        $table->timestamps();
+    });
+
+    // Spatie activity() after generate — minimal table so logging cannot abort the path
+    Schema::dropIfExists('activity_log');
+    Schema::create('activity_log', function (Blueprint $table) {
+        $table->bigIncrements('id');
+        $table->string('log_name')->nullable();
+        $table->text('description')->nullable();
+        $table->nullableUuidMorphs('subject', 'subject');
+        $table->nullableUuidMorphs('causer', 'causer');
+        $table->json('properties')->nullable();
+        $table->uuid('batch_uuid')->nullable();
+        $table->timestamps();
+    });
+
+    $userId = (string) \Illuminate\Support\Str::uuid();
+    \Illuminate\Support\Facades\DB::table('users')->insert([
+        'id' => $userId,
+        'username' => 'reset.user',
+        'email' => 'user@example.com',
+        'school_id' => 42,
+        'password' => 'hashed',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 
     $capturedValidity = null;
 
@@ -156,7 +207,10 @@ test('PasswordResetLinkController wires resolver OTP lifetime into Otp::generate
         ->withArgs(function (string $identifier, string $type, int $length, int $validity) use (&$capturedValidity) {
             $capturedValidity = $validity;
 
-            return $validity === 15 && $type === 'numeric' && $length === 6;
+            return $identifier === 'user@example.com'
+                && $type === 'numeric'
+                && $length === 6
+                && $validity === 15;
         })
         ->andReturn((object) [
             'status' => true,
@@ -165,17 +219,31 @@ test('PasswordResetLinkController wires resolver OTP lifetime into Otp::generate
         ]);
     $this->app->instance(Otp::class, $otp);
 
-    // Mirror the production controller call site exactly:
-    //   $otpValidity = $resolver->get('authentication.reset_password_token_life', $scope);
-    //   app(Otp::class)->generate($targetEmail, 'numeric', $otpLength, $otpValidity);
-    $resolver = app(SettingsResolver::class);
-    $otpValidity = $resolver->get('authentication.reset_password_token_life', $scope);
-    $otpLength = getMergedSettings('authentication', $this->school)['otp_length'] ?? 6;
-    $response = app(Otp::class)->generate('user@example.com', 'numeric', $otpLength, $otpValidity);
+    \Illuminate\Support\Facades\Notification::fake();
 
-    expect($otpValidity)->toBe(15)
-        ->and($capturedValidity)->toBe(15)
-        ->and($response->status)->toBeTrue();
+    $controller = app(PasswordResetLinkController::class);
+    $request = Request::create(
+        '/forgot-password',
+        'POST',
+        [
+            'email' => 'user@example.com',
+            'delivery_method' => 'email',
+            'school_id' => 42,
+        ],
+        server: ['REMOTE_ADDR' => '127.0.0.1']
+    );
+    $request->headers->set('Accept', 'application/json');
+
+    $response = $controller->store($request);
+
+    expect($capturedValidity)->toBe(15)
+        ->and($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true)['message'] ?? null)->toBe('Password reset link sent successfully.');
+
+    Schema::dropIfExists('activity_log');
+    Schema::dropIfExists('profiles');
+    Schema::dropIfExists('users');
+    Schema::dropIfExists('schools');
 });
 
 test('PasswordResetLinkController store rejects when allow_password_reset is false', function () {
