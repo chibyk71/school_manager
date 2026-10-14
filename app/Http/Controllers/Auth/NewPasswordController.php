@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\Settings\SettingsResolver;
+use App\Support\Settings\SettingsScope;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\User;
 use Ichtrojan\Otp\Otp;
@@ -34,9 +36,11 @@ class NewPasswordController extends Controller
             // Check school context
             $school = GetSchoolModel();
 
-            // Check if password reset is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_password_reset'] ?? false)) {
+            // Check if password reset is allowed (Phase 1 settings capability)
+            $resolver = app(SettingsResolver::class);
+            $scope = SettingsScope::school((string) $school->id);
+            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            if (! $allowPasswordReset) {
                 Log::info("Password reset disabled for school {$school->id} as per settings.");
                 return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
@@ -68,26 +72,33 @@ class NewPasswordController extends Controller
      */
     public function store(ResetPasswordRequest $request): RedirectResponse|JsonResponse
     {
+        // Established only once rate limiting applies; catch must not hit an unset key.
+        $throttleKey = null;
+
         try {
             // Check school context
             $school = GetSchoolModel();
 
-            // Check if password reset is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_password_reset'] ?? false)) {
+            // Check if password reset is allowed (Phase 1 settings capability)
+            $resolver = app(SettingsResolver::class);
+            $scope = SettingsScope::school((string) $school->id);
+            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            if (! $allowPasswordReset) {
                 throw new \Exception('Password reset is not allowed.');
             }
 
-            // Check rate limiting
+            // Check rate limiting (OTP lifetime is not a rate-limit lock duration)
             $throttleKey = 'password-reset|' . $request->email . '|' . $request->ip();
             $throttleMax = 5; // Hardcoded, can be moved to settings
-            $throttleLock = $authSettings['reset_password_token_life'] ?? 60;
+            // hasTooManyAttempts currently ignores lock minutes; keep a fixed default
+            // rather than coupling to authentication.reset_password_token_life.
+            $throttleLock = 60;
             if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
                 throw new \Exception('Too many password reset attempts. Please try again later.');
             }
 
             // Validate OTP and find user
-            $otpInstance = new Otp();
+            $otpInstance = app(Otp::class);
             $response = $otpInstance->validate($request->email, $request->token);
 
             if (!$response->status) {
@@ -124,7 +135,10 @@ class NewPasswordController extends Controller
                 ->with('status', 'Password reset successfully.');
         } catch (\Exception $e) {
             Log::error("Password reset failed for email {$request->email}: {$e->getMessage()}");
-            $this->incrementAttempts($throttleKey);
+            if ($throttleKey !== null) {
+                $this->incrementAttempts($throttleKey);
+            }
+
             return $this->respondWithError($request, $e->getMessage());
         }
     }

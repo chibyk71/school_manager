@@ -14,6 +14,20 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->singleton(\App\Support\Settings\SettingsRegistry::class, function () {
+            $registry = new \App\Support\Settings\SettingsRegistry();
+            \App\Settings\Definitions\AuthenticationSettings::register($registry);
+            $registry->seal();
+
+            return $registry;
+        });
+
+        $this->app->singleton(\App\Support\Settings\SettingsResolver::class, function ($app) {
+            return new \App\Support\Settings\SettingsResolver(
+                $app->make(\App\Support\Settings\SettingsRegistry::class)
+            );
+        });
+
         $this->app->bind(
             Authorization::class,
             \App\Services\Permission\AuthorizationService::class
