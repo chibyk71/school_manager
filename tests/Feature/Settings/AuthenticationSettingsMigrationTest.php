@@ -11,6 +11,7 @@
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Requests\Auth\ResetPasswordRequest;
+use App\Models\School;
 use App\Settings\Definitions\AuthenticationSettings;
 use App\Support\Settings\SettingsRegistry;
 use App\Support\Settings\SettingsResolver;
@@ -57,13 +58,18 @@ beforeEach(function () {
     $this->app->instance(SettingsResolver::class, new SettingsResolver($registry));
 
     $this->resolver = app(SettingsResolver::class);
-    $this->school = (object) ['id' => 42];
+
+    // GetSchoolModel(): ?School requires a real School instance (not stdClass)
+    $school = new School;
+    $school->id = 42;
+    $school->name = 'Demo School';
+    $this->school = $school;
 
     $this->app->instance('schoolManager', new class($this->school)
     {
-        public function __construct(private $school) {}
+        public function __construct(private School $school) {}
 
-        public function getActiveSchool()
+        public function getActiveSchool(): ?School
         {
             return $this->school;
         }
@@ -169,10 +175,11 @@ test('PasswordResetLinkController store passes configured OTP lifetime to Otp::g
         $table->timestamps();
     });
     Schema::create('profiles', function (Blueprint $table) {
-        $table->id();
-        $table->uuid('user_id')->nullable();
+        $table->uuid('id')->primary();
+        $table->uuid('user_id')->nullable()->index();
         $table->string('email')->nullable();
         $table->timestamps();
+        $table->softDeletes();
     });
 
     // Spatie activity() after generate — minimal table so logging cannot abort the path
