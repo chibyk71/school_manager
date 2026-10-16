@@ -354,11 +354,17 @@ class StorageProviderHttpTest extends TestCase
         $school = $this->makeSchool('Test Conn OK');
         $user = $this->actingManager($school);
 
+        // Connection tester requires an existing path under storage_path().
+        $root = storage_path('app/private');
+        if (! is_dir($root)) {
+            mkdir($root, 0755, true);
+        }
+
         $this->actingAs($user)
             ->postJson(route('settings.storage-providers.test-connection'), [
                 'driver' => 'local',
                 'ownership' => 'school',
-                'config' => ['root' => storage_path('app/private')],
+                'config' => ['root' => $root],
             ])
             ->assertOk()
             ->assertJsonPath('success', true);
