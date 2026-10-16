@@ -207,6 +207,15 @@ class StorageProviderController extends Controller
         return $school?->id;
     }
 
+    /**
+     * Whether school-owned provider mutations are allowed for this school.
+     *
+     * Fail-closed: if Settings resolution throws (corrupt value, unknown key,
+     * infrastructure error), management is denied rather than silently enabled.
+     * An explicit stored false is always enforced. When no row exists, the
+     * registry default (true) is returned by SettingsResolver::get() without
+     * throwing — that path still allows management.
+     */
     private function schoolProviderManagementAllowed(?string $schoolId): bool
     {
         if ($schoolId === null) {
@@ -221,8 +230,8 @@ class StorageProviderController extends Controller
 
             return (bool) $value;
         } catch (\Throwable) {
-            // Registry default is true.
-            return true;
+            // Fail closed — do not enable management when policy cannot be read.
+            return false;
         }
     }
 }

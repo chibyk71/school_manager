@@ -2,15 +2,10 @@
 
 namespace Tests\Feature\Storage;
 
-use App\Enums\StorageProviderDriver;
-use App\Enums\StorageProviderOwnership;
 use App\Models\Permission;
 use App\Models\School;
-use App\Models\StorageProvider;
 use App\Models\User;
 use App\Services\Storage\StorageProviderManager;
-use App\Settings\Definitions\FileManagerSettings;
-use App\Support\Settings\SettingsRegistry;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,6 +14,9 @@ use Tests\TestCase;
 
 /**
  * HTTP authorization and isolation coverage for storage providers.
+ *
+ * School context is established via the real schoolManager binding
+ * (GetSchoolModel → app('schoolManager')->getActiveSchool()).
  */
 class StorageProviderHttpTest extends TestCase
 {
@@ -28,9 +26,9 @@ class StorageProviderHttpTest extends TestCase
     {
         return School::query()->create([
             'name' => $name,
-            'code' => strtoupper(substr(md5($name.microtime()), 0, 8)),
-            'slug' => str($name)->slug().'-'.substr(md5($name.microtime()), 0, 4),
-            'email' => str($name)->slug().'-'.substr(md5((string) microtime(true)), 0, 4).'@test.example',
+            'code' => strtoupper(substr(md5($name.microtime(true)), 0, 8)),
+            'slug' => str($name)->slug().'-'.substr(md5($name.microtime(true)), 0, 6),
+            'email' => str($name)->slug().'-'.substr(md5((string) microtime(true)), 0, 6).'@test.example',
             'type' => 'private',
         ]);
     }
@@ -44,7 +42,14 @@ class StorageProviderHttpTest extends TestCase
             );
 
             if (method_exists($user, 'givePermission')) {
-                $user->givePermission($permission, $school);
+                try {
+                    $user->givePermission($permission, $school);
+                } catch (\Throwable) {
+                }
+                try {
+                    $user->givePermission($permission);
+                } catch (\Throwable) {
+                }
             } else {
                 DB::table('permission_user')->insertOrIgnore([
                     'permission_id' => $permission->id,
@@ -56,13 +61,13 @@ class StorageProviderHttpTest extends TestCase
         }
     }
 
-    private function bindSchool(?School $school): void
+    private function bindActiveSchool(?School $school): void
     {
-        $this->app->instance('schoolManager', new class($school)
+        $manager = new class($school)
         {
             public function __construct(private $school) {}
 
-            public function getActiveSchool()
+            public function getActiveSchool(?\Illuminate\Http\Request $request = null): ?School
             {
                 return $this->school;
             }
@@ -71,11 +76,24 @@ class StorageProviderHttpTest extends TestCase
             {
                 $this->school = $school;
             }
-        });
+        };
 
-        // GetSchoolModel() typically resolves via schoolManager or helper.
-        if (! function_exists('GetSchoolModel')) {
-            // Helper may already exist from the app bootstrap.
+        $this->app->instance('schoolManager', $manager);
+
+        if ($school !== null) {
+            session(['active_school_id' => $school->id]);
+        } else {
+            session()->forget('active_school_id');
+        }
+
+        if (function_exists('GetSchoolModel')) {
+            $resolved = GetSchoolModel();
+            if ($school !== null) {
+                $this->assertNotNull($resolved, 'GetSchoolModel must resolve the bound schoolManager school');
+                $this->assertSame($school->id, $resolved->id);
+            } else {
+                $this->assertNull($resolved);
+            }
         }
     }
 
@@ -83,9 +101,9 @@ class StorageProviderHttpTest extends TestCase
     {
         $user = User::factory()->create(['is_active' => true]);
         $this->grant($user, ['storage-providers.view', 'storage-providers.manage'], $school);
-        $this->bindSchool($school);
+        $this->bindActiveSchool($school);
 
-        return $user;
+        return $user->fresh();
     }
 
     public function test_unauthenticated_requests_are_rejected(): void
@@ -98,11 +116,61 @@ class StorageProviderHttpTest extends TestCase
     {
         $user = User::factory()->create(['is_active' => true]);
         $school = $this->makeSchool('No Perm');
-        $this->bindSchool($school);
+        $this->bindActiveSchool($school);
 
         $this->actingAs($user)
             ->get(route('settings.storage-providers.index'))
             ->assertForbidden();
+    }
+
+    public function test_school_user_can_create_school_provider_when_allowed(): void
+    {
+        $school = $this->makeSchool('Create School OK');
+        $user = $this->actingManager($school);
+
+        $this->actingAs($user)
+            ->postJson(route('settings.storage-providers.store'), [
+                'name' => 'School Disk',
+                'driver' => 'local',
+                'ownership' => 'school',
+                'config' => [],
+                'enabled' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('provider.ownership', 'school')
+            ->assertJsonPath('provider.name', 'School Disk');
+
+        $this->assertDatabaseHas('storage_providers', [
+            'name' => 'School Disk',
+            'ownership' => 'school',
+            'school_id' => $school->id,
+        ]);
+    }
+
+    public function test_school_provider_management_disabled_rejects_create_with_403(): void
+    {
+        $school = $this->makeSchool('Policy Off');
+        $user = $this->actingManager($school);
+
+        $resolver = app(SettingsResolver::class);
+        $resolver->set(
+            'file_manager.allow_school_provider_management',
+            false,
+            SettingsScope::school($school->id)
+        );
+
+        $this->bindActiveSchool($school);
+
+        $this->actingAs($user)
+            ->postJson(route('settings.storage-providers.store'), [
+                'name' => 'Blocked Disk',
+                'driver' => 'local',
+                'ownership' => 'school',
+                'config' => [],
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('storage_providers', ['name' => 'Blocked Disk']);
     }
 
     public function test_school_user_cannot_view_system_provider_by_id(): void
@@ -114,7 +182,7 @@ class StorageProviderHttpTest extends TestCase
             'name' => 'Platform Disk',
             'driver' => 'local',
             'ownership' => 'system',
-            'config' => ['root' => storage_path('app/private')],
+            'config' => [],
         ], null);
 
         $user = $this->actingManager($school);
@@ -124,7 +192,7 @@ class StorageProviderHttpTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_school_user_cannot_view_other_school_provider(): void
+    public function test_school_user_cannot_view_or_update_other_school_provider(): void
     {
         $schoolA = $this->makeSchool('A Isolation');
         $schoolB = $this->makeSchool('B Isolation');
@@ -142,56 +210,17 @@ class StorageProviderHttpTest extends TestCase
         $this->actingAs($user)
             ->getJson(route('settings.storage-providers.show', $providerB->id))
             ->assertNotFound();
-    }
-
-    public function test_school_user_cannot_create_system_provider(): void
-    {
-        $school = $this->makeSchool('Create System Block');
-        $user = $this->actingManager($school);
 
         $this->actingAs($user)
-            ->postJson(route('settings.storage-providers.store'), [
-                'name' => 'Should Fail',
-                'driver' => 'local',
-                'ownership' => 'system',
-                'config' => [],
+            ->patchJson(route('settings.storage-providers.update', $providerB->id), [
+                'name' => 'Hacked',
             ])
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
-    public function test_school_user_can_create_school_provider_when_policy_allows(): void
+    public function test_school_user_cannot_create_or_update_system_provider(): void
     {
-        $school = $this->makeSchool('Create School OK');
-        $user = $this->actingManager($school);
-
-        $response = $this->actingAs($user)
-            ->postJson(route('settings.storage-providers.store'), [
-                'name' => 'School Disk',
-                'driver' => 'local',
-                'ownership' => 'school',
-                'config' => [],
-                'enabled' => true,
-            ]);
-
-        // May be 201 or forbidden if GetSchoolModel is not wired to our bind —
-        // assert either success with school ownership or document fixture gap.
-        if ($response->status() === 201) {
-            $response->assertJsonPath('provider.ownership', 'school');
-            $this->assertDatabaseHas('storage_providers', [
-                'name' => 'School Disk',
-                'ownership' => 'school',
-                'school_id' => $school->id,
-            ]);
-        } else {
-            // When GetSchoolModel does not resolve the bound schoolManager,
-            // the controller returns 403 for missing school context on school ownership.
-            $this->assertContains($response->status(), [403, 422]);
-        }
-    }
-
-    public function test_school_user_cannot_update_system_provider_by_id(): void
-    {
-        $school = $this->makeSchool('Update System Block');
+        $school = $this->makeSchool('System Mutate Block');
         $manager = app(StorageProviderManager::class);
 
         $system = $manager->create([
@@ -204,10 +233,57 @@ class StorageProviderHttpTest extends TestCase
         $user = $this->actingManager($school);
 
         $this->actingAs($user)
+            ->postJson(route('settings.storage-providers.store'), [
+                'name' => 'Should Fail',
+                'driver' => 'local',
+                'ownership' => 'system',
+                'config' => [],
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($user)
             ->patchJson(route('settings.storage-providers.update', $system->id), [
                 'name' => 'Hacked',
             ])
             ->assertNotFound();
+    }
+
+    public function test_platform_context_can_create_system_provider(): void
+    {
+        $user = $this->actingManager(null);
+
+        $this->actingAs($user)
+            ->postJson(route('settings.storage-providers.store'), [
+                'name' => 'Platform Disk',
+                'driver' => 'local',
+                'ownership' => 'system',
+                'config' => [],
+                'enabled' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('provider.ownership', 'system');
+
+        $this->assertDatabaseHas('storage_providers', [
+            'name' => 'Platform Disk',
+            'ownership' => 'system',
+            'school_id' => null,
+        ]);
+    }
+
+    public function test_platform_context_cannot_create_school_provider(): void
+    {
+        $user = $this->actingManager(null);
+
+        $this->actingAs($user)
+            ->postJson(route('settings.storage-providers.store'), [
+                'name' => 'Orphan School Disk',
+                'driver' => 'local',
+                'ownership' => 'school',
+                'config' => [],
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('storage_providers', ['name' => 'Orphan School Disk']);
     }
 
     public function test_connection_test_system_blocked_in_school_context(): void
@@ -222,6 +298,21 @@ class StorageProviderHttpTest extends TestCase
                 'config' => ['root' => storage_path('app/private')],
             ])
             ->assertForbidden();
+    }
+
+    public function test_connection_test_school_allowed_in_school_context(): void
+    {
+        $school = $this->makeSchool('Test Conn OK');
+        $user = $this->actingManager($school);
+
+        $this->actingAs($user)
+            ->postJson(route('settings.storage-providers.test-connection'), [
+                'driver' => 'local',
+                'ownership' => 'school',
+                'config' => ['root' => storage_path('app/private')],
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
     }
 
     public function test_dependency_check_hidden_for_system_in_school_context(): void
@@ -241,38 +332,5 @@ class StorageProviderHttpTest extends TestCase
         $this->actingAs($user)
             ->getJson(route('settings.storage-providers.dependencies', $system->id))
             ->assertNotFound();
-    }
-
-    public function test_allow_school_provider_management_disabled_blocks_create(): void
-    {
-        $school = $this->makeSchool('Policy Off');
-        $user = $this->actingManager($school);
-
-        // Ensure FileManagerSettings are registered and set disabled for this school.
-        $registry = app(SettingsRegistry::class);
-        if ($registry->find('file_manager.allow_school_provider_management') === null) {
-            $this->markTestSkipped('FileManagerSettings not registered in test container');
-        }
-
-        $resolver = app(SettingsResolver::class);
-        $resolver->set(
-            'file_manager.allow_school_provider_management',
-            false,
-            SettingsScope::school($school->id)
-        );
-
-        $this->bindSchool($school);
-
-        $response = $this->actingAs($user)
-            ->postJson(route('settings.storage-providers.store'), [
-                'name' => 'Blocked Disk',
-                'driver' => 'local',
-                'ownership' => 'school',
-                'config' => [],
-            ]);
-
-        // 403 when school context resolves; otherwise context missing.
-        $this->assertContains($response->status(), [403, 422]);
-        $this->assertDatabaseMissing('storage_providers', ['name' => 'Blocked Disk']);
     }
 }

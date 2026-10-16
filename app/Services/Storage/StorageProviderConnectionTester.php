@@ -3,6 +3,7 @@
 namespace App\Services\Storage;
 
 use App\Enums\StorageProviderDriver;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -12,11 +13,16 @@ use Illuminate\Support\Str;
  * Never persists configuration. Never overwrites an existing provider.
  * Never returns credentials or raw exception messages that may contain secrets.
  *
- * Safety (Phase 1 review):
+ * Safety:
  * - Local roots must resolve under an allowlisted base (storage_path).
- * - S3 endpoints must be http(s) URLs when provided.
+ * - S3 endpoints/URLs: http(s) only, no URL credentials, no private/loopback/
+ *   link-local/metadata targets (hostname + resolved DNS). Redirects disabled
+ *   on the probe HTTP client so they cannot bypass the policy.
  * - Probe objects are always cleaned up on success and failure.
- * - Network/filesystem operations are bounded where the adapter supports it.
+ * - Failures log a static diagnostic only (no exception message, no config).
+ *
+ * Private / internal S3-compatible deployments can be explicitly allowlisted
+ * via config('filesystems.connection_test_allowed_hosts') (exact hostnames).
  */
 final class StorageProviderConnectionTester
 {
@@ -74,12 +80,9 @@ final class StorageProviderConnectionTester
                 StorageProviderDriver::Local => $this->testLocal($config),
                 StorageProviderDriver::S3 => $this->testS3($config),
             };
-        } catch (\Throwable $e) {
-            // Do not log full config (may contain secrets). Message only.
-            report(new \RuntimeException(
-                'Storage provider connection test failed: '.$e->getMessage(),
-                previous: $e
-            ));
+        } catch (\Throwable) {
+            // Static diagnostic only — no exception message, previous, or config.
+            Log::warning('Storage provider connection test failed.');
 
             return [
                 'success' => false,
@@ -89,7 +92,6 @@ final class StorageProviderConnectionTester
 
         if ($result['success']) {
             $reporter = new StorageProviderCapabilityReporter;
-            // Capabilities from non-secret config only in the report path used here.
             $safeConfig = $validated['config'] ?? [];
             $result['capabilities'] = $reporter->report($driver, $safeConfig);
         }
@@ -106,20 +108,15 @@ final class StorageProviderConnectionTester
             throw new \InvalidArgumentException('Local storage root path is invalid.');
         }
 
-        // Reject path traversal tokens before resolution.
         if (preg_match('#(^|/|\\\\)\.\.(/|\\\\|$)#', $root)) {
             throw new \InvalidArgumentException('Local storage root path is not permitted.');
         }
 
-        $default = storage_path('app/private');
-        $candidate = $root === '' ? $default : $root;
-
-        // Resolve relative paths against storage_path for consistency.
+        $candidate = $root;
         if (! $this->isAbsolutePath($candidate)) {
             $candidate = storage_path(ltrim($candidate, '/\\'));
         }
 
-        // Create the directory if missing so realpath can succeed under storage.
         if (! is_dir($candidate)) {
             @mkdir($candidate, 0755, true);
         }
@@ -129,14 +126,21 @@ final class StorageProviderConnectionTester
             throw new \InvalidArgumentException('Local storage root path could not be resolved.');
         }
 
-        $allowed = self::allowedLocalRootBases();
-        foreach ($allowed as $base) {
+        foreach (self::allowedLocalRootBases() as $base) {
             if ($real === $base || str_starts_with($real, $base.DIRECTORY_SEPARATOR)) {
                 return $real;
             }
         }
 
         throw new \InvalidArgumentException('Local storage root path is outside the permitted storage area.');
+    }
+
+    /**
+     * Public entry for endpoint policy checks (used by tests).
+     */
+    public function endpointIsAllowed(string $url): bool
+    {
+        return $this->isAllowedEndpoint($url);
     }
 
     /**
@@ -191,7 +195,7 @@ final class StorageProviderConnectionTester
                     $disk->delete($probe);
                 }
             } catch (\Throwable) {
-                // Best-effort cleanup; do not leak secondary errors.
+                // Best-effort cleanup.
             }
         }
     }
@@ -207,7 +211,7 @@ final class StorageProviderConnectionTester
             if (! $this->isAllowedEndpoint($endpoint)) {
                 return [
                     'success' => false,
-                    'message' => 'S3 endpoint must be a valid http or https URL.',
+                    'message' => 'S3 endpoint is not permitted for connection testing.',
                 ];
             }
         }
@@ -217,7 +221,7 @@ final class StorageProviderConnectionTester
             if (! $this->isAllowedEndpoint($url)) {
                 return [
                     'success' => false,
-                    'message' => 'S3 base URL must be a valid http or https URL.',
+                    'message' => 'S3 base URL is not permitted for connection testing.',
                 ];
             }
         }
@@ -235,10 +239,11 @@ final class StorageProviderConnectionTester
                 FILTER_VALIDATE_BOOLEAN
             ),
             'throw' => true,
-            // Bound HTTP client where Laravel/Flysystem passes options through.
+            // Bound + no redirects so redirect targets cannot bypass endpoint policy.
             'http' => [
                 'timeout' => 10,
                 'connect_timeout' => 5,
+                'allow_redirects' => false,
             ],
         ];
 
@@ -284,11 +289,25 @@ final class StorageProviderConnectionTester
             return false;
         }
 
-        // Unix absolute or Windows drive letter.
         return str_starts_with($path, '/')
-            || (strlen($path) > 2 && ctype_alpha($path[0]) && $path[1] === ':' );
+            || (strlen($path) > 2 && ctype_alpha($path[0]) && $path[1] === ':');
     }
 
+    /**
+     * Defensible endpoint policy for connection-test probes.
+     *
+     * - http/https only, no userinfo in URL
+     * - hostname not in blocked names (localhost, metadata, etc.)
+     * - literal IP not private/loopback/link-local/unique-local
+     * - DNS A/AAAA records (when resolvable) must not be private; failure to
+     *   resolve is treated as not allowed for custom endpoints
+     * - optional exact-hostname allowlist from config for private deployments
+     *
+     * Limitation: the AWS SDK / Flysystem stack may still perform its own DNS
+     * at request time (TOCTOU/rebinding). Disabling redirects reduces one bypass
+     * class; full request-time IP pinning is not available without a custom
+     * HTTP handler. Operators should prefer public endpoints or explicit allowlists.
+     */
     private function isAllowedEndpoint(string $url): bool
     {
         $parts = parse_url($url);
@@ -301,11 +320,171 @@ final class StorageProviderConnectionTester
             return false;
         }
 
-        // Reject obviously internal-only schemes already filtered; block credentials in URL.
         if (isset($parts['user']) || isset($parts['pass'])) {
             return false;
         }
 
+        $host = strtolower(rtrim($parts['host'], '.'));
+        if ($host === '') {
+            return false;
+        }
+
+        // Explicit allowlist for private / internal S3-compatible deployments.
+        $allowlist = config('filesystems.connection_test_allowed_hosts', []);
+        if (is_array($allowlist) && $allowlist !== []) {
+            $normalized = array_map(
+                static fn ($h) => strtolower(rtrim((string) $h, '.')),
+                $allowlist
+            );
+            if (in_array($host, $normalized, true)) {
+                return true;
+            }
+        }
+
+        if ($this->isBlockedHostname($host)) {
+            return false;
+        }
+
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return ! $this->isProhibitedIp($host);
+        }
+
+        // Resolve DNS; reject if any record is prohibited or resolution fails.
+        $records = @dns_get_record($host, DNS_A + DNS_AAAA);
+        if ($records === false || $records === []) {
+            // Also try gethostbynamel as a fallback for environments without dns_get_record.
+            $ipv4 = @gethostbynamel($host);
+            if ($ipv4 === false || $ipv4 === []) {
+                return false;
+            }
+            foreach ($ipv4 as $ip) {
+                if ($this->isProhibitedIp($ip)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        $sawAddress = false;
+        foreach ($records as $record) {
+            $ip = $record['ip'] ?? $record['ipv6'] ?? null;
+            if (! is_string($ip) || $ip === '') {
+                continue;
+            }
+            $sawAddress = true;
+            if ($this->isProhibitedIp($ip)) {
+                return false;
+            }
+        }
+
+        return $sawAddress;
+    }
+
+    private function isBlockedHostname(string $host): bool
+    {
+        $blockedExact = [
+            'localhost',
+            'localhost.localdomain',
+            'metadata.google.internal',
+            'metadata',
+            'kubernetes.default',
+            'kubernetes.default.svc',
+        ];
+
+        if (in_array($host, $blockedExact, true)) {
+            return true;
+        }
+
+        // Link-local / metadata hostnames commonly used across clouds.
+        if (str_ends_with($host, '.localhost') || str_ends_with($host, '.local')) {
+            return true;
+        }
+
+        if ($host === '169.254.169.254' || $host === 'metadata.google.internal') {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * True when the IP must not be contacted by connection-test probes.
+     */
+    public function isProhibitedIp(string $ip): bool
+    {
+        $ip = strtolower(trim($ip, '[]'));
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $this->isProhibitedIpv4($ip);
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return $this->isProhibitedIpv6($ip);
+        }
+
         return true;
+    }
+
+    private function isProhibitedIpv4(string $ip): bool
+    {
+        // FILTER_FLAG_NO_PRIV_RANGE | NO_RES_RANGE rejects private + reserved,
+        // but not all link-local / carrier-grade NAT; add explicit checks.
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return true;
+        }
+
+        $long = ip2long($ip);
+        if ($long === false) {
+            return true;
+        }
+
+        // 169.254.0.0/16 link-local (includes cloud metadata 169.254.169.254)
+        if (($long & 0xFFFF0000) === 0xA9FE0000) {
+            return true;
+        }
+
+        // 100.64.0.0/10 carrier-grade NAT
+        if (($long & 0xFFC00000) === 0x64400000) {
+            return true;
+        }
+
+        // 0.0.0.0/8
+        if (($long & 0xFF000000) === 0) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isProhibitedIpv6(string $ip): bool
+    {
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return true;
+        }
+
+        $packed = inet_pton($ip);
+        if ($packed === false) {
+            return true;
+        }
+
+        // ::1 loopback already excluded by NO_RES_RANGE in most builds; be explicit.
+        if ($ip === '::1') {
+            return true;
+        }
+
+        // fe80::/10 link-local
+        $b0 = ord($packed[0]);
+        $b1 = ord($packed[1]);
+        if ($b0 === 0xfe && ($b1 & 0xc0) === 0x80) {
+            return true;
+        }
+
+        // fc00::/7 unique local
+        if (($b0 & 0xfe) === 0xfc) {
+            return true;
+        }
+
+        return false;
     }
 }

@@ -39,7 +39,7 @@ Phase 1 establishes a **storage provider registry**: configure, validate, and te
 
 | Key | Scope | Behavior |
 |-----|-------|----------|
-| `file_manager.allow_school_provider_management` | school | When `false`, school-context create/update/connection-test of school-owned providers is rejected (403). Default `true`. Enforced via `SettingsResolver`. |
+| `file_manager.allow_school_provider_management` | school | When `false`, school-context create/update/connection-test of school-owned providers is rejected (403). Default `true` when no row exists. Enforced via `SettingsResolver`. **Fail-closed:** if resolution throws, management is denied. |
 | `file_manager.default_provider_preference` | school | Advisory default driver (`local` \| `s3`) passed to the create UI. Does **not** change Laravel filesystem defaults or Media Library disk. |
 
 Provider credentials are never stored as generic Settings values.
@@ -57,10 +57,15 @@ Provider credentials are never stored as generic Settings values.
 - Accepts submitted configuration (including unsaved forms)
 - Does **not** persist or overwrite provider rows
 - **Local roots** must resolve under `storage_path()` (path traversal and paths outside storage are rejected)
-- **S3 endpoints / base URLs** must be `http` or `https` without embedded credentials
-- HTTP client timeouts are bounded (connect 5s, total 10s) where supported
+- **S3 endpoints / base URLs**:
+  - `http` / `https` only; no URL credentials
+  - Hostnames and resolved DNS must not target loopback, private, link-local, unique-local, or cloud-metadata addresses
+  - Redirects disabled on the probe HTTP client
+  - Private / on-prem hosts may be explicitly allowlisted via `filesystems.connection_test_allowed_hosts` / `STORAGE_PROVIDER_TEST_ALLOWED_HOSTS`
+  - Limitation: request-time DNS rebinding cannot be fully pinned without a custom HTTP handler; prefer public endpoints or allowlists
+- HTTP client timeouts are bounded (connect 5s, total 10s)
 - Probe objects are cleaned up on success and failure
-- Returns a safe success/failure message (no credentials, no raw exception text that may contain secrets)
+- Failures return a generic message; logs record only a static warning (no exception message, config, or secrets)
 - Ownership boundary applies: school context cannot run system-ownership connection tests
 
 ## Dependency check

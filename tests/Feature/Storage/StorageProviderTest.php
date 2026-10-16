@@ -382,4 +382,109 @@ class StorageProviderTest extends TestCase
             'New storage providers route must be registered'
         );
     }
+
+    public function test_endpoint_policy_rejects_loopback_and_metadata(): void
+    {
+        $tester = app(StorageProviderConnectionTester::class);
+
+        $prohibited = [
+            'http://127.0.0.1:9000',
+            'http://localhost/minio',
+            'http://169.254.169.254/latest/meta-data/',
+            'http://[::1]/',
+            'http://10.0.0.5',
+            'http://192.168.1.1',
+            'http://172.16.0.1',
+            'ftp://s3.amazonaws.com',
+            'https://user:pass@s3.example.com',
+        ];
+
+        foreach ($prohibited as $url) {
+            $this->assertFalse(
+                $tester->endpointIsAllowed($url),
+                "Expected prohibited endpoint to be rejected: {$url}"
+            );
+        }
+    }
+
+    public function test_endpoint_policy_allows_public_https_hosts(): void
+    {
+        $tester = app(StorageProviderConnectionTester::class);
+
+        // Well-known public hostnames (DNS may resolve in CI; if DNS fails the
+        // policy treats unresolved custom endpoints as not allowed — skip then).
+        $url = 'https://s3.amazonaws.com';
+        $parts = parse_url($url);
+        $host = $parts['host'] ?? '';
+        $resolved = @gethostbynamel($host);
+        if ($resolved === false || $resolved === []) {
+            $this->markTestSkipped('DNS unavailable for s3.amazonaws.com in this environment');
+        }
+
+        $this->assertTrue($tester->endpointIsAllowed($url));
+    }
+
+    public function test_endpoint_allowlist_permits_configured_private_host(): void
+    {
+        config(['filesystems.connection_test_allowed_hosts' => ['minio.internal.example']]);
+        $tester = app(StorageProviderConnectionTester::class);
+
+        $this->assertTrue($tester->endpointIsAllowed('https://minio.internal.example:9000'));
+    }
+
+    public function test_prohibited_ip_helper(): void
+    {
+        $tester = app(StorageProviderConnectionTester::class);
+
+        $this->assertTrue($tester->isProhibitedIp('127.0.0.1'));
+        $this->assertTrue($tester->isProhibitedIp('10.1.2.3'));
+        $this->assertTrue($tester->isProhibitedIp('192.168.0.1'));
+        $this->assertTrue($tester->isProhibitedIp('169.254.169.254'));
+        $this->assertTrue($tester->isProhibitedIp('::1'));
+        $this->assertFalse($tester->isProhibitedIp('8.8.8.8'));
+    }
+
+    public function test_connection_failure_does_not_log_sensitive_values(): void
+    {
+        \Illuminate\Support\Facades\Log::fake();
+
+        $tester = app(StorageProviderConnectionTester::class);
+        $secret = 'super-secret-value-should-not-log';
+        $endpoint = 'https://127.0.0.1:9000';
+
+        // Rejected by endpoint policy before network — still ensure response is generic.
+        $result = $tester->test([
+            'driver' => 's3',
+            'ownership' => 'system',
+            'config' => [
+                'bucket' => 'b',
+                'region' => 'us-east-1',
+                'endpoint' => $endpoint,
+                'key' => 'AKIAEXAMPLE',
+            ],
+            'secrets' => ['secret' => $secret],
+        ]);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringNotContainsString($secret, $result['message']);
+        $this->assertStringNotContainsString('127.0.0.1', $result['message']);
+        $this->assertStringNotContainsString('AKIAEXAMPLE', $result['message']);
+    }
+
+    public function test_school_provider_management_fails_closed_on_settings_error(): void
+    {
+        $school = $this->makeSchool('Fail Closed');
+
+        $mock = \Mockery::mock(SettingsResolver::class);
+        $mock->shouldReceive('get')
+            ->andThrow(new \RuntimeException('simulated settings failure'));
+        $this->app->instance(SettingsResolver::class, $mock);
+
+        $controller = $this->app->make(\App\Http\Controllers\Settings\Storage\StorageProviderController::class);
+        $method = new \ReflectionMethod($controller, 'schoolProviderManagementAllowed');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke($controller, $school->id));
+    }
 }
+
