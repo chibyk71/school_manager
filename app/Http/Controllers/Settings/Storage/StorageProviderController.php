@@ -15,8 +15,8 @@ use App\Services\Storage\StorageProviderManager;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -175,6 +175,16 @@ class StorageProviderController extends Controller
             return response()->json([
                 'message' => 'School-level storage provider management is disabled for this school.',
             ], 403);
+        }
+
+        // Connection tests do not persist providers, but the shared validator still
+        // enforces school_id for school ownership. Bind the active school context
+        // so school-scoped probes validate the same way as system-scoped ones.
+        if ($ownership === StorageProviderOwnership::School && $schoolId !== null) {
+            $data['school_id'] = $schoolId;
+        }
+        if ($ownership === StorageProviderOwnership::System) {
+            unset($data['school_id']);
         }
 
         $result = $this->tester->test($data);
