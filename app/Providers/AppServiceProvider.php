@@ -17,6 +17,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(\App\Support\Settings\SettingsRegistry::class, function () {
             $registry = new \App\Support\Settings\SettingsRegistry();
             \App\Settings\Definitions\AuthenticationSettings::register($registry);
+            \App\Settings\Definitions\FileManagerSettings::register($registry);
             $registry->seal();
 
             return $registry;
@@ -81,6 +82,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(
             \App\Models\DynamicEnum::class,
             \App\Policies\DynamicEnumPolicy::class
+        );
+
+        Gate::policy(
+            \App\Models\StorageProvider::class,
+            \App\Policies\StorageProviderPolicy::class
         );
 
         // School Manager permission identities (permissions.name ∪ catalogue).
