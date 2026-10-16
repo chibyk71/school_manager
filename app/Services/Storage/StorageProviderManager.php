@@ -41,17 +41,12 @@ final class StorageProviderManager
         $query = StorageProvider::query()->orderBy('name');
 
         if ($schoolId !== null) {
-            // School context: own school providers only — never system config.
             return $query->forSchool($schoolId)->get();
         }
 
-        // Platform context: system providers only.
         return $query->system()->get();
     }
 
-    /**
-     * Resolve a provider by id only if it is visible in the given context.
-     */
     public function findForContext(string $id, ?string $schoolId): ?StorageProvider
     {
         $provider = StorageProvider::query()->find($id);
@@ -60,7 +55,6 @@ final class StorageProviderManager
         }
 
         if ($schoolId !== null) {
-            // School context: only matching school-owned rows.
             if ($provider->isSchoolOwned() && $provider->school_id === $schoolId) {
                 return $provider;
             }
@@ -68,7 +62,6 @@ final class StorageProviderManager
             return null;
         }
 
-        // Platform context: system-owned only.
         if ($provider->isSystemOwned()) {
             return $provider;
         }
@@ -76,17 +69,12 @@ final class StorageProviderManager
         return null;
     }
 
-    /**
-     * Whether the context may mutate (create/update/test) providers of the given ownership.
-     */
     public function canMutateOwnership(?string $schoolId, StorageProviderOwnership $ownership): bool
     {
         if ($ownership === StorageProviderOwnership::System) {
-            // System mutation only outside a school context.
             return $schoolId === null;
         }
 
-        // School-owned mutation requires an active school context.
         return $schoolId !== null;
     }
 
@@ -95,6 +83,19 @@ final class StorageProviderManager
      */
     public function create(array $data, ?string $actingSchoolId): StorageProvider
     {
+        // Inject school_id before validation so school-owned creates validate cleanly.
+        $rawOwnership = $data['ownership'] ?? null;
+        $ownershipHint = $rawOwnership instanceof StorageProviderOwnership
+            ? $rawOwnership
+            : (is_string($rawOwnership) ? StorageProviderOwnership::tryFrom($rawOwnership) : null);
+
+        if ($ownershipHint === StorageProviderOwnership::School && $actingSchoolId !== null) {
+            $data['school_id'] = $actingSchoolId;
+        }
+        if ($ownershipHint === StorageProviderOwnership::System) {
+            unset($data['school_id']);
+        }
+
         $validated = $this->validator->validate($data);
 
         $ownership = StorageProviderOwnership::from(
