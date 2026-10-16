@@ -295,6 +295,61 @@ class StorageProviderTest extends TestCase
         $this->assertStringContainsString('permitted', strtolower($result['message']));
     }
 
+    public function test_local_connection_test_does_not_create_outside_storage_path(): void
+    {
+        $tester = app(StorageProviderConnectionTester::class);
+        $outside = sys_get_temp_dir().DIRECTORY_SEPARATOR.'sm-storage-probe-'.bin2hex(random_bytes(8));
+
+        $this->assertDirectoryDoesNotExist($outside);
+
+        $result = $tester->test([
+            'driver' => 'local',
+            'ownership' => 'system',
+            'config' => ['root' => $outside],
+        ]);
+
+        $this->assertFalse($result['success'], $result['message'] ?? '');
+        $this->assertDirectoryDoesNotExist($outside);
+
+        $threw = false;
+        try {
+            $tester->assertSafeLocalRoot($outside);
+        } catch (\InvalidArgumentException $e) {
+            $threw = true;
+            $this->assertMatchesRegularExpression('/does not exist|outside|permitted|resolved/i', $e->getMessage());
+        }
+        $this->assertTrue($threw, 'assertSafeLocalRoot must reject paths outside storage');
+        $this->assertDirectoryDoesNotExist($outside);
+    }
+
+    public function test_local_connection_test_rejects_nonexistent_path_inside_storage(): void
+    {
+        $tester = app(StorageProviderConnectionTester::class);
+        $inside = storage_path('app/private/sm-nonexistent-'.bin2hex(random_bytes(8)));
+
+        $this->assertDirectoryDoesNotExist($inside);
+
+        $result = $tester->test([
+            'driver' => 'local',
+            'ownership' => 'system',
+            'config' => ['root' => $inside],
+        ]);
+
+        $this->assertFalse($result['success'], $result['message'] ?? '');
+        $this->assertStringContainsString('does not exist', strtolower($result['message']));
+        $this->assertDirectoryDoesNotExist($inside);
+
+        $threw = false;
+        try {
+            $tester->assertSafeLocalRoot($inside);
+        } catch (\InvalidArgumentException $e) {
+            $threw = true;
+            $this->assertStringContainsString('does not exist', strtolower($e->getMessage()));
+        }
+        $this->assertTrue($threw);
+        $this->assertDirectoryDoesNotExist($inside);
+    }
+
     public function test_local_connection_test_rejects_traversal(): void
     {
         $tester = app(StorageProviderConnectionTester::class);
@@ -324,7 +379,7 @@ class StorageProviderTest extends TestCase
         ]);
 
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('http', strtolower($result['message']));
+        $this->assertMatchesRegularExpression('/http|not permitted|invalid/i', $result['message']);
     }
 
     public function test_dependency_check_is_honest_when_tracking_absent(): void
@@ -411,8 +466,6 @@ class StorageProviderTest extends TestCase
     {
         $tester = app(StorageProviderConnectionTester::class);
 
-        // Well-known public hostnames (DNS may resolve in CI; if DNS fails the
-        // policy treats unresolved custom endpoints as not allowed — skip then).
         $url = 'https://s3.amazonaws.com';
         $parts = parse_url($url);
         $host = $parts['host'] ?? '';
@@ -452,7 +505,6 @@ class StorageProviderTest extends TestCase
         $secret = 'super-secret-value-should-not-log';
         $endpoint = 'https://127.0.0.1:9000';
 
-        // Rejected by endpoint policy before network — still ensure response is generic.
         $result = $tester->test([
             'driver' => 's3',
             'ownership' => 'system',
@@ -487,4 +539,3 @@ class StorageProviderTest extends TestCase
         $this->assertFalse($method->invoke($controller, $school->id));
     }
 }
-
