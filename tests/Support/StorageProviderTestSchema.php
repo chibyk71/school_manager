@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Schema;
  * Full RefreshDatabase is blocked by an unrelated SQLite devices migration
  * (drop column "ip" / staff_school_id_section_id_index). Same approach as
  * DocumentationSiteTest, SettingsInfrastructureTest, and Permission HTTP tests.
+ *
+ * Includes empty roles/role_user so Laratrust role lookups do not 500 when
+ * Gate still consults the user checker (HTTP tests also clear Gate::before).
  */
 final class StorageProviderTestSchema
 {
@@ -50,6 +53,27 @@ final class StorageProviderTestSchema
             $table->json('data')->nullable();
             $table->timestamps();
             $table->softDeletes();
+        });
+
+        Schema::create('roles', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('name');
+            $table->string('display_name')->nullable();
+            $table->string('description')->nullable();
+            $table->boolean('disabled')->default(false);
+            $table->uuid('school_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('role_user', function (Blueprint $table) {
+            $table->uuid('role_id');
+            $table->uuid('user_id');
+            $table->string('user_type');
+            $table->uuid('school_id')->nullable();
+            $table->unique(
+                ['user_id', 'role_id', 'user_type', 'school_id'],
+                'role_user_user_role_type_school_unique'
+            );
         });
 
         Schema::create('permissions', function (Blueprint $table) {
@@ -95,7 +119,6 @@ final class StorageProviderTestSchema
             $table->index(['enabled']);
         });
 
-        // OI settings table (school-scoped File Manager policy flags).
         Schema::create('settings', function (Blueprint $table) {
             $table->id();
             $table->string('scope')->nullable()->index();
@@ -114,7 +137,9 @@ final class StorageProviderTestSchema
             'storage_providers',
             'profiles',
             'permission_user',
+            'role_user',
             'permissions',
+            'roles',
             'settings',
             'schools',
             'users',
