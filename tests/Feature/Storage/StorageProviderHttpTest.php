@@ -9,8 +9,10 @@ use App\Services\Storage\StorageProviderManager;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
 use Illuminate\Database\Eloquent\Model;
-use Tests\Support\StorageProviderTestSchema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use ReflectionObject;
+use Tests\Support\StorageProviderTestSchema;
 use Tests\TestCase;
 
 /**
@@ -20,6 +22,8 @@ use Tests\TestCase;
  * (GetSchoolModel → app('schoolManager')->getActiveSchool()).
  *
  * Focused schema only — avoids broken devices SQLite migrations.
+ * Gate::before (Laratrust) is cleared so StorageProviderPolicy receives
+ * policy abilities (create, testConnection), matching DynamicEnum HTTP tests.
  */
 class StorageProviderHttpTest extends TestCase
 {
@@ -28,6 +32,15 @@ class StorageProviderHttpTest extends TestCase
         parent::setUp();
         Model::unguard();
         StorageProviderTestSchema::build();
+
+        // Laratrust Gate::before treats policy abilities (create, testConnection) as
+        // Laratrust permission names and queries roles — clear so StorageProviderPolicy runs.
+        $gate = Gate::getFacadeRoot();
+        $ref = new ReflectionObject($gate);
+        $prop = $ref->getProperty('beforeCallbacks');
+        $prop->setAccessible(true);
+        $prop->setValue($gate, []);
+
         $this->withoutMiddleware([
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\EnsureCurrentSession::class,
@@ -64,21 +77,18 @@ class StorageProviderHttpTest extends TestCase
                 ['display_name' => $name]
             );
 
-            if (method_exists($user, 'givePermission')) {
-                try {
-                    $user->givePermission($permission, $school);
-                } catch (\Throwable) {
-                }
-                try {
-                    $user->givePermission($permission);
-                } catch (\Throwable) {
-                }
-            } else {
+            DB::table('permission_user')->insertOrIgnore([
+                'permission_id' => $permission->id,
+                'user_id' => $user->id,
+                'user_type' => User::class,
+                'school_id' => $school?->id,
+            ]);
+            if ($school !== null) {
                 DB::table('permission_user')->insertOrIgnore([
                     'permission_id' => $permission->id,
                     'user_id' => $user->id,
                     'user_type' => User::class,
-                    'school_id' => $school?->id,
+                    'school_id' => null,
                 ]);
             }
         }
@@ -122,9 +132,8 @@ class StorageProviderHttpTest extends TestCase
 
     private function makeUser(): User
     {
-        // Avoid User::$with profile (no profiles table in focused schema).
         $id = (string) \Illuminate\Support\Str::uuid();
-        \Illuminate\Support\Facades\DB::table('users')->insert([
+        DB::table('users')->insert([
             'id' => $id,
             'name' => 'Storage Tester',
             'email' => 'storage-'.substr(md5($id), 0, 8).'@test.example',
