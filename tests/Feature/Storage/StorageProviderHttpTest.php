@@ -9,12 +9,8 @@ use App\Services\Storage\StorageProviderManager;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
 use Illuminate\Database\Eloquent\Model;
-<<<<<<< HEAD
-=======
 use Tests\Support\StorageProviderTestSchema;
->>>>>>> 23db01912d9ff58f51ac93c68de51a47a4cf0e60
 use Illuminate\Support\Facades\DB;
-use Tests\Support\StorageProviderTestSchema;
 use Tests\TestCase;
 
 /**
@@ -126,14 +122,9 @@ class StorageProviderHttpTest extends TestCase
 
     private function makeUser(): User
     {
-<<<<<<< HEAD
-        $id = (string) \Illuminate\Support\Str::uuid();
-        DB::table('users')->insert([
-=======
         // Avoid User::$with profile (no profiles table in focused schema).
         $id = (string) \Illuminate\Support\Str::uuid();
         \Illuminate\Support\Facades\DB::table('users')->insert([
->>>>>>> 23db01912d9ff58f51ac93c68de51a47a4cf0e60
             'id' => $id,
             'name' => 'Storage Tester',
             'email' => 'storage-'.substr(md5($id), 0, 8).'@test.example',

@@ -88,10 +88,7 @@ final class StorageProviderTestSchema
             $table->index(['enabled']);
         });
 
-<<<<<<< HEAD
-=======
         // OI settings table (school-scoped File Manager policy flags).
->>>>>>> 23db01912d9ff58f51ac93c68de51a47a4cf0e60
         Schema::create('settings', function (Blueprint $table) {
             $table->id();
             $table->string('scope')->nullable()->index();
