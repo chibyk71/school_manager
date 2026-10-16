@@ -14,8 +14,9 @@ use Illuminate\Support\Str;
  * Never returns credentials or raw exception messages that may contain secrets.
  *
  * Safety:
- * - Local roots must resolve under an allowlisted base (storage_path).
- * - Local path validation never creates directories; containment is checked first.
+ * - Local roots must exist and resolve under an allowlisted base (storage_path).
+ * - Nonexistent local roots are rejected; directories are never created; ancestors
+ *   are never substituted for the configured path.
  * - S3 endpoints/URLs: http(s) only, no URL credentials, no private/loopback/
  *   link-local/metadata targets (hostname + resolved DNS). Redirects disabled
  *   on the probe HTTP client so they cannot bypass the policy.
@@ -87,6 +88,13 @@ final class StorageProviderConnectionTester
         return $result;
     }
 
+    /**
+     * Canonicalize an existing local root and ensure it lies under an allowed base.
+     *
+     * Nonexistent paths are always rejected. This method never creates directories
+     * and never substitutes an ancestor for the configured root (so a connection
+     * test cannot report success against a different directory).
+     */
     public function assertSafeLocalRoot(string $root): string
     {
         if ($root === '' || str_contains($root, "\0")) {
@@ -109,39 +117,20 @@ final class StorageProviderConnectionTester
 
         $candidate = $this->normalizePathSeparators($candidate);
 
-        if (is_dir($candidate) || is_link($candidate)) {
-            $real = realpath($candidate);
-            if ($real === false || ! is_dir($real)) {
-                throw new \InvalidArgumentException('Local storage root path could not be resolved.');
-            }
-            if (! $this->isPathUnderAllowedBase($real, $bases)) {
-                throw new \InvalidArgumentException('Local storage root path is outside the permitted storage area.');
-            }
-
-            return $real;
+        if (! is_dir($candidate) && ! is_link($candidate)) {
+            throw new \InvalidArgumentException('Local storage root path does not exist.');
         }
 
-        $ancestor = $this->nearestExistingAncestor($candidate);
-        if ($ancestor === null) {
+        $real = realpath($candidate);
+        if ($real === false || ! is_dir($real)) {
             throw new \InvalidArgumentException('Local storage root path could not be resolved.');
         }
 
-        $realAncestor = realpath($ancestor);
-        if ($realAncestor === false || ! is_dir($realAncestor)) {
-            throw new \InvalidArgumentException('Local storage root path could not be resolved.');
-        }
-
-        if (! $this->isPathUnderAllowedBase($realAncestor, $bases)) {
+        if (! $this->isPathUnderAllowedBase($real, $bases)) {
             throw new \InvalidArgumentException('Local storage root path is outside the permitted storage area.');
         }
 
-        $remainder = substr($candidate, strlen($ancestor));
-        $remainder = $this->normalizePathSeparators($remainder);
-        if (preg_match('#(^|/)\.\.(/|$)#', $remainder)) {
-            throw new \InvalidArgumentException('Local storage root path is not permitted.');
-        }
-
-        return $realAncestor;
+        return $real;
     }
 
     private function isPathUnderAllowedBase(string $realPath, array $bases): bool
@@ -153,27 +142,6 @@ final class StorageProviderConnectionTester
         }
 
         return false;
-    }
-
-    private function nearestExistingAncestor(string $path): ?string
-    {
-        $current = $this->normalizePathSeparators($path);
-        while ($current !== '' && $current !== DIRECTORY_SEPARATOR) {
-            if (is_dir($current) || is_link($current)) {
-                return $current;
-            }
-            $parent = dirname($current);
-            if ($parent === $current) {
-                break;
-            }
-            $current = $parent;
-        }
-
-        if (is_dir(DIRECTORY_SEPARATOR)) {
-            return DIRECTORY_SEPARATOR;
-        }
-
-        return null;
     }
 
     private function normalizePathSeparators(string $path): string
