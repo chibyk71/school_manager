@@ -13,16 +13,32 @@ use App\Settings\Definitions\FileManagerSettings;
 use App\Support\Settings\SettingsRegistry;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\Eloquent\Model;
+use Tests\Support\StorageProviderTestSchema;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
  * File Manager Phase 1 — domain, secrets, isolation, connection safety, settings.
+ *
+ * Uses focused schema (not RefreshDatabase): full SQLite migrate is blocked by
+ * an unrelated devices migration (drop column ip / staff section index).
  */
 class StorageProviderTest extends TestCase
 {
-    use RefreshDatabase;
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Model::unguard();
+        StorageProviderTestSchema::build();
+    }
+
+    protected function tearDown(): void
+    {
+        StorageProviderTestSchema::drop();
+        Model::reguard();
+        parent::tearDown();
+    }
 
     private function makeSchool(string $name = 'Test Academy'): School
     {
