@@ -95,6 +95,19 @@ final class StorageProviderManager
      */
     public function create(array $data, ?string $actingSchoolId): StorageProvider
     {
+        // Ownership from payload first so school_id can be injected before validation.
+        $rawOwnership = $data['ownership'] ?? null;
+        $ownershipHint = $rawOwnership instanceof StorageProviderOwnership
+            ? $rawOwnership
+            : (is_string($rawOwnership) ? StorageProviderOwnership::tryFrom($rawOwnership) : null);
+
+        if ($ownershipHint === StorageProviderOwnership::School && $actingSchoolId !== null) {
+            $data['school_id'] = $actingSchoolId;
+        }
+        if ($ownershipHint === StorageProviderOwnership::System) {
+            unset($data['school_id']);
+        }
+
         $validated = $this->validator->validate($data);
 
         $ownership = StorageProviderOwnership::from(

@@ -15,6 +15,7 @@ use App\Services\Storage\StorageProviderManager;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -39,7 +40,7 @@ class StorageProviderController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->authorize('viewAny', StorageProvider::class);
+        Gate::authorize('viewAny', StorageProvider::class);
 
         $schoolId = $this->activeSchoolId();
         $providers = $this->manager->listForContext($schoolId);
@@ -74,7 +75,7 @@ class StorageProviderController extends Controller
 
     public function store(StoreStorageProviderRequest $request): JsonResponse
     {
-        $this->authorize('create', StorageProvider::class);
+        Gate::authorize('create', StorageProvider::class);
 
         $data = $request->validated();
         $schoolId = $this->activeSchoolId();
@@ -118,7 +119,7 @@ class StorageProviderController extends Controller
             abort(404);
         }
 
-        $this->authorize('update', $provider);
+        Gate::authorize('update', $provider);
 
         if ($provider->isSchoolOwned()
             && ! $this->schoolProviderManagementAllowed($schoolId)) {
@@ -147,7 +148,7 @@ class StorageProviderController extends Controller
             abort(404);
         }
 
-        $this->authorize('view', $provider);
+        Gate::authorize('view', $provider);
 
         return response()->json([
             'provider' => (new StorageProviderResource($provider))->resolve(),
@@ -156,7 +157,7 @@ class StorageProviderController extends Controller
 
     public function testConnection(TestStorageProviderConnectionRequest $request): JsonResponse
     {
-        $this->authorize('testConnection', StorageProvider::class);
+        Gate::authorize('testConnection', StorageProvider::class);
 
         $schoolId = $this->activeSchoolId();
         $data = $request->validated();
@@ -191,7 +192,7 @@ class StorageProviderController extends Controller
             abort(404);
         }
 
-        $this->authorize('checkDependencies', $provider);
+        Gate::authorize('checkDependencies', $provider);
 
         return response()->json($this->dependencies->check($provider));
     }
