@@ -12,6 +12,8 @@ use App\Models\StorageProvider;
 use App\Services\Storage\StorageProviderConnectionTester;
 use App\Services\Storage\StorageProviderDependencyChecker;
 use App\Services\Storage\StorageProviderManager;
+use App\Support\Settings\SettingsResolver;
+use App\Support\Settings\SettingsScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -20,9 +22,11 @@ use Inertia\Response;
 /**
  * Storage provider management (File Manager Phase 1).
  *
- * System-owned providers may only be mutated when there is no active school
- * context (platform/tenant administration). School-owned providers are
- * restricted to the active school.
+ * Authorization boundaries:
+ * - School context (active school): school-owned providers for that school only.
+ * - Platform context (no active school): system-owned providers only.
+ * - School users cannot view, create, update, or test system-owned providers.
+ * - file_manager.allow_school_provider_management gates school-owned mutations.
  */
 class StorageProviderController extends Controller
 {
@@ -30,21 +34,37 @@ class StorageProviderController extends Controller
         private readonly StorageProviderManager $manager,
         private readonly StorageProviderConnectionTester $tester,
         private readonly StorageProviderDependencyChecker $dependencies,
+        private readonly SettingsResolver $settings,
     ) {}
 
     public function index(Request $request): Response
     {
         $this->authorize('viewAny', StorageProvider::class);
 
-        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
-        $schoolId = $school?->id;
-
+        $schoolId = $this->activeSchoolId();
         $providers = $this->manager->listForContext($schoolId);
+
+        $defaultDriver = 'local';
+        if ($schoolId !== null) {
+            try {
+                $pref = $this->settings->get(
+                    'file_manager.default_provider_preference',
+                    SettingsScope::school($schoolId)
+                );
+                if (is_string($pref) && in_array($pref, ['local', 's3'], true)) {
+                    $defaultDriver = $pref;
+                }
+            } catch (\Throwable) {
+                // Registry default applies.
+            }
+        }
 
         return Inertia::render('Settings/Storage/Providers', [
             'providers' => StorageProviderResource::collection($providers)->resolve(),
             'canManage' => $request->user()?->hasPermission('storage-providers.manage') ?? false,
             'activeSchoolId' => $schoolId,
+            'defaultDriver' => $defaultDriver,
+            'schoolProviderManagementAllowed' => $this->schoolProviderManagementAllowed($schoolId),
             'crumbs' => [
                 ['label' => 'Settings'],
                 ['label' => 'Storage Providers'],
@@ -57,28 +77,32 @@ class StorageProviderController extends Controller
         $this->authorize('create', StorageProvider::class);
 
         $data = $request->validated();
-        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
-        $schoolId = $school?->id;
-
+        $schoolId = $this->activeSchoolId();
         $ownership = StorageProviderOwnership::from($data['ownership']);
 
-        if ($ownership === StorageProviderOwnership::System) {
-            // System providers only when no school context (or explicit platform path).
-            if ($schoolId !== null) {
-                // Allow create of system provider only for actors who manage in tenant context
-                // without forcing school_id; strip school association.
-                $data['school_id'] = null;
-            }
-        } else {
-            if ($schoolId === null) {
-                return response()->json([
-                    'message' => 'School-owned providers require an active school context.',
-                ], 422);
-            }
-            $data['school_id'] = $schoolId;
+        if (! $this->manager->canMutateOwnership($schoolId, $ownership)) {
+            return response()->json([
+                'message' => $ownership === StorageProviderOwnership::System
+                    ? 'System-owned storage providers cannot be created from a school context.'
+                    : 'School-owned storage providers require an active school context.',
+            ], 403);
         }
 
-        $provider = $this->manager->create($data);
+        if ($ownership === StorageProviderOwnership::School
+            && ! $this->schoolProviderManagementAllowed($schoolId)) {
+            return response()->json([
+                'message' => 'School-level storage provider management is disabled for this school.',
+            ], 403);
+        }
+
+        // Force school_id from context; never trust client-supplied school_id for ownership.
+        unset($data['school_id']);
+
+        try {
+            $provider = $this->manager->create($data, $schoolId);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 403);
+        }
 
         return response()->json([
             'message' => 'Storage provider created.',
@@ -88,9 +112,7 @@ class StorageProviderController extends Controller
 
     public function update(UpdateStorageProviderRequest $request, string $id): JsonResponse
     {
-        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
-        $schoolId = $school?->id;
-
+        $schoolId = $this->activeSchoolId();
         $provider = $this->manager->findForContext($id, $schoolId);
         if ($provider === null) {
             abort(404);
@@ -98,18 +120,18 @@ class StorageProviderController extends Controller
 
         $this->authorize('update', $provider);
 
-        if ($provider->isSystemOwned() && $schoolId !== null) {
-            // School context must not mutate system-owned configuration.
+        if ($provider->isSchoolOwned()
+            && ! $this->schoolProviderManagementAllowed($schoolId)) {
             return response()->json([
-                'message' => 'System-owned storage providers cannot be modified from a school context.',
+                'message' => 'School-level storage provider management is disabled for this school.',
             ], 403);
         }
 
-        if ($provider->isSchoolOwned() && $provider->school_id !== $schoolId) {
-            abort(403);
+        try {
+            $provider = $this->manager->update($provider, $request->validated(), $schoolId);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 403);
         }
-
-        $provider = $this->manager->update($provider, $request->validated());
 
         return response()->json([
             'message' => 'Storage provider updated.',
@@ -119,8 +141,8 @@ class StorageProviderController extends Controller
 
     public function show(Request $request, string $id): JsonResponse
     {
-        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
-        $provider = $this->manager->findForContext($id, $school?->id);
+        $schoolId = $this->activeSchoolId();
+        $provider = $this->manager->findForContext($id, $schoolId);
         if ($provider === null) {
             abort(404);
         }
@@ -136,15 +158,35 @@ class StorageProviderController extends Controller
     {
         $this->authorize('testConnection', StorageProvider::class);
 
-        $result = $this->tester->test($request->validated());
+        $schoolId = $this->activeSchoolId();
+        $data = $request->validated();
+
+        // Connection tests follow the same ownership boundary as mutations.
+        $ownershipValue = $data['ownership'] ?? ($schoolId !== null ? 'school' : 'system');
+        $ownership = StorageProviderOwnership::from($ownershipValue);
+
+        if (! $this->manager->canMutateOwnership($schoolId, $ownership)) {
+            return response()->json([
+                'message' => 'Connection testing for this ownership scope is not permitted in the current context.',
+            ], 403);
+        }
+
+        if ($ownership === StorageProviderOwnership::School
+            && ! $this->schoolProviderManagementAllowed($schoolId)) {
+            return response()->json([
+                'message' => 'School-level storage provider management is disabled for this school.',
+            ], 403);
+        }
+
+        $result = $this->tester->test($data);
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }
 
     public function dependencies(Request $request, string $id): JsonResponse
     {
-        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
-        $provider = $this->manager->findForContext($id, $school?->id);
+        $schoolId = $this->activeSchoolId();
+        $provider = $this->manager->findForContext($id, $schoolId);
         if ($provider === null) {
             abort(404);
         }
@@ -152,5 +194,35 @@ class StorageProviderController extends Controller
         $this->authorize('checkDependencies', $provider);
 
         return response()->json($this->dependencies->check($provider));
+    }
+
+    private function activeSchoolId(): ?string
+    {
+        if (! function_exists('GetSchoolModel')) {
+            return null;
+        }
+
+        $school = GetSchoolModel();
+
+        return $school?->id;
+    }
+
+    private function schoolProviderManagementAllowed(?string $schoolId): bool
+    {
+        if ($schoolId === null) {
+            return true; // N/A for platform context
+        }
+
+        try {
+            $value = $this->settings->get(
+                'file_manager.allow_school_provider_management',
+                SettingsScope::school($schoolId)
+            );
+
+            return (bool) $value;
+        } catch (\Throwable) {
+            // Registry default is true.
+            return true;
+        }
     }
 }

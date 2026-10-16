@@ -7,13 +7,22 @@ use App\Enums\StorageProviderOwnership;
 use App\Models\StorageProvider;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 /**
  * Application service for storage provider CRUD within authorization boundaries.
  *
- * Controllers enforce permission; this service enforces ownership invariants
- * and secret handling.
+ * Visibility and mutation rules (Phase 1 review):
+ *
+ * - School context (active school_id set):
+ *   - Lists and resolves only school-owned providers for that school.
+ *   - Must not see, create, update, or test system-owned providers.
+ *
+ * - Platform / tenant context (no active school):
+ *   - Lists and resolves only system-owned providers.
+ *   - Must not create school-owned providers without a school context.
+ *
+ * Controllers still enforce permission gates; this service enforces ownership
+ * isolation so generic storage-providers.manage cannot cross the boundary.
  */
 final class StorageProviderManager
 {
@@ -23,23 +32,68 @@ final class StorageProviderManager
     ) {}
 
     /**
+     * Providers visible in the current authorization context.
+     *
      * @return Collection<int, StorageProvider>
      */
-    public function listForContext(?string $schoolId, bool $systemOnly = false): Collection
+    public function listForContext(?string $schoolId): Collection
     {
         $query = StorageProvider::query()->orderBy('name');
 
-        if ($systemOnly || $schoolId === null) {
-            return $query->system()->get();
+        if ($schoolId !== null) {
+            // School context: own school providers only — never system config.
+            return $query->forSchool($schoolId)->get();
         }
 
-        return $query->visibleToSchool($schoolId)->get();
+        // Platform context: system providers only.
+        return $query->system()->get();
+    }
+
+    /**
+     * Resolve a provider by id only if it is visible in the given context.
+     */
+    public function findForContext(string $id, ?string $schoolId): ?StorageProvider
+    {
+        $provider = StorageProvider::query()->find($id);
+        if ($provider === null) {
+            return null;
+        }
+
+        if ($schoolId !== null) {
+            // School context: only matching school-owned rows.
+            if ($provider->isSchoolOwned() && $provider->school_id === $schoolId) {
+                return $provider;
+            }
+
+            return null;
+        }
+
+        // Platform context: system-owned only.
+        if ($provider->isSystemOwned()) {
+            return $provider;
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether the context may mutate (create/update/test) providers of the given ownership.
+     */
+    public function canMutateOwnership(?string $schoolId, StorageProviderOwnership $ownership): bool
+    {
+        if ($ownership === StorageProviderOwnership::System) {
+            // System mutation only outside a school context.
+            return $schoolId === null;
+        }
+
+        // School-owned mutation requires an active school context.
+        return $schoolId !== null;
     }
 
     /**
      * @param  array<string, mixed>  $data
      */
-    public function create(array $data): StorageProvider
+    public function create(array $data, ?string $actingSchoolId): StorageProvider
     {
         $validated = $this->validator->validate($data);
 
@@ -49,18 +103,28 @@ final class StorageProviderManager
                 : (string) $validated['ownership']
         );
 
+        if (! $this->canMutateOwnership($actingSchoolId, $ownership)) {
+            throw new \InvalidArgumentException(
+                $ownership === StorageProviderOwnership::System
+                    ? 'System-owned storage providers cannot be created from a school context.'
+                    : 'School-owned storage providers require an active school context.'
+            );
+        }
+
         $driver = StorageProviderDriver::from(
             $validated['driver'] instanceof StorageProviderDriver
                 ? $validated['driver']->value
                 : (string) $validated['driver']
         );
 
-        return DB::transaction(function () use ($validated, $ownership, $driver) {
+        $schoolId = $ownership->requiresSchool() ? $actingSchoolId : null;
+
+        return DB::transaction(function () use ($validated, $ownership, $driver, $schoolId) {
             $provider = new StorageProvider([
                 'name' => $validated['name'],
                 'driver' => $driver,
                 'ownership' => $ownership,
-                'school_id' => $ownership->requiresSchool() ? ($validated['school_id'] ?? null) : null,
+                'school_id' => $schoolId,
                 'config' => $this->sanitizeConfig($driver, $validated['config'] ?? []),
                 'enabled' => $validated['enabled'] ?? true,
             ]);
@@ -80,8 +144,22 @@ final class StorageProviderManager
     /**
      * @param  array<string, mixed>  $data
      */
-    public function update(StorageProvider $provider, array $data): StorageProvider
+    public function update(StorageProvider $provider, array $data, ?string $actingSchoolId): StorageProvider
     {
+        if (! $this->canMutateOwnership($actingSchoolId, $provider->ownership)) {
+            throw new \InvalidArgumentException(
+                $provider->isSystemOwned()
+                    ? 'System-owned storage providers cannot be modified from a school context.'
+                    : 'School-owned storage providers cannot be modified outside their school context.'
+            );
+        }
+
+        if ($provider->isSchoolOwned() && $provider->school_id !== $actingSchoolId) {
+            throw new \InvalidArgumentException(
+                'Cannot modify a storage provider owned by another school.'
+            );
+        }
+
         $validated = $this->validator->validate($data, isUpdate: true);
 
         return DB::transaction(function () use ($provider, $validated) {
@@ -107,24 +185,6 @@ final class StorageProviderManager
 
             return $provider->fresh();
         });
-    }
-
-    public function findForContext(string $id, ?string $schoolId, bool $allowSystemMutation = false): ?StorageProvider
-    {
-        $provider = StorageProvider::query()->find($id);
-        if ($provider === null) {
-            return null;
-        }
-
-        if ($provider->isSystemOwned()) {
-            return $provider;
-        }
-
-        if ($schoolId !== null && $provider->school_id === $schoolId) {
-            return $provider;
-        }
-
-        return null;
     }
 
     /**

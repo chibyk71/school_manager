@@ -7,10 +7,10 @@ Phase 1 establishes a **storage provider registry**: configure, validate, and te
 **In scope**
 
 - Provider registration and persistence
-- System-owned vs school-owned providers
+- System-owned vs school-owned providers with strict context isolation
 - Local and S3-compatible drivers (Laravel Filesystem / Flysystem)
 - Encrypted secrets, safe replacement, redaction in API/UI
-- Connection testing against unsaved configuration
+- Connection testing against unsaved configuration (with path/endpoint safety)
 - Honest capability reporting
 - Minimal dependency-check contract (no invented usage data)
 - File Manager **policy** settings via the existing Settings infrastructure
@@ -22,16 +22,27 @@ Phase 1 establishes a **storage provider registry**: configure, validate, and te
 - Trash, retention, bulk migration between providers
 - Migrating all Media Library / filesystem consumers onto the registry
 
-## Ownership
+## Ownership and authorization
 
-| Ownership | `school_id` | Who may mutate |
-|-----------|-------------|----------------|
-| `system`  | must be `NULL` | Platform / tenant context (not from a school-scoped session mutating system config) |
-| `school`  | required FK   | Actors in that school with `storage-providers.manage` |
+| Context | Visible providers | May create / update / test |
+|---------|-------------------|----------------------------|
+| Active school | School-owned providers for **that school only** | School-owned for that school (if policy allows) |
+| No active school (platform) | System-owned only | System-owned only |
 
-Ownership is **explicit**. System is never inferred from a null `school_id` alone.
+- Ownership is **explicit** (`system` | `school`). System is never inferred from a null `school_id` alone.
+- School users **do not** list, view, or receive configuration for system-owned providers.
+- School users **cannot** create or update system-owned providers, even with `storage-providers.manage`.
+- Cross-school access is rejected (404) for show/update/dependencies.
+- `storage-providers.view` / `storage-providers.manage` are capability gates only; ownership isolation is enforced in the manager and controller.
 
-School A cannot read or change School B’s providers. School context cannot update system-owned provider configuration.
+## Settings policy
+
+| Key | Scope | Behavior |
+|-----|-------|----------|
+| `file_manager.allow_school_provider_management` | school | When `false`, school-context create/update/connection-test of school-owned providers is rejected (403). Default `true`. Enforced via `SettingsResolver`. |
+| `file_manager.default_provider_preference` | school | Advisory default driver (`local` \| `s3`) passed to the create UI. Does **not** change Laravel filesystem defaults or Media Library disk. |
+
+Provider credentials are never stored as generic Settings values.
 
 ## Secrets
 
@@ -45,15 +56,12 @@ School A cannot read or change School B’s providers. School context cannot upd
 
 - Accepts submitted configuration (including unsaved forms)
 - Does **not** persist or overwrite provider rows
+- **Local roots** must resolve under `storage_path()` (path traversal and paths outside storage are rejected)
+- **S3 endpoints / base URLs** must be `http` or `https` without embedded credentials
+- HTTP client timeouts are bounded (connect 5s, total 10s) where supported
+- Probe objects are cleaned up on success and failure
 - Returns a safe success/failure message (no credentials, no raw exception text that may contain secrets)
-- Success means the probe operation succeeded, not a guarantee of every future file operation
-
-## Settings vs provider registry
-
-- **Settings** (`file_manager.*`): code-owned policy defaults (e.g. preferred driver hint, allow school management). School scope only; no system Settings scope.
-- **Provider registry** (`storage_providers` table): identity, ownership, connection config, encrypted secrets.
-
-Provider credentials are never stored as generic Settings values.
+- Ownership boundary applies: school context cannot run system-ownership connection tests
 
 ## Dependency check
 
@@ -64,7 +72,7 @@ Phase 1 does not track file operations against provider IDs. The dependency endp
 - `safe_to_remove: null`
 - summary stating tracking is not implemented
 
-Absence of rows is **not** certification that a provider is safe to remove.
+Absence of rows is **not** certification that a provider is safe to remove. The endpoint is subject to the same visibility rules as show.
 
 ## Legacy Advanced Storage
 
@@ -74,12 +82,12 @@ Routes and UI under **Settings → Advanced → Storage** (`advanced.storage` vi
 
 | Permission | Purpose |
 |------------|---------|
-| `storage-providers.view` | List and view safe provider details |
-| `storage-providers.manage` | Create, update, test connections |
+| `storage-providers.view` | List and view safe provider details **within the current ownership context** |
+| `storage-providers.manage` | Create, update, and test connections **within the current ownership context** |
 
 ## Supported drivers
 
-- **local** — root path optional (defaults to application private storage)
+- **local** — root path optional; must stay under application storage
 - **s3** — key, secret, region, bucket, optional endpoint/url/path-style
 
 Capability flags (read, write, streaming, file size, temporary/signed URLs) reflect the selected adapter and configuration only.
