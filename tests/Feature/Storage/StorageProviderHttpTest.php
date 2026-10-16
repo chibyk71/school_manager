@@ -360,14 +360,19 @@ class StorageProviderHttpTest extends TestCase
             mkdir($root, 0755, true);
         }
 
-        $this->actingAs($user)
+        $response = $this->actingAs($user)
             ->postJson(route('settings.storage-providers.test-connection'), [
                 'driver' => 'local',
                 'ownership' => 'school',
                 'config' => ['root' => $root],
-            ])
-            ->assertOk()
-            ->assertJsonPath('success', true);
+            ]);
+
+        $this->assertSame(
+            200,
+            $response->status(),
+            'Connection test 422 payload: '.json_encode($response->json())
+        );
+        $response->assertJsonPath('success', true);
     }
 
     public function test_dependency_check_hidden_for_system_in_school_context(): void
