@@ -275,7 +275,7 @@ Route::prefix('settings/advanced')->name('settings.advanced.')->group(function (
 });
 
 // File Manager Phase 1 — Storage provider registry (additive; legacy advanced.storage preserved)
-Route::prefix('settings/storage-providers')->name('settings.storage-providers.')->group(function () {
+Route::prefix('settings/storage-providers')->name('settings.storage-providers.')->middleware(['auth'])->group(function () {
     Route::get('/', [StorageProviderController::class, 'index'])->name('index');
     Route::post('/', [StorageProviderController::class, 'store'])->name('store');
     Route::get('{id}', [StorageProviderController::class, 'show'])->name('show');
