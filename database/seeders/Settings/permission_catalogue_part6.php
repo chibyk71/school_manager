@@ -31,4 +31,8 @@ return [
     ['name' => 'hostel-assignment.restore', 'display_name' => 'Restore Hostel Assignments', 'description' => 'Allows the user to restore soft-deleted hostel assignments for a school.'],
     ['name' => 'hostel-assignment.force-delete', 'display_name' => 'Permanently Delete Hostel Assignments', 'description' => 'Allows the user to permanently delete hostel assignments for a school.'],
     ['name' => 'finance-reports.view', 'display_name' => 'View Financial Reports', 'description' => 'View financial reporting dashboard for a school'],
+
+    // File Manager Phase 1 — Storage providers
+    ['name' => 'storage-providers.view', 'display_name' => 'View Storage Providers', 'description' => 'List and view storage provider configuration (secrets redacted)'],
+    ['name' => 'storage-providers.manage', 'display_name' => 'Manage Storage Providers', 'description' => 'Create, update, and test storage provider connections within authorized scope'],
 ];
