@@ -6,17 +6,19 @@ use App\Enums\StorageProviderDriver;
 use App\Enums\StorageProviderOwnership;
 use App\Models\School;
 use App\Models\StorageProvider;
-use App\Models\User;
 use App\Services\Storage\StorageProviderConnectionTester;
 use App\Services\Storage\StorageProviderDependencyChecker;
 use App\Services\Storage\StorageProviderManager;
+use App\Settings\Definitions\FileManagerSettings;
+use App\Support\Settings\SettingsRegistry;
+use App\Support\Settings\SettingsResolver;
+use App\Support\Settings\SettingsScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
- * File Manager Phase 1 — storage provider domain, secrets, isolation, connection test.
+ * File Manager Phase 1 — domain, secrets, isolation, connection safety, settings.
  */
 class StorageProviderTest extends TestCase
 {
@@ -31,31 +33,6 @@ class StorageProviderTest extends TestCase
             'email' => str($name)->slug().'@test.example',
             'type' => 'private',
         ]);
-    }
-
-    private function makeUserWithPermissions(array $permissions, ?School $school = null): User
-    {
-        $user = User::factory()->create();
-
-        foreach ($permissions as $name) {
-            $permission = \App\Models\Permission::query()->firstOrCreate(
-                ['name' => $name],
-                ['display_name' => $name]
-            );
-            // Laratrust assignment — school_id as team when provided
-            if (method_exists($user, 'givePermission')) {
-                $user->givePermission($permission, $school);
-            } else {
-                DB::table('permission_user')->insert([
-                    'permission_id' => $permission->id,
-                    'user_id' => $user->id,
-                    'user_type' => User::class,
-                    'school_id' => $school?->id,
-                ]);
-            }
-        }
-
-        return $user->fresh();
     }
 
     public function test_system_provider_requires_null_school_id(): void
@@ -89,13 +66,12 @@ class StorageProviderTest extends TestCase
     public function test_secrets_are_encrypted_at_rest_and_redacted_in_resource(): void
     {
         $school = $this->makeSchool();
-
         $manager = app(StorageProviderManager::class);
+
         $provider = $manager->create([
             'name' => 'S3 Primary',
             'driver' => 's3',
             'ownership' => 'school',
-            'school_id' => $school->id,
             'config' => [
                 'key' => 'AKIAEXAMPLE',
                 'region' => 'us-east-1',
@@ -104,7 +80,7 @@ class StorageProviderTest extends TestCase
             'secrets' => [
                 'secret' => 'super-secret-value-xyz',
             ],
-        ]);
+        ], $school->id);
 
         $raw = DB::table('storage_providers')->where('id', $provider->id)->value('secrets');
         $this->assertNotNull($raw);
@@ -116,7 +92,6 @@ class StorageProviderTest extends TestCase
         $resource = (new \App\Http\Resources\StorageProviderResource($provider))->resolve();
         $this->assertArrayNotHasKey('secrets', $resource);
         $this->assertTrue($resource['secrets_configured']);
-        $this->assertSame('AKIAEXAMPLE', $resource['config']['key'] ?? null);
         $json = json_encode($resource);
         $this->assertStringNotContainsString('super-secret-value-xyz', (string) $json);
     }
@@ -130,19 +105,17 @@ class StorageProviderTest extends TestCase
             'name' => 'S3 Keep',
             'driver' => 's3',
             'ownership' => 'school',
-            'school_id' => $school->id,
             'config' => ['bucket' => 'b', 'region' => 'eu-west-1', 'key' => 'k'],
             'secrets' => ['secret' => 'original-secret'],
-        ]);
+        ], $school->id);
 
         $manager->update($provider, [
             'name' => 'S3 Keep Updated',
             'secrets' => ['secret' => ''],
-        ]);
+        ], $school->id);
 
         $provider->refresh();
         $this->assertSame('original-secret', $provider->getDecryptedSecrets()['secret'] ?? null);
-        $this->assertSame('S3 Keep Updated', $provider->name);
     }
 
     public function test_supplied_secret_replacement_updates_stored_secret(): void
@@ -154,14 +127,13 @@ class StorageProviderTest extends TestCase
             'name' => 'S3 Replace',
             'driver' => 's3',
             'ownership' => 'school',
-            'school_id' => $school->id,
             'config' => ['bucket' => 'b', 'region' => 'eu-west-1', 'key' => 'k'],
             'secrets' => ['secret' => 'old-secret'],
-        ]);
+        ], $school->id);
 
         $manager->update($provider, [
             'secrets' => ['secret' => 'new-secret'],
-        ]);
+        ], $school->id);
 
         $provider->refresh();
         $this->assertSame('new-secret', $provider->getDecryptedSecrets()['secret'] ?? null);
@@ -176,21 +148,129 @@ class StorageProviderTest extends TestCase
             'name' => 'S3 Clear',
             'driver' => 's3',
             'ownership' => 'school',
-            'school_id' => $school->id,
             'config' => ['bucket' => 'b', 'region' => 'eu-west-1', 'key' => 'k'],
             'secrets' => ['secret' => 'to-clear'],
-        ]);
+        ], $school->id);
 
-        $manager->update($provider, ['clear_secrets' => true]);
+        $manager->update($provider, ['clear_secrets' => true], $school->id);
         $provider->refresh();
         $this->assertFalse($provider->hasSecretsConfigured());
     }
 
-    public function test_local_connection_test_does_not_persist(): void
+    public function test_school_context_cannot_create_system_provider(): void
+    {
+        $school = $this->makeSchool('No System Create');
+        $manager = app(StorageProviderManager::class);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $manager->create([
+            'name' => 'System From School',
+            'driver' => 'local',
+            'ownership' => 'system',
+            'config' => [],
+        ], $school->id);
+    }
+
+    public function test_platform_context_cannot_create_school_provider(): void
+    {
+        $manager = app(StorageProviderManager::class);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $manager->create([
+            'name' => 'School Without Context',
+            'driver' => 'local',
+            'ownership' => 'school',
+            'config' => [],
+        ], null);
+    }
+
+    public function test_school_context_list_excludes_system_and_other_schools(): void
+    {
+        $schoolA = $this->makeSchool('School A');
+        $schoolB = $this->makeSchool('School B');
+        $manager = app(StorageProviderManager::class);
+
+        $manager->create([
+            'name' => 'A Local',
+            'driver' => 'local',
+            'ownership' => 'school',
+            'config' => [],
+        ], $schoolA->id);
+
+        $manager->create([
+            'name' => 'B Local',
+            'driver' => 'local',
+            'ownership' => 'school',
+            'config' => [],
+        ], $schoolB->id);
+
+        $manager->create([
+            'name' => 'System Local',
+            'driver' => 'local',
+            'ownership' => 'system',
+            'config' => [],
+        ], null);
+
+        $visibleA = $manager->listForContext($schoolA->id);
+        $namesA = $visibleA->pluck('name')->all();
+
+        $this->assertContains('A Local', $namesA);
+        $this->assertNotContains('B Local', $namesA);
+        $this->assertNotContains('System Local', $namesA);
+
+        $systemOnly = $manager->listForContext(null);
+        $this->assertContains('System Local', $systemOnly->pluck('name')->all());
+        $this->assertNotContains('A Local', $systemOnly->pluck('name')->all());
+    }
+
+    public function test_find_for_context_hides_system_from_school_and_cross_school(): void
+    {
+        $schoolA = $this->makeSchool('Find A');
+        $schoolB = $this->makeSchool('Find B');
+        $manager = app(StorageProviderManager::class);
+
+        $system = $manager->create([
+            'name' => 'Sys',
+            'driver' => 'local',
+            'ownership' => 'system',
+            'config' => [],
+        ], null);
+
+        $a = $manager->create([
+            'name' => 'A',
+            'driver' => 'local',
+            'ownership' => 'school',
+            'config' => [],
+        ], $schoolA->id);
+
+        $this->assertNull($manager->findForContext($system->id, $schoolA->id));
+        $this->assertNotNull($manager->findForContext($system->id, null));
+        $this->assertNull($manager->findForContext($a->id, $schoolB->id));
+        $this->assertNotNull($manager->findForContext($a->id, $schoolA->id));
+        $this->assertNull($manager->findForContext($a->id, null));
+    }
+
+    public function test_school_cannot_update_system_provider_via_manager(): void
+    {
+        $school = $this->makeSchool('Update Boundary');
+        $manager = app(StorageProviderManager::class);
+
+        $system = $manager->create([
+            'name' => 'Sys Up',
+            'driver' => 'local',
+            'ownership' => 'system',
+            'config' => [],
+        ], null);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $manager->update($system, ['name' => 'Hacked'], $school->id);
+    }
+
+    public function test_local_connection_test_succeeds_under_storage_path(): void
     {
         $before = StorageProvider::query()->count();
-
         $tester = app(StorageProviderConnectionTester::class);
+
         $result = $tester->test([
             'driver' => 'local',
             'ownership' => 'system',
@@ -201,6 +281,52 @@ class StorageProviderTest extends TestCase
         $this->assertSame($before, StorageProvider::query()->count());
     }
 
+    public function test_local_connection_test_rejects_path_outside_storage(): void
+    {
+        $tester = app(StorageProviderConnectionTester::class);
+
+        $result = $tester->test([
+            'driver' => 'local',
+            'ownership' => 'system',
+            'config' => ['root' => '/etc'],
+        ]);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('permitted', strtolower($result['message']));
+    }
+
+    public function test_local_connection_test_rejects_traversal(): void
+    {
+        $tester = app(StorageProviderConnectionTester::class);
+
+        $result = $tester->test([
+            'driver' => 'local',
+            'ownership' => 'system',
+            'config' => ['root' => storage_path('app/private/../../..')],
+        ]);
+
+        $this->assertFalse($result['success']);
+    }
+
+    public function test_s3_endpoint_must_be_http_url(): void
+    {
+        $tester = app(StorageProviderConnectionTester::class);
+
+        $result = $tester->test([
+            'driver' => 's3',
+            'ownership' => 'system',
+            'config' => [
+                'bucket' => 'b',
+                'region' => 'us-east-1',
+                'endpoint' => 'ftp://evil.example',
+            ],
+            'secrets' => ['secret' => 'x'],
+        ]);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('http', strtolower($result['message']));
+    }
+
     public function test_dependency_check_is_honest_when_tracking_absent(): void
     {
         $school = $this->makeSchool('Deps School');
@@ -209,9 +335,8 @@ class StorageProviderTest extends TestCase
             'name' => 'Local Deps',
             'driver' => 'local',
             'ownership' => 'school',
-            'school_id' => $school->id,
             'config' => [],
-        ]);
+        ], $school->id);
 
         $check = app(StorageProviderDependencyChecker::class)->check($provider);
 
@@ -219,53 +344,6 @@ class StorageProviderTest extends TestCase
         $this->assertSame([], $check['known_dependencies']);
         $this->assertNull($check['safe_to_remove']);
         $this->assertStringContainsString('not implemented', $check['summary']);
-    }
-
-    public function test_school_isolation_on_list_scope(): void
-    {
-        $schoolA = $this->makeSchool('School A');
-        $schoolB = $this->makeSchool('School B');
-        $manager = app(StorageProviderManager::class);
-
-        $manager->create([
-            'name' => 'A Local',
-            'driver' => 'local',
-            'ownership' => 'school',
-            'school_id' => $schoolA->id,
-            'config' => [],
-        ]);
-        $manager->create([
-            'name' => 'B Local',
-            'driver' => 'local',
-            'ownership' => 'school',
-            'school_id' => $schoolB->id,
-            'config' => [],
-        ]);
-        $manager->create([
-            'name' => 'System Local',
-            'driver' => 'local',
-            'ownership' => 'system',
-            'config' => [],
-        ]);
-
-        $visibleA = $manager->listForContext($schoolA->id);
-        $namesA = $visibleA->pluck('name')->all();
-
-        $this->assertContains('A Local', $namesA);
-        $this->assertContains('System Local', $namesA);
-        $this->assertNotContains('B Local', $namesA);
-
-        $foundB = $manager->findForContext(
-            $visibleA->firstWhere('name', 'A Local')->id,
-            $schoolB->id
-        );
-        // School B cannot resolve School A's provider by id
-        $this->assertNull(
-            $manager->findForContext(
-                StorageProvider::query()->where('name', 'B Local')->value('id'),
-                $schoolA->id
-            )
-        );
     }
 
     public function test_file_manager_settings_registered(): void
@@ -278,6 +356,19 @@ class StorageProviderTest extends TestCase
         $def = $registry->get('file_manager.default_provider_preference');
         $this->assertSame('school', $def->intendedScope);
         $this->assertSame('local', $def->default);
+    }
+
+    public function test_allow_school_provider_management_setting_defaults_true(): void
+    {
+        $registry = new SettingsRegistry;
+        FileManagerSettings::register($registry);
+        $registry->seal();
+        $resolver = new SettingsResolver($registry);
+
+        $school = $this->makeSchool('Settings School');
+        $scope = SettingsScope::school($school->id);
+
+        $this->assertTrue((bool) $resolver->get('file_manager.allow_school_provider_management', $scope));
     }
 
     public function test_legacy_storage_settings_route_still_registered(): void

@@ -26,6 +26,8 @@ interface Props {
     providers: Provider[]
     canManage: boolean
     activeSchoolId: string | null
+    defaultDriver?: string
+    schoolProviderManagementAllowed?: boolean
     crumbs: Array<{ label: string }>
 }
 
@@ -65,7 +67,7 @@ const openCreate = () => {
     editing.value = null
     testResult.value = null
     form.reset()
-    form.driver = 'local'
+    form.driver = (props.defaultDriver === 's3' ? 's3' : 'local')
     form.ownership = props.activeSchoolId ? 'school' : 'system'
     form.enabled = true
     form.clear_secrets = false

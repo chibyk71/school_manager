@@ -182,20 +182,4 @@ class StorageProvider extends Model
             ->where('school_id', $schoolId);
     }
 
-    public function scopeVisibleToSchool(Builder $query, ?string $schoolId): Builder
-    {
-        // School actors see system providers (read) + their own school providers.
-        // Mutation of system providers is enforced separately in policy/service.
-        if ($schoolId === null) {
-            return $query->where('ownership', StorageProviderOwnership::System->value);
-        }
-
-        return $query->where(function (Builder $q) use ($schoolId) {
-            $q->where('ownership', StorageProviderOwnership::System->value)
-                ->orWhere(function (Builder $inner) use ($schoolId) {
-                    $inner->where('ownership', StorageProviderOwnership::School->value)
-                        ->where('school_id', $schoolId);
-                });
-        });
-    }
 }
