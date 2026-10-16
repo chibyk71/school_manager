@@ -35,8 +35,10 @@ final class FileManagerSettings
                     ->default(true)
                     ->label('Allow school-level storage provider management')
                     ->description(
-                        'When false, school actors with storage-providers.manage cannot create '
-                        .'school-owned providers (system providers remain separately governed).'
+                        'When false, school actors with storage-providers.manage cannot create, '
+                        .'update, or connection-test school-owned providers. Enforced by the '
+                        .'storage provider controller via SettingsResolver. System-owned providers '
+                        .'remain separately governed outside school context.'
                     )
                     ->intendedScope('school');
             }
