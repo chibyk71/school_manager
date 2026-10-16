@@ -8,7 +8,8 @@ use App\Models\User;
 use App\Services\Storage\StorageProviderManager;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\Eloquent\Model;
+use Tests\Support\StorageProviderTestSchema;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -17,10 +18,32 @@ use Tests\TestCase;
  *
  * School context is established via the real schoolManager binding
  * (GetSchoolModel → app('schoolManager')->getActiveSchool()).
+ *
+ * Focused schema only — avoids broken devices SQLite migrations.
  */
 class StorageProviderHttpTest extends TestCase
 {
-    use RefreshDatabase;
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Model::unguard();
+        StorageProviderTestSchema::build();
+        $this->withoutMiddleware([
+            \App\Http\Middleware\HandleInertiaRequests::class,
+            \App\Http\Middleware\EnsureCurrentSession::class,
+            \App\Http\Middleware\CheckMaintenanceMode::class,
+            \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
+            \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+        ]);
+        $this->withoutVite();
+    }
+
+    protected function tearDown(): void
+    {
+        StorageProviderTestSchema::drop();
+        Model::reguard();
+        parent::tearDown();
+    }
 
     private function makeSchool(string $name = 'HTTP School'): School
     {
@@ -97,13 +120,30 @@ class StorageProviderHttpTest extends TestCase
         }
     }
 
+    private function makeUser(): User
+    {
+        // Avoid User::$with profile (no profiles table in focused schema).
+        $id = (string) \Illuminate\Support\Str::uuid();
+        \Illuminate\Support\Facades\DB::table('users')->insert([
+            'id' => $id,
+            'name' => 'Storage Tester',
+            'email' => 'storage-'.substr(md5($id), 0, 8).'@test.example',
+            'password' => bcrypt('password'),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return User::query()->findOrFail($id);
+    }
+
     private function actingManager(?School $school = null): User
     {
-        $user = User::factory()->create(['is_active' => true]);
+        $user = $this->makeUser();
         $this->grant($user, ['storage-providers.view', 'storage-providers.manage'], $school);
         $this->bindActiveSchool($school);
 
-        return $user->fresh();
+        return $user;
     }
 
     public function test_unauthenticated_requests_are_rejected(): void
@@ -114,7 +154,7 @@ class StorageProviderHttpTest extends TestCase
 
     public function test_user_without_permission_cannot_list(): void
     {
-        $user = User::factory()->create(['is_active' => true]);
+        $user = $this->makeUser();
         $school = $this->makeSchool('No Perm');
         $this->bindActiveSchool($school);
 
