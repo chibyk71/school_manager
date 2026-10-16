@@ -83,7 +83,7 @@ final class StorageProviderManager
      */
     public function create(array $data, ?string $actingSchoolId): StorageProvider
     {
-        // Inject school_id before validation so school-owned creates validate cleanly.
+        // Ownership from payload first so school_id can be injected before validation.
         $rawOwnership = $data['ownership'] ?? null;
         $ownershipHint = $rawOwnership instanceof StorageProviderOwnership
             ? $rawOwnership

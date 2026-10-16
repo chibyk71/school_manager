@@ -71,6 +71,13 @@ final class StorageProviderTestSchema
             );
         });
 
+        Schema::create('profiles', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('user_id')->index();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
         Schema::create('storage_providers', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('name');
@@ -105,6 +112,7 @@ final class StorageProviderTestSchema
     {
         foreach ([
             'storage_providers',
+            'profiles',
             'permission_user',
             'permissions',
             'settings',
