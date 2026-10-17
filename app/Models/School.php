@@ -154,17 +154,11 @@ class School extends Team implements HasMedia
     {
         parent::boot();
 
-        // File Manager Phase 1: cascade soft-delete school-owned providers AFTER the
-        // school soft-delete so school.deleted_at is already written. Align each
-        // provider's deleted_at to that exact value as deletion provenance.
-        // Force-delete uses FK cascadeOnDelete (never nulls school_id into system shape).
+        // File Manager Phase 1: cascade soft-delete school-owned providers on deleted.
+        // Mark each with deleted_via_school_cascade = true as explicit provenance
+        // (not timestamp equality). Force-delete uses FK cascadeOnDelete.
         static::deleted(function (self $school): void {
             if ($school->isForceDeleting()) {
-                return;
-            }
-
-            $deletedAt = $school->deleted_at;
-            if ($deletedAt === null) {
                 return;
             }
 
@@ -172,31 +166,28 @@ class School extends Team implements HasMedia
                 ->where('ownership', 'school')
                 ->where('school_id', $school->id)
                 ->get()
-                ->each(function (StorageProvider $provider) use ($deletedAt): void {
+                ->each(function (StorageProvider $provider): void {
                     $provider->delete();
-                    // Provenance: exact school soft-delete timestamp (not a heuristic range).
                     StorageProvider::withTrashed()
                         ->whereKey($provider->id)
-                        ->update(['deleted_at' => $deletedAt]);
+                        ->update(['deleted_via_school_cascade' => true]);
                 });
         });
 
-        // Restore only providers whose deleted_at matches this school's soft-delete
-        // timestamp (set during deleted). Pre-trashed providers keep an earlier
-        // deleted_at and are left untouched. Ownership / school_id never change.
+        // Restore only providers explicitly marked by the cascade. Independently
+        // trashed providers (even with the same deleted_at second) stay trashed.
+        // Ownership / school_id never change; flag is cleared on restore.
         static::restoring(function (self $school): void {
-            $deletedAt = $school->deleted_at;
-            if ($deletedAt === null) {
-                return;
-            }
-
             StorageProvider::onlyTrashed()
                 ->where('ownership', 'school')
                 ->where('school_id', $school->id)
-                ->where('deleted_at', $deletedAt)
+                ->where('deleted_via_school_cascade', true)
                 ->get()
                 ->each(function (StorageProvider $provider): void {
                     $provider->restore();
+                    StorageProvider::query()
+                        ->whereKey($provider->id)
+                        ->update(['deleted_via_school_cascade' => false]);
                 });
         });
 

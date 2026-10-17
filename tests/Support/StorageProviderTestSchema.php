@@ -111,6 +111,7 @@ final class StorageProviderTestSchema
             $table->json('config')->nullable();
             $table->text('secrets')->nullable();
             $table->boolean('enabled')->default(true);
+            $table->boolean('deleted_via_school_cascade')->default(false);
             $table->timestamps();
             $table->softDeletes();
 

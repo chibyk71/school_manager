@@ -608,13 +608,9 @@ class StorageProviderTest extends TestCase
             'ownership' => 'system',
             'school_id' => null,
         ]);
-        // Provenance: provider deleted_at matches school deleted_at exactly.
+        // Provenance: cascade flag, not timestamp equality.
         $provider = StorageProvider::withTrashed()->find($schoolProvider->id);
-        $this->assertNotNull($school->deleted_at);
-        $this->assertTrue(
-            $provider->deleted_at->equalTo($school->deleted_at),
-            'Provider deleted_at must match school deleted_at for restore provenance'
-        );
+        $this->assertTrue((bool) $provider->deleted_via_school_cascade);
         $this->assertSame('school', $provider->ownership->value);
         $this->assertSame($school->id, $provider->school_id);
     }
@@ -658,11 +654,7 @@ class StorageProviderTest extends TestCase
 
         $pretrashed->delete();
         $this->assertSoftDeleted('storage_providers', ['id' => $pretrashed->id]);
-
-        // Distinct earlier timestamp so it cannot match school soft-delete provenance.
-        DB::table('storage_providers')
-            ->where('id', $pretrashed->id)
-            ->update(['deleted_at' => now()->subMinutes(5)]);
+        $this->assertFalse((bool) StorageProvider::withTrashed()->find($pretrashed->id)->deleted_via_school_cascade);
 
         $kept = $manager->create([
             'name' => 'Deleted With School',
@@ -673,13 +665,8 @@ class StorageProviderTest extends TestCase
 
         $school->delete();
         $this->assertSoftDeleted('storage_providers', ['id' => $kept->id]);
-
-        // Pretrashed still has older deleted_at; cascade-deleted has school.deleted_at.
-        $school->refresh();
-        $keptRow = StorageProvider::withTrashed()->find($kept->id);
-        $preRow = StorageProvider::withTrashed()->find($pretrashed->id);
-        $this->assertTrue($keptRow->deleted_at->equalTo($school->deleted_at));
-        $this->assertTrue($preRow->deleted_at->lt($school->deleted_at));
+        $this->assertTrue((bool) StorageProvider::withTrashed()->find($kept->id)->deleted_via_school_cascade);
+        $this->assertFalse((bool) StorageProvider::withTrashed()->find($pretrashed->id)->deleted_via_school_cascade);
 
         $school->restore();
 
@@ -689,6 +676,51 @@ class StorageProviderTest extends TestCase
             'deleted_at' => null,
             'ownership' => 'school',
             'school_id' => $school->id,
+            'deleted_via_school_cascade' => false,
+        ]);
+    }
+
+    public function test_school_restore_ignores_pretrashed_provider_with_matching_deleted_at(): void
+    {
+        $school = $this->makeSchool('Same Timestamp Edge');
+        $manager = app(StorageProviderManager::class);
+
+        $pretrashed = $manager->create([
+            'name' => 'Pretrashed Same Second',
+            'driver' => 'local',
+            'ownership' => 'school',
+            'config' => [],
+        ], $school->id);
+
+        $pretrashed->delete();
+        $this->assertFalse((bool) StorageProvider::withTrashed()->find($pretrashed->id)->deleted_via_school_cascade);
+
+        $kept = $manager->create([
+            'name' => 'Cascade Deleted',
+            'driver' => 'local',
+            'ownership' => 'school',
+            'config' => [],
+        ], $school->id);
+
+        $school->delete();
+        $school->refresh();
+
+        // Force identical deleted_at to the school soft-delete timestamp — must still
+        // not restore without the cascade flag.
+        DB::table('storage_providers')
+            ->where('id', $pretrashed->id)
+            ->update([
+                'deleted_at' => $school->deleted_at,
+                'deleted_via_school_cascade' => false,
+            ]);
+
+        $school->restore();
+
+        $this->assertSoftDeleted('storage_providers', ['id' => $pretrashed->id]);
+        $this->assertDatabaseHas('storage_providers', [
+            'id' => $kept->id,
+            'deleted_at' => null,
+            'deleted_via_school_cascade' => false,
         ]);
     }
 
