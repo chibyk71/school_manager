@@ -2,10 +2,12 @@
 
 namespace App\Services\FileManager;
 
+use App\Enums\FileManager\Capability;
 use App\Enums\FileManager\Ownership;
 use App\Models\FileManager\Folder;
 use App\Models\StorageProvider;
 use App\Services\Storage\StorageProviderManager;
+use App\Support\FileManager\FolderCapabilityResolver;
 use App\Support\FileManager\ModuleDefinitionRegistry;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +28,14 @@ final class FolderService
      */
     public function listForContext(?string $schoolId, ?string $parentId = null): Collection
     {
+        if ($parentId !== null) {
+            $parent = $this->findForContext($parentId, $schoolId);
+            if ($parent === null) {
+                throw new InvalidArgumentException('Parent folder not found in the current ownership context.');
+            }
+            FolderCapabilityResolver::assertAllows($parent, Capability::Browse);
+        }
+
         $query = Folder::query()->orderBy('name');
 
         if ($schoolId !== null) {
@@ -83,6 +93,7 @@ final class FolderService
                 throw new InvalidArgumentException('Parent folder not found in the current ownership context.');
             }
             $this->assertSameOwnershipBoundary($ownership, $actingSchoolId, $parent);
+            FolderCapabilityResolver::assertAllows($parent, Capability::CreateFolder);
         }
 
         $moduleCode = $data['module_code'] ?? $parent?->module_code;
@@ -128,6 +139,7 @@ final class FolderService
         $this->assertFolderInContext($folder, $actingSchoolId);
 
         if (array_key_exists('name', $data)) {
+            FolderCapabilityResolver::assertAllows($folder, Capability::Rename);
             $folder->name = trim((string) $data['name']);
         }
 
@@ -156,6 +168,7 @@ final class FolderService
     public function move(Folder $folder, ?string $newParentId, ?string $actingSchoolId): Folder
     {
         $this->assertFolderInContext($folder, $actingSchoolId);
+        FolderCapabilityResolver::assertAllows($folder, Capability::Move);
 
         if ($newParentId === $folder->id) {
             throw new InvalidArgumentException('A folder cannot be its own parent.');
@@ -168,6 +181,7 @@ final class FolderService
                 throw new InvalidArgumentException('Target parent folder not found in the current ownership context.');
             }
             $this->assertSameOwnershipBoundary($folder->ownership, $folder->school_id, $newParent);
+            FolderCapabilityResolver::assertAllows($newParent, Capability::Move);
 
             if ($this->wouldCreateCycle($folder, $newParent)) {
                 throw new InvalidArgumentException('Move would create a cycle in the folder hierarchy.');
@@ -183,6 +197,7 @@ final class FolderService
     public function delete(Folder $folder, ?string $actingSchoolId): void
     {
         $this->assertFolderInContext($folder, $actingSchoolId);
+        FolderCapabilityResolver::assertAllows($folder, Capability::Delete);
 
         if (! $folder->isEmpty()) {
             throw new InvalidArgumentException('Cannot delete a folder that still contains child folders or files.');
