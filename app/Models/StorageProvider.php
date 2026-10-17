@@ -46,6 +46,7 @@ class StorageProvider extends Model
         'ownership' => StorageProviderOwnership::class,
         'config' => 'array',
         'enabled' => 'boolean',
+        'deleted_via_school_cascade' => 'boolean',
     ];
 
     protected static function booted(): void
