@@ -278,10 +278,10 @@ Route::prefix('settings/advanced')->name('settings.advanced.')->group(function (
 Route::prefix('settings/storage-providers')->name('settings.storage-providers.')->middleware(['auth'])->group(function () {
     Route::get('/', [StorageProviderController::class, 'index'])->name('index');
     Route::post('/', [StorageProviderController::class, 'store'])->name('store');
-    Route::get('{id}', [StorageProviderController::class, 'show'])->name('show');
-    Route::patch('{id}', [StorageProviderController::class, 'update'])->name('update');
     Route::post('test-connection', [StorageProviderController::class, 'testConnection'])->name('test-connection');
     Route::get('{id}/dependencies', [StorageProviderController::class, 'dependencies'])->name('dependencies');
+    Route::get('{id}', [StorageProviderController::class, 'show'])->name('show');
+    Route::patch('{id}', [StorageProviderController::class, 'update'])->name('update');
 });
 
 // Dynamic Enum Phase 4 administration routes
