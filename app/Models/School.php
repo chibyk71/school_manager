@@ -171,6 +171,25 @@ class School extends Team implements HasMedia
                 });
         });
 
+        // Restore only school-owned providers soft-deleted with this school
+        // (deleted_at >= school.deleted_at). Providers trashed earlier stay trashed.
+        // Never changes ownership or school_id.
+        static::restoring(function (self $school): void {
+            $deletedAt = $school->deleted_at;
+            if ($deletedAt === null) {
+                return;
+            }
+
+            StorageProvider::onlyTrashed()
+                ->where('ownership', 'school')
+                ->where('school_id', $school->id)
+                ->where('deleted_at', '>=', $deletedAt)
+                ->get()
+                ->each(function (StorageProvider $provider): void {
+                    $provider->restore();
+                });
+        });
+
         static::creating(function (self $school) {
             // Generate unique slug if not provided
             if (empty($school->slug)) {
