@@ -103,7 +103,7 @@ class StorageProviderHttpTest extends TestCase
 
     private function bindActiveSchool(?School $school): void
     {
-        $manager = new class ($school)
+        $manager = new class($school)
         {
             public function __construct(private $school) {}
 

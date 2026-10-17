@@ -58,7 +58,7 @@ class StorageProviderTest extends TestCase
 
     public function test_system_provider_requires_null_school_id(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         $p = new StorageProvider([
             'name' => 'Bad System',
@@ -72,7 +72,7 @@ class StorageProviderTest extends TestCase
 
     public function test_school_provider_requires_school_id(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         $p = new StorageProvider([
             'name' => 'Bad School',
@@ -183,7 +183,7 @@ class StorageProviderTest extends TestCase
         $school = $this->makeSchool('No System Create');
         $manager = app(StorageProviderManager::class);
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $manager->create([
             'name' => 'System From School',
             'driver' => 'local',
@@ -287,7 +287,7 @@ class StorageProviderTest extends TestCase
             'config' => [],
         ], null);
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $manager->update($system, ['name' => 'Hacked'], $school->id);
     }
 
@@ -343,7 +343,7 @@ class StorageProviderTest extends TestCase
         $threw = false;
         try {
             $tester->assertSafeLocalRoot($outside);
-        } catch (\InvalidArgumentException $e) {
+        } catch (InvalidArgumentException $e) {
             $threw = true;
             $this->assertMatchesRegularExpression('/does not exist|outside|permitted|resolved/i', $e->getMessage());
         }
@@ -371,7 +371,7 @@ class StorageProviderTest extends TestCase
         $threw = false;
         try {
             $tester->assertSafeLocalRoot($inside);
-        } catch (\InvalidArgumentException $e) {
+        } catch (InvalidArgumentException $e) {
             $threw = true;
             $this->assertStringContainsString('does not exist', strtolower($e->getMessage()));
         }

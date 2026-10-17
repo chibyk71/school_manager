@@ -348,13 +348,13 @@ final class StorageProviderConnectionTester
         if ($long === false) {
             return true;
         }
-        if (($long & 0xffff0000) === 0xa9fe0000) {
+        if (($long & 0xFFFF0000) === 0xA9FE0000) {
             return true;
         }
-        if (($long & 0xffc00000) === 0x64400000) {
+        if (($long & 0xFFC00000) === 0x64400000) {
             return true;
         }
-        if (($long & 0xff000000) === 0) {
+        if (($long & 0xFF000000) === 0) {
             return true;
         }
 
@@ -375,10 +375,10 @@ final class StorageProviderConnectionTester
         }
         $b0 = ord($packed[0]);
         $b1 = ord($packed[1]);
-        if ($b0 === 0xfe && ($b1 & 0xc0) === 0x80) {
+        if ($b0 === 0xFE && ($b1 & 0xC0) === 0x80) {
             return true;
         }
-        if (($b0 & 0xfe) === 0xfc) {
+        if (($b0 & 0xFE) === 0xFC) {
             return true;
         }
 
