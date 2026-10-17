@@ -63,6 +63,24 @@ const form = useForm({
 const isS3 = computed(() => form.driver === 's3')
 const ownershipLocked = computed(() => editing.value !== null)
 
+/** Ownership is dictated by active context; users must not flip system ↔ school in the form. */
+const ownershipOptions = computed(() =>
+    props.activeSchoolId
+        ? [{ label: 'School', value: 'school' as const }]
+        : [{ label: 'System', value: 'system' as const }],
+)
+
+/** Create/edit gated by permission and school management policy. */
+const canMutateProviders = computed(() => {
+    if (!props.canManage) {
+        return false
+    }
+    if (props.activeSchoolId && props.schoolProviderManagementAllowed === false) {
+        return false
+    }
+    return true
+})
+
 const openCreate = () => {
     editing.value = null
     testResult.value = null
@@ -115,7 +133,7 @@ const payload = () => {
 }
 
 const save = async () => {
-    if (!props.canManage) return
+    if (!canMutateProviders.value) return
     saving.value = true
     testResult.value = null
     try {
@@ -183,12 +201,21 @@ const ownershipLabel = (o: string) => (o === 'system' ? 'System' : 'School')
                         </p>
                     </div>
                     <Button
-                        v-if="canManage"
+                        v-if="canMutateProviders"
                         label="Add provider"
                         icon="pi pi-plus"
                         @click="openCreate"
                     />
                 </div>
+
+                <Message
+                    v-if="activeSchoolId && schoolProviderManagementAllowed === false"
+                    severity="warn"
+                    :closable="false"
+                    class="w-full"
+                >
+                    School-level storage provider management is disabled for this school.
+                </Message>
 
                 <div v-if="!providers.length" class="text-surface-500 text-sm py-8 text-center border border-dashed rounded-lg">
                     No storage providers configured in this scope yet.
@@ -214,7 +241,7 @@ const ownershipLabel = (o: string) => (o === 'system' ? 'System' : 'School')
                         </template>
                         <template #footer>
                             <Button
-                                v-if="canManage"
+                                v-if="canMutateProviders"
                                 label="Edit"
                                 size="small"
                                 text
@@ -256,14 +283,11 @@ const ownershipLabel = (o: string) => (o === 'system' ? 'System' : 'School')
                         <label class="text-sm font-medium">Ownership</label>
                         <Select
                             v-model="form.ownership"
-                            :options="[
-                                { label: 'School', value: 'school' },
-                                { label: 'System', value: 'system' },
-                            ]"
+                            :options="ownershipOptions"
                             optionLabel="label"
                             optionValue="value"
                             class="w-full mt-1"
-                            :disabled="Boolean(activeSchoolId) && form.ownership === 'school'"
+                            disabled
                         />
                     </div>
                 </div>
@@ -335,12 +359,12 @@ const ownershipLabel = (o: string) => (o === 'system' ? 'System' : 'School')
                         label="Test connection"
                         severity="secondary"
                         :loading="testLoading"
-                        :disabled="!canManage"
+                        :disabled="!canMutateProviders"
                         @click="runTest"
                     />
                     <div class="flex gap-2">
                         <Button label="Cancel" text @click="dialogVisible = false" />
-                        <Button label="Save" :loading="saving" :disabled="!canManage || !form.name" @click="save" />
+                        <Button label="Save" :loading="saving" :disabled="!canMutateProviders || !form.name" @click="save" />
                     </div>
                 </div>
             </template>
