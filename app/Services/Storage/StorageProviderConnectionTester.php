@@ -25,6 +25,7 @@ use Throwable;
  *   on the probe HTTP client so they cannot bypass the policy.
  * - Resolved safe IPs are pinned via CURLOPT_RESOLVE for the probe (TLS still
  *   verifies the original hostname). Fail closed when DNS yields no safe IP.
+ * - Custom endpoint/url requires a successful pin before Storage::build runs.
  * - Probe objects are always cleaned up on success and failure.
  * - Failures log a static diagnostic only (no exception message, no config).
  *
@@ -191,23 +192,39 @@ final class StorageProviderConnectionTester
         }
     }
 
-    private function testS3(array $config): array
+    /**
+     * Build the Laravel disk config for an S3 probe, including DNS pin HTTP options.
+     *
+     * Returns null with a failure message when the endpoint/url policy rejects the target
+     * or when a pin cannot be applied for a provided custom endpoint/url.
+     *
+     * The hostname in endpoint/url is preserved for TLS SNI and certificate verification;
+     * only the peer IP is forced via CURLOPT_RESOLVE on the Guzzle/cURL client used by
+     * the AWS SDK (Laravel passes disk "http" options through to S3Client).
+     *
+     * @return array{0: array<string, mixed>|null, 1: string|null} [diskConfig, errorMessage]
+     */
+    public function buildS3DiskConfig(array $config): array
     {
         $curlResolve = [];
 
         if (! empty($config['endpoint'])) {
             $pin = $this->pinAllowedEndpoint((string) $config['endpoint']);
             if ($pin === null) {
-                return ['success' => false, 'message' => 'S3 endpoint is not permitted for connection testing.'];
+                return [null, 'S3 endpoint is not permitted for connection testing.'];
             }
             $curlResolve = array_merge($curlResolve, $pin['curl_resolve']);
         }
         if (! empty($config['url'])) {
             $pin = $this->pinAllowedEndpoint((string) $config['url']);
             if ($pin === null) {
-                return ['success' => false, 'message' => 'S3 base URL is not permitted for connection testing.'];
+                return [null, 'S3 base URL is not permitted for connection testing.'];
             }
             $curlResolve = array_merge($curlResolve, $pin['curl_resolve']);
+        }
+
+        if ((! empty($config['endpoint']) || ! empty($config['url'])) && $curlResolve === []) {
+            return [null, 'S3 endpoint pin could not be applied for connection testing.'];
         }
 
         $http = [
@@ -235,7 +252,17 @@ final class StorageProviderConnectionTester
         ];
 
         if (empty($diskConfig['bucket'])) {
-            return ['success' => false, 'message' => 'S3 connection test requires a bucket.'];
+            return [null, 'S3 connection test requires a bucket.'];
+        }
+
+        return [$diskConfig, null];
+    }
+
+    private function testS3(array $config): array
+    {
+        [$diskConfig, $error] = $this->buildS3DiskConfig($config);
+        if ($diskConfig === null) {
+            return ['success' => false, 'message' => $error ?? 'S3 configuration is not permitted for connection testing.'];
         }
 
         $disk = Storage::build($diskConfig);
@@ -310,8 +337,6 @@ final class StorageProviderConnectionTester
     }
 
     /**
-     * Validate endpoint and return CURLOPT_RESOLVE pin entries for the first safe IP.
-     *
      * @return array{host: string, ip: string, port: int, curl_resolve: list<string>}|null
      */
     public function pinAllowedEndpoint(string $url): ?array
