@@ -8,6 +8,7 @@
  *   - ownership = school  → school_id MUST reference schools.id
  * School force-delete cascades school-owned provider rows (never nulls school_id).
  * School soft-delete soft-deletes school-owned providers via School model boot.
+ * deleted_via_school_cascade marks providers deleted by that cascade (restore provenance).
  *
  * Secrets are stored in an encrypted JSON column (Laravel encrypt/decrypt).
  * Non-secret connection fields live in a plain JSON config column.
@@ -34,6 +35,8 @@ return new class extends Migration
             $table->json('config')->nullable(); // non-secret connection fields
             $table->text('secrets')->nullable(); // encrypted JSON of secret fields
             $table->boolean('enabled')->default(true);
+            // Set true only when soft-deleted by School::deleted cascade; used for restore provenance.
+            $table->boolean('deleted_via_school_cascade')->default(false);
             $table->timestamps();
             $table->softDeletes();
 
