@@ -30,6 +30,8 @@ use Throwable;
  *
  * Private / internal S3-compatible deployments can be explicitly allowlisted
  * via config('filesystems.connection_test_allowed_hosts') (exact hostnames).
+ * Allowlist is a hostname policy for endpointIsAllowed; connect-time probes
+ * still require pinAllowedEndpoint (DNS + CURLOPT_RESOLVE).
  */
 final class StorageProviderConnectionTester
 {
@@ -94,13 +96,6 @@ final class StorageProviderConnectionTester
         return $result;
     }
 
-    /**
-     * Canonicalize an existing local root and ensure it lies under an allowed base.
-     *
-     * Nonexistent paths are always rejected. This method never creates directories
-     * and never substitutes an ancestor for the configured root (so a connection
-     * test cannot report success against a different directory).
-     */
     public function assertSafeLocalRoot(string $root): string
     {
         if ($root === '' || str_contains($root, "\0")) {
@@ -221,8 +216,6 @@ final class StorageProviderConnectionTester
             'connect_timeout' => 5,
             'allow_redirects' => false,
         ];
-        // Pin DNS at connect time so a rebinding answer cannot bypass the IP policy.
-        // TLS still verifies the original hostname (SNI / cert name); we only force the peer IP.
         if ($curlResolve !== []) {
             $http['curl'] = [
                 CURLOPT_RESOLVE => array_values(array_unique($curlResolve)),
@@ -279,7 +272,42 @@ final class StorageProviderConnectionTester
 
     private function isAllowedEndpoint(string $url): bool
     {
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return false;
+        }
+        $scheme = strtolower((string) $parts['scheme']);
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            return false;
+        }
+        $host = strtolower(rtrim((string) $parts['host'], '.'));
+        if ($host === '') {
+            return false;
+        }
+
+        if ($this->isAllowlistedHost($host)) {
+            return true;
+        }
+
+        if ($this->isBlockedHostname($host)) {
+            return false;
+        }
+
         return $this->pinAllowedEndpoint($url) !== null;
+    }
+
+    private function isAllowlistedHost(string $host): bool
+    {
+        $allowlist = config('filesystems.connection_test_allowed_hosts', []);
+        if (! is_array($allowlist) || $allowlist === []) {
+            return false;
+        }
+        $normalized = array_map(static fn ($h) => strtolower(rtrim((string) $h, '.')), $allowlist);
+
+        return in_array(strtolower(rtrim($host, '.')), $normalized, true);
     }
 
     /**
@@ -309,12 +337,7 @@ final class StorageProviderConnectionTester
             ? (int) $parts['port']
             : ($scheme === 'https' ? 443 : 80);
 
-        $allowlisted = false;
-        $allowlist = config('filesystems.connection_test_allowed_hosts', []);
-        if (is_array($allowlist) && $allowlist !== []) {
-            $normalized = array_map(static fn ($h) => strtolower(rtrim((string) $h, '.')), $allowlist);
-            $allowlisted = in_array($host, $normalized, true);
-        }
+        $allowlisted = $this->isAllowlistedHost($host);
 
         if (! $allowlisted && $this->isBlockedHostname($host)) {
             return null;
@@ -336,7 +359,6 @@ final class StorageProviderConnectionTester
             return null;
         }
 
-        // host:port:address — forces cURL to use this IP for the hostname (DNS pin).
         $resolveEntry = sprintf('%s:%d:%s', $host, $port, $safeIp);
 
         return [
