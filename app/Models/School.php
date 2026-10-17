@@ -154,11 +154,17 @@ class School extends Team implements HasMedia
     {
         parent::boot();
 
-        // File Manager Phase 1: school soft-delete must not leave school-owned
-        // providers attached (and force-delete cascades via FK). Never null school_id.
-        static::deleting(function (self $school): void {
+        // File Manager Phase 1: cascade soft-delete school-owned providers AFTER the
+        // school soft-delete so school.deleted_at is already written. Align each
+        // provider's deleted_at to that exact value as deletion provenance.
+        // Force-delete uses FK cascadeOnDelete (never nulls school_id into system shape).
+        static::deleted(function (self $school): void {
             if ($school->isForceDeleting()) {
-                // DB cascadeOnDelete removes school-owned rows on force-delete.
+                return;
+            }
+
+            $deletedAt = $school->deleted_at;
+            if ($deletedAt === null) {
                 return;
             }
 
@@ -166,14 +172,18 @@ class School extends Team implements HasMedia
                 ->where('ownership', 'school')
                 ->where('school_id', $school->id)
                 ->get()
-                ->each(function (StorageProvider $provider): void {
+                ->each(function (StorageProvider $provider) use ($deletedAt): void {
                     $provider->delete();
+                    // Provenance: exact school soft-delete timestamp (not a heuristic range).
+                    StorageProvider::withTrashed()
+                        ->whereKey($provider->id)
+                        ->update(['deleted_at' => $deletedAt]);
                 });
         });
 
-        // Restore only school-owned providers soft-deleted with this school
-        // (deleted_at >= school.deleted_at). Providers trashed earlier stay trashed.
-        // Never changes ownership or school_id.
+        // Restore only providers whose deleted_at matches this school's soft-delete
+        // timestamp (set during deleted). Pre-trashed providers keep an earlier
+        // deleted_at and are left untouched. Ownership / school_id never change.
         static::restoring(function (self $school): void {
             $deletedAt = $school->deleted_at;
             if ($deletedAt === null) {
@@ -183,7 +193,7 @@ class School extends Team implements HasMedia
             StorageProvider::onlyTrashed()
                 ->where('ownership', 'school')
                 ->where('school_id', $school->id)
-                ->where('deleted_at', '>=', $deletedAt)
+                ->where('deleted_at', $deletedAt)
                 ->get()
                 ->each(function (StorageProvider $provider): void {
                     $provider->restore();
