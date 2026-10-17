@@ -6,6 +6,9 @@ use App\Enums\StorageProviderDriver;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use Throwable;
 
 /**
  * Tests connectivity using a submitted (possibly unsaved) configuration.
@@ -50,7 +53,7 @@ final class StorageProviderConnectionTester
     {
         try {
             $validated = $this->validator->validate($payload, isUpdate: false, forConnectionTest: true);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return [
                 'success' => false,
                 'message' => 'Configuration is invalid: '.collect($e->errors())->flatten()->first(),
@@ -70,7 +73,7 @@ final class StorageProviderConnectionTester
                 StorageProviderDriver::Local => $this->testLocal($config),
                 StorageProviderDriver::S3 => $this->testS3($config),
             };
-        } catch (\Throwable) {
+        } catch (Throwable) {
             Log::warning('Storage provider connection test failed.');
 
             return [
@@ -98,16 +101,16 @@ final class StorageProviderConnectionTester
     public function assertSafeLocalRoot(string $root): string
     {
         if ($root === '' || str_contains($root, "\0")) {
-            throw new \InvalidArgumentException('Local storage root path is invalid.');
+            throw new InvalidArgumentException('Local storage root path is invalid.');
         }
 
         if (preg_match('#(^|/|\\\\)\.\.(/|\\\\|$)#', $root)) {
-            throw new \InvalidArgumentException('Local storage root path is not permitted.');
+            throw new InvalidArgumentException('Local storage root path is not permitted.');
         }
 
         $bases = self::allowedLocalRootBases();
         if ($bases === []) {
-            throw new \InvalidArgumentException('No permitted local storage base is available.');
+            throw new InvalidArgumentException('No permitted local storage base is available.');
         }
 
         $candidate = $root;
@@ -118,16 +121,16 @@ final class StorageProviderConnectionTester
         $candidate = $this->normalizePathSeparators($candidate);
 
         if (! is_dir($candidate) && ! is_link($candidate)) {
-            throw new \InvalidArgumentException('Local storage root path does not exist.');
+            throw new InvalidArgumentException('Local storage root path does not exist.');
         }
 
         $real = realpath($candidate);
         if ($real === false || ! is_dir($real)) {
-            throw new \InvalidArgumentException('Local storage root path could not be resolved.');
+            throw new InvalidArgumentException('Local storage root path could not be resolved.');
         }
 
         if (! $this->isPathUnderAllowedBase($real, $bases)) {
-            throw new \InvalidArgumentException('Local storage root path is outside the permitted storage area.');
+            throw new InvalidArgumentException('Local storage root path is outside the permitted storage area.');
         }
 
         return $real;
@@ -166,7 +169,7 @@ final class StorageProviderConnectionTester
 
         try {
             $root = $this->assertSafeLocalRoot($rootInput);
-        } catch (\InvalidArgumentException $e) {
+        } catch (InvalidArgumentException $e) {
             return ['success' => false, 'message' => $e->getMessage()];
         }
 
@@ -186,7 +189,7 @@ final class StorageProviderConnectionTester
                 if ($disk->exists($probe)) {
                     $disk->delete($probe);
                 }
-            } catch (\Throwable) {
+            } catch (Throwable) {
             }
         }
     }
@@ -233,7 +236,7 @@ final class StorageProviderConnectionTester
                 if ($disk->exists($probe)) {
                     $disk->delete($probe);
                 }
-            } catch (\Throwable) {
+            } catch (Throwable) {
             }
         }
     }
@@ -345,13 +348,13 @@ final class StorageProviderConnectionTester
         if ($long === false) {
             return true;
         }
-        if (($long & 0xFFFF0000) === 0xA9FE0000) {
+        if (($long & 0xffff0000) === 0xa9fe0000) {
             return true;
         }
-        if (($long & 0xFFC00000) === 0x64400000) {
+        if (($long & 0xffc00000) === 0x64400000) {
             return true;
         }
-        if (($long & 0xFF000000) === 0) {
+        if (($long & 0xff000000) === 0) {
             return true;
         }
 

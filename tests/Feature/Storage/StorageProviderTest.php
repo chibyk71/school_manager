@@ -4,6 +4,8 @@ namespace Tests\Feature\Storage;
 
 use App\Enums\StorageProviderDriver;
 use App\Enums\StorageProviderOwnership;
+use App\Http\Controllers\Settings\Storage\StorageProviderController;
+use App\Http\Resources\StorageProviderResource;
 use App\Models\School;
 use App\Models\StorageProvider;
 use App\Services\Storage\StorageProviderConnectionTester;
@@ -14,8 +16,11 @@ use App\Support\Settings\SettingsRegistry;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
 use Illuminate\Database\Eloquent\Model;
-use Tests\Support\StorageProviderTestSchema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use Tests\Support\StorageProviderTestSchema;
 use Tests\TestCase;
 
 /**
@@ -105,7 +110,7 @@ class StorageProviderTest extends TestCase
         $decrypted = $provider->getDecryptedSecrets();
         $this->assertSame('super-secret-value-xyz', $decrypted['secret'] ?? null);
 
-        $resource = (new \App\Http\Resources\StorageProviderResource($provider))->resolve();
+        $resource = (new StorageProviderResource($provider))->resolve();
         $this->assertArrayNotHasKey('secrets', $resource);
         $this->assertTrue($resource['secrets_configured']);
         $json = json_encode($resource);
@@ -199,7 +204,7 @@ class StorageProviderTest extends TestCase
                 'config' => [],
             ], null);
             $this->fail('Expected rejection when creating school provider without school context');
-        } catch (\InvalidArgumentException|\Illuminate\Validation\ValidationException $e) {
+        } catch (InvalidArgumentException|ValidationException $e) {
             $this->assertTrue(true);
         }
     }
@@ -427,7 +432,7 @@ class StorageProviderTest extends TestCase
 
     public function test_file_manager_settings_registered(): void
     {
-        $registry = app(\App\Support\Settings\SettingsRegistry::class);
+        $registry = app(SettingsRegistry::class);
 
         $this->assertNotNull($registry->find('file_manager.default_provider_preference'));
         $this->assertNotNull($registry->find('file_manager.allow_school_provider_management'));
@@ -453,11 +458,11 @@ class StorageProviderTest extends TestCase
     public function test_legacy_storage_settings_route_still_registered(): void
     {
         $this->assertTrue(
-            \Illuminate\Support\Facades\Route::has('settings.advanced.storage'),
+            Route::has('settings.advanced.storage'),
             'Legacy Advanced Storage route must remain registered'
         );
         $this->assertTrue(
-            \Illuminate\Support\Facades\Route::has('settings.storage-providers.index'),
+            Route::has('settings.storage-providers.index'),
             'New storage providers route must be registered'
         );
     }
@@ -556,7 +561,7 @@ class StorageProviderTest extends TestCase
         $this->app->instance(SettingsRegistry::class, $empty);
         $this->app->instance(SettingsResolver::class, new SettingsResolver($empty));
 
-        $controller = $this->app->make(\App\Http\Controllers\Settings\Storage\StorageProviderController::class);
+        $controller = $this->app->make(StorageProviderController::class);
         $method = new \ReflectionMethod($controller, 'schoolProviderManagementAllowed');
         $method->setAccessible(true);
 
