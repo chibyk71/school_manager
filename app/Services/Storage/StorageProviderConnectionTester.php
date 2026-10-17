@@ -23,6 +23,8 @@ use Throwable;
  * - S3 endpoints/URLs: http(s) only, no URL credentials, no private/loopback/
  *   link-local/metadata targets (hostname + resolved DNS). Redirects disabled
  *   on the probe HTTP client so they cannot bypass the policy.
+ * - Resolved safe IPs are pinned via CURLOPT_RESOLVE for the probe (TLS still
+ *   verifies the original hostname). Fail closed when DNS yields no safe IP.
  * - Probe objects are always cleaned up on success and failure.
  * - Failures log a static diagnostic only (no exception message, no config).
  *
@@ -47,7 +49,8 @@ final class StorageProviderConnectionTester
 
     public function __construct(
         private readonly StorageProviderValidator $validator,
-    ) {}
+    ) {
+    }
 
     public function test(array $payload): array
     {
@@ -196,11 +199,34 @@ final class StorageProviderConnectionTester
 
     private function testS3(array $config): array
     {
-        if (! empty($config['endpoint']) && ! $this->isAllowedEndpoint((string) $config['endpoint'])) {
-            return ['success' => false, 'message' => 'S3 endpoint is not permitted for connection testing.'];
+        $curlResolve = [];
+
+        if (! empty($config['endpoint'])) {
+            $pin = $this->pinAllowedEndpoint((string) $config['endpoint']);
+            if ($pin === null) {
+                return ['success' => false, 'message' => 'S3 endpoint is not permitted for connection testing.'];
+            }
+            $curlResolve = array_merge($curlResolve, $pin['curl_resolve']);
         }
-        if (! empty($config['url']) && ! $this->isAllowedEndpoint((string) $config['url'])) {
-            return ['success' => false, 'message' => 'S3 base URL is not permitted for connection testing.'];
+        if (! empty($config['url'])) {
+            $pin = $this->pinAllowedEndpoint((string) $config['url']);
+            if ($pin === null) {
+                return ['success' => false, 'message' => 'S3 base URL is not permitted for connection testing.'];
+            }
+            $curlResolve = array_merge($curlResolve, $pin['curl_resolve']);
+        }
+
+        $http = [
+            'timeout' => 10,
+            'connect_timeout' => 5,
+            'allow_redirects' => false,
+        ];
+        // Pin DNS at connect time so a rebinding answer cannot bypass the IP policy.
+        // TLS still verifies the original hostname (SNI / cert name); we only force the peer IP.
+        if ($curlResolve !== []) {
+            $http['curl'] = [
+                CURLOPT_RESOLVE => array_values(array_unique($curlResolve)),
+            ];
         }
 
         $diskConfig = [
@@ -213,7 +239,7 @@ final class StorageProviderConnectionTester
             'endpoint' => $config['endpoint'] ?? null,
             'use_path_style_endpoint' => filter_var($config['use_path_style_endpoint'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'throw' => true,
-            'http' => ['timeout' => 10, 'connect_timeout' => 5, 'allow_redirects' => false],
+            'http' => $http,
         ];
 
         if (empty($diskConfig['bucket'])) {
@@ -253,61 +279,105 @@ final class StorageProviderConnectionTester
 
     private function isAllowedEndpoint(string $url): bool
     {
+        return $this->pinAllowedEndpoint($url) !== null;
+    }
+
+    /**
+     * Validate endpoint and return CURLOPT_RESOLVE pin entries for the first safe IP.
+     *
+     * @return array{host: string, ip: string, port: int, curl_resolve: list<string>}|null
+     */
+    public function pinAllowedEndpoint(string $url): ?array
+    {
         $parts = parse_url($url);
         if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
-            return false;
+            return null;
         }
-        $scheme = strtolower($parts['scheme']);
+        $scheme = strtolower((string) $parts['scheme']);
         if (! in_array($scheme, ['http', 'https'], true)) {
-            return false;
+            return null;
         }
         if (isset($parts['user']) || isset($parts['pass'])) {
-            return false;
+            return null;
         }
-        $host = strtolower(rtrim($parts['host'], '.'));
+        $host = strtolower(rtrim((string) $parts['host'], '.'));
         if ($host === '') {
-            return false;
+            return null;
         }
+
+        $port = isset($parts['port'])
+            ? (int) $parts['port']
+            : ($scheme === 'https' ? 443 : 80);
+
+        $allowlisted = false;
         $allowlist = config('filesystems.connection_test_allowed_hosts', []);
         if (is_array($allowlist) && $allowlist !== []) {
             $normalized = array_map(static fn ($h) => strtolower(rtrim((string) $h, '.')), $allowlist);
-            if (in_array($host, $normalized, true)) {
-                return true;
+            $allowlisted = in_array($host, $normalized, true);
+        }
+
+        if (! $allowlisted && $this->isBlockedHostname($host)) {
+            return null;
+        }
+
+        $ips = $this->resolveEndpointIps($host);
+        if ($ips === []) {
+            return null;
+        }
+
+        $safeIp = null;
+        foreach ($ips as $ip) {
+            if ($allowlisted || ! $this->isProhibitedIp($ip)) {
+                $safeIp = $ip;
+                break;
             }
         }
-        if ($this->isBlockedHostname($host)) {
-            return false;
+        if ($safeIp === null) {
+            return null;
         }
+
+        // host:port:address — forces cURL to use this IP for the hostname (DNS pin).
+        $resolveEntry = sprintf('%s:%d:%s', $host, $port, $safeIp);
+
+        return [
+            'host' => $host,
+            'ip' => $safeIp,
+            'port' => $port,
+            'curl_resolve' => [$resolveEntry],
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function resolveEndpointIps(string $host): array
+    {
         if (filter_var($host, FILTER_VALIDATE_IP)) {
-            return ! $this->isProhibitedIp($host);
+            return [$host];
         }
+
+        $ips = [];
         $records = @dns_get_record($host, DNS_A + DNS_AAAA);
-        if ($records === false || $records === []) {
-            $ipv4 = @gethostbynamel($host);
-            if ($ipv4 === false || $ipv4 === []) {
-                return false;
-            }
-            foreach ($ipv4 as $ip) {
-                if ($this->isProhibitedIp($ip)) {
-                    return false;
+        if (is_array($records)) {
+            foreach ($records as $record) {
+                $ip = $record['ip'] ?? $record['ipv6'] ?? null;
+                if (is_string($ip) && $ip !== '') {
+                    $ips[] = $ip;
                 }
             }
-
-            return true;
         }
-        $sawAddress = false;
-        foreach ($records as $record) {
-            $ip = $record['ip'] ?? $record['ipv6'] ?? null;
-            if (! is_string($ip) || $ip === '') {
-                continue;
-            }
-            $sawAddress = true;
-            if ($this->isProhibitedIp($ip)) {
-                return false;
+        if ($ips === []) {
+            $ipv4 = @gethostbynamel($host);
+            if (is_array($ipv4)) {
+                foreach ($ipv4 as $ip) {
+                    if (is_string($ip) && $ip !== '') {
+                        $ips[] = $ip;
+                    }
+                }
             }
         }
 
-        return $sawAddress;
+        return array_values(array_unique($ips));
     }
 
     private function isBlockedHostname(string $host): bool
@@ -348,13 +418,13 @@ final class StorageProviderConnectionTester
         if ($long === false) {
             return true;
         }
-        if (($long & 0xFFFF0000) === 0xA9FE0000) {
+        if (($long & 0xffff0000) === 0xa9fe0000) {
             return true;
         }
-        if (($long & 0xFFC00000) === 0x64400000) {
+        if (($long & 0xffc00000) === 0x64400000) {
             return true;
         }
-        if (($long & 0xFF000000) === 0) {
+        if (($long & 0xff000000) === 0) {
             return true;
         }
 
@@ -375,10 +445,10 @@ final class StorageProviderConnectionTester
         }
         $b0 = ord($packed[0]);
         $b1 = ord($packed[1]);
-        if ($b0 === 0xFE && ($b1 & 0xC0) === 0x80) {
+        if ($b0 === 0xfe && ($b1 & 0xc0) === 0x80) {
             return true;
         }
-        if (($b0 & 0xFE) === 0xFC) {
+        if (($b0 & 0xfe) === 0xfc) {
             return true;
         }
 
