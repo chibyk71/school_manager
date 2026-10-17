@@ -35,4 +35,10 @@ return [
     // File Manager Phase 1 — Storage providers
     ['name' => 'storage-providers.view', 'display_name' => 'View Storage Providers', 'description' => 'List and view storage provider configuration (secrets redacted)'],
     ['name' => 'storage-providers.manage', 'display_name' => 'Manage Storage Providers', 'description' => 'Create, update, and test storage provider connections within authorized scope'],
+
+    // File Manager Phase 2 — Core domain (distinct from storage-providers.*)
+    ['name' => 'file-manager.view', 'display_name' => 'View File Manager', 'description' => 'Browse folders and files and download within authorized ownership scope'],
+    ['name' => 'file-manager.manage', 'display_name' => 'Manage File Manager', 'description' => 'Create folders, upload and organize files, and delete File Manager-managed content within authorized scope'],
+    ['name' => 'file-manager.attach', 'display_name' => 'Attach Files', 'description' => 'Attach and detach files to business owners within authorized scope'],
+    ['name' => 'file-manager.configure', 'display_name' => 'Configure File Manager Modules', 'description' => 'Enable or configure per-school File Manager module settings'],
 ];
