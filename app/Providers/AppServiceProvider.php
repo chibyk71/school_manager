@@ -89,6 +89,15 @@ class AppServiceProvider extends ServiceProvider
             \App\Policies\StorageProviderPolicy::class
         );
 
+        Gate::policy(
+            \App\Models\FileManager\Folder::class,
+            \App\Policies\FileManager\FolderPolicy::class
+        );
+        Gate::policy(
+            \App\Models\FileManager\File::class,
+            \App\Policies\FileManager\FilePolicy::class
+        );
+
         // School Manager permission identities (permissions.name ∪ catalogue).
         // Resolved once per process and shared by the Gate bridge and Docent.
         // The catalogue is the developer-owned source of truth; live DB rows are
