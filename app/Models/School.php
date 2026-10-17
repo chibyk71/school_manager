@@ -5,6 +5,7 @@ namespace App\Models;
 use Abbasudo\Purity\Traits\Filterable;
 use Abbasudo\Purity\Traits\Sortable;
 use App\Models\Academic\AcademicSession;
+use App\Models\StorageProvider;
 use App\Models\Academic\ClassLevel;
 use App\Models\Transport\Vehicle\Vehicle;
 use App\Traits\BelongsToSections;
@@ -152,6 +153,23 @@ class School extends Team implements HasMedia
     protected static function boot(): void
     {
         parent::boot();
+
+        // File Manager Phase 1: school soft-delete must not leave school-owned
+        // providers attached (and force-delete cascades via FK). Never null school_id.
+        static::deleting(function (self $school): void {
+            if ($school->isForceDeleting()) {
+                // DB cascadeOnDelete removes school-owned rows on force-delete.
+                return;
+            }
+
+            StorageProvider::query()
+                ->where('ownership', 'school')
+                ->where('school_id', $school->id)
+                ->get()
+                ->each(function (StorageProvider $provider): void {
+                    $provider->delete();
+                });
+        });
 
         static::creating(function (self $school) {
             // Generate unique slug if not provided
