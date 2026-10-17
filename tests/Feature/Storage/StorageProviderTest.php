@@ -50,8 +50,8 @@ class StorageProviderTest extends TestCase
         return School::query()->create([
             'name' => $name,
             'code' => strtoupper(substr(md5($name), 0, 8)),
-            'slug' => str($name)->slug().'-'.substr(md5($name), 0, 4),
-            'email' => str($name)->slug().'@test.example',
+            'slug' => str($name)->slug() . '-' . substr(md5($name), 0, 4),
+            'email' => str($name)->slug() . '@test.example',
             'type' => 'private',
         ]);
     }
@@ -204,7 +204,7 @@ class StorageProviderTest extends TestCase
                 'config' => [],
             ], null);
             $this->fail('Expected rejection when creating school provider without school context');
-        } catch (InvalidArgumentException|ValidationException $e) {
+        } catch (InvalidArgumentException | ValidationException $e) {
             $this->assertTrue(true);
         }
     }
@@ -327,7 +327,7 @@ class StorageProviderTest extends TestCase
     public function test_local_connection_test_does_not_create_outside_storage_path(): void
     {
         $tester = app(StorageProviderConnectionTester::class);
-        $outside = sys_get_temp_dir().DIRECTORY_SEPARATOR.'sm-storage-probe-'.bin2hex(random_bytes(8));
+        $outside = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'sm-storage-probe-' . bin2hex(random_bytes(8));
 
         $this->assertDirectoryDoesNotExist($outside);
 
@@ -354,7 +354,7 @@ class StorageProviderTest extends TestCase
     public function test_local_connection_test_rejects_nonexistent_path_inside_storage(): void
     {
         $tester = app(StorageProviderConnectionTester::class);
-        $inside = storage_path('app/private/sm-nonexistent-'.bin2hex(random_bytes(8)));
+        $inside = storage_path('app/private/sm-nonexistent-' . bin2hex(random_bytes(8)));
 
         $this->assertDirectoryDoesNotExist($inside);
 
@@ -511,7 +511,18 @@ class StorageProviderTest extends TestCase
         config(['filesystems.connection_test_allowed_hosts' => ['minio.internal.example']]);
         $tester = app(StorageProviderConnectionTester::class);
 
+        // Hostname allowlist is a policy decision (no DNS required).
         $this->assertTrue($tester->endpointIsAllowed('https://minio.internal.example:9000'));
+
+        // Connect-time pin still requires resolvable addresses (fail closed).
+        $ips = $tester->resolveEndpointIps('minio.internal.example');
+        if ($ips === []) {
+            $this->assertNull($tester->pinAllowedEndpoint('https://minio.internal.example:9000'));
+        } else {
+            $pin = $tester->pinAllowedEndpoint('https://minio.internal.example:9000');
+            $this->assertNotNull($pin);
+            $this->assertStringContainsString('minio.internal.example:9000:', $pin['curl_resolve'][0]);
+        }
     }
 
     public function test_prohibited_ip_helper(): void

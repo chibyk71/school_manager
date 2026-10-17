@@ -5,7 +5,6 @@ namespace App\Models;
 use Abbasudo\Purity\Traits\Filterable;
 use Abbasudo\Purity\Traits\Sortable;
 use App\Models\Academic\AcademicSession;
-use App\Models\StorageProvider;
 use App\Models\Academic\ClassLevel;
 use App\Models\Transport\Vehicle\Vehicle;
 use App\Traits\BelongsToSections;
@@ -67,16 +66,17 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
  */
 class School extends Team implements HasMedia
 {
-    use HasFactory;
-    use HasUuids;
-    use HasAddress;              // Polymorphic multi-address management (primary + additional)
+    // Polymorphic multi-address management (primary + additional)
     use BelongsToSections;
     use Filterable;
-    use Sortable;
-    use SoftDeletes;
-    use InteractsWithMedia;
+    use HasAddress;
+    use HasFactory;
     use HasTableQuery;
+    use HasUuids;
+    use InteractsWithMedia;
     use LogsActivity;
+    use SoftDeletes;
+    use Sortable;
 
     /**
      * Explicit table so Laratrust Team constructor resolution cannot drift.
@@ -104,7 +104,7 @@ class School extends Team implements HasMedia
      * Type casting.
      */
     protected $casts = [
-        'data'      => 'array',
+        'data' => 'array',
         'is_active' => 'boolean',
     ];
 
@@ -179,7 +179,7 @@ class School extends Team implements HasMedia
 
                 $counter = 1;
                 while (static::withTrashed()->where('slug', $school->slug)->exists()) {
-                    $school->slug = $baseSlug . '-' . $counter++;
+                    $school->slug = $baseSlug.'-'.$counter++;
                 }
             }
 
@@ -217,7 +217,7 @@ class School extends Team implements HasMedia
 
     public function classLevels()
     {
-        return $this->hasManyThrough(ClassLevel::class, \App\Models\SchoolSection::class);
+        return $this->hasManyThrough(ClassLevel::class, SchoolSection::class);
     }
 
     public function academicSessions()
@@ -246,7 +246,7 @@ class School extends Team implements HasMedia
             ->logFillable()
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "School [{$this->name}] was {$eventName}");
+            ->setDescriptionForEvent(fn (string $eventName) => "School [{$this->name}] was {$eventName}");
     }
 
     // =================================================================
