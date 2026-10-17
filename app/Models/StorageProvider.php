@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Crypt;
+use InvalidArgumentException;
+use Throwable;
 
 /**
  * StorageProvider — persisted storage destination configuration (File Manager Phase 1).
@@ -65,13 +67,13 @@ class StorageProvider extends Model
             : StorageProviderOwnership::from((string) $this->ownership);
 
         if ($ownership->requiresSchool() && empty($this->school_id)) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'School-owned storage providers require a school_id.'
             );
         }
 
         if ($ownership->forbidsSchool() && ! empty($this->school_id)) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'System-owned storage providers must not have a school_id.'
             );
         }
@@ -108,7 +110,7 @@ class StorageProvider extends Model
             $decoded = json_decode($plain, true);
 
             return is_array($decoded) ? $decoded : [];
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return [];
         }
     }
@@ -181,5 +183,4 @@ class StorageProvider extends Model
         return $query->where('ownership', StorageProviderOwnership::School->value)
             ->where('school_id', $schoolId);
     }
-
 }

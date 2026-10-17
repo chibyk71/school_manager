@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Storage;
 
+use App\Http\Middleware\CheckMaintenanceMode;
+use App\Http\Middleware\EnsureCurrentSession;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Permission;
 use App\Models\School;
 use App\Models\User;
@@ -9,8 +12,12 @@ use App\Services\Storage\StorageProviderManager;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use ReflectionObject;
 use Tests\Support\StorageProviderTestSchema;
 use Tests\TestCase;
@@ -42,11 +49,11 @@ class StorageProviderHttpTest extends TestCase
         $prop->setValue($gate, []);
 
         $this->withoutMiddleware([
-            \App\Http\Middleware\HandleInertiaRequests::class,
-            \App\Http\Middleware\EnsureCurrentSession::class,
-            \App\Http\Middleware\CheckMaintenanceMode::class,
-            \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
-            \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+            HandleInertiaRequests::class,
+            EnsureCurrentSession::class,
+            CheckMaintenanceMode::class,
+            VerifyCsrfToken::class,
+            ValidateCsrfToken::class,
         ]);
         $this->withoutVite();
     }
@@ -96,11 +103,11 @@ class StorageProviderHttpTest extends TestCase
 
     private function bindActiveSchool(?School $school): void
     {
-        $manager = new class($school)
+        $manager = new class ($school)
         {
             public function __construct(private $school) {}
 
-            public function getActiveSchool(?\Illuminate\Http\Request $request = null): ?School
+            public function getActiveSchool(?Request $request = null): ?School
             {
                 return $this->school;
             }
@@ -132,7 +139,7 @@ class StorageProviderHttpTest extends TestCase
 
     private function makeUser(): User
     {
-        $id = (string) \Illuminate\Support\Str::uuid();
+        $id = (string) Str::uuid();
         DB::table('users')->insert([
             'id' => $id,
             'name' => 'Storage Tester',
