@@ -16,6 +16,7 @@ use App\Http\Controllers\Settings\Advanced\BackupRestoreController;
 use App\Http\Controllers\Settings\Advanced\IpBanController;
 use App\Http\Controllers\Settings\Advanced\MaintenanceSettingsController;
 use App\Http\Controllers\Settings\Advanced\StorageSettingsController;
+use App\Http\Controllers\Settings\Storage\StorageProviderController;
 use App\Http\Controllers\Settings\Communication\EmailSettingsController;
 use App\Http\Controllers\Settings\Communication\EmailTemplatesController;
 use App\Http\Controllers\Settings\Communication\OtpSettingsController;
@@ -271,6 +272,16 @@ Route::prefix('settings/advanced')->name('settings.advanced.')->group(function (
     Route::post('backup', [BackupRestoreController::class, 'store'])->name('backup.store');
     Route::get('ip-ban', [IpBanController::class, 'index'])->name('ip_ban');
     Route::post('ip-ban', [IpBanController::class, 'store'])->name('ip_ban.store');
+});
+
+// File Manager Phase 1 — Storage provider registry (additive; legacy advanced.storage preserved)
+Route::prefix('settings/storage-providers')->name('settings.storage-providers.')->middleware(['auth'])->group(function () {
+    Route::get('/', [StorageProviderController::class, 'index'])->name('index');
+    Route::post('/', [StorageProviderController::class, 'store'])->name('store');
+    Route::post('test-connection', [StorageProviderController::class, 'testConnection'])->name('test-connection');
+    Route::get('{id}/dependencies', [StorageProviderController::class, 'dependencies'])->name('dependencies');
+    Route::get('{id}', [StorageProviderController::class, 'show'])->name('show');
+    Route::patch('{id}', [StorageProviderController::class, 'update'])->name('update');
 });
 
 // Dynamic Enum Phase 4 administration routes

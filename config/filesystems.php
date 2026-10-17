@@ -70,6 +70,22 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Connection-test endpoint allowlist
+    |--------------------------------------------------------------------------
+    |
+    | Exact hostnames permitted for S3-compatible connection tests even when
+    | they resolve to private addresses (on-prem MinIO, internal gateways).
+    | Public endpoints need not be listed. Empty = no private-host exceptions.
+    | Comma-separated via STORAGE_PROVIDER_TEST_ALLOWED_HOSTS env.
+    |
+    */
+    'connection_test_allowed_hosts' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('STORAGE_PROVIDER_TEST_ALLOWED_HOSTS', ''))
+    ))),
+
     'links' => [
         public_path('storage') => storage_path('app/public'),
     ],

@@ -1,0 +1,503 @@
+<?php
+
+namespace App\Services\Storage;
+
+use App\Enums\StorageProviderDriver;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use Throwable;
+
+/**
+ * Tests connectivity using a submitted (possibly unsaved) configuration.
+ *
+ * Never persists configuration. Never overwrites an existing provider.
+ * Never returns credentials or raw exception messages that may contain secrets.
+ *
+ * Safety:
+ * - Local roots must exist and resolve under an allowlisted base (storage_path).
+ * - Nonexistent local roots are rejected; directories are never created; ancestors
+ *   are never substituted for the configured path.
+ * - S3 endpoints/URLs: http(s) only, no URL credentials, no private/loopback/
+ *   link-local/metadata targets (hostname + resolved DNS). Redirects disabled
+ *   on the probe HTTP client so they cannot bypass the policy.
+ * - Resolved safe IPs are pinned via CURLOPT_RESOLVE for the probe (TLS still
+ *   verifies the original hostname). Fail closed when DNS yields no safe IP.
+ * - Custom endpoint/url requires a successful pin before Storage::build runs.
+ * - Probe objects are always cleaned up on success and failure.
+ * - Failures log a static diagnostic only (no exception message, no config).
+ *
+ * Private / internal S3-compatible deployments can be explicitly allowlisted
+ * via config('filesystems.connection_test_allowed_hosts') (exact hostnames).
+ * Allowlist is a hostname policy for endpointIsAllowed; connect-time probes
+ * still require pinAllowedEndpoint (DNS + CURLOPT_RESOLVE).
+ */
+final class StorageProviderConnectionTester
+{
+    public static function allowedLocalRootBases(): array
+    {
+        $bases = [storage_path()];
+        $resolved = [];
+        foreach ($bases as $base) {
+            $real = realpath($base);
+            if ($real !== false) {
+                $resolved[] = rtrim($real, DIRECTORY_SEPARATOR);
+            }
+        }
+
+        return $resolved;
+    }
+
+    public function __construct(
+        private readonly StorageProviderValidator $validator,
+    ) {}
+
+    public function test(array $payload): array
+    {
+        try {
+            $validated = $this->validator->validate($payload, isUpdate: false, forConnectionTest: true);
+        } catch (ValidationException $e) {
+            return [
+                'success' => false,
+                'message' => 'Configuration is invalid: '.collect($e->errors())->flatten()->first(),
+            ];
+        }
+
+        $driver = StorageProviderDriver::from(
+            $validated['driver'] instanceof StorageProviderDriver
+                ? $validated['driver']->value
+                : (string) $validated['driver']
+        );
+
+        $config = array_merge($validated['config'] ?? [], $validated['secrets'] ?? []);
+
+        try {
+            $result = match ($driver) {
+                StorageProviderDriver::Local => $this->testLocal($config),
+                StorageProviderDriver::S3 => $this->testS3($config),
+            };
+        } catch (Throwable) {
+            Log::warning('Storage provider connection test failed.');
+
+            return [
+                'success' => false,
+                'message' => 'Connection test failed. Verify the configuration and try again.',
+            ];
+        }
+
+        if ($result['success']) {
+            $reporter = new StorageProviderCapabilityReporter;
+            $safeConfig = $validated['config'] ?? [];
+            $result['capabilities'] = $reporter->report($driver, $safeConfig);
+        }
+
+        return $result;
+    }
+
+    public function assertSafeLocalRoot(string $root): string
+    {
+        if ($root === '' || str_contains($root, "\0")) {
+            throw new InvalidArgumentException('Local storage root path is invalid.');
+        }
+
+        if (preg_match('#(^|/|\\\\)\.\.(/|\\\\|$)#', $root)) {
+            throw new InvalidArgumentException('Local storage root path is not permitted.');
+        }
+
+        $bases = self::allowedLocalRootBases();
+        if ($bases === []) {
+            throw new InvalidArgumentException('No permitted local storage base is available.');
+        }
+
+        $candidate = $root;
+        if (! $this->isAbsolutePath($candidate)) {
+            $candidate = storage_path(ltrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $candidate), '/\\'));
+        }
+
+        $candidate = $this->normalizePathSeparators($candidate);
+
+        if (! is_dir($candidate) && ! is_link($candidate)) {
+            throw new InvalidArgumentException('Local storage root path does not exist.');
+        }
+
+        $real = realpath($candidate);
+        if ($real === false || ! is_dir($real)) {
+            throw new InvalidArgumentException('Local storage root path could not be resolved.');
+        }
+
+        if (! $this->isPathUnderAllowedBase($real, $bases)) {
+            throw new InvalidArgumentException('Local storage root path is outside the permitted storage area.');
+        }
+
+        return $real;
+    }
+
+    private function isPathUnderAllowedBase(string $realPath, array $bases): bool
+    {
+        foreach ($bases as $base) {
+            if ($realPath === $base || str_starts_with($realPath, $base.DIRECTORY_SEPARATOR)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizePathSeparators(string $path): string
+    {
+        $path = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+        $path = preg_replace('#'.preg_quote(DIRECTORY_SEPARATOR, '#').'{2,}#', DIRECTORY_SEPARATOR, $path) ?? $path;
+
+        return rtrim($path, DIRECTORY_SEPARATOR) ?: DIRECTORY_SEPARATOR;
+    }
+
+    public function endpointIsAllowed(string $url): bool
+    {
+        return $this->isAllowedEndpoint($url);
+    }
+
+    private function testLocal(array $config): array
+    {
+        $rootInput = $config['root'] ?? storage_path('app/private');
+        if (! is_string($rootInput)) {
+            return ['success' => false, 'message' => 'Local storage root path is invalid.'];
+        }
+
+        try {
+            $root = $this->assertSafeLocalRoot($rootInput);
+        } catch (InvalidArgumentException $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+
+        $disk = Storage::build(['driver' => 'local', 'root' => $root, 'throw' => true]);
+        $probe = '.storage-provider-probe-'.Str::random(12);
+
+        try {
+            $disk->put($probe, 'ok');
+            $exists = $disk->exists($probe);
+            if (! $exists) {
+                return ['success' => false, 'message' => 'Local storage probe write/read did not succeed.'];
+            }
+
+            return ['success' => true, 'message' => 'Local storage connection test succeeded.'];
+        } finally {
+            try {
+                if ($disk->exists($probe)) {
+                    $disk->delete($probe);
+                }
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    /**
+     * Build the Laravel disk config for an S3 probe, including DNS pin HTTP options.
+     *
+     * Returns null with a failure message when the endpoint/url policy rejects the target
+     * or when a pin cannot be applied for a provided custom endpoint/url.
+     *
+     * The hostname in endpoint/url is preserved for TLS SNI and certificate verification;
+     * only the peer IP is forced via CURLOPT_RESOLVE on the Guzzle/cURL client used by
+     * the AWS SDK (Laravel passes disk "http" options through to S3Client).
+     *
+     * @return array{0: array<string, mixed>|null, 1: string|null} [diskConfig, errorMessage]
+     */
+    public function buildS3DiskConfig(array $config): array
+    {
+        $curlResolve = [];
+
+        if (! empty($config['endpoint'])) {
+            $pin = $this->pinAllowedEndpoint((string) $config['endpoint']);
+            if ($pin === null) {
+                return [null, 'S3 endpoint is not permitted for connection testing.'];
+            }
+            $curlResolve = array_merge($curlResolve, $pin['curl_resolve']);
+        }
+        if (! empty($config['url'])) {
+            $pin = $this->pinAllowedEndpoint((string) $config['url']);
+            if ($pin === null) {
+                return [null, 'S3 base URL is not permitted for connection testing.'];
+            }
+            $curlResolve = array_merge($curlResolve, $pin['curl_resolve']);
+        }
+
+        if ((! empty($config['endpoint']) || ! empty($config['url'])) && $curlResolve === []) {
+            return [null, 'S3 endpoint pin could not be applied for connection testing.'];
+        }
+
+        $http = [
+            'timeout' => 10,
+            'connect_timeout' => 5,
+            'allow_redirects' => false,
+        ];
+        if ($curlResolve !== []) {
+            $http['curl'] = [
+                CURLOPT_RESOLVE => array_values(array_unique($curlResolve)),
+            ];
+        }
+
+        $diskConfig = [
+            'driver' => 's3',
+            'key' => $config['key'] ?? null,
+            'secret' => $config['secret'] ?? null,
+            'region' => $config['region'] ?? 'us-east-1',
+            'bucket' => $config['bucket'] ?? null,
+            'url' => $config['url'] ?? null,
+            'endpoint' => $config['endpoint'] ?? null,
+            'use_path_style_endpoint' => filter_var($config['use_path_style_endpoint'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'throw' => true,
+            'http' => $http,
+        ];
+
+        if (empty($diskConfig['bucket'])) {
+            return [null, 'S3 connection test requires a bucket.'];
+        }
+
+        return [$diskConfig, null];
+    }
+
+    private function testS3(array $config): array
+    {
+        [$diskConfig, $error] = $this->buildS3DiskConfig($config);
+        if ($diskConfig === null) {
+            return ['success' => false, 'message' => $error ?? 'S3 configuration is not permitted for connection testing.'];
+        }
+
+        $disk = Storage::build($diskConfig);
+        $probe = '.storage-provider-probe-'.Str::random(12);
+
+        try {
+            $disk->put($probe, 'ok');
+            $exists = $disk->exists($probe);
+            if (! $exists) {
+                return ['success' => false, 'message' => 'S3-compatible storage probe write/read did not succeed.'];
+            }
+
+            return ['success' => true, 'message' => 'S3-compatible storage connection test succeeded.'];
+        } finally {
+            try {
+                if ($disk->exists($probe)) {
+                    $disk->delete($probe);
+                }
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    private function isAbsolutePath(string $path): bool
+    {
+        if ($path === '') {
+            return false;
+        }
+
+        return str_starts_with($path, '/')
+            || (strlen($path) > 2 && ctype_alpha($path[0]) && $path[1] === ':');
+    }
+
+    private function isAllowedEndpoint(string $url): bool
+    {
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return false;
+        }
+        $scheme = strtolower((string) $parts['scheme']);
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            return false;
+        }
+        $host = strtolower(rtrim((string) $parts['host'], '.'));
+        if ($host === '') {
+            return false;
+        }
+
+        if ($this->isAllowlistedHost($host)) {
+            return true;
+        }
+
+        if ($this->isBlockedHostname($host)) {
+            return false;
+        }
+
+        return $this->pinAllowedEndpoint($url) !== null;
+    }
+
+    private function isAllowlistedHost(string $host): bool
+    {
+        $allowlist = config('filesystems.connection_test_allowed_hosts', []);
+        if (! is_array($allowlist) || $allowlist === []) {
+            return false;
+        }
+        $normalized = array_map(static fn ($h) => strtolower(rtrim((string) $h, '.')), $allowlist);
+
+        return in_array(strtolower(rtrim($host, '.')), $normalized, true);
+    }
+
+    /**
+     * @return array{host: string, ip: string, port: int, curl_resolve: list<string>}|null
+     */
+    public function pinAllowedEndpoint(string $url): ?array
+    {
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return null;
+        }
+        $scheme = strtolower((string) $parts['scheme']);
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            return null;
+        }
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            return null;
+        }
+        $host = strtolower(rtrim((string) $parts['host'], '.'));
+        if ($host === '') {
+            return null;
+        }
+
+        $port = isset($parts['port'])
+            ? (int) $parts['port']
+            : ($scheme === 'https' ? 443 : 80);
+
+        $allowlisted = $this->isAllowlistedHost($host);
+
+        if (! $allowlisted && $this->isBlockedHostname($host)) {
+            return null;
+        }
+
+        $ips = $this->resolveEndpointIps($host);
+        if ($ips === []) {
+            return null;
+        }
+
+        $safeIp = null;
+        foreach ($ips as $ip) {
+            if ($allowlisted || ! $this->isProhibitedIp($ip)) {
+                $safeIp = $ip;
+                break;
+            }
+        }
+        if ($safeIp === null) {
+            return null;
+        }
+
+        $resolveEntry = sprintf('%s:%d:%s', $host, $port, $safeIp);
+
+        return [
+            'host' => $host,
+            'ip' => $safeIp,
+            'port' => $port,
+            'curl_resolve' => [$resolveEntry],
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function resolveEndpointIps(string $host): array
+    {
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            return [$host];
+        }
+
+        $ips = [];
+        $records = @dns_get_record($host, DNS_A + DNS_AAAA);
+        if (is_array($records)) {
+            foreach ($records as $record) {
+                $ip = $record['ip'] ?? $record['ipv6'] ?? null;
+                if (is_string($ip) && $ip !== '') {
+                    $ips[] = $ip;
+                }
+            }
+        }
+        if ($ips === []) {
+            $ipv4 = @gethostbynamel($host);
+            if (is_array($ipv4)) {
+                foreach ($ipv4 as $ip) {
+                    if (is_string($ip) && $ip !== '') {
+                        $ips[] = $ip;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($ips));
+    }
+
+    private function isBlockedHostname(string $host): bool
+    {
+        $blockedExact = [
+            'localhost', 'localhost.localdomain', 'metadata.google.internal',
+            'metadata', 'kubernetes.default', 'kubernetes.default.svc',
+        ];
+        if (in_array($host, $blockedExact, true)) {
+            return true;
+        }
+        if (str_ends_with($host, '.localhost') || str_ends_with($host, '.local')) {
+            return true;
+        }
+
+        return $host === '169.254.169.254';
+    }
+
+    public function isProhibitedIp(string $ip): bool
+    {
+        $ip = strtolower(trim($ip, '[]'));
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $this->isProhibitedIpv4($ip);
+        }
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return $this->isProhibitedIpv6($ip);
+        }
+
+        return true;
+    }
+
+    private function isProhibitedIpv4(string $ip): bool
+    {
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return true;
+        }
+        $long = ip2long($ip);
+        if ($long === false) {
+            return true;
+        }
+        if (($long & 0xFFFF0000) === 0xA9FE0000) {
+            return true;
+        }
+        if (($long & 0xFFC00000) === 0x64400000) {
+            return true;
+        }
+        if (($long & 0xFF000000) === 0) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isProhibitedIpv6(string $ip): bool
+    {
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return true;
+        }
+        $packed = inet_pton($ip);
+        if ($packed === false) {
+            return true;
+        }
+        if ($ip === '::1') {
+            return true;
+        }
+        $b0 = ord($packed[0]);
+        $b1 = ord($packed[1]);
+        if ($b0 === 0xFE && ($b1 & 0xC0) === 0x80) {
+            return true;
+        }
+        if (($b0 & 0xFE) === 0xFC) {
+            return true;
+        }
+
+        return false;
+    }
+}

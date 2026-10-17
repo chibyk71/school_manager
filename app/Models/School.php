@@ -66,16 +66,17 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
  */
 class School extends Team implements HasMedia
 {
-    use HasFactory;
-    use HasUuids;
-    use HasAddress;              // Polymorphic multi-address management (primary + additional)
+    // Polymorphic multi-address management (primary + additional)
     use BelongsToSections;
     use Filterable;
-    use Sortable;
-    use SoftDeletes;
-    use InteractsWithMedia;
+    use HasAddress;
+    use HasFactory;
     use HasTableQuery;
+    use HasUuids;
+    use InteractsWithMedia;
     use LogsActivity;
+    use SoftDeletes;
+    use Sortable;
 
     /**
      * Explicit table so Laratrust Team constructor resolution cannot drift.
@@ -103,7 +104,7 @@ class School extends Team implements HasMedia
      * Type casting.
      */
     protected $casts = [
-        'data'      => 'array',
+        'data' => 'array',
         'is_active' => 'boolean',
     ];
 
@@ -153,6 +154,43 @@ class School extends Team implements HasMedia
     {
         parent::boot();
 
+        // File Manager Phase 1: cascade soft-delete school-owned providers on deleted.
+        // Mark each with deleted_via_school_cascade = true as explicit provenance
+        // (not timestamp equality). Force-delete uses FK cascadeOnDelete.
+        static::deleted(function (self $school): void {
+            if ($school->isForceDeleting()) {
+                return;
+            }
+
+            StorageProvider::query()
+                ->where('ownership', 'school')
+                ->where('school_id', $school->id)
+                ->get()
+                ->each(function (StorageProvider $provider): void {
+                    $provider->delete();
+                    StorageProvider::withTrashed()
+                        ->whereKey($provider->id)
+                        ->update(['deleted_via_school_cascade' => true]);
+                });
+        });
+
+        // Restore only providers explicitly marked by the cascade. Independently
+        // trashed providers (even with the same deleted_at second) stay trashed.
+        // Ownership / school_id never change; flag is cleared on restore.
+        static::restoring(function (self $school): void {
+            StorageProvider::onlyTrashed()
+                ->where('ownership', 'school')
+                ->where('school_id', $school->id)
+                ->where('deleted_via_school_cascade', true)
+                ->get()
+                ->each(function (StorageProvider $provider): void {
+                    $provider->restore();
+                    StorageProvider::query()
+                        ->whereKey($provider->id)
+                        ->update(['deleted_via_school_cascade' => false]);
+                });
+        });
+
         static::creating(function (self $school) {
             // Generate unique slug if not provided
             if (empty($school->slug)) {
@@ -161,7 +199,7 @@ class School extends Team implements HasMedia
 
                 $counter = 1;
                 while (static::withTrashed()->where('slug', $school->slug)->exists()) {
-                    $school->slug = $baseSlug . '-' . $counter++;
+                    $school->slug = $baseSlug.'-'.$counter++;
                 }
             }
 
@@ -199,7 +237,7 @@ class School extends Team implements HasMedia
 
     public function classLevels()
     {
-        return $this->hasManyThrough(ClassLevel::class, \App\Models\SchoolSection::class);
+        return $this->hasManyThrough(ClassLevel::class, SchoolSection::class);
     }
 
     public function academicSessions()
@@ -228,7 +266,7 @@ class School extends Team implements HasMedia
             ->logFillable()
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "School [{$this->name}] was {$eventName}");
+            ->setDescriptionForEvent(fn (string $eventName) => "School [{$this->name}] was {$eventName}");
     }
 
     // =================================================================

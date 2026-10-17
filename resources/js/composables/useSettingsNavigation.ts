@@ -116,6 +116,7 @@ const navigationGroups: NavGroup[] = [
         title: 'Advanced Settings',
         items: [
             { label: 'Storage', href: route('settings.advanced.storage') },
+            { label: 'Storage Providers', href: route('settings.storage-providers.index') },
             { label: 'Backup & Restore', href: route('settings.advanced.backup') },
             { label: 'Ban IP Address', href: route('settings.advanced.ip') },
             { label: 'Maintenance Mode', href: route('settings.advanced.maintenance') },
