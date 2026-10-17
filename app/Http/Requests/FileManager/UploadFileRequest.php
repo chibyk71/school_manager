@@ -21,7 +21,8 @@ class UploadFileRequest extends FormRequest
             'file' => ['required', 'file', 'max:51200'], // 50 MB advisory; provider may impose more
             'folder_id' => ['nullable', 'uuid'],
             'storage_provider_id' => ['nullable', 'uuid'],
-            'managed_by' => ['nullable', 'string', Rule::in(['file_manager', 'module'])],
+            // managed_by is intentionally not accepted from clients.
+            // Ordinary uploads are always File Manager-managed.
             'module_code' => ['nullable', 'string', 'max:64'],
             'ownership' => ['nullable', 'string', Rule::in(['system', 'school'])],
         ];

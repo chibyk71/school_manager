@@ -72,16 +72,56 @@ final class FileService
     }
 
     /**
+     * Ordinary File Manager upload. Always creates a File Manager-managed file.
+     * Clients cannot set managed_by; use registerModuleManaged() for module-owned content.
+     *
      * @param  array{
      *     folder_id?: string|null,
      *     storage_provider_id?: string|null,
-     *     managed_by?: string,
      *     module_code?: string|null,
      *     ownership?: string
      * }  $meta
      */
     public function upload(UploadedFile $upload, array $meta, ?string $actingSchoolId): File
     {
+        // Strip any client-supplied lifecycle ownership — ordinary uploads are always FM-managed.
+        unset($meta['managed_by']);
+
+        return $this->performUpload($upload, $meta, $actingSchoolId, ManagedBy::FileManager);
+    }
+
+    /**
+     * Trusted path for module-owned files (server-side / internal callers only).
+     * Not exposed on the ordinary File Manager upload HTTP endpoint.
+     *
+     * @param  array{
+     *     folder_id?: string|null,
+     *     storage_provider_id?: string|null,
+     *     module_code?: string|null,
+     *     ownership?: string
+     * }  $meta
+     */
+    public function registerModuleManaged(UploadedFile $upload, array $meta, ?string $actingSchoolId): File
+    {
+        unset($meta['managed_by']);
+
+        return $this->performUpload($upload, $meta, $actingSchoolId, ManagedBy::Module);
+    }
+
+    /**
+     * @param  array{
+     *     folder_id?: string|null,
+     *     storage_provider_id?: string|null,
+     *     module_code?: string|null,
+     *     ownership?: string
+     * }  $meta
+     */
+    private function performUpload(
+        UploadedFile $upload,
+        array $meta,
+        ?string $actingSchoolId,
+        ManagedBy $managedBy
+    ): File {
         $ownership = $this->resolveOwnership($meta['ownership'] ?? null, $actingSchoolId);
         $this->assertCanMutateOwnership($actingSchoolId, $ownership);
 
@@ -95,6 +135,11 @@ final class FileService
                 || ($ownership === Ownership::School && $folder->school_id !== $actingSchoolId)) {
                 throw new InvalidArgumentException('File and folder ownership boundaries must match.');
             }
+            // Operation-time capability: upload into this folder
+            \App\Support\FileManager\FolderCapabilityResolver::assertAllows(
+                $folder,
+                \App\Enums\FileManager\Capability::Upload
+            );
         }
 
         $moduleCode = $meta['module_code'] ?? $folder?->module_code;
@@ -109,9 +154,6 @@ final class FileService
             $folder,
             $actingSchoolId
         );
-
-        $managedBy = ManagedBy::tryFrom((string) ($meta['managed_by'] ?? ManagedBy::FileManager->value))
-            ?? ManagedBy::FileManager;
 
         $extension = $upload->getClientOriginalExtension() ?: pathinfo($upload->getClientOriginalName(), PATHINFO_EXTENSION);
         $storageKey = $this->objectStorage->generateStorageKey(is_string($extension) ? $extension : null);
@@ -192,6 +234,7 @@ final class FileService
     public function retrieve(File $file, ?string $actingSchoolId): array
     {
         $this->assertFileInContext($file, $actingSchoolId);
+        $this->assertFileFolderCapability($file, \App\Enums\FileManager\Capability::Download);
 
         $provider = StorageProvider::query()->find($file->storage_provider_id);
         if ($provider === null) {
@@ -226,6 +269,7 @@ final class FileService
     public function delete(File $file, ?string $actingSchoolId): void
     {
         $this->assertFileInContext($file, $actingSchoolId);
+        $this->assertFileFolderCapability($file, \App\Enums\FileManager\Capability::Delete);
 
         if ($file->isModuleManaged()) {
             throw new InvalidArgumentException(
@@ -259,6 +303,7 @@ final class FileService
     public function move(File $file, ?string $newFolderId, ?string $actingSchoolId): File
     {
         $this->assertFileInContext($file, $actingSchoolId);
+        $this->assertFileFolderCapability($file, \App\Enums\FileManager\Capability::Move);
 
         if ($newFolderId === null) {
             $file->folder_id = null;
@@ -277,10 +322,32 @@ final class FileService
             throw new InvalidArgumentException('File and folder ownership boundaries must match.');
         }
 
+        \App\Support\FileManager\FolderCapabilityResolver::assertAllows(
+            $folder,
+            \App\Enums\FileManager\Capability::Move
+        );
+
         $file->folder_id = $folder->id;
         $file->save();
 
         return $file->fresh();
+    }
+
+    /**
+     * When the file lives in a folder, enforce that folder's effective capabilities.
+     */
+    private function assertFileFolderCapability(File $file, \App\Enums\FileManager\Capability $capability): void
+    {
+        if ($file->folder_id === null) {
+            return;
+        }
+
+        $folder = Folder::query()->find($file->folder_id);
+        if ($folder === null) {
+            return;
+        }
+
+        \App\Support\FileManager\FolderCapabilityResolver::assertAllows($folder, $capability);
     }
 
     private function resolveProvider(
