@@ -6,6 +6,8 @@
  * Explicit ownership (system | school) with school association invariants:
  *   - ownership = system  → school_id MUST be NULL
  *   - ownership = school  → school_id MUST reference schools.id
+ * School force-delete cascades school-owned provider rows (never nulls school_id).
+ * School soft-delete soft-deletes school-owned providers via School model boot.
  *
  * Secrets are stored in an encrypted JSON column (Laravel encrypt/decrypt).
  * Non-secret connection fields live in a plain JSON config column.
@@ -35,10 +37,14 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
 
+            // cascadeOnDelete: force-deleting a school removes its school-owned providers.
+            // nullOnDelete would set school_id=NULL and violate the ownership CHECK
+            // (or silently look like a system provider). Soft-deleted schools keep rows
+            // until force-delete; soft-delete of providers is handled in School::boot.
             $table->foreign('school_id')
                 ->references('id')
                 ->on('schools')
-                ->nullOnDelete();
+                ->cascadeOnDelete();
 
             $table->index(['ownership', 'school_id']);
             $table->index(['driver']);
