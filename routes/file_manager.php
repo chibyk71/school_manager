@@ -22,6 +22,7 @@ Route::middleware(['auth'])->prefix('file-manager')->name('file-manager.')->grou
     Route::get('files/{id}/download', [FileController::class, 'download'])->name('files.download');
     Route::patch('files/{id}/move', [FileController::class, 'move'])->name('files.move');
     Route::post('files/{id}/restore', [FileController::class, 'restore'])->name('files.restore');
+    Route::post('files/{id}/clear-purge-failure', [FileController::class, 'clearPurgeFailure'])->name('files.clear-purge-failure');
     Route::delete('files/{id}', [FileController::class, 'destroy'])->name('files.destroy');
     Route::post('files/{id}/attachments', [FileController::class, 'attach'])->name('files.attach');
     Route::delete('files/{id}/attachments/{attachmentId}', [FileController::class, 'detach'])->name('files.detach');

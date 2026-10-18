@@ -170,6 +170,31 @@ class FileController extends Controller
         ]);
     }
 
+    /**
+     * Operator recovery: clear terminal purge failure so the file can be restored
+     * or rediscovered after the underlying storage issue is fixed.
+     * Requires manage (delete) authorization; preserves storage identity.
+     */
+    public function clearPurgeFailure(string $id): JsonResponse
+    {
+        $file = $this->files->findIncludingTrashedForContext($id, $this->activeSchoolId());
+        if ($file === null || ! $file->isTrashed()) {
+            return response()->json(['message' => 'Trashed file not found.'], 404);
+        }
+
+        Gate::authorize('delete', $file);
+
+        try {
+            $file = $this->lifecycle->clearFailedPurgeForRetry($file, $this->activeSchoolId());
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'data' => (new FileResource($file))->resolve(),
+        ]);
+    }
+
     public function move(Request $request, string $id): JsonResponse
     {
         $file = $this->files->findForContext($id, $this->activeSchoolId());

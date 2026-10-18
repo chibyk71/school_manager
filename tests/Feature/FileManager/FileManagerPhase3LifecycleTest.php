@@ -484,41 +484,58 @@ class FileManagerPhase3LifecycleTest extends TestCase
         $school = $this->makeSchool();
         $provider = $this->makeLocalProvider($school);
         $files = $this->fileService();
-
-        // Build a FileService-like interleaving by writing then mutating before a
-        // second internal registration is not exposed. Instead: use Storage:: and
-        // direct DB transaction mirroring performUpload's check.
-        $manager = app(\App\Services\Storage\StorageProviderManager::class);
-        $objectStorage = app(\App\Services\FileManager\FileObjectStorage::class);
-
-        $upload = UploadedFile::fake()->create('race-cfg.txt', 8, 'text/plain');
-        $storageKey = $objectStorage->generateStorageKey('txt');
-        $writeFingerprint = $manager->locationFingerprint($provider);
-        $objectStorage->write($provider, $storageKey, $upload);
-
-        // Concurrent location-affecting change
-        $provider->config = ['root' => $this->localRoot.DIRECTORY_SEPARATOR.'relocated-'.\Illuminate\Support\Str::random(4)];
-        if (! is_dir($provider->config['root'])) {
-            mkdir($provider->config['root'], 0777, true);
+        $originalRoot = $this->localRoot;
+        $relocated = $this->localRoot.DIRECTORY_SEPARATOR.'relocated-'.Str::random(6);
+        if (! is_dir($relocated)) {
+            mkdir($relocated, 0777, true);
         }
-        $provider->save();
 
-        $currentFingerprint = $manager->locationFingerprint($provider->fresh());
-        $this->assertFalse(hash_equals($writeFingerprint, $currentFingerprint));
+        $providerId = $provider->id;
 
-        // Registration gate (same as FileService) must refuse.
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('configuration changed');
+        // Controlled interleaving: after physical write, mutate location-affecting config
+        // before FileService registers metadata (production registration path).
+        \App\Services\FileManager\FileObjectStorage::setAfterWriteForTesting(
+            function () use ($providerId, $relocated): void {
+                $row = \App\Models\StorageProvider::query()->find($providerId);
+                if ($row === null) {
+                    return;
+                }
+                $row->config = ['root' => $relocated];
+                $row->save();
+            }
+        );
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($provider, $writeFingerprint, $manager) {
-            $locked = \App\Models\StorageProvider::query()->whereKey($provider->id)->lockForUpdate()->first();
-            $current = $manager->locationFingerprint($locked);
-            if (! hash_equals($writeFingerprint, $current)) {
-                throw new InvalidArgumentException(
-                    'Storage provider configuration changed during upload. The object was not registered; please retry.'
+        try {
+            try {
+                $files->upload(
+                    UploadedFile::fake()->create('race-cfg.txt', 8, 'text/plain'),
+                    ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+                    $school->id
+                );
+                $this->fail('Expected upload registration to fail after location config change');
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('configuration changed', strtolower($e->getMessage()));
+            } catch (RuntimeException $e) {
+                // Compensating cleanup may wrap the original InvalidArgumentException.
+                $this->assertTrue(
+                    str_contains(strtolower($e->getMessage()), 'configuration changed')
+                    || str_contains(strtolower($e->getMessage()), 'metadata could not be saved')
+                    || str_contains(strtolower($e->getMessage()), 'retry'),
+                    $e->getMessage()
                 );
             }
-        });
+
+            // No File row registered against the mutated provider config.
+            $this->assertSame(0, File::query()->where('storage_provider_id', $providerId)->count());
+
+            // Compensation targets the write-time location (original root): object must not remain.
+            $disk = Storage::build(['driver' => 'local', 'root' => $originalRoot, 'throw' => false]);
+            $remaining = collect($disk->allFiles())->filter(fn ($p) => str_ends_with($p, '.txt') || ! str_contains($p, '/'))->count();
+            // Best-effort: no files under original root storage keys after compensation.
+            $this->assertSame([], array_values(array_filter($disk->allFiles(), static fn ($f) => ! str_starts_with(basename($f), '.'))));
+        } finally {
+            \App\Services\FileManager\FileObjectStorage::setAfterWriteForTesting(null);
+        }
     }
 
     public function test_purge_job_failure_marks_terminal_and_excludes_from_discovery(): void

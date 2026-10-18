@@ -234,6 +234,33 @@ function closeTrash() {
     showTrash.value = false;
 }
 
+
+async function clearPurgeFailure(id: string) {
+    errorMessage.value = null;
+    successMessage.value = null;
+    try {
+        const res = await fetch(route('file-manager.files.clear-purge-failure', id), {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '',
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({}),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(body.message || 'Could not clear purge failure');
+        }
+        successMessage.value = 'Purge failure cleared. File can be restored or will be eligible for retry after retention rules.';
+        await loadTrash();
+    } catch (e: any) {
+        errorMessage.value = e?.message || 'Could not clear purge failure';
+    }
+}
+
 function openRestoreDialog(file: FileRow) {
     restoreTargetId.value = file.id;
     restoreTargetName.value = file.original_filename;
@@ -397,14 +424,26 @@ function formatSize(bytes: number): string {
                             <div class="text-xs text-surface-500">
                                 Eligible {{ file.purge_eligible_at || '—' }}
                                 <span v-if="file.has_attachments"> · has attachments (purge blocked)</span>
+                                <span v-if="file.purge_state === 'failed'" class="text-red-600 dark:text-red-400"> · purge failed (operator recovery needed)</span>
+                                <span v-else-if="file.purge_state"> · {{ file.purge_state }}</span>
                             </div>
                         </div>
-                        <Button
-                            v-if="canManage"
-                            label="Restore"
-                            size="small"
-                            @click="restoreFile(file.id)"
-                        />
+                        <div class="flex gap-1">
+                            <Button
+                                v-if="canManage && file.purge_state === 'failed'"
+                                label="Clear failure"
+                                size="small"
+                                severity="warn"
+                                outlined
+                                @click="clearPurgeFailure(file.id)"
+                            />
+                            <Button
+                                v-if="canManage"
+                                label="Restore"
+                                size="small"
+                                @click="restoreFile(file.id)"
+                            />
+                        </div>
                     </li>
                 </ul>
                 <p v-else class="text-sm text-surface-500">Trash is empty.</p>

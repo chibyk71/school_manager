@@ -21,9 +21,28 @@ use Throwable;
  */
 final class FileObjectStorage
 {
+    /**
+     * Test-only seam: invoked after a successful physical write so tests can
+     * interleave provider reconfiguration before metadata registration.
+     *
+     * @var null|callable(StorageProvider, string): void
+     */
+    private static $afterWriteForTesting = null;
+
     public function __construct(
         private readonly StorageProviderConnectionTester $connectionTester,
     ) {}
+
+    /**
+     * @param  null|callable(StorageProvider, string): void  $callback
+     */
+    public static function setAfterWriteForTesting(?callable $callback): void
+    {
+        if ($callback !== null && ! app()->runningUnitTests()) {
+            throw new RuntimeException('afterWriteForTesting is only available during unit tests.');
+        }
+        self::$afterWriteForTesting = $callback;
+    }
 
     /**
      * Generate an opaque storage key independent of display names and folder paths.
@@ -124,6 +143,10 @@ final class FileObjectStorage
             }
         } catch (Throwable) {
             $checksum = null;
+        }
+
+        if (self::$afterWriteForTesting !== null && app()->runningUnitTests()) {
+            (self::$afterWriteForTesting)($provider, $storageKey);
         }
 
         return [
