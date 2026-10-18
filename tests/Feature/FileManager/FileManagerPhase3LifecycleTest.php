@@ -92,7 +92,7 @@ class FileManagerPhase3LifecycleTest extends TestCase
 
         $file = $files->registerModuleManaged(
             UploadedFile::fake()->create('mod.txt', 5, 'text/plain'),
-            ['storage_provider_id' => $provider->id, 'ownership' => 'school', 'module_code' => 'students'],
+            ['storage_provider_id' => $provider->id, 'ownership' => 'school', 'module_code' => 'student'],
             $school->id
         );
 
@@ -312,7 +312,6 @@ class FileManagerPhase3LifecycleTest extends TestCase
 
         Carbon::setTestNow();
     }
-
 
     public function test_purge_fails_closed_when_storage_key_unresolvable(): void
     {
