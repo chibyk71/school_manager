@@ -37,7 +37,11 @@ class FileController extends Controller
             $folderId = null;
         }
 
-        $items = $this->files->listForContext($schoolId, $folderId);
+        try {
+            $items = $this->files->listForContext($schoolId, $folderId);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json([
             'data' => FileResource::collection($items)->resolve(),
