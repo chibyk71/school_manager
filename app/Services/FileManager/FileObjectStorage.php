@@ -44,6 +44,17 @@ final class FileObjectStorage
         self::$afterWriteForTesting = $callback;
     }
 
+    /** @var bool */
+    private static $forceCompensatingDeleteFailureForTesting = false;
+
+    public static function forceCompensatingDeleteFailureForTesting(bool $force): void
+    {
+        if ($force && ! app()->runningUnitTests()) {
+            throw new RuntimeException('forceCompensatingDeleteFailureForTesting is only available during unit tests.');
+        }
+        self::$forceCompensatingDeleteFailureForTesting = $force;
+    }
+
     /**
      * Generate an opaque storage key independent of display names and folder paths.
      */
@@ -163,6 +174,18 @@ final class FileObjectStorage
      */
     public function attemptCompensatingDelete(StorageProvider $provider, string $storageKey): bool
     {
+        if (self::$forceCompensatingDeleteFailureForTesting && app()->runningUnitTests()) {
+            Log::error('file_manager.compensating_delete_failed', [
+                'provider_id' => $provider->id,
+                'storage_key_prefix' => substr($storageKey, 0, 8).'…',
+                'driver' => $provider->driver instanceof StorageProviderDriver
+                    ? $provider->driver->value
+                    : (string) $provider->driver,
+            ]);
+
+            return false;
+        }
+
         try {
             $disk = $this->diskFor($provider);
             if ($disk->exists($storageKey)) {

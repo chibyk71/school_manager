@@ -27,6 +27,7 @@ interface FileRow {
     storage_provider_id: string;
     trashed_at?: string | null;
     purge_eligible_at?: string | null;
+    purge_state?: string | null;
     is_trashed?: boolean;
     has_attachments?: boolean;
     original_folder_id?: string | null;

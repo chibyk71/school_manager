@@ -18,6 +18,7 @@ use App\Services\Storage\StorageProviderManager;
 use App\Support\FileManager\ModuleDefinitionRegistry;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -622,6 +623,73 @@ class FileManagerPhase3LifecycleTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('alternative');
         $lifecycle->restore(File::query()->find($file->id), $school->id, null);
+    }
+
+
+    public function test_upload_reports_failure_when_compensation_also_fails(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+        $providerId = $provider->id;
+        $relocated = $this->localRoot.DIRECTORY_SEPARATOR.'relocated-comp-'.Str::random(6);
+        if (! is_dir($relocated)) {
+            mkdir($relocated, 0777, true);
+        }
+
+        Log::fake();
+
+        \App\Services\FileManager\FileObjectStorage::setAfterWriteForTesting(
+            function () use ($providerId, $relocated): void {
+                $row = \App\Models\StorageProvider::query()->find($providerId);
+                if ($row === null) {
+                    return;
+                }
+                $row->config = ['root' => $relocated];
+                $row->save();
+            }
+        );
+        \App\Services\FileManager\FileObjectStorage::forceCompensatingDeleteFailureForTesting(true);
+
+        try {
+            try {
+                $files->upload(
+                    UploadedFile::fake()->create('orphan.txt', 8, 'text/plain'),
+                    ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+                    $school->id
+                );
+                $this->fail('Expected upload to report failure when compensation fails');
+            } catch (RuntimeException $e) {
+                $this->assertStringContainsString('compensating storage cleanup failed', strtolower($e->getMessage()));
+                $this->assertStringNotContainsString($this->localRoot, $e->getMessage());
+            }
+
+            $this->assertSame(0, File::query()->where('storage_provider_id', $providerId)->count());
+
+            // Observable cleanup failure: error logged without full storage key or secrets.
+            Log::assertLogged(function (\Illuminate\Log\Events\MessageLogged $log): bool {
+                if ($log->level !== 'error') {
+                    return false;
+                }
+                $ctx = is_array($log->context) ? $log->context : [];
+                $msg = (string) $log->message;
+                $blob = $msg.json_encode($ctx);
+                $relevant = str_contains($blob, 'upload_orphaned_object')
+                    || str_contains($blob, 'compensating_delete_failed')
+                    || str_contains($blob, 'upload_orphaned');
+                if (! $relevant) {
+                    return false;
+                }
+                if (array_key_exists('storage_key', $ctx) || array_key_exists('secrets', $ctx)) {
+                    return false;
+                }
+
+                return true;
+            });
+        } finally {
+            \App\Services\FileManager\FileObjectStorage::setAfterWriteForTesting(null);
+            \App\Services\FileManager\FileObjectStorage::forceCompensatingDeleteFailureForTesting(false);
+        }
     }
 
     private function fileService(): FileService
