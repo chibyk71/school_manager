@@ -25,6 +25,11 @@ interface FileRow {
     managed_by: string;
     folder_id: string | null;
     storage_provider_id: string;
+    trashed_at?: string | null;
+    purge_eligible_at?: string | null;
+    is_trashed?: boolean;
+    has_attachments?: boolean;
+    original_folder_id?: string | null;
 }
 
 interface ProviderRow {
@@ -52,6 +57,10 @@ const showCreateFolder = ref(false);
 const showUpload = ref(false);
 const errorMessage = ref<string | null>(null);
 const successMessage = ref<string | null>(null);
+const showTrash = ref(false);
+const trashFiles = ref<FileRow[]>([]);
+const trashLoading = ref(false);
+
 
 /**
  * AuthenticatedLayout requires `crumb: { label?, url?, icon? }[]`.
@@ -188,6 +197,63 @@ function downloadFile(id: string) {
     window.location.href = route('file-manager.files.download', id);
 }
 
+
+async function loadTrash() {
+    trashLoading.value = true;
+    errorMessage.value = null;
+    try {
+        const res = await fetch(route('file-manager.files.trash'), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        });
+        const body = await res.json();
+        if (!res.ok) {
+            throw new Error(body.message || 'Failed to load trash');
+        }
+        trashFiles.value = body.data || [];
+    } catch (e: any) {
+        errorMessage.value = e?.message || 'Failed to load trash';
+    } finally {
+        trashLoading.value = false;
+    }
+}
+
+async function openTrash() {
+    showTrash.value = true;
+    await loadTrash();
+}
+
+function closeTrash() {
+    showTrash.value = false;
+}
+
+async function restoreFile(id: string) {
+    errorMessage.value = null;
+    successMessage.value = null;
+    try {
+        const res = await fetch(route('file-manager.files.restore', id), {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '',
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({}),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(body.message || 'Restore failed');
+        }
+        successMessage.value = 'File restored.';
+        await loadTrash();
+        router.reload({ only: ['files', 'folders'] });
+    } catch (e: any) {
+        errorMessage.value = e?.message || 'Restore failed';
+    }
+}
+
 function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -235,7 +301,58 @@ function formatSize(bytes: number): string {
             </Message>
 
             <div class="grid gap-4 md:grid-cols-2">
-                <div class="rounded border border-surface-200 dark:border-surface-700 p-3">
+                <div v-if="canManage" class="mb-3 flex gap-2">
+                <Button
+                    v-if="!showTrash"
+                    label="Trash"
+                    icon="pi pi-trash"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    @click="openTrash"
+                />
+                <Button
+                    v-else
+                    label="Back to files"
+                    icon="pi pi-arrow-left"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    @click="closeTrash"
+                />
+            </div>
+
+            <div v-if="showTrash" class="rounded border border-surface-200 dark:border-surface-700 p-3 mb-4">
+                <h2 class="font-medium mb-2">Trash</h2>
+                <p class="text-sm text-surface-500 mb-2">
+                    File Manager-managed files only. Retention applies from the time each file was trashed.
+                </p>
+                <p v-if="trashLoading" class="text-sm">Loading…</p>
+                <ul v-else-if="trashFiles.length" class="space-y-1">
+                    <li
+                        v-for="file in trashFiles"
+                        :key="file.id"
+                        class="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-surface-100 dark:hover:bg-surface-800"
+                    >
+                        <div class="min-w-0 flex-1">
+                            <div class="truncate">📄 {{ file.original_filename }}</div>
+                            <div class="text-xs text-surface-500">
+                                Eligible {{ file.purge_eligible_at || '—' }}
+                                <span v-if="file.has_attachments"> · has attachments (purge blocked)</span>
+                            </div>
+                        </div>
+                        <Button
+                            v-if="canManage"
+                            label="Restore"
+                            size="small"
+                            @click="restoreFile(file.id)"
+                        />
+                    </li>
+                </ul>
+                <p v-else class="text-sm text-surface-500">Trash is empty.</p>
+            </div>
+
+            <div v-show="!showTrash" class="rounded border border-surface-200 dark:border-surface-700 p-3">
                     <h2 class="font-medium mb-2">Folders</h2>
                     <ul v-if="folders.length" class="space-y-1">
                         <li
@@ -259,7 +376,7 @@ function formatSize(bytes: number): string {
                     <p v-else class="text-sm text-surface-500">No folders here.</p>
                 </div>
 
-                <div class="rounded border border-surface-200 dark:border-surface-700 p-3">
+                <div v-show="!showTrash" class="rounded border border-surface-200 dark:border-surface-700 p-3">
                     <h2 class="font-medium mb-2">Files</h2>
                     <ul v-if="files.length" class="space-y-1">
                         <li

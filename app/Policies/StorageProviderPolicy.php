@@ -61,4 +61,11 @@ class StorageProviderPolicy
     {
         return $this->view($user, $provider);
     }
+
+    public function delete(User $user, StorageProvider $provider): Response
+    {
+        return $user->hasPermission('storage-providers.manage')
+            ? Response::allow()
+            : Response::deny('You do not have permission to delete storage providers.');
+    }
 }

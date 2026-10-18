@@ -46,9 +46,25 @@ final class FileObjectStorage
      *
      * @throws RuntimeException when the provider is disabled or configuration is unsafe
      */
+    /**
+     * Build a Laravel filesystem disk for write/upload paths (requires enabled provider).
+     */
     public function diskFor(StorageProvider $provider): Filesystem
     {
-        if (! $provider->enabled) {
+        return $this->buildDisk($provider, requireEnabled: true);
+    }
+
+    /**
+     * Build disk for retrieval or purge of existing objects (disabled providers remain readable).
+     */
+    public function diskForExisting(StorageProvider $provider): Filesystem
+    {
+        return $this->buildDisk($provider, requireEnabled: false);
+    }
+
+    private function buildDisk(StorageProvider $provider, bool $requireEnabled): Filesystem
+    {
+        if ($requireEnabled && ! $provider->enabled) {
             throw new RuntimeException('Storage provider is disabled.');
         }
 
@@ -154,7 +170,7 @@ final class FileObjectStorage
      */
     public function readStream(StorageProvider $provider, string $storageKey)
     {
-        $disk = $this->diskFor($provider);
+        $disk = $this->diskForExisting($provider);
 
         if (! $disk->exists($storageKey)) {
             throw new RuntimeException('Stored object not found on the storage provider.');
@@ -169,7 +185,7 @@ final class FileObjectStorage
     }
 
     /**
-     * Delete the physical object. Used for File Manager-managed deletes only.
+     * Delete the physical object (write-path semantics; requires enabled provider).
      */
     public function deleteObject(StorageProvider $provider, string $storageKey): void
     {
@@ -181,6 +197,43 @@ final class FileObjectStorage
         } catch (Throwable $e) {
             throw new RuntimeException('Failed to delete physical object from storage provider.', 0, $e);
         }
+    }
+
+    /**
+     * Delete existing object for purge even when the provider is disabled.
+     */
+    public function deleteObjectAllowingDisabled(StorageProvider $provider, string $storageKey): void
+    {
+        try {
+            $disk = $this->diskForExisting($provider);
+            if ($disk->exists($storageKey)) {
+                $disk->delete($storageKey);
+            }
+        } catch (Throwable $e) {
+            if ($this->isMissingObjectError($e)) {
+                return;
+            }
+            throw new RuntimeException('Failed to delete physical object from storage provider.', 0, $e);
+        }
+    }
+
+    /**
+     * Whether the throwable indicates the object is already absent (idempotent purge).
+     */
+    public function isMissingObjectError(Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+        foreach (['not found', 'no such file', 'nosuchkey', '404', 'does not exist', 'file does not exist'] as $needle) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
+        }
+        $prev = $e->getPrevious();
+        if ($prev instanceof Throwable) {
+            return $this->isMissingObjectError($prev);
+        }
+
+        return false;
     }
 
     /**

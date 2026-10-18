@@ -205,6 +205,31 @@ class StorageProviderController extends Controller
         return response()->json($this->dependencies->check($provider));
     }
 
+    public function destroy(Request $request, string $id): JsonResponse
+    {
+        $schoolId = $this->activeSchoolId();
+        $provider = $this->manager->findForContext($id, $schoolId);
+        if ($provider === null) {
+            abort(404);
+        }
+
+        Gate::authorize('delete', $provider);
+
+        if ($provider->isSchoolOwned() && ! $this->schoolProviderManagementAllowed($schoolId)) {
+            return response()->json([
+                'message' => 'School-level storage provider management is disabled for this school.',
+            ], 403);
+        }
+
+        try {
+            $this->manager->delete($provider, $schoolId);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(null, 204);
+    }
+
     private function activeSchoolId(): ?string
     {
         if (! function_exists('GetSchoolModel')) {
