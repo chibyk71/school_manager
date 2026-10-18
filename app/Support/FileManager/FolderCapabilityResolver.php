@@ -12,9 +12,14 @@ use InvalidArgumentException;
  * Effective set = Module maximum ∩ Folder configuration
  * (User authorization and tenant boundary are enforced separately.)
  *
- * - Non-empty folder.capabilities → that list (already clamped on write)
- * - Empty capabilities + module_code → module maximum
- * - Empty capabilities + no module → all Capability values (unconstrained general library)
+ * The module registry is authoritative: folder configuration cannot elevate
+ * capabilities beyond the module's current maximum, even if older stored data
+ * predates a ceiling change or is otherwise inconsistent.
+ *
+ * - Module + non-empty stored → stored ∩ module maximum
+ * - Module + empty stored → module maximum
+ * - No module + non-empty stored → stored (general library)
+ * - No module + empty stored → all Capability values
  */
 final class FolderCapabilityResolver
 {
@@ -24,16 +29,24 @@ final class FolderCapabilityResolver
     public static function effective(Folder $folder): array
     {
         $stored = $folder->capabilityList();
-        if ($stored !== []) {
-            return $stored;
-        }
-
         $moduleCode = $folder->module_code;
+
         if (is_string($moduleCode) && $moduleCode !== '') {
             $definition = ModuleDefinitionRegistry::get($moduleCode);
             if ($definition !== null) {
-                return $definition->maxCapabilityValues();
+                $ceiling = $definition->maxCapabilityValues();
+                if ($stored === []) {
+                    return $ceiling;
+                }
+
+                // Always re-apply the current module ceiling (not only at write time).
+                return array_values(array_intersect($stored, $ceiling));
             }
+        }
+
+        // No module (or unknown definition): general-library behavior.
+        if ($stored !== []) {
+            return $stored;
         }
 
         return Capability::values();

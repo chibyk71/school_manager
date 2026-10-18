@@ -9,6 +9,7 @@ use App\Models\School;
 use App\Models\StorageProvider;
 use App\Services\FileManager\FileService;
 use App\Services\FileManager\FolderService;
+use App\Support\FileManager\FolderCapabilityResolver;
 use App\Support\FileManager\ModuleDefinitionRegistry;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
@@ -123,6 +124,46 @@ class FileManagerListCapabilityTest extends TestCase
         $items = $this->fileService()->listForContext($school->id, null);
         $this->assertCount(1, $items);
         $this->assertSame('root.txt', $items->first()->original_filename);
+    }
+
+    /**
+     * Stored capabilities that exceed the current module ceiling must be
+     * intersected at read time — the registry is authoritative even if
+     * write-time clamping was skipped or the ceiling later tightened.
+     */
+    public function test_effective_capabilities_reapply_module_ceiling_to_stored_list(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        // student module max does not include Move.
+        $folder = $this->folderService()->create([
+            'name' => 'Student docs',
+            'module_code' => 'student',
+            'capabilities' => [
+                Capability::Browse->value,
+                Capability::Upload->value,
+                Capability::Download->value,
+            ],
+            'default_storage_provider_id' => $provider->id,
+        ], $school->id);
+
+        // Simulate inconsistent / pre-ceiling-change stored data (bypass write clamp).
+        $folder->capabilities = [
+            Capability::Browse->value,
+            Capability::Upload->value,
+            Capability::Download->value,
+            Capability::Move->value, // not in student max
+        ];
+        $folder->save();
+        $folder->refresh();
+
+        $effective = FolderCapabilityResolver::effective($folder);
+        $this->assertContains(Capability::Browse->value, $effective);
+        $this->assertContains(Capability::Upload->value, $effective);
+        $this->assertContains(Capability::Download->value, $effective);
+        $this->assertNotContains(Capability::Move->value, $effective);
+        $this->assertFalse(FolderCapabilityResolver::allows($folder, Capability::Move));
+        $this->assertTrue(FolderCapabilityResolver::allows($folder, Capability::Browse));
     }
 
     private function folderService(): FolderService
