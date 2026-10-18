@@ -1,0 +1,345 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { router, useForm } from '@inertiajs/vue3';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import Button from 'primevue/button';
+import Dialog from 'primevue/dialog';
+import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
+import Message from 'primevue/message';
+
+interface FolderRow {
+    id: string;
+    name: string;
+    parent_id: string | null;
+    module_code: string | null;
+    default_storage_provider_id: string | null;
+    capabilities: string[];
+}
+
+interface FileRow {
+    id: string;
+    original_filename: string;
+    mime_type: string | null;
+    size_bytes: number;
+    managed_by: string;
+    folder_id: string | null;
+    storage_provider_id: string;
+}
+
+interface ProviderRow {
+    id: string;
+    name: string;
+    driver: string;
+    enabled: boolean;
+}
+
+const props = defineProps<{
+    currentFolder: FolderRow | null;
+    folders: FolderRow[];
+    files: FileRow[];
+    providers: ProviderRow[];
+    modules: { code: string; label: string }[];
+    canManage: boolean;
+    canAttach: boolean;
+    canConfigure: boolean;
+    activeSchoolId: string | null;
+    /** Optional server-provided trail; mapped to AuthenticatedLayout's `crumb` contract. */
+    crumbs?: { label: string; href?: string }[];
+}>();
+
+const showCreateFolder = ref(false);
+const showUpload = ref(false);
+const errorMessage = ref<string | null>(null);
+const successMessage = ref<string | null>(null);
+
+/**
+ * AuthenticatedLayout requires `crumb: { label?, url?, icon? }[]`.
+ * Prefer server crumbs (href → url); otherwise a minimal File Manager trail.
+ */
+const layoutCrumb = computed(() => {
+    if (props.crumbs && props.crumbs.length > 0) {
+        return props.crumbs.map((c) => ({
+            label: c.label,
+            url: c.href,
+        }));
+    }
+
+    const items: { label: string; url?: string }[] = [
+        { label: 'File Manager', url: route('file-manager.browser') },
+    ];
+    if (props.currentFolder) {
+        items.push({ label: props.currentFolder.name });
+    }
+
+    return items;
+});
+
+const folderForm = useForm({
+    name: '',
+    parent_id: props.currentFolder?.id ?? null as string | null,
+    module_code: null as string | null,
+    default_storage_provider_id: null as string | null,
+});
+
+const uploadForm = useForm({
+    file: null as File | null,
+    folder_id: props.currentFolder?.id ?? null as string | null,
+    storage_provider_id: null as string | null,
+});
+
+const providerOptions = computed(() =>
+    props.providers.filter((p) => p.enabled).map((p) => ({ label: `${p.name} (${p.driver})`, value: p.id })),
+);
+
+function openFolder(id: string) {
+    router.get(route('file-manager.browser'), { folder: id }, { preserveState: true });
+}
+
+function goRoot() {
+    router.get(route('file-manager.browser'));
+}
+
+function createFolder() {
+    errorMessage.value = null;
+    folderForm.post(route('file-manager.folders.store'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            showCreateFolder.value = false;
+            folderForm.reset();
+            successMessage.value = 'Folder created.';
+            router.reload({ only: ['folders', 'files', 'currentFolder'] });
+        },
+        onError: (errors) => {
+            errorMessage.value = Object.values(errors).flat().join(' ') || 'Unable to create folder.';
+        },
+    });
+}
+
+function onFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    uploadForm.file = input.files?.[0] ?? null;
+}
+
+function uploadFile() {
+    errorMessage.value = null;
+    uploadForm.post(route('file-manager.files.store'), {
+        forceFormData: true,
+        preserveScroll: true,
+        onSuccess: () => {
+            showUpload.value = false;
+            uploadForm.reset();
+            successMessage.value = 'File uploaded.';
+            router.reload({ only: ['folders', 'files'] });
+        },
+        onError: (errors) => {
+            errorMessage.value = Object.values(errors).flat().join(' ') || 'Upload failed.';
+        },
+    });
+}
+
+async function deleteFolder(id: string) {
+    errorMessage.value = null;
+    try {
+        const res = await fetch(route('file-manager.folders.destroy', id), {
+            method: 'DELETE',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '',
+            },
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            errorMessage.value = body.message || 'Unable to delete folder.';
+            return;
+        }
+        successMessage.value = 'Folder deleted.';
+        router.reload({ only: ['folders', 'files'] });
+    } catch {
+        errorMessage.value = 'Unable to delete folder.';
+    }
+}
+
+async function deleteFile(id: string) {
+    errorMessage.value = null;
+    try {
+        const res = await fetch(route('file-manager.files.destroy', id), {
+            method: 'DELETE',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '',
+            },
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            errorMessage.value = body.message || 'Unable to delete file.';
+            return;
+        }
+        successMessage.value = 'File deleted.';
+        router.reload({ only: ['folders', 'files'] });
+    } catch {
+        errorMessage.value = 'Unable to delete file.';
+    }
+}
+
+function downloadFile(id: string) {
+    window.location.href = route('file-manager.files.download', id);
+}
+
+function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+</script>
+
+<template>
+    <AuthenticatedLayout :title="'File Manager'" :crumb="layoutCrumb">
+        <div class="p-4 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <h1 class="text-xl font-semibold">File Manager</h1>
+                    <Button
+                        v-if="currentFolder"
+                        label="Up"
+                        size="small"
+                        severity="secondary"
+                        outlined
+                        @click="currentFolder.parent_id ? openFolder(currentFolder.parent_id) : goRoot()"
+                    />
+                </div>
+                <div class="flex gap-2">
+                    <Button
+                        v-if="canManage"
+                        label="New folder"
+                        size="small"
+                        @click="showCreateFolder = true"
+                    />
+                    <Button
+                        v-if="canManage"
+                        label="Upload"
+                        size="small"
+                        severity="success"
+                        @click="showUpload = true"
+                    />
+                </div>
+            </div>
+
+            <Message v-if="errorMessage" severity="error" :closable="true" @close="errorMessage = null">
+                {{ errorMessage }}
+            </Message>
+            <Message v-if="successMessage" severity="success" :closable="true" @close="successMessage = null">
+                {{ successMessage }}
+            </Message>
+
+            <div class="grid gap-4 md:grid-cols-2">
+                <div class="rounded border border-surface-200 dark:border-surface-700 p-3">
+                    <h2 class="font-medium mb-2">Folders</h2>
+                    <ul v-if="folders.length" class="space-y-1">
+                        <li
+                            v-for="folder in folders"
+                            :key="folder.id"
+                            class="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-surface-100 dark:hover:bg-surface-800"
+                        >
+                            <button type="button" class="text-left flex-1 truncate" @click="openFolder(folder.id)">
+                                📁 {{ folder.name }}
+                            </button>
+                            <Button
+                                v-if="canManage"
+                                icon="pi pi-trash"
+                                size="small"
+                                severity="danger"
+                                text
+                                @click="deleteFolder(folder.id)"
+                            />
+                        </li>
+                    </ul>
+                    <p v-else class="text-sm text-surface-500">No folders here.</p>
+                </div>
+
+                <div class="rounded border border-surface-200 dark:border-surface-700 p-3">
+                    <h2 class="font-medium mb-2">Files</h2>
+                    <ul v-if="files.length" class="space-y-1">
+                        <li
+                            v-for="file in files"
+                            :key="file.id"
+                            class="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-surface-100 dark:hover:bg-surface-800"
+                        >
+                            <div class="min-w-0 flex-1">
+                                <div class="truncate">📄 {{ file.original_filename }}</div>
+                                <div class="text-xs text-surface-500">
+                                    {{ formatSize(file.size_bytes) }}
+                                    · {{ file.managed_by }}
+                                </div>
+                            </div>
+                            <div class="flex gap-1 shrink-0">
+                                <Button icon="pi pi-download" size="small" text @click="downloadFile(file.id)" />
+                                <Button
+                                    v-if="canManage"
+                                    icon="pi pi-trash"
+                                    size="small"
+                                    severity="danger"
+                                    text
+                                    @click="deleteFile(file.id)"
+                                />
+                            </div>
+                        </li>
+                    </ul>
+                    <p v-else class="text-sm text-surface-500">No files here.</p>
+                </div>
+            </div>
+        </div>
+
+        <Dialog v-model:visible="showCreateFolder" header="New folder" modal :style="{ width: '28rem' }">
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm mb-1">Name</label>
+                    <InputText v-model="folderForm.name" class="w-full" />
+                </div>
+                <div v-if="providerOptions.length">
+                    <label class="block text-sm mb-1">Default storage provider (optional)</label>
+                    <Select
+                        v-model="folderForm.default_storage_provider_id"
+                        :options="providerOptions"
+                        option-label="label"
+                        option-value="value"
+                        placeholder="Inherit / none"
+                        class="w-full"
+                        show-clear
+                    />
+                </div>
+                <div class="flex justify-end gap-2">
+                    <Button label="Cancel" severity="secondary" text @click="showCreateFolder = false" />
+                    <Button label="Create" :loading="folderForm.processing" @click="createFolder" />
+                </div>
+            </div>
+        </Dialog>
+
+        <Dialog v-model:visible="showUpload" header="Upload file" modal :style="{ width: '28rem' }">
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-sm mb-1">File</label>
+                    <input type="file" class="w-full" @change="onFileSelected" />
+                </div>
+                <div v-if="providerOptions.length">
+                    <label class="block text-sm mb-1">Storage provider</label>
+                    <Select
+                        v-model="uploadForm.storage_provider_id"
+                        :options="providerOptions"
+                        option-label="label"
+                        option-value="value"
+                        placeholder="Folder default or select"
+                        class="w-full"
+                        show-clear
+                    />
+                </div>
+                <div class="flex justify-end gap-2">
+                    <Button label="Cancel" severity="secondary" text @click="showUpload = false" />
+                    <Button label="Upload" :loading="uploadForm.processing" @click="uploadFile" />
+                </div>
+            </div>
+        </Dialog>
+    </AuthenticatedLayout>
+</template>
