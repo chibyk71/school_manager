@@ -199,6 +199,9 @@ final class FileService
         $extension = $upload->getClientOriginalExtension() ?: pathinfo($upload->getClientOriginalName(), PATHINFO_EXTENSION);
         $storageKey = $this->objectStorage->generateStorageKey(is_string($extension) ? $extension : null);
 
+        // Snapshot location-affecting config used for the physical write.
+        $writeFingerprint = $this->storageProviders->locationFingerprint($provider);
+
         // 1–3: authorize + resolve already done; write physical object.
         try {
             $written = $this->objectStorage->write($provider, $storageKey, $upload);
@@ -220,7 +223,8 @@ final class FileService
                 $upload,
                 $written,
                 $managedBy,
-                $moduleCode
+                $moduleCode,
+                $writeFingerprint
             ) {
                 // Serialize registration against provider delete/disable/reconfigure.
                 /** @var StorageProvider|null $lockedProvider */
@@ -235,6 +239,14 @@ final class FileService
                 }
                 if (! $lockedProvider->enabled) {
                     throw new InvalidArgumentException('Storage provider is disabled.');
+                }
+
+                // Fail closed if location-affecting configuration changed after the physical write.
+                $currentFingerprint = $this->storageProviders->locationFingerprint($lockedProvider);
+                if (! hash_equals($writeFingerprint, $currentFingerprint)) {
+                    throw new InvalidArgumentException(
+                        'Storage provider configuration changed during upload. The object was not registered; please retry.'
+                    );
                 }
 
                 $file = new File([

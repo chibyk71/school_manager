@@ -304,6 +304,66 @@ final class FileLifecycleService
     }
 
     /**
+     * Mark a purge as terminally failed after job retry exhaustion.
+     * Leaves the File row and storage identity intact for operator recovery.
+     */
+    public function markPurgeFailed(string $fileId, ?string $reason = null): void
+    {
+        DB::transaction(function () use ($fileId, $reason) {
+            /** @var File|null $locked */
+            $locked = File::query()->whereKey($fileId)->lockForUpdate()->first();
+            if ($locked === null || ! $locked->isTrashed()) {
+                return;
+            }
+
+            // Only terminal-fail claims that were mid-purge or pending.
+            if ($locked->purge_state !== File::PURGE_STATE_DELETING_PHYSICAL
+                && $locked->purge_state !== File::PURGE_STATE_PENDING) {
+                return;
+            }
+
+            $locked->purge_state = File::PURGE_STATE_FAILED;
+            $locked->lifecycle_version = ((int) $locked->lifecycle_version) + 1;
+            $locked->save();
+
+            Log::error('file_manager.purge_terminal_failure', [
+                'file_id' => $fileId,
+                'reason' => $reason,
+            ]);
+        });
+    }
+
+    /**
+     * Operator recovery: clear a terminal purge failure so the file can be
+     * restored or rediscovered for a safe retry after the underlying issue is fixed.
+     * Preserves storage identity (provider id + storage key).
+     */
+    public function clearFailedPurgeForRetry(File $file, ?string $actingSchoolId): File
+    {
+        $this->assertFileInContext($file, $actingSchoolId);
+
+        return DB::transaction(function () use ($file) {
+            /** @var File|null $locked */
+            $locked = File::query()->whereKey($file->id)->lockForUpdate()->first();
+            if ($locked === null) {
+                throw new InvalidArgumentException('File not found.');
+            }
+            if (! $locked->isTrashed()) {
+                throw new InvalidArgumentException('Only trashed files can clear purge failure state.');
+            }
+            if ($locked->purge_state !== File::PURGE_STATE_FAILED) {
+                throw new InvalidArgumentException('File is not in a terminal purge-failure state.');
+            }
+
+            $locked->purge_state = null;
+            $locked->lifecycle_version = ((int) $locked->lifecycle_version) + 1;
+            $locked->save();
+
+            return $locked->fresh() ?? $locked;
+        });
+    }
+
+    /**
      * @return list<string> claimed file ids
      */
     public function discoverEligibleForPurge(int $limit = 50): array
@@ -347,6 +407,9 @@ final class FileLifecycleService
             return false;
         }
         if (! $file->isManagedByFileManager()) {
+            return false;
+        }
+        if ($file->purge_state === File::PURGE_STATE_FAILED) {
             return false;
         }
         if ($file->purge_eligible_at === null || now()->lt($file->purge_eligible_at)) {

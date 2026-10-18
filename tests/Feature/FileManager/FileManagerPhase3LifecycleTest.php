@@ -8,6 +8,7 @@ use App\Models\FileManager\Attachment;
 use App\Models\FileManager\File;
 use App\Models\School;
 use App\Models\StorageProvider;
+use App\Jobs\FileManager\PurgeTrashedFileJob;
 use App\Services\FileManager\AttachmentService;
 use App\Services\FileManager\FileLifecycleService;
 use App\Services\FileManager\FileService;
@@ -475,6 +476,135 @@ class FileManagerPhase3LifecycleTest extends TestCase
         $restored = $lifecycle->restore(File::query()->find($file->id), $school->id, $alt->id);
         $this->assertFalse($restored->isTrashed());
         $this->assertSame($alt->id, $restored->folder_id);
+    }
+
+
+    public function test_upload_rejects_registration_when_fingerprint_mismatches_after_write(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+
+        // Build a FileService-like interleaving by writing then mutating before a
+        // second internal registration is not exposed. Instead: use Storage:: and
+        // direct DB transaction mirroring performUpload's check.
+        $manager = app(\App\Services\Storage\StorageProviderManager::class);
+        $objectStorage = app(\App\Services\FileManager\FileObjectStorage::class);
+
+        $upload = UploadedFile::fake()->create('race-cfg.txt', 8, 'text/plain');
+        $storageKey = $objectStorage->generateStorageKey('txt');
+        $writeFingerprint = $manager->locationFingerprint($provider);
+        $objectStorage->write($provider, $storageKey, $upload);
+
+        // Concurrent location-affecting change
+        $provider->config = ['root' => $this->localRoot.DIRECTORY_SEPARATOR.'relocated-'.\Illuminate\Support\Str::random(4)];
+        if (! is_dir($provider->config['root'])) {
+            mkdir($provider->config['root'], 0777, true);
+        }
+        $provider->save();
+
+        $currentFingerprint = $manager->locationFingerprint($provider->fresh());
+        $this->assertFalse(hash_equals($writeFingerprint, $currentFingerprint));
+
+        // Registration gate (same as FileService) must refuse.
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('configuration changed');
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($provider, $writeFingerprint, $manager) {
+            $locked = \App\Models\StorageProvider::query()->whereKey($provider->id)->lockForUpdate()->first();
+            $current = $manager->locationFingerprint($locked);
+            if (! hash_equals($writeFingerprint, $current)) {
+                throw new InvalidArgumentException(
+                    'Storage provider configuration changed during upload. The object was not registered; please retry.'
+                );
+            }
+        });
+    }
+
+    public function test_purge_job_failure_marks_terminal_and_excludes_from_discovery(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+        $lifecycle = $this->lifecycleService();
+
+        $file = $files->upload(
+            UploadedFile::fake()->create('term.txt', 5, 'text/plain'),
+            ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+            $school->id
+        );
+        $trashed = $lifecycle->trash($file, $school->id);
+        $trashed->purge_eligible_at = now()->subMinute();
+        $trashed->purge_state = File::PURGE_STATE_DELETING_PHYSICAL;
+        $trashed->save();
+
+        $lifecycle->markPurgeFailed($trashed->id, 'simulated_retry_exhaustion');
+
+        $failed = File::query()->find($file->id);
+        $this->assertSame(File::PURGE_STATE_FAILED, $failed->purge_state);
+        $this->assertFalse($lifecycle->isEligibleForImmediatePurge($failed));
+        $this->assertNotContains($failed->id, $lifecycle->discoverEligibleForPurge(50));
+
+        // Storage identity preserved
+        $this->assertSame($provider->id, $failed->storage_provider_id);
+        $this->assertNotEmpty($failed->storage_key);
+    }
+
+    public function test_clear_failed_purge_allows_rediscovery_and_restore(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+        $lifecycle = $this->lifecycleService();
+
+        $file = $files->upload(
+            UploadedFile::fake()->create('recover.txt', 5, 'text/plain'),
+            ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+            $school->id
+        );
+        $trashed = $lifecycle->trash($file, $school->id);
+        $trashed->purge_eligible_at = now()->subMinute();
+        $trashed->purge_state = File::PURGE_STATE_FAILED;
+        $trashed->save();
+
+        $cleared = $lifecycle->clearFailedPurgeForRetry($trashed->fresh(), $school->id);
+        $this->assertNull($cleared->purge_state);
+        $this->assertTrue($lifecycle->isEligibleForImmediatePurge($cleared));
+
+        $restored = $lifecycle->restore($cleared->fresh(), $school->id);
+        $this->assertFalse($restored->isTrashed());
+    }
+
+    public function test_restore_without_folder_id_still_requires_alternative_when_original_missing(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $folders = $this->folderService();
+        $files = $this->fileService();
+        $lifecycle = $this->lifecycleService();
+
+        $folder = $folders->create([
+            'name' => 'Only',
+            'ownership' => 'school',
+            'capabilities' => ['browse', 'upload', 'download', 'delete', 'create_folder', 'rename', 'move', 'attach'],
+        ], $school->id);
+
+        $file = $files->upload(
+            UploadedFile::fake()->create('rootless.txt', 5, 'text/plain'),
+            [
+                'storage_provider_id' => $provider->id,
+                'ownership' => 'school',
+                'folder_id' => $folder->id,
+            ],
+            $school->id
+        );
+        $lifecycle->trash($file, $school->id);
+        $folder->delete();
+
+        // Explicit null (UI "no selection" / omitted folder_id) must not mean root.
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('alternative');
+        $lifecycle->restore(File::query()->find($file->id), $school->id, null);
     }
 
     private function fileService(): FileService

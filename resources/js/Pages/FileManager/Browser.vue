@@ -253,7 +253,9 @@ async function submitRestore(folderId: string | null = null) {
     successMessage.value = null;
     try {
         const payload: Record<string, string> = {};
-        if (folderId) {
+        // Only send folder_id when a real folder is selected. Null/absent means
+        // "no alternative selection" — never an implicit root destination.
+        if (typeof folderId === 'string' && folderId !== '') {
             payload.folder_id = folderId;
         }
         const res = await fetch(route('file-manager.files.restore', restoreTargetId.value), {
@@ -526,17 +528,15 @@ function formatSize(bytes: number): string {
                     <label class="block text-sm mb-1">Destination folder</label>
                     <Select
                         v-model="restoreFolderId"
-                        :options="[
-                            { label: 'Root (no folder)', value: null },
-                            ...folders.map((f) => ({ label: f.name, value: f.id })),
-                        ]"
+                        :options="folders.map((f) => ({ label: f.name, value: f.id }))"
                         option-label="label"
                         option-value="value"
-                        placeholder="Select destination"
+                        placeholder="Select an authorized folder"
                         class="w-full"
                     />
                     <p class="text-xs text-surface-500 mt-1">
-                        Only folders in the current ownership context are listed. Navigate the browser to load more folders if needed.
+                        Original location is unavailable. Choose an authorized folder in the current context.
+                        Root is not offered here because an omitted destination is treated as “no selection.”
                     </p>
                 </div>
                 <div class="flex justify-end gap-2">
@@ -545,7 +545,7 @@ function formatSize(bytes: number): string {
                         v-if="restoreNeedsAlternative"
                         label="Restore here"
                         :loading="restoreSubmitting"
-                        :disabled="restoreNeedsAlternative && restoreFolderId === undefined"
+                        :disabled="!restoreFolderId"
                         @click="submitRestore(restoreFolderId)"
                     />
                     <Button

@@ -44,6 +44,20 @@ class PurgeTrashedFileJob implements ShouldQueue
         Log::error('file_manager.purge_job_failed', [
             'file_id' => $this->fileId,
             'error_class' => $e !== null ? $e::class : null,
+            'message' => $e !== null ? $e->getMessage() : null,
         ]);
+
+        // Terminal path: stop automatic rediscovery; preserve storage identity.
+        try {
+            app(FileLifecycleService::class)->markPurgeFailed(
+                $this->fileId,
+                $e !== null ? $e->getMessage() : 'retry_exhausted'
+            );
+        } catch (Throwable $inner) {
+            Log::error('file_manager.purge_mark_failed_error', [
+                'file_id' => $this->fileId,
+                'error_class' => $inner::class,
+            ]);
+        }
     }
 }

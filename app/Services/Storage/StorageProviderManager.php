@@ -269,6 +269,30 @@ final class StorageProviderManager
      * @param  array<string, mixed>  $current
      * @param  array<string, mixed>  $incoming
      */
+    /**
+     * Stable fingerprint of location-affecting provider configuration used for object placement.
+     * Compared at file registration so concurrent reconfiguration cannot silently retarget metadata.
+     */
+    public function locationFingerprint(StorageProvider $provider): string
+    {
+        $driver = $provider->driver instanceof StorageProviderDriver
+            ? $provider->driver
+            : StorageProviderDriver::from((string) $provider->driver);
+
+        $config = is_array($provider->config) ? $provider->config : [];
+        $locationKeys = match ($driver) {
+            StorageProviderDriver::Local => ['root'],
+            StorageProviderDriver::S3 => ['bucket', 'region', 'endpoint', 'url', 'use_path_style_endpoint', 'key'],
+        };
+
+        $slice = [];
+        foreach ($locationKeys as $key) {
+            $slice[$key] = $config[$key] ?? null;
+        }
+
+        return hash('sha256', json_encode([$driver->value, $slice], JSON_THROW_ON_ERROR));
+    }
+
     private function configChangeAffectsLocation(StorageProviderDriver $driver, array $current, array $incoming): bool
     {
         $locationKeys = match ($driver) {

@@ -154,6 +154,8 @@ class FileController extends Controller
 
         Gate::authorize('delete', $file);
 
+        // folder_id present and non-empty → explicit alternative folder.
+        // Absent, null, or empty → no alternative selection (never implicit root).
         $folderId = $request->input('folder_id');
         $folderId = is_string($folderId) && $folderId !== '' ? $folderId : null;
 

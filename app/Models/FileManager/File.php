@@ -31,6 +31,8 @@ class File extends Model
 
     public const PURGE_STATE_DELETING_PHYSICAL = 'deleting_physical';
 
+    public const PURGE_STATE_FAILED = 'failed';
+
     protected $table = 'fm_files';
 
     protected $fillable = [
@@ -175,6 +177,8 @@ class File extends Model
 
     public function scopeEligibleForPurge(Builder $query): Builder
     {
+        // Terminal failure (failed) is intentionally excluded so discovery cannot
+        // requeue exhausted jobs forever. Operators clear failure for a safe retry.
         return $query->trashed()
             ->where('purge_eligible_at', '<=', now())
             ->where(function (Builder $q): void {
