@@ -14,6 +14,10 @@ use App\Support\Settings\SettingsRegistry;
  */
 final class FileManagerSettings
 {
+    public const RETENTION_DAYS_KEY = 'file_manager.trash_retention_days';
+
+    public const DEFAULT_RETENTION_DAYS = 30;
+
     public static function register(SettingsRegistry $registry): void
     {
         $registry->group(
@@ -39,6 +43,18 @@ final class FileManagerSettings
                         .'update, or connection-test school-owned providers. Enforced by the '
                         .'storage provider controller via SettingsResolver. System-owned providers '
                         .'remain separately governed outside school context.'
+                    )
+                    ->intendedScope('school');
+
+                $group->define(self::RETENTION_DAYS_KEY)
+                    ->type('integer')
+                    ->default(self::DEFAULT_RETENTION_DAYS)
+                    ->label('Trash retention period (days)')
+                    ->description(
+                        'Number of days a File Manager-managed file remains in Trash before it '
+                        .'becomes eligible for permanent purge. Applied when a file is trashed; '
+                        .'changing this value does not alter purge_eligible_at on existing trash entries. '
+                        .'Minimum 1, maximum 365.'
                     )
                     ->intendedScope('school');
             }

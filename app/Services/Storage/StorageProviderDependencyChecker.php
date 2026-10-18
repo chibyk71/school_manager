@@ -2,14 +2,13 @@
 
 namespace App\Services\Storage;
 
+use App\Models\FileManager\File;
 use App\Models\StorageProvider;
 
 /**
- * Minimal dependency-check contract for future provider lifecycle operations.
+ * Authoritative dependency checks for storage provider lifecycle (Phase 3).
  *
- * Phase 1 has no authoritative file-operation or media tracking tied to
- * storage provider records. This implementation reports that fact honestly
- * and must not claim a provider is safe to remove.
+ * A provider is in use if any File record (active or trashed) still depends on it.
  */
 final class StorageProviderDependencyChecker
 {
@@ -19,21 +18,53 @@ final class StorageProviderDependencyChecker
      *     known_dependencies: list<array{type: string, count: int, description: string}>,
      *     tracking_implemented: bool,
      *     summary: string,
-     *     safe_to_remove: null
+     *     safe_to_remove: bool,
+     *     file_count: int
      * }
      */
     public function check(StorageProvider $provider): array
     {
-        // No inspectable dependency tables exist yet that reference storage_providers.id.
-        // Media Library uses disk names from config, not provider UUIDs.
-        // Legacy advanced.storage is a settings blob, not a provider FK.
+        $fileCount = File::query()
+            ->where('storage_provider_id', $provider->id)
+            ->count();
+
+        $activeCount = File::query()
+            ->where('storage_provider_id', $provider->id)
+            ->whereNull('trashed_at')
+            ->count();
+
+        $trashedCount = $fileCount - $activeCount;
+
+        $deps = [];
+        if ($fileCount > 0) {
+            $deps[] = [
+                'type' => 'fm_files',
+                'count' => $fileCount,
+                'description' => sprintf(
+                    '%d File Manager file(s) depend on this provider (%d active, %d in trash).',
+                    $fileCount,
+                    $activeCount,
+                    $trashedCount
+                ),
+            ];
+        }
+
+        $safe = $fileCount === 0;
 
         return [
             'provider_id' => $provider->id,
-            'known_dependencies' => [],
-            'tracking_implemented' => false,
-            'summary' => 'No known dependencies yet; dependency tracking is not implemented.',
-            'safe_to_remove' => null, // never certify safety when tracking is incomplete
+            'known_dependencies' => $deps,
+            'tracking_implemented' => true,
+            'summary' => $safe
+                ? 'No File Manager files depend on this provider.'
+                : sprintf('Provider has %d dependent file(s); deletion and location-affecting changes are refused.', $fileCount),
+            'safe_to_remove' => $safe,
+            'file_count' => $fileCount,
         ];
+    }
+
+    public function hasDependencies(StorageProvider $provider): bool
+    {
+        return File::query()->where('storage_provider_id', $provider->id)->exists();
     }
 }

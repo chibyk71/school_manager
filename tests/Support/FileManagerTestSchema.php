@@ -134,6 +134,11 @@ final class FileManagerTestSchema
             $table->string('checksum', 128)->nullable();
             $table->string('managed_by', 32)->default('file_manager');
             $table->string('module_code', 64)->nullable();
+            $table->timestamp('trashed_at')->nullable();
+            $table->uuid('original_folder_id')->nullable();
+            $table->timestamp('purge_eligible_at')->nullable();
+            $table->string('purge_state', 32)->nullable();
+            $table->unsignedInteger('lifecycle_version')->default(0);
             $table->timestamps();
             $table->unique(['storage_provider_id', 'storage_key'], 'fm_files_provider_key_unique');
         });
