@@ -222,11 +222,26 @@ final class FileService
                 $managedBy,
                 $moduleCode
             ) {
+                // Serialize registration against provider delete/disable/reconfigure.
+                /** @var StorageProvider|null $lockedProvider */
+                $lockedProvider = StorageProvider::query()
+                    ->whereKey($provider->id)
+                    ->lockForUpdate()
+                    ->first();
+                if ($lockedProvider === null) {
+                    throw new InvalidArgumentException(
+                        'Storage provider is no longer available for new uploads.'
+                    );
+                }
+                if (! $lockedProvider->enabled) {
+                    throw new InvalidArgumentException('Storage provider is disabled.');
+                }
+
                 $file = new File([
                     'ownership' => $ownership,
                     'school_id' => $ownership === Ownership::School ? $actingSchoolId : null,
                     'folder_id' => $folder?->id,
-                    'storage_provider_id' => $provider->id,
+                    'storage_provider_id' => $lockedProvider->id,
                     'storage_key' => $storageKey,
                     'original_filename' => $upload->getClientOriginalName() ?: 'upload',
                     'mime_type' => $written['mime_type'],

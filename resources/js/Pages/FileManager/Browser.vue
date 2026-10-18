@@ -60,6 +60,13 @@ const successMessage = ref<string | null>(null);
 const showTrash = ref(false);
 const trashFiles = ref<FileRow[]>([]);
 const trashLoading = ref(false);
+const showRestoreDialog = ref(false);
+const restoreTargetId = ref<string | null>(null);
+const restoreTargetName = ref('');
+const restoreFolderId = ref<string | null>(null);
+const restoreNeedsAlternative = ref(false);
+const restoreSubmitting = ref(false);
+
 
 
 /**
@@ -227,11 +234,29 @@ function closeTrash() {
     showTrash.value = false;
 }
 
-async function restoreFile(id: string) {
+function openRestoreDialog(file: FileRow) {
+    restoreTargetId.value = file.id;
+    restoreTargetName.value = file.original_filename;
+    restoreFolderId.value = null;
+    restoreNeedsAlternative.value = false;
+    errorMessage.value = null;
+    successMessage.value = null;
+    showRestoreDialog.value = true;
+}
+
+async function submitRestore(folderId: string | null = null) {
+    if (!restoreTargetId.value) {
+        return;
+    }
+    restoreSubmitting.value = true;
     errorMessage.value = null;
     successMessage.value = null;
     try {
-        const res = await fetch(route('file-manager.files.restore', id), {
+        const payload: Record<string, string> = {};
+        if (folderId) {
+            payload.folder_id = folderId;
+        }
+        const res = await fetch(route('file-manager.files.restore', restoreTargetId.value), {
             method: 'POST',
             headers: {
                 Accept: 'application/json',
@@ -240,18 +265,49 @@ async function restoreFile(id: string) {
                 'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '',
             },
             credentials: 'same-origin',
-            body: JSON.stringify({}),
+            body: JSON.stringify(payload),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
-            throw new Error(body.message || 'Restore failed');
+            const msg = body.message || 'Restore failed';
+            // Server requires an authorized alternative when original folder is gone.
+            if (typeof msg === 'string' && msg.toLowerCase().includes('alternative')) {
+                restoreNeedsAlternative.value = true;
+                errorMessage.value = msg;
+                return;
+            }
+            throw new Error(msg);
         }
         successMessage.value = 'File restored.';
+        showRestoreDialog.value = false;
+        restoreTargetId.value = null;
         await loadTrash();
         router.reload({ only: ['files', 'folders'] });
     } catch (e: any) {
         errorMessage.value = e?.message || 'Restore failed';
+    } finally {
+        restoreSubmitting.value = false;
     }
+}
+
+async function restoreFile(id: string) {
+    const file = trashFiles.value.find((f) => f.id === id);
+    if (file) {
+        openRestoreDialog(file);
+        // Try original location first (no folder_id).
+        await submitRestore(null);
+        return;
+    }
+    openRestoreDialog({
+        id,
+        original_filename: 'File',
+        mime_type: null,
+        size_bytes: 0,
+        managed_by: 'file_manager',
+        folder_id: null,
+        storage_provider_id: '',
+    });
+    await submitRestore(null);
 }
 
 function formatSize(bytes: number): string {
@@ -455,6 +511,49 @@ function formatSize(bytes: number): string {
                 <div class="flex justify-end gap-2">
                     <Button label="Cancel" severity="secondary" text @click="showUpload = false" />
                     <Button label="Upload" :loading="uploadForm.processing" @click="uploadFile" />
+                </div>
+            </div>
+        </Dialog>
+
+        <Dialog v-model:visible="showRestoreDialog" header="Restore file" modal :style="{ width: '28rem' }">
+            <div class="space-y-3">
+                <p class="text-sm">
+                    Restore <strong>{{ restoreTargetName }}</strong>
+                    <span v-if="!restoreNeedsAlternative"> to its original folder when available.</span>
+                    <span v-else> requires an authorized destination folder because the original location is missing or inaccessible.</span>
+                </p>
+                <div v-if="restoreNeedsAlternative">
+                    <label class="block text-sm mb-1">Destination folder</label>
+                    <Select
+                        v-model="restoreFolderId"
+                        :options="[
+                            { label: 'Root (no folder)', value: null },
+                            ...folders.map((f) => ({ label: f.name, value: f.id })),
+                        ]"
+                        option-label="label"
+                        option-value="value"
+                        placeholder="Select destination"
+                        class="w-full"
+                    />
+                    <p class="text-xs text-surface-500 mt-1">
+                        Only folders in the current ownership context are listed. Navigate the browser to load more folders if needed.
+                    </p>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <Button label="Cancel" severity="secondary" text @click="showRestoreDialog = false" />
+                    <Button
+                        v-if="restoreNeedsAlternative"
+                        label="Restore here"
+                        :loading="restoreSubmitting"
+                        :disabled="restoreNeedsAlternative && restoreFolderId === undefined"
+                        @click="submitRestore(restoreFolderId)"
+                    />
+                    <Button
+                        v-else
+                        label="Retry"
+                        :loading="restoreSubmitting"
+                        @click="submitRestore(null)"
+                    />
                 </div>
             </div>
         </Dialog>

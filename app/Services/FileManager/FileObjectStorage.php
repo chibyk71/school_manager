@@ -200,6 +200,23 @@ final class FileObjectStorage
     }
 
     /**
+     * Authoritative existence check for an existing object (read path; allows disabled providers).
+     */
+    public function objectExists(StorageProvider $provider, string $storageKey): bool
+    {
+        try {
+            $disk = $this->diskForExisting($provider);
+
+            return $disk->exists($storageKey);
+        } catch (Throwable $e) {
+            if ($this->isMissingObjectError($e)) {
+                return false;
+            }
+            throw new RuntimeException('Unable to verify whether the stored object exists.', 0, $e);
+        }
+    }
+
+    /**
      * Delete existing object for purge even when the provider is disabled.
      */
     public function deleteObjectAllowingDisabled(StorageProvider $provider, string $storageKey): void

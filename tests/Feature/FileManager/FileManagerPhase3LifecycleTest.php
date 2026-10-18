@@ -8,6 +8,7 @@ use App\Models\FileManager\Attachment;
 use App\Models\FileManager\File;
 use App\Models\School;
 use App\Models\StorageProvider;
+use App\Services\FileManager\AttachmentService;
 use App\Services\FileManager\FileLifecycleService;
 use App\Services\FileManager\FileService;
 use App\Services\FileManager\FolderService;
@@ -19,6 +20,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use RuntimeException;
 use Tests\Support\FileManagerTestSchema;
 use Tests\TestCase;
 
@@ -309,6 +311,171 @@ class FileManagerPhase3LifecycleTest extends TestCase
         $this->assertEquals($eligible->timestamp, $t2->purge_eligible_at->timestamp);
 
         Carbon::setTestNow();
+    }
+
+
+    public function test_purge_fails_closed_when_storage_key_unresolvable(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+        $lifecycle = $this->lifecycleService();
+
+        $file = $files->upload(
+            UploadedFile::fake()->create('nokey.txt', 5, 'text/plain'),
+            ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+            $school->id
+        );
+
+        $trashed = $lifecycle->trash($file, $school->id);
+        $trashed->purge_eligible_at = now()->subMinute();
+        $trashed->storage_key = '';
+        $trashed->save();
+
+        try {
+            $lifecycle->purge($trashed->fresh());
+            $this->fail('Expected RuntimeException for unresolvable storage key');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('storage key', strtolower($e->getMessage()));
+        }
+
+        $this->assertNotNull(File::query()->find($file->id), 'File row must remain when purge fails closed');
+    }
+
+    public function test_purge_fails_closed_when_provider_unresolvable(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+        $lifecycle = $this->lifecycleService();
+
+        $file = $files->upload(
+            UploadedFile::fake()->create('noprov.txt', 5, 'text/plain'),
+            ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+            $school->id
+        );
+
+        $trashed = $lifecycle->trash($file, $school->id);
+        $trashed->purge_eligible_at = now()->subMinute();
+        // Point at a non-existent provider id without cascade issues.
+        $missingId = (string) Str::uuid();
+        \Illuminate\Support\Facades\DB::table('fm_files')
+            ->where('id', $trashed->id)
+            ->update(['storage_provider_id' => $missingId]);
+
+        try {
+            $lifecycle->purge(File::query()->find($file->id));
+            $this->fail('Expected RuntimeException for unresolvable provider');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('provider', strtolower($e->getMessage()));
+        }
+
+        $this->assertNotNull(File::query()->find($file->id));
+    }
+
+    public function test_attach_refuses_file_while_purge_state_deleting_physical(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+
+        $file = $files->upload(
+            UploadedFile::fake()->create('race.txt', 5, 'text/plain'),
+            ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+            $school->id
+        );
+
+        // Simulate claim without completing purge (active path would not trash first for attach test:
+        // force purge_state on an active file to exercise the shared lock gate).
+        $file->purge_state = File::PURGE_STATE_DELETING_PHYSICAL;
+        $file->save();
+
+        $attachments = app(AttachmentService::class);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('purged');
+        $attachments->attach($file->fresh(), [
+            'owner_type' => School::class,
+            'owner_id' => $school->id,
+        ], $school->id);
+    }
+
+    public function test_attach_refuses_trashed_file(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+        $lifecycle = $this->lifecycleService();
+
+        $file = $files->upload(
+            UploadedFile::fake()->create('tratt.txt', 5, 'text/plain'),
+            ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+            $school->id
+        );
+        $lifecycle->trash($file, $school->id);
+
+        // attach uses findForContext (active-only) — should fail closed.
+        $attachments = app(AttachmentService::class);
+        $this->expectException(InvalidArgumentException::class);
+        $attachments->attach($file->fresh(), [
+            'owner_type' => School::class,
+            'owner_id' => $school->id,
+        ], $school->id);
+    }
+
+    public function test_upload_registration_fails_when_provider_disabled_under_lock(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = $this->fileService();
+
+        // Disable after resolve would be concurrent; here disable before upload.
+        $provider->enabled = false;
+        $provider->save();
+
+        $this->expectException(InvalidArgumentException::class);
+        $files->upload(
+            UploadedFile::fake()->create('dis.txt', 5, 'text/plain'),
+            ['storage_provider_id' => $provider->id, 'ownership' => 'school'],
+            $school->id
+        );
+    }
+
+    public function test_restore_with_alternative_folder_when_original_missing(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $folders = $this->folderService();
+        $files = $this->fileService();
+        $lifecycle = $this->lifecycleService();
+
+        $original = $folders->create([
+            'name' => 'Original',
+            'ownership' => 'school',
+            'capabilities' => ['browse', 'upload', 'download', 'delete', 'create_folder', 'rename', 'move', 'attach'],
+        ], $school->id);
+
+        $alt = $folders->create([
+            'name' => 'Alt',
+            'ownership' => 'school',
+            'capabilities' => ['browse', 'upload', 'download', 'delete', 'create_folder', 'rename', 'move', 'attach'],
+        ], $school->id);
+
+        $file = $files->upload(
+            UploadedFile::fake()->create('alt.txt', 5, 'text/plain'),
+            [
+                'storage_provider_id' => $provider->id,
+                'ownership' => 'school',
+                'folder_id' => $original->id,
+            ],
+            $school->id
+        );
+
+        $lifecycle->trash($file, $school->id);
+        $original->delete();
+
+        $restored = $lifecycle->restore(File::query()->find($file->id), $school->id, $alt->id);
+        $this->assertFalse($restored->isTrashed());
+        $this->assertSame($alt->id, $restored->folder_id);
     }
 
     private function fileService(): FileService

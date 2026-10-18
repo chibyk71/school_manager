@@ -188,8 +188,10 @@ final class FileLifecycleService
      *
      * 1. Lock + revalidate (including no attachments)
      * 2. Mark purge_state = deleting_physical
-     * 3. Physical delete (allows disabled providers)
-     * 4. Delete DB row only if state still matches claim
+     * 3. Resolve provider + storage key (fail closed if unresolvable)
+     * 4. Physical delete / confirm absence (allows disabled providers)
+     * 5. Delete DB row only when physical deletion is confirmed or the object
+     *    is authoritatively established to be absent — never on unresolved provider/key
      */
     public function purge(File $file): void
     {
@@ -220,23 +222,58 @@ final class FileLifecycleService
             return;
         }
 
-        $provider = StorageProvider::query()->find($claim['storage_provider_id']);
         $storageKey = $claim['storage_key'];
+        if (! is_string($storageKey) || $storageKey === '') {
+            Log::error('file_manager.purge_unresolvable_storage_key', [
+                'file_id' => $claim['id'],
+                'provider_id' => $claim['storage_provider_id'],
+            ]);
+            // Fail closed: leave row in deleting_physical for operator/retry inspection.
+            throw new \RuntimeException(
+                'Cannot purge file: storage key is missing or unresolvable. The File row was not deleted.'
+            );
+        }
 
-        if ($provider !== null && is_string($storageKey) && $storageKey !== '') {
-            try {
-                $this->objectStorage->deleteObjectAllowingDisabled($provider, $storageKey);
-            } catch (Throwable $e) {
-                if (! $this->objectStorage->isMissingObjectError($e)) {
-                    Log::error('file_manager.purge_physical_failed', [
-                        'file_id' => $claim['id'],
-                        'provider_id' => $provider->id,
-                        'storage_key_prefix' => substr($storageKey, 0, 8).'…',
-                        'error_class' => $e::class,
-                    ]);
-                    throw $e;
-                }
+        // Include soft-deleted providers so we can still attempt cleanup of existing objects.
+        $provider = StorageProvider::query()->withTrashed()->find($claim['storage_provider_id']);
+        if ($provider === null) {
+            Log::error('file_manager.purge_unresolvable_provider', [
+                'file_id' => $claim['id'],
+                'provider_id' => $claim['storage_provider_id'],
+            ]);
+            throw new \RuntimeException(
+                'Cannot purge file: storage provider cannot be resolved. The File row was not deleted.'
+            );
+        }
+
+        $physicalAbsent = false;
+        try {
+            $this->objectStorage->deleteObjectAllowingDisabled($provider, $storageKey);
+            // Confirm absence after delete attempt (idempotent when already gone).
+            $physicalAbsent = ! $this->objectStorage->objectExists($provider, $storageKey);
+        } catch (Throwable $e) {
+            if ($this->objectStorage->isMissingObjectError($e)) {
+                $physicalAbsent = true;
+            } else {
+                Log::error('file_manager.purge_physical_failed', [
+                    'file_id' => $claim['id'],
+                    'provider_id' => $provider->id,
+                    'storage_key_prefix' => substr($storageKey, 0, 8).'…',
+                    'error_class' => $e::class,
+                ]);
+                throw $e;
             }
+        }
+
+        if (! $physicalAbsent) {
+            Log::error('file_manager.purge_object_still_present', [
+                'file_id' => $claim['id'],
+                'provider_id' => $provider->id,
+                'storage_key_prefix' => substr($storageKey, 0, 8).'…',
+            ]);
+            throw new \RuntimeException(
+                'Cannot purge file: physical object could not be confirmed absent. The File row was not deleted.'
+            );
         }
 
         DB::transaction(function () use ($claim) {
@@ -253,6 +290,7 @@ final class FileLifecycleService
                 return;
             }
 
+            // Shared protocol with AttachmentService: revalidate under the same file lock.
             if ($locked->attachments()->exists()) {
                 $locked->purge_state = null;
                 $locked->lifecycle_version = ((int) $locked->lifecycle_version) + 1;

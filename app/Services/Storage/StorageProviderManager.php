@@ -164,47 +164,53 @@ final class StorageProviderManager
 
         $validated = $this->validator->validate($data, isUpdate: true);
 
-        // Location-affecting config / secrets cannot change while files depend on this provider.
-        if ($this->dependencies->hasDependencies($provider)) {
-            if (array_key_exists('config', $validated)) {
-                $incoming = $this->sanitizeConfig($provider->driver, $validated['config'] ?? []);
-                $current = is_array($provider->config) ? $provider->config : [];
-                if ($this->configChangeAffectsLocation($provider->driver, $current, $incoming)) {
+        return DB::transaction(function () use ($provider, $validated) {
+            /** @var StorageProvider|null $locked */
+            $locked = StorageProvider::query()->whereKey($provider->id)->lockForUpdate()->first();
+            if ($locked === null) {
+                throw new \InvalidArgumentException('Storage provider not found.');
+            }
+
+            // Location-affecting config / secrets cannot change while files depend on this provider.
+            if ($this->dependencies->hasDependencies($locked)) {
+                if (array_key_exists('config', $validated)) {
+                    $incoming = $this->sanitizeConfig($locked->driver, $validated['config'] ?? []);
+                    $current = is_array($locked->config) ? $locked->config : [];
+                    if ($this->configChangeAffectsLocation($locked->driver, $current, $incoming)) {
+                        throw new \InvalidArgumentException(
+                            'Cannot change location-affecting provider configuration while File Manager files depend on this provider.'
+                        );
+                    }
+                }
+                if (! empty($validated['clear_secrets'])
+                    || (array_key_exists('secrets', $validated) && is_array($validated['secrets']) && $validated['secrets'] !== [])) {
                     throw new \InvalidArgumentException(
-                        'Cannot change location-affecting provider configuration while File Manager files depend on this provider.'
+                        'Cannot change provider credentials while File Manager files depend on this provider.'
                     );
                 }
             }
-            if (! empty($validated['clear_secrets'])
-                || (array_key_exists('secrets', $validated) && is_array($validated['secrets']) && $validated['secrets'] !== [])) {
-                throw new \InvalidArgumentException(
-                    'Cannot change provider credentials while File Manager files depend on this provider.'
-                );
-            }
-        }
 
-        return DB::transaction(function () use ($provider, $validated) {
             if (array_key_exists('name', $validated)) {
-                $provider->name = $validated['name'];
+                $locked->name = $validated['name'];
             }
             if (array_key_exists('enabled', $validated)) {
-                $provider->enabled = (bool) $validated['enabled'];
+                $locked->enabled = (bool) $validated['enabled'];
             }
             if (array_key_exists('config', $validated)) {
-                $provider->config = $this->sanitizeConfig($provider->driver, $validated['config'] ?? []);
+                $locked->config = $this->sanitizeConfig($locked->driver, $validated['config'] ?? []);
             }
 
             if (! empty($validated['clear_secrets'])) {
-                $provider->clearSecrets();
+                $locked->clearSecrets();
             } elseif (array_key_exists('secrets', $validated) && is_array($validated['secrets'])) {
-                $provider->mergeSecretReplacement(
-                    $this->sanitizeSecrets($provider->driver, $validated['secrets'])
+                $locked->mergeSecretReplacement(
+                    $this->sanitizeSecrets($locked->driver, $validated['secrets'])
                 );
             }
 
-            $provider->save();
+            $locked->save();
 
-            return $provider->fresh();
+            return $locked->fresh();
         });
     }
 
