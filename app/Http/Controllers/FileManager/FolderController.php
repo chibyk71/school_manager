@@ -27,7 +27,11 @@ class FolderController extends Controller
         $parentId = $request->query('parent_id');
         $parentId = is_string($parentId) && $parentId !== '' ? $parentId : null;
 
-        $items = $this->folders->listForContext($schoolId, $parentId);
+        try {
+            $items = $this->folders->listForContext($schoolId, $parentId);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json([
             'data' => FolderResource::collection($items)->resolve(),

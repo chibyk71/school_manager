@@ -41,10 +41,23 @@ class BrowserController extends Controller
             if ($current === null) {
                 abort(404);
             }
+            // Fail closed when the folder does not permit browsing its contents.
+            try {
+                \App\Support\FileManager\FolderCapabilityResolver::assertAllows(
+                    $current,
+                    \App\Enums\FileManager\Capability::Browse
+                );
+            } catch (\InvalidArgumentException $e) {
+                abort(403, $e->getMessage());
+            }
         }
 
-        $folderItems = $this->folders->listForContext($schoolId, $parentId);
-        $fileItems = $this->files->listForContext($schoolId, $parentId);
+        try {
+            $folderItems = $this->folders->listForContext($schoolId, $parentId);
+            $fileItems = $this->files->listForContext($schoolId, $parentId);
+        } catch (\InvalidArgumentException $e) {
+            abort(403, $e->getMessage());
+        }
         $providers = $this->providers->listForContext($schoolId);
 
         $user = $request->user();
@@ -67,10 +80,6 @@ class BrowserController extends Controller
             'canAttach' => $user?->hasPermission('file-manager.attach') ?? false,
             'canConfigure' => $user?->hasPermission('file-manager.configure') ?? false,
             'activeSchoolId' => $schoolId,
-            'crumbs' => [
-                ['label' => 'File Manager', 'href' => route('file-manager.browser')],
-                ...($current ? [['label' => $current->name]] : []),
-            ],
         ]);
     }
 
