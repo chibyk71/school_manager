@@ -44,13 +44,36 @@ const props = defineProps<{
     canAttach: boolean;
     canConfigure: boolean;
     activeSchoolId: string | null;
-    crumbs: { label: string; href?: string }[];
+    /** Optional server-provided trail; mapped to AuthenticatedLayout's `crumb` contract. */
+    crumbs?: { label: string; href?: string }[];
 }>();
 
 const showCreateFolder = ref(false);
 const showUpload = ref(false);
 const errorMessage = ref<string | null>(null);
 const successMessage = ref<string | null>(null);
+
+/**
+ * AuthenticatedLayout requires `crumb: { label?, url?, icon? }[]`.
+ * Prefer server crumbs (href → url); otherwise a minimal File Manager trail.
+ */
+const layoutCrumb = computed(() => {
+    if (props.crumbs && props.crumbs.length > 0) {
+        return props.crumbs.map((c) => ({
+            label: c.label,
+            url: c.href,
+        }));
+    }
+
+    const items: { label: string; url?: string }[] = [
+        { label: 'File Manager', url: route('file-manager.browser') },
+    ];
+    if (props.currentFolder) {
+        items.push({ label: props.currentFolder.name });
+    }
+
+    return items;
+});
 
 const folderForm = useForm({
     name: '',
@@ -173,7 +196,7 @@ function formatSize(bytes: number): string {
 </script>
 
 <template>
-    <AuthenticatedLayout :title="'File Manager'" :crumbs="crumbs">
+    <AuthenticatedLayout :title="'File Manager'" :crumb="layoutCrumb">
         <div class="p-4 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
