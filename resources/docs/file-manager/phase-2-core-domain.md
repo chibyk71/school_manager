@@ -1,78 +1,69 @@
 # File Manager Phase 2 — Core Domain
 
-## Purpose and scope
+## Scope
 
-Phase 2 establishes the **core File Manager domain**:
+Phase 2 delivers the File Manager core domain on top of Phase 1 storage providers:
 
-- Nested logical folders (not physical directories)
-- Code-defined module registration and per-school module configuration
-- Stable `File` identities independent of physical storage paths
+- Explicit `Folder` and `File` identities with ownership boundaries
 - Explicit `Attachment` relationships to business owners
 - Backend-enforced authorization and ownership boundaries
-- Safe integration with Phase 1 storage providers
+- Module registry (code-defined) and per-school enablement
+- Compensating cleanup when upload persistence fails after a physical write
+- Minimal functional browser UI
 
-**Out of scope:** trash/retention/purge, asynchronous storage migration, SVAR/Vuefinder, broad Spatie Media Library migration, antivirus, automatic failover.
+Out of scope: trash/purge, Spatie mass migration, full UI polish, SVAR/Vuefinder.
 
 ## Ownership
 
 Every `Folder` and `File` has an explicit `ownership` value:
 
-| Value | `school_id` |
-|-------|-------------|
-| `system` | must be `NULL` |
-| `school` | must identify the owning school |
-
-Ownership is **never** inferred from a null `school_id` alone.
-
-Invariants enforced in services and model `saving` hooks:
-
-- Parent and child folders share the same ownership boundary
-- File and folder share the same ownership boundary when a folder is set
-- File and storage provider have compatible ownership boundaries
-- School context never lists or mutates another school’s resources (404 / exception)
-- System resources require platform context (no active school)
-
-## Module registry vs school configuration
-
-- **`ModuleDefinitionRegistry`** (code): authoritative module codes and maximum capabilities
-- **`SchoolModuleConfiguration`** (database): per-school enablement and optional settings
+- `system` — platform-scoped (`school_id` null)
+- `school` — school-scoped (`school_id` required)
 
 Rules:
 
-- Unknown module codes are rejected
-- School configuration cannot elevate capabilities beyond the registry maximum
+- System resources cannot be managed from a school context
+- School resources cannot be managed outside their school context
+- Parent and child folders share the same ownership boundary
+- File and folder share the same ownership boundary when a folder is set
+- File and storage provider have compatible ownership boundaries
+
+## Modules
+
+`ModuleDefinitionRegistry` is the developer-owned source of truth (capability ceilings, labels).
+`SchoolModuleConfiguration` stores per-school enablement and settings only.
+
 - Disabling a module blocks relevant **new** operations; it does not delete folders, files, attachments, or the configuration row
-- Re-enabling does not silently reset existing settings
-- Lazy provisioning: absence of a configuration row means the active module is enabled by default
+- Capability ceilings are enforced on folder create/update and at operation time
 
 ## Capabilities
 
-Effective capability model:
+Effective capability for a folder operation:
 
 `Module maximum ∩ Folder configuration ∩ User authorization ∩ Tenant/ownership boundary`
 
 Capability flags: `browse`, `create_folder`, `upload`, `download`, `rename`, `move`, `attach`, `delete`.
 
-Permissions (Laratrust catalogue; distinct from `storage-providers.*`):
+Listing files **inside a specific folder** requires that folder's effective `browse` capability. Standalone/root listing (`folder_id` null) does not consult a folder capability.
+
+## Permissions
 
 | Permission | Purpose |
 |------------|---------|
-| `file-manager.view` | Browse and download |
-| `file-manager.manage` | Create/rename/move/delete folders; upload/delete File Manager-managed files |
+| `file-manager.view` | Browse / download within scope |
+| `file-manager.manage` | Create folders, upload, organize, delete FM-managed content |
 | `file-manager.attach` | Attach / detach |
-| `file-manager.configure` | Per-school module configuration |
+| `file-manager.configure` | Module enablement / configuration |
 
-Frontend capability flags are informational only.
+Distinct from `storage-providers.*`.
 
-## Files and storage
+## Lifecycle ownership
 
-- Stable UUID identity; `storage_key` is opaque (`fm/{uuid}[.ext]`) and hidden from ordinary API responses
-- Actual `storage_provider_id` is independent of a folder’s current default provider
-- Changing a folder default provider affects **future** uploads only
-- Standalone files (null `folder_id`) are first-class
-- `managed_by`: `file_manager` \| `module` — ordinary File Manager delete refuses module-managed files
+- Ordinary File Manager uploads are always `managed_by = file_manager`. Clients cannot set `managed_by`.
+- Trusted path `FileService::registerModuleManaged()` creates module-owned files (not exposed on the ordinary upload HTTP endpoint).
+- Ordinary File Manager delete refuses module-managed files.
 
-### Upload consistency
+## Upload consistency
 
 1. Validate and authorize
 2. Resolve permitted provider; generate storage key
@@ -87,6 +78,8 @@ No silent fallback to another provider. Retrieval always goes through authorized
 
 - Owner types from `AttachableOwnerRegistry` only (aliases or allow-listed FQCNs)
 - Dual authorization: File accessible in context; owner resolved and school-aligned when applicable
+- School-boundary enforcement is fail-closed for every allow-listed owner type (School, Student, Guardian, Staff, Profile via role links, User via `school_users` / profile links). When membership cannot be verified, attach is denied.
+- Phase 2 does **not** invoke per-model Laravel policies on the owner (e.g. `StudentPolicy::view`) beyond File Manager permissions (`file-manager.attach`) and the school-boundary rules above. Record-level authorization on the business owner remains the calling module's responsibility when attaching from domain workflows.
 - Duplicate attachments permitted by default
 - Detach does not delete the physical object or the File row
 
