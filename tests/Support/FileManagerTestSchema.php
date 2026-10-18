@@ -140,9 +140,9 @@ final class FileManagerTestSchema
 
         Schema::create('fm_attachments', function (Blueprint $table) {
             $table->uuid('id')->primary();
+            $table->uuid('file_id');
             $table->string('owner_type');
             $table->uuid('owner_id');
-            $table->uuid('file_id');
             $table->string('purpose', 64)->default('default');
             $table->string('lifecycle', 32)->default('module');
             $table->timestamps();
