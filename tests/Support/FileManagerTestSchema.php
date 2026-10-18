@@ -19,6 +19,9 @@ final class FileManagerTestSchema
         Schema::dropIfExists('fm_folders');
         Schema::dropIfExists('fm_school_module_configurations');
         Schema::dropIfExists('storage_providers');
+        Schema::dropIfExists('activity_log');
+        Schema::dropIfExists('school_users');
+        Schema::dropIfExists('profiles');
         Schema::dropIfExists('schools');
         Schema::dropIfExists('users');
         Schema::dropIfExists('permissions');
@@ -27,17 +30,54 @@ final class FileManagerTestSchema
         Schema::create('users', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('name')->nullable();
-            $table->string('email')->unique();
+            // User model stores identity on Profile; email is not a fillable column.
+            $table->string('email')->nullable()->unique();
+            $table->string('username')->nullable()->unique();
             $table->string('password')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
+        });
+
+        // User::$with = ['profile'] — minimal table so eager load does not fail.
+        Schema::create('profiles', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('user_id')->nullable();
+            $table->string('email')->nullable();
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('school_users', function (Blueprint $table) {
+            $table->uuid('school_id');
+            $table->uuid('user_id');
+            $table->primary(['school_id', 'user_id']);
         });
 
         Schema::create('schools', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('name');
+            // School model boot generates a unique slug and may write JSON data.
+            $table->string('slug')->nullable();
+            $table->json('data')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();
+        });
+
+        // School uses LogsActivity; focused schema must accept those writes.
+        Schema::create('activity_log', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->string('log_name')->nullable();
+            $table->text('description');
+            $table->nullableUuidMorphs('subject', 'subject');
+            $table->string('event')->nullable();
+            $table->nullableUuidMorphs('causer', 'causer');
+            $table->json('properties')->nullable();
+            $table->uuid('batch_uuid')->nullable();
+            $table->timestamps();
+            $table->index('log_name');
         });
 
         Schema::create('permissions', function (Blueprint $table) {
@@ -100,9 +140,9 @@ final class FileManagerTestSchema
 
         Schema::create('fm_attachments', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->uuid('file_id');
             $table->string('owner_type');
             $table->uuid('owner_id');
+            $table->uuid('file_id');
             $table->string('purpose', 64)->default('default');
             $table->string('lifecycle', 32)->default('module');
             $table->timestamps();
