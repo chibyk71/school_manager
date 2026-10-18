@@ -246,19 +246,34 @@ class FileManagerDomainTest extends TestCase
         $this->assertNotNull($this->fileService()->findForContext($file->id, $a->id));
     }
 
-    public function test_module_managed_file_cannot_be_deleted_via_file_manager(): void
+    public function test_ordinary_upload_ignores_client_managed_by_and_is_file_manager_managed(): void
     {
         $school = $this->makeSchool();
         $provider = $this->makeLocalProvider($school);
         $file = $this->fileService()->upload(
-            UploadedFile::fake()->create('mod.txt', 10),
+            UploadedFile::fake()->create('client.txt', 10),
             [
                 'storage_provider_id' => $provider->id,
-                'managed_by' => ManagedBy::Module->value,
+                'managed_by' => ManagedBy::Module->value, // must be ignored
             ],
             $school->id
         );
 
+        $this->assertTrue($file->isManagedByFileManager());
+        $this->assertFalse($file->isModuleManaged());
+    }
+
+    public function test_module_managed_file_cannot_be_deleted_via_file_manager(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $file = $this->fileService()->registerModuleManaged(
+            UploadedFile::fake()->create('mod.txt', 10),
+            ['storage_provider_id' => $provider->id],
+            $school->id
+        );
+
+        $this->assertTrue($file->isModuleManaged());
         $this->expectException(InvalidArgumentException::class);
         $this->fileService()->delete($file, $school->id);
     }
@@ -267,12 +282,6 @@ class FileManagerDomainTest extends TestCase
     {
         $school = $this->makeSchool();
         $provider = $this->makeLocalProvider($school);
-        $user = User::query()->create([
-            'id' => (string) Str::uuid(),
-            'name' => 'Owner',
-            'email' => 'owner@example.test',
-            'password' => bcrypt('secret'),
-        ]);
         $file = $this->fileService()->upload(
             UploadedFile::fake()->create('att.txt', 10),
             ['storage_provider_id' => $provider->id],
@@ -281,9 +290,9 @@ class FileManagerDomainTest extends TestCase
 
         $attachments = app(AttachmentService::class);
         $attachment = $attachments->attach($file, [
-            'owner_type' => 'user',
-            'owner_id' => $user->id,
-            'purpose' => 'profile',
+            'owner_type' => 'school',
+            'owner_id' => $school->id,
+            'purpose' => 'archive',
         ], $school->id);
 
         $this->assertDatabaseHas('fm_attachments', ['id' => $attachment->id]);
@@ -291,7 +300,7 @@ class FileManagerDomainTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $attachments->attach($file, [
             'owner_type' => 'App\\Models\\NotAllowListed',
-            'owner_id' => $user->id,
+            'owner_id' => $school->id,
         ], $school->id);
     }
 
@@ -299,12 +308,6 @@ class FileManagerDomainTest extends TestCase
     {
         $school = $this->makeSchool();
         $provider = $this->makeLocalProvider($school);
-        $user = User::query()->create([
-            'id' => (string) Str::uuid(),
-            'name' => 'Owner',
-            'email' => 'owner2@example.test',
-            'password' => bcrypt('secret'),
-        ]);
         $file = $this->fileService()->upload(
             UploadedFile::fake()->create('att2.txt', 10),
             ['storage_provider_id' => $provider->id],
@@ -312,13 +315,100 @@ class FileManagerDomainTest extends TestCase
         );
         $attachments = app(AttachmentService::class);
         $attachment = $attachments->attach($file, [
-            'owner_type' => User::class,
-            'owner_id' => $user->id,
+            'owner_type' => School::class,
+            'owner_id' => $school->id,
         ], $school->id);
 
         $attachments->detach($attachment, $school->id);
         $this->assertDatabaseMissing('fm_attachments', ['id' => $attachment->id]);
         $this->assertDatabaseHas('fm_files', ['id' => $file->id]);
+    }
+
+    public function test_attachment_rejects_user_without_school_link(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $user = User::query()->create([
+            'id' => (string) Str::uuid(),
+            'name' => 'Unlinked',
+            'email' => 'unlinked@example.test',
+            'password' => bcrypt('secret'),
+        ]);
+        $file = $this->fileService()->upload(
+            UploadedFile::fake()->create('x.txt', 10),
+            ['storage_provider_id' => $provider->id],
+            $school->id
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+        app(AttachmentService::class)->attach($file, [
+            'owner_type' => 'user',
+            'owner_id' => $user->id,
+        ], $school->id);
+    }
+
+    public function test_attachment_rejects_cross_school_owner(): void
+    {
+        $schoolA = $this->makeSchool('A');
+        $schoolB = $this->makeSchool('B');
+        $provider = $this->makeLocalProvider($schoolA);
+        $file = $this->fileService()->upload(
+            UploadedFile::fake()->create('x.txt', 10),
+            ['storage_provider_id' => $provider->id],
+            $schoolA->id
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+        app(AttachmentService::class)->attach($file, [
+            'owner_type' => 'school',
+            'owner_id' => $schoolB->id,
+        ], $schoolA->id);
+    }
+
+    public function test_folder_capability_blocks_upload_when_not_allowed(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $folder = $this->folderService()->create([
+            'name' => 'Read only',
+            'module_code' => 'student',
+            'capabilities' => [
+                Capability::Browse->value,
+                Capability::Download->value,
+            ],
+            'default_storage_provider_id' => $provider->id,
+        ], $school->id);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->fileService()->upload(
+            UploadedFile::fake()->create('blocked.txt', 10),
+            ['folder_id' => $folder->id],
+            $school->id
+        );
+    }
+
+    public function test_folder_capability_blocks_delete_when_not_allowed(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $folder = $this->folderService()->create([
+            'name' => 'No delete',
+            'module_code' => 'general',
+            'capabilities' => [
+                Capability::Browse->value,
+                Capability::Upload->value,
+                Capability::Download->value,
+            ],
+            'default_storage_provider_id' => $provider->id,
+        ], $school->id);
+        $file = $this->fileService()->upload(
+            UploadedFile::fake()->create('keep.txt', 10),
+            ['folder_id' => $folder->id],
+            $school->id
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->fileService()->delete($file, $school->id);
     }
 
     public function test_file_resource_hides_storage_key(): void
