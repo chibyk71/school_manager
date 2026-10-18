@@ -3,8 +3,10 @@
 namespace Tests\Feature\FileManager;
 
 use App\Enums\FileManager\Capability;
+use App\Enums\FileManager\Ownership;
 use App\Enums\StorageProviderDriver;
 use App\Enums\StorageProviderOwnership;
+use App\Models\FileManager\Folder;
 use App\Models\School;
 use App\Models\StorageProvider;
 use App\Services\FileManager\FileService;
@@ -164,6 +166,50 @@ class FileManagerListCapabilityTest extends TestCase
         $this->assertNotContains(Capability::Move->value, $effective);
         $this->assertFalse(FolderCapabilityResolver::allows($folder, Capability::Move));
         $this->assertTrue(FolderCapabilityResolver::allows($folder, Capability::Browse));
+    }
+
+    /**
+     * Unrecognized module codes must fail closed (no capabilities), not inherit
+     * the general library set — whether or not stored capabilities are present.
+     */
+    public function test_unknown_module_code_with_empty_stored_capabilities_fails_closed(): void
+    {
+        $folder = new Folder([
+            'ownership' => Ownership::School,
+            'school_id' => (string) Str::uuid(),
+            'name' => 'Stale module folder',
+            'module_code' => 'not-a-registered-module',
+            'capabilities' => [],
+        ]);
+
+        $effective = FolderCapabilityResolver::effective($folder);
+        $this->assertSame([], $effective);
+        $this->assertFalse(FolderCapabilityResolver::allows($folder, Capability::Browse));
+        $this->assertFalse(FolderCapabilityResolver::allows($folder, Capability::Upload));
+
+        $this->expectException(InvalidArgumentException::class);
+        FolderCapabilityResolver::assertAllows($folder, Capability::Browse);
+    }
+
+    public function test_unknown_module_code_with_stored_capabilities_fails_closed(): void
+    {
+        $folder = new Folder([
+            'ownership' => Ownership::School,
+            'school_id' => (string) Str::uuid(),
+            'name' => 'Stale module folder with caps',
+            'module_code' => 'removed-module-xyz',
+            'capabilities' => [
+                Capability::Browse->value,
+                Capability::Upload->value,
+                Capability::Download->value,
+            ],
+        ]);
+
+        $effective = FolderCapabilityResolver::effective($folder);
+        $this->assertSame([], $effective);
+        $this->assertFalse(FolderCapabilityResolver::allows($folder, Capability::Browse));
+        $this->assertFalse(FolderCapabilityResolver::allows($folder, Capability::Upload));
+        $this->assertFalse(FolderCapabilityResolver::allows($folder, Capability::Download));
     }
 
     private function folderService(): FolderService
