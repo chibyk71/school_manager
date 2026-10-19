@@ -9,6 +9,7 @@ use App\Http\Resources\FileManager\AttachmentResource;
 use App\Http\Resources\FileManager\FileResource;
 use App\Models\FileManager\File;
 use App\Services\FileManager\AttachmentService;
+use App\Services\FileManager\FileLifecycleService;
 use App\Services\FileManager\FileService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class FileController extends Controller
     public function __construct(
         private readonly FileService $files,
         private readonly AttachmentService $attachments,
+        private readonly FileLifecycleService $lifecycle,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -42,6 +44,17 @@ class FileController extends Controller
         } catch (InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+
+        return response()->json([
+            'data' => FileResource::collection($items)->resolve(),
+        ]);
+    }
+
+    public function trashIndex(Request $request): JsonResponse
+    {
+        Gate::authorize('viewAny', File::class);
+
+        $items = $this->lifecycle->listTrashed($this->activeSchoolId());
 
         return response()->json([
             'data' => FileResource::collection($items)->resolve(),
@@ -94,6 +107,8 @@ class FileController extends Controller
 
         try {
             $payload = $this->files->retrieve($file, $this->activeSchoolId());
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
         }
@@ -128,6 +143,56 @@ class FileController extends Controller
         }
 
         return response()->json(null, 204);
+    }
+
+    public function restore(Request $request, string $id): JsonResponse
+    {
+        $file = $this->files->findIncludingTrashedForContext($id, $this->activeSchoolId());
+        if ($file === null || ! $file->isTrashed()) {
+            return response()->json(['message' => 'Trashed file not found.'], 404);
+        }
+
+        Gate::authorize('delete', $file);
+
+        // folder_id present and non-empty → explicit alternative folder.
+        // Absent, null, or empty → no alternative selection (never implicit root).
+        $folderId = $request->input('folder_id');
+        $folderId = is_string($folderId) && $folderId !== '' ? $folderId : null;
+
+        try {
+            $file = $this->lifecycle->restore($file, $this->activeSchoolId(), $folderId);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'data' => (new FileResource($file))->resolve(),
+        ]);
+    }
+
+    /**
+     * Operator recovery: clear terminal purge failure so the file can be restored
+     * or rediscovered after the underlying storage issue is fixed.
+     * Requires manage (delete) authorization; preserves storage identity.
+     */
+    public function clearPurgeFailure(string $id): JsonResponse
+    {
+        $file = $this->files->findIncludingTrashedForContext($id, $this->activeSchoolId());
+        if ($file === null || ! $file->isTrashed()) {
+            return response()->json(['message' => 'Trashed file not found.'], 404);
+        }
+
+        Gate::authorize('delete', $file);
+
+        try {
+            $file = $this->lifecycle->clearFailedPurgeForRetry($file, $this->activeSchoolId());
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'data' => (new FileResource($file))->resolve(),
+        ]);
     }
 
     public function move(Request $request, string $id): JsonResponse

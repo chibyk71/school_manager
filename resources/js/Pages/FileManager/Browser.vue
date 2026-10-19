@@ -25,6 +25,12 @@ interface FileRow {
     managed_by: string;
     folder_id: string | null;
     storage_provider_id: string;
+    trashed_at?: string | null;
+    purge_eligible_at?: string | null;
+    purge_state?: string | null;
+    is_trashed?: boolean;
+    has_attachments?: boolean;
+    original_folder_id?: string | null;
 }
 
 interface ProviderRow {
@@ -52,6 +58,17 @@ const showCreateFolder = ref(false);
 const showUpload = ref(false);
 const errorMessage = ref<string | null>(null);
 const successMessage = ref<string | null>(null);
+const showTrash = ref(false);
+const trashFiles = ref<FileRow[]>([]);
+const trashLoading = ref(false);
+const showRestoreDialog = ref(false);
+const restoreTargetId = ref<string | null>(null);
+const restoreTargetName = ref('');
+const restoreFolderId = ref<string | null>(null);
+const restoreNeedsAlternative = ref(false);
+const restoreSubmitting = ref(false);
+
+
 
 /**
  * AuthenticatedLayout requires `crumb: { label?, url?, icon? }[]`.
@@ -188,6 +205,141 @@ function downloadFile(id: string) {
     window.location.href = route('file-manager.files.download', id);
 }
 
+
+async function loadTrash() {
+    trashLoading.value = true;
+    errorMessage.value = null;
+    try {
+        const res = await fetch(route('file-manager.files.trash'), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        });
+        const body = await res.json();
+        if (!res.ok) {
+            throw new Error(body.message || 'Failed to load trash');
+        }
+        trashFiles.value = body.data || [];
+    } catch (e: any) {
+        errorMessage.value = e?.message || 'Failed to load trash';
+    } finally {
+        trashLoading.value = false;
+    }
+}
+
+async function openTrash() {
+    showTrash.value = true;
+    await loadTrash();
+}
+
+function closeTrash() {
+    showTrash.value = false;
+}
+
+
+async function clearPurgeFailure(id: string) {
+    errorMessage.value = null;
+    successMessage.value = null;
+    try {
+        const res = await fetch(route('file-manager.files.clear-purge-failure', id), {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '',
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({}),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(body.message || 'Could not clear purge failure');
+        }
+        successMessage.value = 'Purge failure cleared. File can be restored or will be eligible for retry after retention rules.';
+        await loadTrash();
+    } catch (e: any) {
+        errorMessage.value = e?.message || 'Could not clear purge failure';
+    }
+}
+
+function openRestoreDialog(file: FileRow) {
+    restoreTargetId.value = file.id;
+    restoreTargetName.value = file.original_filename;
+    restoreFolderId.value = null;
+    restoreNeedsAlternative.value = false;
+    errorMessage.value = null;
+    successMessage.value = null;
+    showRestoreDialog.value = true;
+}
+
+async function submitRestore(folderId: string | null = null) {
+    if (!restoreTargetId.value) {
+        return;
+    }
+    restoreSubmitting.value = true;
+    errorMessage.value = null;
+    successMessage.value = null;
+    try {
+        const payload: Record<string, string> = {};
+        // Only send folder_id when a real folder is selected. Null/absent means
+        // "no alternative selection" — never an implicit root destination.
+        if (typeof folderId === 'string' && folderId !== '') {
+            payload.folder_id = folderId;
+        }
+        const res = await fetch(route('file-manager.files.restore', restoreTargetId.value), {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '',
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            const msg = body.message || 'Restore failed';
+            // Server requires an authorized alternative when original folder is gone.
+            if (typeof msg === 'string' && msg.toLowerCase().includes('alternative')) {
+                restoreNeedsAlternative.value = true;
+                errorMessage.value = msg;
+                return;
+            }
+            throw new Error(msg);
+        }
+        successMessage.value = 'File restored.';
+        showRestoreDialog.value = false;
+        restoreTargetId.value = null;
+        await loadTrash();
+        router.reload({ only: ['files', 'folders'] });
+    } catch (e: any) {
+        errorMessage.value = e?.message || 'Restore failed';
+    } finally {
+        restoreSubmitting.value = false;
+    }
+}
+
+async function restoreFile(id: string) {
+    const file = trashFiles.value.find((f) => f.id === id);
+    if (file) {
+        openRestoreDialog(file);
+        // Try original location first (no folder_id).
+        await submitRestore(null);
+        return;
+    }
+    openRestoreDialog({
+        id,
+        original_filename: 'File',
+        mime_type: null,
+        size_bytes: 0,
+        managed_by: 'file_manager',
+        folder_id: null,
+        storage_provider_id: '',
+    });
+    await submitRestore(null);
+}
+
 function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -235,7 +387,71 @@ function formatSize(bytes: number): string {
             </Message>
 
             <div class="grid gap-4 md:grid-cols-2">
-                <div class="rounded border border-surface-200 dark:border-surface-700 p-3">
+                <div v-if="canManage" class="mb-3 flex gap-2">
+                <Button
+                    v-if="!showTrash"
+                    label="Trash"
+                    icon="pi pi-trash"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    @click="openTrash"
+                />
+                <Button
+                    v-else
+                    label="Back to files"
+                    icon="pi pi-arrow-left"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    @click="closeTrash"
+                />
+            </div>
+
+            <div v-if="showTrash" class="rounded border border-surface-200 dark:border-surface-700 p-3 mb-4">
+                <h2 class="font-medium mb-2">Trash</h2>
+                <p class="text-sm text-surface-500 mb-2">
+                    File Manager-managed files only. Retention applies from the time each file was trashed.
+                </p>
+                <p v-if="trashLoading" class="text-sm">Loading…</p>
+                <ul v-else-if="trashFiles.length" class="space-y-1">
+                    <li
+                        v-for="file in trashFiles"
+                        :key="file.id"
+                        class="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-surface-100 dark:hover:bg-surface-800"
+                    >
+                        <div class="min-w-0 flex-1">
+                            <div class="truncate">📄 {{ file.original_filename }}</div>
+                            <div class="text-xs text-surface-500">
+                                Eligible {{ file.purge_eligible_at || '—' }}
+                                <span v-if="file.has_attachments"> · has attachments (purge blocked)</span>
+                                <span v-if="file.purge_state === 'failed'" class="text-red-600 dark:text-red-400"> · purge failed — restore unavailable until failure is cleared and the object is verified present</span>
+                                <span v-else-if="file.purge_state === 'deleting_physical'" class="text-amber-600 dark:text-amber-400"> · permanent purge in progress — restore unavailable</span>
+                                <span v-else-if="file.purge_state"> · {{ file.purge_state }}</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-1">
+                            <Button
+                                v-if="canManage && file.purge_state === 'failed'"
+                                label="Clear failure"
+                                size="small"
+                                severity="warn"
+                                outlined
+                                @click="clearPurgeFailure(file.id)"
+                            />
+                            <Button
+                                v-if="canManage && file.purge_state !== 'failed' && file.purge_state !== 'deleting_physical'"
+                                label="Restore"
+                                size="small"
+                                @click="restoreFile(file.id)"
+                            />
+                        </div>
+                    </li>
+                </ul>
+                <p v-else class="text-sm text-surface-500">Trash is empty.</p>
+            </div>
+
+            <div v-show="!showTrash" class="rounded border border-surface-200 dark:border-surface-700 p-3">
                     <h2 class="font-medium mb-2">Folders</h2>
                     <ul v-if="folders.length" class="space-y-1">
                         <li
@@ -259,7 +475,7 @@ function formatSize(bytes: number): string {
                     <p v-else class="text-sm text-surface-500">No folders here.</p>
                 </div>
 
-                <div class="rounded border border-surface-200 dark:border-surface-700 p-3">
+                <div v-show="!showTrash" class="rounded border border-surface-200 dark:border-surface-700 p-3">
                     <h2 class="font-medium mb-2">Files</h2>
                     <ul v-if="files.length" class="space-y-1">
                         <li
@@ -298,18 +514,6 @@ function formatSize(bytes: number): string {
                     <label class="block text-sm mb-1">Name</label>
                     <InputText v-model="folderForm.name" class="w-full" />
                 </div>
-                <div v-if="providerOptions.length">
-                    <label class="block text-sm mb-1">Default storage provider (optional)</label>
-                    <Select
-                        v-model="folderForm.default_storage_provider_id"
-                        :options="providerOptions"
-                        option-label="label"
-                        option-value="value"
-                        placeholder="Inherit / none"
-                        class="w-full"
-                        show-clear
-                    />
-                </div>
                 <div class="flex justify-end gap-2">
                     <Button label="Cancel" severity="secondary" text @click="showCreateFolder = false" />
                     <Button label="Create" :loading="folderForm.processing" @click="createFolder" />
@@ -321,23 +525,63 @@ function formatSize(bytes: number): string {
             <div class="space-y-3">
                 <div>
                     <label class="block text-sm mb-1">File</label>
-                    <input type="file" class="w-full" @change="onFileSelected" />
+                    <input type="file" @change="onFileSelected" />
                 </div>
-                <div v-if="providerOptions.length">
+                <div>
                     <label class="block text-sm mb-1">Storage provider</label>
                     <Select
                         v-model="uploadForm.storage_provider_id"
                         :options="providerOptions"
                         option-label="label"
                         option-value="value"
-                        placeholder="Folder default or select"
+                        placeholder="Select provider"
                         class="w-full"
-                        show-clear
                     />
                 </div>
                 <div class="flex justify-end gap-2">
                     <Button label="Cancel" severity="secondary" text @click="showUpload = false" />
                     <Button label="Upload" :loading="uploadForm.processing" @click="uploadFile" />
+                </div>
+            </div>
+        </Dialog>
+
+        <Dialog v-model:visible="showRestoreDialog" header="Restore file" modal :style="{ width: '28rem' }">
+            <div class="space-y-3">
+                <p class="text-sm">
+                    Restore <strong>{{ restoreTargetName }}</strong>
+                    <span v-if="!restoreNeedsAlternative"> to its original folder when available.</span>
+                    <span v-else> requires an authorized destination folder because the original location is missing or inaccessible.</span>
+                </p>
+                <div v-if="restoreNeedsAlternative">
+                    <label class="block text-sm mb-1">Destination folder</label>
+                    <Select
+                        v-model="restoreFolderId"
+                        :options="folders.map((f) => ({ label: f.name, value: f.id }))"
+                        option-label="label"
+                        option-value="value"
+                        placeholder="Select an authorized folder"
+                        class="w-full"
+                    />
+                    <p class="text-xs text-surface-500 mt-1">
+                        Original location is unavailable. Choose an authorized folder in the current context.
+                        Root is not offered here because an omitted destination is treated as “no selection.”
+                    </p>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <Button label="Cancel" severity="secondary" text @click="showRestoreDialog = false" />
+                    <Button
+                        v-if="restoreNeedsAlternative"
+                        label="Restore here"
+                        :loading="restoreSubmitting"
+                        :disabled="!restoreFolderId"
+                        @click="submitRestore(restoreFolderId)"
+                    />
+                    <Button
+                        v-else
+                        label="Retry"
+                        :loading="restoreSubmitting"
+                        @click="submitRestore(null)"
+                    />
                 </div>
             </div>
         </Dialog>

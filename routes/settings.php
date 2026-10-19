@@ -282,6 +282,7 @@ Route::prefix('settings/storage-providers')->name('settings.storage-providers.')
     Route::get('{id}/dependencies', [StorageProviderController::class, 'dependencies'])->name('dependencies');
     Route::get('{id}', [StorageProviderController::class, 'show'])->name('show');
     Route::patch('{id}', [StorageProviderController::class, 'update'])->name('update');
+    Route::delete('{id}', [StorageProviderController::class, 'destroy'])->name('destroy');
 });
 
 // Dynamic Enum Phase 4 administration routes

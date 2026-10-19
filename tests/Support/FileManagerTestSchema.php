@@ -6,7 +6,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Focused schema for File Manager Phase 2 domain tests.
+ * Focused schema for File Manager domain and HTTP tests.
  *
  * Avoids full RefreshDatabase (blocked by unrelated devices migration on SQLite).
  */
@@ -24,8 +24,10 @@ final class FileManagerTestSchema
         Schema::dropIfExists('profiles');
         Schema::dropIfExists('schools');
         Schema::dropIfExists('users');
-        Schema::dropIfExists('permissions');
         Schema::dropIfExists('permission_user');
+        Schema::dropIfExists('permissions');
+        Schema::dropIfExists('role_user');
+        Schema::dropIfExists('roles');
 
         Schema::create('users', function (Blueprint $table) {
             $table->uuid('id')->primary();
@@ -78,6 +80,28 @@ final class FileManagerTestSchema
             $table->uuid('batch_uuid')->nullable();
             $table->timestamps();
             $table->index('log_name');
+        });
+
+        // Empty roles tables so Laratrust/CustomUserChecker role lookups do not 500.
+        Schema::create('roles', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('name');
+            $table->string('display_name')->nullable();
+            $table->string('description')->nullable();
+            $table->boolean('disabled')->default(false);
+            $table->uuid('school_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('role_user', function (Blueprint $table) {
+            $table->uuid('role_id');
+            $table->uuid('user_id');
+            $table->string('user_type');
+            $table->uuid('school_id')->nullable();
+            $table->unique(
+                ['user_id', 'role_id', 'user_type', 'school_id'],
+                'role_user_user_role_type_school_unique'
+            );
         });
 
         Schema::create('permissions', function (Blueprint $table) {
@@ -134,6 +158,11 @@ final class FileManagerTestSchema
             $table->string('checksum', 128)->nullable();
             $table->string('managed_by', 32)->default('file_manager');
             $table->string('module_code', 64)->nullable();
+            $table->timestamp('trashed_at')->nullable();
+            $table->uuid('original_folder_id')->nullable();
+            $table->timestamp('purge_eligible_at')->nullable();
+            $table->string('purge_state', 32)->nullable();
+            $table->unsignedInteger('lifecycle_version')->default(0);
             $table->timestamps();
             $table->unique(['storage_provider_id', 'storage_key'], 'fm_files_provider_key_unique');
         });

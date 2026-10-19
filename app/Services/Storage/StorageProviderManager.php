@@ -29,6 +29,7 @@ final class StorageProviderManager
     public function __construct(
         private readonly StorageProviderValidator $validator,
         private readonly StorageProviderCapabilityReporter $capabilities,
+        private readonly StorageProviderDependencyChecker $dependencies,
     ) {}
 
     /**
@@ -164,27 +165,88 @@ final class StorageProviderManager
         $validated = $this->validator->validate($data, isUpdate: true);
 
         return DB::transaction(function () use ($provider, $validated) {
+            /** @var StorageProvider|null $locked */
+            $locked = StorageProvider::query()->whereKey($provider->id)->lockForUpdate()->first();
+            if ($locked === null) {
+                throw new \InvalidArgumentException('Storage provider not found.');
+            }
+
+            // Location-affecting config / secrets cannot change while files depend on this provider.
+            if ($this->dependencies->hasDependencies($locked)) {
+                if (array_key_exists('config', $validated)) {
+                    $incoming = $this->sanitizeConfig($locked->driver, $validated['config'] ?? []);
+                    $current = is_array($locked->config) ? $locked->config : [];
+                    if ($this->configChangeAffectsLocation($locked->driver, $current, $incoming)) {
+                        throw new \InvalidArgumentException(
+                            'Cannot change location-affecting provider configuration while File Manager files depend on this provider.'
+                        );
+                    }
+                }
+                if (! empty($validated['clear_secrets'])
+                    || (array_key_exists('secrets', $validated) && is_array($validated['secrets']) && $validated['secrets'] !== [])) {
+                    throw new \InvalidArgumentException(
+                        'Cannot change provider credentials while File Manager files depend on this provider.'
+                    );
+                }
+            }
+
             if (array_key_exists('name', $validated)) {
-                $provider->name = $validated['name'];
+                $locked->name = $validated['name'];
             }
             if (array_key_exists('enabled', $validated)) {
-                $provider->enabled = (bool) $validated['enabled'];
+                $locked->enabled = (bool) $validated['enabled'];
             }
             if (array_key_exists('config', $validated)) {
-                $provider->config = $this->sanitizeConfig($provider->driver, $validated['config'] ?? []);
+                $locked->config = $this->sanitizeConfig($locked->driver, $validated['config'] ?? []);
             }
 
             if (! empty($validated['clear_secrets'])) {
-                $provider->clearSecrets();
+                $locked->clearSecrets();
             } elseif (array_key_exists('secrets', $validated) && is_array($validated['secrets'])) {
-                $provider->mergeSecretReplacement(
-                    $this->sanitizeSecrets($provider->driver, $validated['secrets'])
+                $locked->mergeSecretReplacement(
+                    $this->sanitizeSecrets($locked->driver, $validated['secrets'])
                 );
             }
 
-            $provider->save();
+            $locked->save();
 
-            return $provider->fresh();
+            return $locked->fresh();
+        });
+    }
+
+    /**
+     * Soft-delete a provider when no File records depend on it.
+     */
+    public function delete(StorageProvider $provider, ?string $actingSchoolId): void
+    {
+        if (! $this->canMutateOwnership($actingSchoolId, $provider->ownership)) {
+            throw new \InvalidArgumentException(
+                $provider->isSystemOwned()
+                    ? 'System-owned storage providers cannot be deleted from a school context.'
+                    : 'School-owned storage providers cannot be deleted outside their school context.'
+            );
+        }
+
+        if ($provider->isSchoolOwned() && $provider->school_id !== $actingSchoolId) {
+            throw new \InvalidArgumentException(
+                'Cannot delete a storage provider owned by another school.'
+            );
+        }
+
+        DB::transaction(function () use ($provider) {
+            /** @var StorageProvider|null $locked */
+            $locked = StorageProvider::query()->whereKey($provider->id)->lockForUpdate()->first();
+            if ($locked === null) {
+                return;
+            }
+
+            if ($this->dependencies->hasDependencies($locked)) {
+                throw new \InvalidArgumentException(
+                    'Cannot delete a storage provider while File Manager files (including trash) depend on it.'
+                );
+            }
+
+            $locked->delete();
         });
     }
 
@@ -200,6 +262,58 @@ final class StorageProviderManager
      * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */
+
+    /**
+     * Keys that affect how an existing storage_key resolves to a physical object.
+     *
+     * @param  array<string, mixed>  $current
+     * @param  array<string, mixed>  $incoming
+     */
+    /**
+     * Stable fingerprint of location-affecting provider configuration used for object placement.
+     * Compared at file registration so concurrent reconfiguration cannot silently retarget metadata.
+     */
+    public function locationFingerprint(StorageProvider $provider): string
+    {
+        $driver = $provider->driver instanceof StorageProviderDriver
+            ? $provider->driver
+            : StorageProviderDriver::from((string) $provider->driver);
+
+        $config = is_array($provider->config) ? $provider->config : [];
+        $locationKeys = match ($driver) {
+            StorageProviderDriver::Local => ['root'],
+            StorageProviderDriver::S3 => ['bucket', 'region', 'endpoint', 'url', 'use_path_style_endpoint', 'key'],
+        };
+
+        $slice = [];
+        foreach ($locationKeys as $key) {
+            $slice[$key] = $config[$key] ?? null;
+        }
+
+        return hash('sha256', json_encode([$driver->value, $slice], JSON_THROW_ON_ERROR));
+    }
+
+    private function configChangeAffectsLocation(StorageProviderDriver $driver, array $current, array $incoming): bool
+    {
+        $locationKeys = match ($driver) {
+            StorageProviderDriver::Local => ['root'],
+            StorageProviderDriver::S3 => ['bucket', 'region', 'endpoint', 'url', 'use_path_style_endpoint', 'key'],
+        };
+
+        foreach ($locationKeys as $key) {
+            if (! array_key_exists($key, $incoming)) {
+                continue;
+            }
+            $old = $current[$key] ?? null;
+            $new = $incoming[$key];
+            if ((string) $old !== (string) $new) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function sanitizeConfig(StorageProviderDriver $driver, array $config): array
     {
         $allowed = $driver->configKeys();

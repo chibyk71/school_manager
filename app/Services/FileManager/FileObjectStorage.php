@@ -21,9 +21,39 @@ use Throwable;
  */
 final class FileObjectStorage
 {
+    /**
+     * Test-only seam: invoked after a successful physical write so tests can
+     * interleave provider reconfiguration before metadata registration.
+     *
+     * @var null|callable(StorageProvider, string): void
+     */
+    private static $afterWriteForTesting = null;
+
     public function __construct(
         private readonly StorageProviderConnectionTester $connectionTester,
     ) {}
+
+    /**
+     * @param  null|callable(StorageProvider, string): void  $callback
+     */
+    public static function setAfterWriteForTesting(?callable $callback): void
+    {
+        if ($callback !== null && ! app()->runningUnitTests()) {
+            throw new RuntimeException('afterWriteForTesting is only available during unit tests.');
+        }
+        self::$afterWriteForTesting = $callback;
+    }
+
+    /** @var bool */
+    private static $forceCompensatingDeleteFailureForTesting = false;
+
+    public static function forceCompensatingDeleteFailureForTesting(bool $force): void
+    {
+        if ($force && ! app()->runningUnitTests()) {
+            throw new RuntimeException('forceCompensatingDeleteFailureForTesting is only available during unit tests.');
+        }
+        self::$forceCompensatingDeleteFailureForTesting = $force;
+    }
 
     /**
      * Generate an opaque storage key independent of display names and folder paths.
@@ -46,9 +76,25 @@ final class FileObjectStorage
      *
      * @throws RuntimeException when the provider is disabled or configuration is unsafe
      */
+    /**
+     * Build a Laravel filesystem disk for write/upload paths (requires enabled provider).
+     */
     public function diskFor(StorageProvider $provider): Filesystem
     {
-        if (! $provider->enabled) {
+        return $this->buildDisk($provider, requireEnabled: true);
+    }
+
+    /**
+     * Build disk for retrieval or purge of existing objects (disabled providers remain readable).
+     */
+    public function diskForExisting(StorageProvider $provider): Filesystem
+    {
+        return $this->buildDisk($provider, requireEnabled: false);
+    }
+
+    private function buildDisk(StorageProvider $provider, bool $requireEnabled): Filesystem
+    {
+        if ($requireEnabled && ! $provider->enabled) {
             throw new RuntimeException('Storage provider is disabled.');
         }
 
@@ -110,6 +156,10 @@ final class FileObjectStorage
             $checksum = null;
         }
 
+        if (self::$afterWriteForTesting !== null && app()->runningUnitTests()) {
+            (self::$afterWriteForTesting)($provider, $storageKey);
+        }
+
         return [
             'size_bytes' => (int) $size,
             'mime_type' => is_string($mime) ? $mime : null,
@@ -124,6 +174,18 @@ final class FileObjectStorage
      */
     public function attemptCompensatingDelete(StorageProvider $provider, string $storageKey): bool
     {
+        if (self::$forceCompensatingDeleteFailureForTesting && app()->runningUnitTests()) {
+            Log::error('file_manager.compensating_delete_failed', [
+                'provider_id' => $provider->id,
+                'storage_key_prefix' => substr($storageKey, 0, 8).'…',
+                'driver' => $provider->driver instanceof StorageProviderDriver
+                    ? $provider->driver->value
+                    : (string) $provider->driver,
+            ]);
+
+            return false;
+        }
+
         try {
             $disk = $this->diskFor($provider);
             if ($disk->exists($storageKey)) {
@@ -154,7 +216,7 @@ final class FileObjectStorage
      */
     public function readStream(StorageProvider $provider, string $storageKey)
     {
-        $disk = $this->diskFor($provider);
+        $disk = $this->diskForExisting($provider);
 
         if (! $disk->exists($storageKey)) {
             throw new RuntimeException('Stored object not found on the storage provider.');
@@ -169,7 +231,7 @@ final class FileObjectStorage
     }
 
     /**
-     * Delete the physical object. Used for File Manager-managed deletes only.
+     * Delete the physical object (write-path semantics; requires enabled provider).
      */
     public function deleteObject(StorageProvider $provider, string $storageKey): void
     {
@@ -181,6 +243,60 @@ final class FileObjectStorage
         } catch (Throwable $e) {
             throw new RuntimeException('Failed to delete physical object from storage provider.', 0, $e);
         }
+    }
+
+    /**
+     * Authoritative existence check for an existing object (read path; allows disabled providers).
+     */
+    public function objectExists(StorageProvider $provider, string $storageKey): bool
+    {
+        try {
+            $disk = $this->diskForExisting($provider);
+
+            return $disk->exists($storageKey);
+        } catch (Throwable $e) {
+            if ($this->isMissingObjectError($e)) {
+                return false;
+            }
+            throw new RuntimeException('Unable to verify whether the stored object exists.', 0, $e);
+        }
+    }
+
+    /**
+     * Delete existing object for purge even when the provider is disabled.
+     */
+    public function deleteObjectAllowingDisabled(StorageProvider $provider, string $storageKey): void
+    {
+        try {
+            $disk = $this->diskForExisting($provider);
+            if ($disk->exists($storageKey)) {
+                $disk->delete($storageKey);
+            }
+        } catch (Throwable $e) {
+            if ($this->isMissingObjectError($e)) {
+                return;
+            }
+            throw new RuntimeException('Failed to delete physical object from storage provider.', 0, $e);
+        }
+    }
+
+    /**
+     * Whether the throwable indicates the object is already absent (idempotent purge).
+     */
+    public function isMissingObjectError(Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+        foreach (['not found', 'no such file', 'nosuchkey', '404', 'does not exist', 'file does not exist'] as $needle) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
+        }
+        $prev = $e->getPrevious();
+        if ($prev instanceof Throwable) {
+            return $this->isMissingObjectError($prev);
+        }
+
+        return false;
     }
 
     /**

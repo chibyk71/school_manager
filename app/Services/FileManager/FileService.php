@@ -67,10 +67,34 @@ final class FileService
             $query->where('folder_id', $folderId);
         }
 
+        // Phase 3: ordinary browsing never surfaces trashed files.
+        $query->active();
+
         return $query->get();
     }
 
     public function findForContext(string $id, ?string $schoolId): ?File
+    {
+        $file = File::query()->active()->find($id);
+        if ($file === null) {
+            return null;
+        }
+
+        if ($schoolId !== null) {
+            if ($file->isSchoolOwned() && $file->school_id === $schoolId) {
+                return $file;
+            }
+
+            return null;
+        }
+
+        return $file->isSystemOwned() ? $file : null;
+    }
+
+    /**
+     * Locate a file in context including trashed rows (trash admin / restore).
+     */
+    public function findIncludingTrashedForContext(string $id, ?string $schoolId): ?File
     {
         $file = File::query()->find($id);
         if ($file === null) {
@@ -175,6 +199,9 @@ final class FileService
         $extension = $upload->getClientOriginalExtension() ?: pathinfo($upload->getClientOriginalName(), PATHINFO_EXTENSION);
         $storageKey = $this->objectStorage->generateStorageKey(is_string($extension) ? $extension : null);
 
+        // Snapshot location-affecting config used for the physical write.
+        $writeFingerprint = $this->storageProviders->locationFingerprint($provider);
+
         // 1–3: authorize + resolve already done; write physical object.
         try {
             $written = $this->objectStorage->write($provider, $storageKey, $upload);
@@ -196,13 +223,37 @@ final class FileService
                 $upload,
                 $written,
                 $managedBy,
-                $moduleCode
+                $moduleCode,
+                $writeFingerprint
             ) {
+                // Serialize registration against provider delete/disable/reconfigure.
+                /** @var StorageProvider|null $lockedProvider */
+                $lockedProvider = StorageProvider::query()
+                    ->whereKey($provider->id)
+                    ->lockForUpdate()
+                    ->first();
+                if ($lockedProvider === null) {
+                    throw new InvalidArgumentException(
+                        'Storage provider is no longer available for new uploads.'
+                    );
+                }
+                if (! $lockedProvider->enabled) {
+                    throw new InvalidArgumentException('Storage provider is disabled.');
+                }
+
+                // Fail closed if location-affecting configuration changed after the physical write.
+                $currentFingerprint = $this->storageProviders->locationFingerprint($lockedProvider);
+                if (! hash_equals($writeFingerprint, $currentFingerprint)) {
+                    throw new InvalidArgumentException(
+                        'Storage provider configuration changed during upload. The object was not registered; please retry.'
+                    );
+                }
+
                 $file = new File([
                     'ownership' => $ownership,
                     'school_id' => $ownership === Ownership::School ? $actingSchoolId : null,
                     'folder_id' => $folder?->id,
-                    'storage_provider_id' => $provider->id,
+                    'storage_provider_id' => $lockedProvider->id,
                     'storage_key' => $storageKey,
                     'original_filename' => $upload->getClientOriginalName() ?: 'upload',
                     'mime_type' => $written['mime_type'],
@@ -251,6 +302,11 @@ final class FileService
     public function retrieve(File $file, ?string $actingSchoolId): array
     {
         $this->assertFileInContext($file, $actingSchoolId);
+
+        if ($file->isTrashed()) {
+            throw new InvalidArgumentException('Trashed files are not available for ordinary download.');
+        }
+
         $this->assertFileFolderCapability($file, \App\Enums\FileManager\Capability::Download);
 
         $provider = StorageProvider::query()->find($file->storage_provider_id);
@@ -276,38 +332,12 @@ final class FileService
     }
 
     /**
-     * Ordinary File Manager delete. Refuses module-managed files.
+     * Ordinary File Manager delete (Phase 3): moves FM-managed files to Trash.
+     * Refuses module-managed files. Physical object and attachments are preserved.
      */
     public function delete(File $file, ?string $actingSchoolId): void
     {
-        $this->assertFileInContext($file, $actingSchoolId);
-        $this->assertFileFolderCapability($file, \App\Enums\FileManager\Capability::Delete);
-
-        if ($file->isModuleManaged()) {
-            throw new InvalidArgumentException(
-                'Module-managed files cannot be deleted through ordinary File Manager operations.'
-            );
-        }
-
-        $provider = StorageProvider::query()->find($file->storage_provider_id);
-        $storageKey = $file->storage_key;
-
-        DB::transaction(function () use ($file) {
-            $file->attachments()->delete();
-            $file->delete();
-        });
-
-        if ($provider !== null) {
-            try {
-                $this->objectStorage->deleteObject($provider, $storageKey);
-            } catch (Throwable $e) {
-                Log::error('file_manager.delete_physical_failed', [
-                    'file_id' => $file->id,
-                    'provider_id' => $provider->id,
-                    'storage_key_prefix' => substr($storageKey, 0, 8).'…',
-                ]);
-            }
-        }
+        app(FileLifecycleService::class)->trash($file, $actingSchoolId);
     }
 
     public function move(File $file, ?string $newFolderId, ?string $actingSchoolId): File

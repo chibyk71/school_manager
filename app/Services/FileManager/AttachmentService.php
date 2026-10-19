@@ -16,6 +16,7 @@ use App\Support\FileManager\AttachableOwnerRegistry;
 use App\Support\FileManager\FolderCapabilityResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
@@ -67,16 +68,38 @@ final class AttachmentService
         // Mandatory owner authorization — fail closed when school boundary cannot be verified.
         $this->assertOwnerAuthorized($file, $owner, $actingSchoolId);
 
-        $attachment = new Attachment([
-            'file_id' => $file->id,
-            'owner_type' => $ownerClass,
-            'owner_id' => $ownerId,
-            'purpose' => (string) ($data['purpose'] ?? 'default'),
-            'lifecycle' => (string) ($data['lifecycle'] ?? 'module'),
-        ]);
-        $attachment->save();
+        // Shared lock protocol with purge: serialize attachment create against destructive purge.
+        return DB::transaction(function () use ($file, $ownerClass, $ownerId, $data) {
+            /** @var File|null $locked */
+            $locked = File::query()->whereKey($file->id)->lockForUpdate()->first();
+            if ($locked === null) {
+                throw new InvalidArgumentException('File not found.');
+            }
 
-        return $attachment->fresh();
+            if ($locked->isTrashed()) {
+                throw new InvalidArgumentException(
+                    'Cannot attach to a trashed file.'
+                );
+            }
+
+            if ($locked->purge_state === File::PURGE_STATE_DELETING_PHYSICAL
+                || $locked->purge_state === File::PURGE_STATE_PENDING) {
+                throw new InvalidArgumentException(
+                    'Cannot attach to a file that is being permanently purged.'
+                );
+            }
+
+            $attachment = new Attachment([
+                'file_id' => $locked->id,
+                'owner_type' => $ownerClass,
+                'owner_id' => $ownerId,
+                'purpose' => (string) ($data['purpose'] ?? 'default'),
+                'lifecycle' => (string) ($data['lifecycle'] ?? 'module'),
+            ]);
+            $attachment->save();
+
+            return $attachment->fresh();
+        });
     }
 
     public function detach(Attachment $attachment, ?string $actingSchoolId): void

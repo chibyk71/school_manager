@@ -29,6 +29,14 @@ class FileResource extends JsonResource
             'checksum' => $this->checksum,
             'managed_by' => $this->managed_by instanceof \BackedEnum ? $this->managed_by->value : $this->managed_by,
             'module_code' => $this->module_code,
+            'trashed_at' => $this->trashed_at?->toIso8601String(),
+            'original_folder_id' => $this->original_folder_id,
+            'purge_eligible_at' => $this->purge_eligible_at?->toIso8601String(),
+            'purge_state' => $this->purge_state,
+            'is_trashed' => $this->trashed_at !== null,
+            'has_attachments' => $this->relationLoaded('attachments')
+                ? $this->attachments->isNotEmpty()
+                : $this->attachments()->exists(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
