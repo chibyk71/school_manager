@@ -18,6 +18,8 @@ use App\Services\Storage\StorageProviderManager;
 use App\Support\FileManager\ModuleDefinitionRegistry;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -637,7 +639,9 @@ class FileManagerPhase3LifecycleTest extends TestCase
             mkdir($relocated, 0777, true);
         }
 
-        Log::fake();
+        // Prefer Event::fake over Log::fake — some log channel setups proxy Log::fake()
+        // onto Monolog and blow up in this project.
+        Event::fake([MessageLogged::class]);
 
         \App\Services\FileManager\FileObjectStorage::setAfterWriteForTesting(
             function () use ($providerId, $relocated): void {
@@ -662,18 +666,18 @@ class FileManagerPhase3LifecycleTest extends TestCase
             } catch (RuntimeException $e) {
                 $this->assertStringContainsString('compensating storage cleanup failed', strtolower($e->getMessage()));
                 $this->assertStringNotContainsString($this->localRoot, $e->getMessage());
+                $this->assertStringNotContainsString('storage_key', strtolower($e->getMessage()));
             }
 
             $this->assertSame(0, File::query()->where('storage_provider_id', $providerId)->count());
 
-            // Observable cleanup failure: error logged without full storage key or secrets.
-            Log::assertLogged(function (\Illuminate\Log\Events\MessageLogged $log): bool {
+            // Observable cleanup failure: error event logged without full storage key or secrets.
+            Event::assertDispatched(MessageLogged::class, function (MessageLogged $log): bool {
                 if ($log->level !== 'error') {
                     return false;
                 }
                 $ctx = is_array($log->context) ? $log->context : [];
-                $msg = (string) $log->message;
-                $blob = $msg.json_encode($ctx);
+                $blob = ((string) $log->message).json_encode($ctx);
                 $relevant = str_contains($blob, 'upload_orphaned_object')
                     || str_contains($blob, 'compensating_delete_failed')
                     || str_contains($blob, 'upload_orphaned');
