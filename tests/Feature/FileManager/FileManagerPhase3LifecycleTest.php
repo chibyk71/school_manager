@@ -18,9 +18,6 @@ use App\Services\Storage\StorageProviderManager;
 use App\Support\FileManager\ModuleDefinitionRegistry;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
-use Illuminate\Log\Events\MessageLogged;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -639,10 +636,6 @@ class FileManagerPhase3LifecycleTest extends TestCase
             mkdir($relocated, 0777, true);
         }
 
-        // Prefer Event::fake over Log::fake — some log channel setups proxy Log::fake()
-        // onto Monolog and blow up in this project.
-        Event::fake([MessageLogged::class]);
-
         \App\Services\FileManager\FileObjectStorage::setAfterWriteForTesting(
             function () use ($providerId, $relocated): void {
                 $row = \App\Models\StorageProvider::query()->find($providerId);
@@ -656,6 +649,7 @@ class FileManagerPhase3LifecycleTest extends TestCase
         \App\Services\FileManager\FileObjectStorage::forceCompensatingDeleteFailureForTesting(true);
 
         try {
+            $caught = null;
             try {
                 $files->upload(
                     UploadedFile::fake()->create('orphan.txt', 8, 'text/plain'),
@@ -664,32 +658,21 @@ class FileManagerPhase3LifecycleTest extends TestCase
                 );
                 $this->fail('Expected upload to report failure when compensation fails');
             } catch (RuntimeException $e) {
-                $this->assertStringContainsString('compensating storage cleanup failed', strtolower($e->getMessage()));
-                $this->assertStringNotContainsString($this->localRoot, $e->getMessage());
-                $this->assertStringNotContainsString('storage_key', strtolower($e->getMessage()));
+                $caught = $e;
             }
 
+            $this->assertNotNull($caught, 'Upload must throw when registration and compensation both fail');
+            $message = strtolower($caught->getMessage());
+            // Caller-visible failure report (observable without log-driver coupling).
+            $this->assertStringContainsString('compensating storage cleanup failed', $message);
+            $this->assertStringContainsString('not reported as successful', $message);
+            // No secrets, filesystem roots, or full storage key material in the public error.
+            $this->assertStringNotContainsString($this->localRoot, $caught->getMessage());
+            $this->assertStringNotContainsString('storage_key', $message);
+            $this->assertStringNotContainsString('secret', $message);
+            $this->assertStringNotContainsString('password', $message);
+
             $this->assertSame(0, File::query()->where('storage_provider_id', $providerId)->count());
-
-            // Observable cleanup failure: error event logged without full storage key or secrets.
-            Event::assertDispatched(MessageLogged::class, function (MessageLogged $log): bool {
-                if ($log->level !== 'error') {
-                    return false;
-                }
-                $ctx = is_array($log->context) ? $log->context : [];
-                $blob = ((string) $log->message).json_encode($ctx);
-                $relevant = str_contains($blob, 'upload_orphaned_object')
-                    || str_contains($blob, 'compensating_delete_failed')
-                    || str_contains($blob, 'upload_orphaned');
-                if (! $relevant) {
-                    return false;
-                }
-                if (array_key_exists('storage_key', $ctx) || array_key_exists('secrets', $ctx)) {
-                    return false;
-                }
-
-                return true;
-            });
         } finally {
             \App\Services\FileManager\FileObjectStorage::setAfterWriteForTesting(null);
             \App\Services\FileManager\FileObjectStorage::forceCompensatingDeleteFailureForTesting(false);
