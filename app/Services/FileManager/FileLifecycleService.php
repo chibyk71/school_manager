@@ -1,1 +1,5 @@
-PLACEHOLDER
+<?php
+
+namespace App\Services\FileManager;
+
+// temporary - will replace
