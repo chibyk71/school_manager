@@ -2,12 +2,14 @@
 
 namespace App\Services\FileManager;
 
+use App\Enums\FileManager\Capability;
 use App\Enums\FileManager\ManagedBy;
 use App\Enums\FileManager\Ownership;
 use App\Models\FileManager\File;
 use App\Models\FileManager\Folder;
 use App\Models\StorageProvider;
 use App\Services\Storage\StorageProviderManager;
+use App\Support\FileManager\FolderCapabilityResolver;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -37,19 +39,27 @@ final class FileService
      * - folderId null: standalone/root files (no folder capability check).
      * - folderId set: resolve folder in context (fail closed if missing) and
      *   require the folder's effective Browse capability.
+     * - Optional search is applied only within the already-authorized ownership
+     *   and folder scope. Results are bounded.
+     * - Optional managed_by filter is allow-listed and applied in-query before limit.
      *
      * @return Collection<int, File>
      */
-    public function listForContext(?string $schoolId, ?string $folderId = null): Collection
-    {
+    public function listForContext(
+        ?string $schoolId,
+        ?string $folderId = null,
+        ?string $search = null,
+        int $limit = 100,
+        ?string $managedBy = null,
+    ): Collection {
         if ($folderId !== null) {
             $folder = $this->folders->findForContext($folderId, $schoolId);
             if ($folder === null) {
                 throw new InvalidArgumentException('Folder not found in the current ownership context.');
             }
-            \App\Support\FileManager\FolderCapabilityResolver::assertAllows(
+            FolderCapabilityResolver::assertAllows(
                 $folder,
-                \App\Enums\FileManager\Capability::Browse
+                Capability::Browse
             );
         }
 
@@ -70,7 +80,26 @@ final class FileService
         // Phase 3: ordinary browsing never surfaces trashed files.
         $query->active();
 
-        return $query->get();
+        // Phase 4: allow-listed managed_by filter applied in-query before limit.
+        if ($managedBy !== null && $managedBy !== '') {
+            if (! in_array($managedBy, ['file_manager', 'module'], true)) {
+                throw new InvalidArgumentException('Invalid managed_by filter.');
+            }
+            $query->where('managed_by', $managedBy);
+        }
+
+        $search = is_string($search) ? trim($search) : '';
+        if ($search !== '') {
+            $term = mb_substr($search, 0, 100);
+            $query->where(function ($q) use ($term) {
+                $q->where('original_filename', 'like', '%'.$term.'%')
+                    ->orWhere('mime_type', 'like', '%'.$term.'%');
+            });
+        }
+
+        $limit = max(1, min($limit, 200));
+
+        return $query->limit($limit)->get();
     }
 
     public function findForContext(string $id, ?string $schoolId): ?File
@@ -177,9 +206,9 @@ final class FileService
                 throw new InvalidArgumentException('File and folder ownership boundaries must match.');
             }
             // Operation-time capability: upload into this folder
-            \App\Support\FileManager\FolderCapabilityResolver::assertAllows(
+            FolderCapabilityResolver::assertAllows(
                 $folder,
-                \App\Enums\FileManager\Capability::Upload
+                Capability::Upload
             );
         }
 
@@ -307,7 +336,7 @@ final class FileService
             throw new InvalidArgumentException('Trashed files are not available for ordinary download.');
         }
 
-        $this->assertFileFolderCapability($file, \App\Enums\FileManager\Capability::Download);
+        $this->assertFileFolderCapability($file, Capability::Download);
 
         $provider = StorageProvider::query()->find($file->storage_provider_id);
         if ($provider === null) {
@@ -343,7 +372,15 @@ final class FileService
     public function move(File $file, ?string $newFolderId, ?string $actingSchoolId): File
     {
         $this->assertFileInContext($file, $actingSchoolId);
-        $this->assertFileFolderCapability($file, \App\Enums\FileManager\Capability::Move);
+
+        // Domain boundary: module-managed files are not moved via ordinary FM operations.
+        if ($file->isModuleManaged()) {
+            throw new InvalidArgumentException(
+                'Module-managed files cannot be moved through the File Manager. Use the owning module workflow.'
+            );
+        }
+
+        $this->assertFileFolderCapability($file, Capability::Move);
 
         if ($newFolderId === null) {
             $file->folder_id = null;
@@ -362,9 +399,9 @@ final class FileService
             throw new InvalidArgumentException('File and folder ownership boundaries must match.');
         }
 
-        \App\Support\FileManager\FolderCapabilityResolver::assertAllows(
+        FolderCapabilityResolver::assertAllows(
             $folder,
-            \App\Enums\FileManager\Capability::Move
+            Capability::Move
         );
 
         $file->folder_id = $folder->id;
@@ -373,7 +410,7 @@ final class FileService
         return $file->fresh();
     }
 
-    private function assertFileFolderCapability(File $file, \App\Enums\FileManager\Capability $capability): void
+    private function assertFileFolderCapability(File $file, Capability $capability): void
     {
         if ($file->folder_id === null) {
             return;
@@ -384,7 +421,7 @@ final class FileService
             return;
         }
 
-        \App\Support\FileManager\FolderCapabilityResolver::assertAllows($folder, $capability);
+        FolderCapabilityResolver::assertAllows($folder, $capability);
     }
 
     private function resolveProvider(
