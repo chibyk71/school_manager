@@ -285,6 +285,41 @@ final class StorageQuotaServiceTest extends TestCase
         $this->assertSame(50, $service->snapshot()['reserved_bytes']);
     }
 
+    public function test_consistent_lock_order_reserve_then_settle_same_reservation(): void
+    {
+        // Documents account→reservation lock order: overlapping reserve retry
+        // and settle on the same operation must both succeed without deadlock
+        // under sequential execution (server multi-connection stress is follow-up).
+        $service = $this->serviceWithLimit(10_000);
+        $op = (string) Str::uuid();
+        $fileId = (string) Str::uuid();
+
+        $pending = $service->reserve(800, $op);
+        $retry = $service->reserve(800, $op);
+        $this->assertSame($pending->id, $retry->id);
+
+        $settled = $service->settle($pending, $fileId, 750);
+        $this->assertSame(StorageReservation::STATE_SETTLED, $settled->state);
+        $this->assertSame(750, $service->snapshot()['used_bytes']);
+        $this->assertSame(0, $service->snapshot()['reserved_bytes']);
+
+        // Settle retry (idempotent) after account→reservation order.
+        $again = $service->settle($pending, $fileId, 750);
+        $this->assertSame($settled->id, $again->id);
+
+        $service->releaseUsedForFile($fileId, 750);
+        $this->assertSame(0, $service->snapshot()['used_bytes']);
+    }
+
+    public function test_release_pending_uses_account_then_reservation_lock_order(): void
+    {
+        $service = $this->serviceWithLimit(10_000);
+        $pending = $service->reserve(300);
+        $released = $service->release($pending, 'abort');
+        $this->assertSame(StorageReservation::STATE_RELEASED, $released->state);
+        $this->assertSame(0, $service->snapshot()['reserved_bytes']);
+    }
+
     public function test_migration_backfill_sums_existing_fm_files_only(): void
     {
         // Focused schema: pre-create fm_files with quota-covered sizes, then run

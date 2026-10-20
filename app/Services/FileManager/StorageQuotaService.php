@@ -15,18 +15,12 @@ use RuntimeException;
 /**
  * Concurrency-safe storage capacity reservation and settlement for File Manager.
  *
- * Coordination:
- * 1. Lock the tenant StorageAccount row FOR UPDATE (create safely if missing).
- * 2. Evaluate used + reserved against the entitlement limit.
- * 3. Insert a pending reservation and increment reserved_bytes atomically.
- * 4. After physical write + metadata, settle under the same lock rules:
- *    return the reserved hold, re-check capacity for the authoritative size,
- *    then charge used_bytes.
- * 5. On confirmed cleanup, release; on uncertain outcome, mark uncertain and retain.
- * 6. On confirmed permanent file deletion, release used capacity once per file_id.
+ * Lock order (must be consistent across all mutations that touch both resources):
+ *   1. StorageAccount row (scope tenant) via lockAccount()
+ *   2. StorageReservation row(s) via lockForUpdate()
  *
- * Mutations are idempotent by operation_id (reservations) and by file_id
- * (usage release). Conflicting settlement arguments are rejected.
+ * Never acquire a reservation lock before the account lock when both are needed.
+ * This prevents deadlocks between reserve/settle/release/releaseUsedForFile.
  *
  * Account bootstrap uses insertOrIgnore so unique conflicts do not abort the
  * surrounding transaction (PostgreSQL-safe). Reservation create re-checks
@@ -42,10 +36,11 @@ final class StorageQuotaService
     /**
      * Atomically reserve capacity for an upcoming upload.
      *
+     * Lock order: account → reservation (lookup/create).
+     *
      * Matching retries with the same operation_id and reserved_bytes return the
      * existing reservation. Conflicting reserved_bytes for the same operation_id
-     * are rejected. Concurrent callers serialize on the account row and re-check
-     * operation_id after the lock so only one insert occurs.
+     * are rejected.
      *
      * @return StorageReservation  Pending reservation (or existing if same operation_id).
      *
@@ -60,10 +55,10 @@ final class StorageQuotaService
         $operationId = $operationId ?: (string) Str::uuid();
 
         return DB::transaction(function () use ($bytes, $operationId) {
-            // Serialize on the account first so concurrent same-operation_id
-            // callers cannot both pass a pre-lock absence check.
+            // 1) Account lock first (global lock order).
             $account = $this->lockAccount();
 
+            // 2) Reservation lock second.
             $existing = StorageReservation::query()
                 ->where('operation_id', $operationId)
                 ->lockForUpdate()
@@ -99,6 +94,8 @@ final class StorageQuotaService
     /**
      * Settle a pending reservation against the authoritative recorded file size.
      *
+     * Lock order: account → reservation (same as reserve).
+     *
      * Transitions reserved → used under the account lock. If the actual size
      * exceeds the original reservation, capacity is re-checked so the limit
      * cannot be exceeded. Idempotent only for the same file_id and actualBytes;
@@ -116,10 +113,16 @@ final class StorageQuotaService
             throw new InvalidArgumentException('Settlement requires a non-empty file_id.');
         }
 
-        return DB::transaction(function () use ($reservation, $fileId, $actualBytes) {
+        $reservationId = $reservation->id;
+
+        return DB::transaction(function () use ($reservationId, $fileId, $actualBytes) {
+            // 1) Account lock first (global lock order).
+            $account = $this->lockAccount();
+
+            // 2) Reservation lock second.
             /** @var StorageReservation|null $locked */
             $locked = StorageReservation::query()
-                ->whereKey($reservation->id)
+                ->whereKey($reservationId)
                 ->lockForUpdate()
                 ->first();
 
@@ -144,8 +147,6 @@ final class StorageQuotaService
             if ($locked->state === StorageReservation::STATE_RELEASED) {
                 throw new RuntimeException('Cannot settle a released reservation.');
             }
-
-            $account = $this->lockAccount();
 
             $reserved = (int) $locked->reserved_bytes;
 
@@ -178,13 +179,21 @@ final class StorageQuotaService
     /**
      * Release a reservation after confirmed cleanup (no physical object remains).
      * Idempotent.
+     *
+     * Lock order: account → reservation.
      */
     public function release(StorageReservation $reservation, ?string $notes = null): StorageReservation
     {
-        return DB::transaction(function () use ($reservation, $notes) {
+        $reservationId = $reservation->id;
+
+        return DB::transaction(function () use ($reservationId, $notes) {
+            // 1) Account lock first.
+            $account = $this->lockAccount();
+
+            // 2) Reservation lock second.
             /** @var StorageReservation|null $locked */
             $locked = StorageReservation::query()
-                ->whereKey($reservation->id)
+                ->whereKey($reservationId)
                 ->lockForUpdate()
                 ->first();
 
@@ -202,7 +211,6 @@ final class StorageQuotaService
                 );
             }
 
-            $account = $this->lockAccount();
             $reserved = (int) $locked->reserved_bytes;
             $account->reserved_bytes = max(0, (int) $account->reserved_bytes - $reserved);
             $account->save();
@@ -220,6 +228,11 @@ final class StorageQuotaService
     /**
      * Mark reservation uncertain — retain accounting until reconciliation confirms outcome.
      * Idempotent for already-uncertain rows.
+     *
+     * Only touches the reservation row (no account mutation), so a single
+     * reservation lock is sufficient and cannot deadlock with account-first paths:
+     * the other transaction either already holds the account and will wait for
+     * this reservation lock, or has not started.
      */
     public function markUncertain(StorageReservation $reservation, ?string $notes = null): StorageReservation
     {
@@ -254,12 +267,10 @@ final class StorageQuotaService
     /**
      * Release used capacity after confirmed permanent deletion of a file.
      *
-     * Idempotent per file_id under concurrency:
-     * - Settled reservation path: lock the reservation; if already usage_released, no-op;
-     *   otherwise mark usage_released and subtract settled_bytes under the account lock.
-     * - Fallback (no settled reservation): claim a unique sentinel row via insertOrIgnore
-     *   before subtracting. Only the claim winner subtracts; losers no-op without
-     *   touching the ledger.
+     * Lock order when a settled reservation exists: account → reservation.
+     * Fallback (no settled reservation): claim unique sentinel via insertOrIgnore
+     * (no FOR UPDATE on a shared row), then account lock, then subtract.
+     * Only the claim winner subtracts; losers no-op without touching the ledger.
      */
     public function releaseUsedForFile(string $fileId, int $bytes): void
     {
@@ -276,6 +287,10 @@ final class StorageQuotaService
         }
 
         DB::transaction(function () use ($fileId, $bytes) {
+            // 1) Account lock first (global lock order).
+            $account = $this->lockAccount();
+
+            // 2) Reservation lock second (settled row for this file, if any).
             /** @var StorageReservation|null $reservation */
             $reservation = StorageReservation::query()
                 ->where('file_id', $fileId)
@@ -296,7 +311,6 @@ final class StorageQuotaService
                     return;
                 }
 
-                $account = $this->lockAccount();
                 $account->used_bytes = max(0, (int) $account->used_bytes - $releaseBytes);
                 $account->save();
 
@@ -307,8 +321,8 @@ final class StorageQuotaService
             }
 
             // Fallback: claim the release before any ledger mutation so concurrent
-            // callers cannot both subtract. insertOrIgnore is portable across
-            // SQLite / MySQL / PostgreSQL and does not abort the transaction.
+            // callers cannot both subtract. insertOrIgnore is portable and does not
+            // acquire a conflicting FOR UPDATE on an existing row.
             $now = now();
             $claimed = DB::table('fm_storage_reservations')->insertOrIgnore([
                 'id' => (string) Str::uuid(),
@@ -329,7 +343,7 @@ final class StorageQuotaService
                 return;
             }
 
-            $account = $this->lockAccount();
+            // Account is already locked; subtract under the same transaction.
             $account->used_bytes = max(0, (int) $account->used_bytes - $bytes);
             $account->save();
         });
@@ -434,7 +448,6 @@ final class StorageQuotaService
             );
         }
 
-        // Matching retry: same operation_id and same reserved amount.
         if ((int) $existing->reserved_bytes === $requestedBytes) {
             return $existing;
         }
