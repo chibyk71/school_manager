@@ -140,10 +140,26 @@ class FileManagerPhase4BrowserTest extends TestCase
     public function test_search_term_is_bounded(): void
     {
         $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
         $files = app(FileService::class);
-        $long = str_repeat('a', 500);
-        $result = $files->listForContext($school->id, null, $long);
-        $this->assertInstanceOf(\Illuminate\Support\Collection::class, $result);
+
+        $this->uploadNamed($files, $provider, $school->id, null, 'unique-needle-phase4.pdf');
+
+        // Term longer than 100 chars is truncated; prefix-only noise must not match the file.
+        $noisePrefix = str_repeat('z', 100);
+        $longMiss = $noisePrefix.'unique-needle-phase4';
+        $miss = $files->listForContext($school->id, null, $longMiss);
+        $this->assertCount(0, $miss, 'Search term must be truncated to 100 chars so trailing needle is ignored');
+
+        // A short, relevant term still finds the file.
+        $hit = $files->listForContext($school->id, null, 'unique-needle');
+        $this->assertCount(1, $hit);
+        $this->assertSame('unique-needle-phase4.pdf', $hit->first()->original_filename);
+
+        // Explicit limit binds result size.
+        $this->uploadNamed($files, $provider, $school->id, null, 'unique-needle-phase4-b.pdf');
+        $limited = $files->listForContext($school->id, null, 'unique-needle', 1);
+        $this->assertCount(1, $limited);
     }
 
     public function test_ordinary_browse_excludes_trashed(): void
