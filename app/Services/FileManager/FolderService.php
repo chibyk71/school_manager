@@ -24,9 +24,14 @@ final class FolderService
     ) {}
 
     /**
+     * List folders in the authorized ownership context, optionally filtered by name search.
+     *
+     * Search is scoped to the current parent (or roots) and ownership boundary only.
+     * Results are bounded to prevent unbounded collection materialization.
+     *
      * @return Collection<int, Folder>
      */
-    public function listForContext(?string $schoolId, ?string $parentId = null): Collection
+    public function listForContext(?string $schoolId, ?string $parentId = null, ?string $search = null, int $limit = 100): Collection
     {
         if ($parentId !== null) {
             $parent = $this->findForContext($parentId, $schoolId);
@@ -50,7 +55,15 @@ final class FolderService
             $query->where('parent_id', $parentId);
         }
 
-        return $query->get();
+        $search = is_string($search) ? trim($search) : '';
+        if ($search !== '') {
+            $term = mb_substr($search, 0, 100);
+            $query->where('name', 'like', '%'.$term.'%');
+        }
+
+        $limit = max(1, min($limit, 200));
+
+        return $query->limit($limit)->get();
     }
 
     public function findForContext(string $id, ?string $schoolId): ?Folder
