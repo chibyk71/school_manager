@@ -24,6 +24,7 @@ final class FileLifecycleService
         private readonly FolderService $folders,
         private readonly FileObjectStorage $objectStorage,
         private readonly SettingsResolver $settings,
+        private readonly StorageQuotaService $storageQuota,
     ) {}
 
     /**
@@ -306,7 +307,11 @@ final class FileLifecycleService
                 return;
             }
 
+            $sizeBytes = (int) $locked->size_bytes;
             $locked->delete();
+
+            // Confirmed permanent deletion + metadata removal: release accounted usage.
+            $this->storageQuota->releaseUsed($sizeBytes);
         });
     }
 
