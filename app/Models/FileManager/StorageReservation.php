@@ -14,6 +14,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * - settled: converted to used_bytes against an authoritative File row
  * - released: confirmed cleanup; capacity returned
  * - uncertain: physical outcome unknown; capacity retained until reconciliation
+ *
+ * usage_released: once true on a settled row, used capacity for file_id has been
+ * returned; retries of releaseUsedForFile must not subtract again.
  */
 class StorageReservation extends Model
 {
@@ -36,12 +39,14 @@ class StorageReservation extends Model
         'settled_bytes',
         'state',
         'file_id',
+        'usage_released',
         'notes',
     ];
 
     protected $casts = [
         'reserved_bytes' => 'integer',
         'settled_bytes' => 'integer',
+        'usage_released' => 'boolean',
     ];
 
     public function file(): BelongsTo

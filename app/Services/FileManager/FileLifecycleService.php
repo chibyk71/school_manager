@@ -308,10 +308,11 @@ final class FileLifecycleService
             }
 
             $sizeBytes = (int) $locked->size_bytes;
+            $fileId = (string) $locked->id;
             $locked->delete();
 
-            // Confirmed permanent deletion + metadata removal: release accounted usage.
-            $this->storageQuota->releaseUsed($sizeBytes);
+            // Confirmed permanent deletion + metadata removal: release accounted usage once per file.
+            $this->storageQuota->releaseUsedForFile($fileId, $sizeBytes);
         });
     }
 

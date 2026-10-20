@@ -207,6 +207,7 @@ final class FileManagerTestSchema
             $table->unsignedBigInteger('settled_bytes')->nullable();
             $table->string('state', 32);
             $table->uuid('file_id')->nullable();
+            $table->boolean('usage_released')->default(false);
             $table->text('notes')->nullable();
             $table->timestamps();
             $table->index(['scope_key', 'state']);

@@ -11,10 +11,10 @@ use App\Support\Entitlements\DefaultEntitlementProfile;
 use App\Support\Entitlements\EntitlementRegistry;
 use App\Support\Entitlements\EntitlementResolver;
 use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -93,10 +93,47 @@ final class StorageQuotaServiceTest extends TestCase
         $this->assertSame(2_500, $snap['used_bytes']);
         $this->assertSame(0, $snap['reserved_bytes']);
 
-        // Idempotent settle
+        // Idempotent settle with matching arguments
         $again = $service->settle($reservation, $fileId, 2_500);
         $this->assertSame(StorageReservation::STATE_SETTLED, $again->state);
         $this->assertSame(2_500, $service->snapshot()['used_bytes']);
+    }
+
+    public function test_settlement_rejects_conflicting_retry_arguments(): void
+    {
+        $service = $this->serviceWithLimit(10_000);
+        $reservation = $service->reserve(1_000);
+        $fileId = (string) Str::uuid();
+        $service->settle($reservation, $fileId, 1_000);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Conflicting settlement');
+        $service->settle($reservation, $fileId, 999);
+    }
+
+    public function test_settlement_rejects_when_actual_exceeds_remaining_capacity(): void
+    {
+        $service = $this->serviceWithLimit(1_000);
+        // Reserve 400; another reservation holds 500 → 100 free after this hold returns.
+        $service->reserve(500);
+        $r = $service->reserve(400);
+
+        $this->expectException(InsufficientCapacityException::class);
+        // Actual written size 600 would exceed limit once the 400 hold is returned
+        // (used 0 + reserved 500 + 600 > 1000).
+        $service->settle($r, (string) Str::uuid(), 600);
+    }
+
+    public function test_settlement_allows_actual_greater_than_reservation_when_capacity_permits(): void
+    {
+        $service = $this->serviceWithLimit(10_000);
+        $r = $service->reserve(100);
+        $fileId = (string) Str::uuid();
+
+        $settled = $service->settle($r, $fileId, 250);
+        $this->assertSame(250, $settled->settled_bytes);
+        $this->assertSame(250, $service->snapshot()['used_bytes']);
+        $this->assertSame(0, $service->snapshot()['reserved_bytes']);
     }
 
     public function test_release_after_confirmed_cleanup(): void
@@ -126,16 +163,47 @@ final class StorageQuotaServiceTest extends TestCase
         $this->assertSame(7_000, $snap['available']);
     }
 
-    public function test_release_used_after_confirmed_purge(): void
+    public function test_release_used_for_file_is_idempotent(): void
     {
         $service = $this->serviceWithLimit(10_000);
+        $fileId = (string) Str::uuid();
         $r = $service->reserve(2_000);
-        $service->settle($r, (string) Str::uuid(), 2_000);
+        $service->settle($r, $fileId, 2_000);
 
-        $service->releaseUsed(2_000);
-
+        $service->releaseUsedForFile($fileId, 2_000);
         $this->assertSame(0, $service->snapshot()['used_bytes']);
-        $this->assertSame(10_000, $service->snapshot()['available']);
+
+        // Retry must not undercount.
+        $service->releaseUsedForFile($fileId, 2_000);
+        $this->assertSame(0, $service->snapshot()['used_bytes']);
+
+        $reservation = StorageReservation::query()->where('file_id', $fileId)->first();
+        $this->assertTrue((bool) $reservation?->usage_released);
+    }
+
+    public function test_legacy_release_used_is_disabled(): void
+    {
+        $service = $this->serviceWithLimit(10_000);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('releaseUsedForFile');
+        $service->releaseUsed(100);
+    }
+
+    public function test_lock_account_bootstraps_when_row_missing(): void
+    {
+        StorageAccount::query()->delete();
+        $this->assertNull(
+            StorageAccount::query()->where('scope_key', StorageAccount::SCOPE_TENANT)->first()
+        );
+
+        $service = $this->serviceWithLimit(5_000);
+        $reservation = $service->reserve(100);
+
+        $this->assertSame(StorageReservation::STATE_PENDING, $reservation->state);
+        $account = StorageAccount::query()->where('scope_key', StorageAccount::SCOPE_TENANT)->first();
+        $this->assertNotNull($account);
+        $this->assertSame(100, (int) $account->reserved_bytes);
     }
 
     public function test_production_default_limit_is_one_tib(): void
@@ -166,6 +234,7 @@ final class StorageQuotaServiceTest extends TestCase
             $table->unsignedBigInteger('settled_bytes')->nullable();
             $table->string('state', 32);
             $table->uuid('file_id')->nullable();
+            $table->boolean('usage_released')->default(false);
             $table->text('notes')->nullable();
             $table->timestamps();
         });

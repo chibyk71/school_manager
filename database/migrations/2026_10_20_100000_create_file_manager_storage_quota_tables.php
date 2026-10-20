@@ -35,6 +35,7 @@ return new class extends Migration
             $table->unsignedBigInteger('settled_bytes')->nullable();
             $table->string('state', 32); // pending | settled | released | uncertain
             $table->uuid('file_id')->nullable();
+            $table->boolean('usage_released')->default(false);
             $table->text('notes')->nullable();
             $table->timestamps();
 
