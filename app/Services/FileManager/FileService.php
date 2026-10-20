@@ -41,11 +41,17 @@ final class FileService
      *   require the folder's effective Browse capability.
      * - Optional search is applied only within the already-authorized ownership
      *   and folder scope. Results are bounded.
+     * - Optional managed_by filter is allow-listed and applied in-query before limit.
      *
      * @return Collection<int, File>
      */
-    public function listForContext(?string $schoolId, ?string $folderId = null, ?string $search = null, int $limit = 100): Collection
-    {
+    public function listForContext(
+        ?string $schoolId,
+        ?string $folderId = null,
+        ?string $search = null,
+        int $limit = 100,
+        ?string $managedBy = null,
+    ): Collection {
         if ($folderId !== null) {
             $folder = $this->folders->findForContext($folderId, $schoolId);
             if ($folder === null) {
@@ -73,6 +79,14 @@ final class FileService
 
         // Phase 3: ordinary browsing never surfaces trashed files.
         $query->active();
+
+        // Phase 4: allow-listed managed_by filter applied in-query before limit.
+        if ($managedBy !== null && $managedBy !== '') {
+            if (! in_array($managedBy, ['file_manager', 'module'], true)) {
+                throw new InvalidArgumentException('Invalid managed_by filter.');
+            }
+            $query->where('managed_by', $managedBy);
+        }
 
         $search = is_string($search) ? trim($search) : '';
         if ($search !== '') {
@@ -358,6 +372,14 @@ final class FileService
     public function move(File $file, ?string $newFolderId, ?string $actingSchoolId): File
     {
         $this->assertFileInContext($file, $actingSchoolId);
+
+        // Domain boundary: module-managed files are not moved via ordinary FM operations.
+        if ($file->isModuleManaged()) {
+            throw new InvalidArgumentException(
+                'Module-managed files cannot be moved through the File Manager. Use the owning module workflow.'
+            );
+        }
+
         $this->assertFileFolderCapability($file, Capability::Move);
 
         if ($newFolderId === null) {

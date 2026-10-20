@@ -65,15 +65,15 @@ class BrowserController extends Controller
 
         try {
             $folderItems = $this->folders->listForContext($schoolId, $parentId, $search);
-            $fileItems = $this->files->listForContext($schoolId, $parentId, $search);
+            $fileItems = $this->files->listForContext(
+                $schoolId,
+                $parentId,
+                $search,
+                100,
+                $managedByFilter,
+            );
         } catch (\InvalidArgumentException $e) {
             abort(403, $e->getMessage());
-        }
-
-        if ($managedByFilter !== null) {
-            $fileItems = $fileItems->filter(
-                static fn ($f) => ($f->managed_by instanceof \BackedEnum ? $f->managed_by->value : $f->managed_by) === $managedByFilter
-            )->values();
         }
 
         $providers = $this->providers->listForContext($schoolId);

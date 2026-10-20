@@ -134,8 +134,51 @@ class FileManagerPhase4BrowserTest extends TestCase
         );
         $this->assertTrue($moduleFile->isModuleManaged());
 
+        // Domain must reject move of module-managed files (not only UI).
+        try {
+            $files->move($moduleFile, $dest->id, $school->id);
+            $this->fail('Expected InvalidArgumentException when moving a module-managed file.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsStringIgnoringCase('module-managed', $e->getMessage());
+        }
+
+        // Delete remains refused for module-managed files.
         $this->expectException(InvalidArgumentException::class);
         $files->delete($moduleFile, $school->id);
+    }
+
+    public function test_managed_by_filter_applied_before_limit(): void
+    {
+        $school = $this->makeSchool();
+        $provider = $this->makeLocalProvider($school);
+        $files = app(FileService::class);
+
+        // Seed more FM-managed files than the listing limit so an in-memory post-filter
+        // would drop a later module-managed match.
+        for ($i = 0; $i < 5; $i++) {
+            $this->uploadNamed($files, $provider, $school->id, null, sprintf('fm-%02d.pdf', $i));
+        }
+
+        $moduleFile = $files->registerModuleManaged(
+            UploadedFile::fake()->create('module-only.pdf', 10, 'application/pdf'),
+            ['storage_provider_id' => $provider->id],
+            $school->id
+        );
+        $this->assertTrue($moduleFile->isModuleManaged());
+
+        // Limit 3 without filter may return only FM-managed rows (ordered by name: fm-00…).
+        $unfiltered = $files->listForContext($school->id, null, null, 3);
+        $this->assertCount(3, $unfiltered);
+        $this->assertTrue(
+            $unfiltered->every(fn ($f) => ! $f->isModuleManaged()),
+            'Unfiltered limited listing should be dominated by FM-managed names'
+        );
+
+        // With managed_by=module applied in-query before limit, the module file is found.
+        $filtered = $files->listForContext($school->id, null, null, 3, 'module');
+        $this->assertCount(1, $filtered);
+        $this->assertTrue($filtered->first()->isModuleManaged());
+        $this->assertSame('module-only.pdf', $filtered->first()->original_filename);
     }
 
     public function test_search_term_is_bounded(): void
