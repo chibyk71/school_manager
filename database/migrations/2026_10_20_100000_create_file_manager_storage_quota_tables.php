@@ -14,6 +14,12 @@ use Illuminate\Support\Str;
  *
  * fm_storage_reservations: outstanding and historical reservation records for
  * idempotent settlement, release, and uncertain-outcome retention.
+ *
+ * Rollout: if fm_files already exists, used_bytes is initialized to the sum of
+ * size_bytes for all remaining File Manager rows (active, trashed, and
+ * purge-in-progress). Confirmed permanent deletions have no row and are not
+ * counted. Direct Spatie Media Library objects are not in fm_files and are
+ * never included.
  */
 return new class extends Migration
 {
@@ -43,15 +49,36 @@ return new class extends Migration
             $table->index('file_id');
         });
 
+        $usedBytes = 0;
+        if (Schema::hasTable('fm_files') && Schema::hasColumn('fm_files', 'size_bytes')) {
+            // Quota-covered objects only: rows still present in fm_files.
+            // Active + trashed + purge-in-progress continue to count per Phase 1 rules.
+            $usedBytes = (int) DB::table('fm_files')->sum('size_bytes');
+        }
+
         // Bootstrap the single Phase 1 tenant account so FOR UPDATE always has a row.
-        DB::table('fm_storage_accounts')->insert([
+        // insertOrIgnore keeps re-runs / concurrent installers from aborting on unique scope_key.
+        DB::table('fm_storage_accounts')->insertOrIgnore([
             'id' => (string) Str::uuid(),
             'scope_key' => 'tenant',
-            'used_bytes' => 0,
+            'used_bytes' => $usedBytes,
             'reserved_bytes' => 0,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        // If the account already existed (partial deploy), never overwrite a non-zero
+        // ledger with a smaller backfill — only raise used_bytes when the sum of
+        // existing FM files is higher than the current ledger (initial zero case).
+        if ($usedBytes > 0) {
+            DB::table('fm_storage_accounts')
+                ->where('scope_key', 'tenant')
+                ->where('used_bytes', '<', $usedBytes)
+                ->update([
+                    'used_bytes' => $usedBytes,
+                    'updated_at' => now(),
+                ]);
+        }
     }
 
     public function down(): void

@@ -12,6 +12,7 @@ use App\Support\Entitlements\EntitlementRegistry;
 use App\Support\Entitlements\EntitlementResolver;
 use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -213,10 +214,127 @@ final class StorageQuotaServiceTest extends TestCase
         $this->assertSame(1_099_511_627_776, $snap['limit']);
     }
 
+    public function test_reservation_rejects_conflicting_bytes_for_same_operation_id(): void
+    {
+        $service = $this->serviceWithLimit(10_000);
+        $op = (string) Str::uuid();
+        $service->reserve(500, $op);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Conflicting reservation arguments');
+        $service->reserve(600, $op);
+    }
+
+    public function test_reservation_idempotent_after_account_lock_path(): void
+    {
+        // Simulates the post-lock recheck path: first call creates, second with
+        // the same operation_id and bytes returns the same row without double-counting.
+        $service = $this->serviceWithLimit(10_000);
+        $op = (string) Str::uuid();
+
+        $a = $service->reserve(250, $op);
+        $b = $service->reserve(250, $op);
+
+        $this->assertSame($a->id, $b->id);
+        $this->assertSame(250, $service->snapshot()['reserved_bytes']);
+        $this->assertSame(1, StorageReservation::query()->where('operation_id', $op)->count());
+    }
+
+    public function test_fallback_release_used_for_file_is_idempotent_without_settled_reservation(): void
+    {
+        $service = $this->serviceWithLimit(10_000);
+        $fileId = (string) Str::uuid();
+
+        // Simulate usage that exists on the ledger without a prior reservation link
+        // (e.g. backfilled pre-existing file).
+        StorageAccount::query()->where('scope_key', StorageAccount::SCOPE_TENANT)->update([
+            'used_bytes' => 1_500,
+        ]);
+
+        $service->releaseUsedForFile($fileId, 1_500);
+        $this->assertSame(0, $service->snapshot()['used_bytes']);
+
+        // Concurrent-style retry: second call must not subtract again.
+        $service->releaseUsedForFile($fileId, 1_500);
+        $this->assertSame(0, $service->snapshot()['used_bytes']);
+
+        $sentinel = StorageReservation::query()
+            ->where('operation_id', 'usage-release:'.$fileId)
+            ->first();
+        $this->assertNotNull($sentinel);
+        $this->assertTrue((bool) $sentinel->usage_released);
+        $this->assertSame(1, StorageReservation::query()->where('file_id', $fileId)->count());
+    }
+
+    public function test_account_bootstrap_via_insert_or_ignore_when_row_missing(): void
+    {
+        StorageAccount::query()->delete();
+        $service = $this->serviceWithLimit(5_000);
+
+        // Two sequential bootstraps in the same process: second must not fail or
+        // create a second account (unique scope_key + insertOrIgnore path).
+        $service->ensureAccount();
+        $service->ensureAccount();
+
+        $this->assertSame(
+            1,
+            StorageAccount::query()->where('scope_key', StorageAccount::SCOPE_TENANT)->count()
+        );
+
+        $service->reserve(50);
+        $this->assertSame(50, $service->snapshot()['reserved_bytes']);
+    }
+
+    public function test_migration_backfill_sums_existing_fm_files_only(): void
+    {
+        // Focused schema: pre-create fm_files with quota-covered sizes, then run
+        // the same backfill logic the production migration uses.
+        Schema::dropIfExists('fm_files');
+        Schema::create('fm_files', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->unsignedBigInteger('size_bytes')->default(0);
+        });
+
+        DB::table('fm_files')->insert([
+            ['id' => (string) Str::uuid(), 'size_bytes' => 100],
+            ['id' => (string) Str::uuid(), 'size_bytes' => 250],
+            ['id' => (string) Str::uuid(), 'size_bytes' => 50],
+        ]);
+
+        StorageAccount::query()->delete();
+
+        $usedBytes = (int) DB::table('fm_files')->sum('size_bytes');
+        $this->assertSame(400, $usedBytes);
+
+        DB::table('fm_storage_accounts')->insertOrIgnore([
+            'id' => (string) Str::uuid(),
+            'scope_key' => StorageAccount::SCOPE_TENANT,
+            'used_bytes' => $usedBytes,
+            'reserved_bytes' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        if ($usedBytes > 0) {
+            DB::table('fm_storage_accounts')
+                ->where('scope_key', StorageAccount::SCOPE_TENANT)
+                ->where('used_bytes', '<', $usedBytes)
+                ->update(['used_bytes' => $usedBytes, 'updated_at' => now()]);
+        }
+
+        $service = $this->serviceWithLimit(10_000);
+        $this->assertSame(400, $service->snapshot()['used_bytes']);
+        $this->assertSame(9_600, $service->snapshot()['available']);
+
+        // Spatie-style objects are not in fm_files — they never affect the ledger.
+        // (No media table involved; the backfill only reads fm_files.)
+    }
+
     private function migrateQuotaSchema(): void
     {
         Schema::dropIfExists('fm_storage_reservations');
         Schema::dropIfExists('fm_storage_accounts');
+        Schema::dropIfExists('fm_files');
 
         Schema::create('fm_storage_accounts', function (Blueprint $table) {
             $table->uuid('id')->primary();

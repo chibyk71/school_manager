@@ -7,7 +7,6 @@ use App\Models\FileManager\StorageAccount;
 use App\Models\FileManager\StorageReservation;
 use App\Support\Entitlements\CapacityEvaluator;
 use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -28,6 +27,11 @@ use RuntimeException;
  *
  * Mutations are idempotent by operation_id (reservations) and by file_id
  * (usage release). Conflicting settlement arguments are rejected.
+ *
+ * Account bootstrap uses insertOrIgnore so unique conflicts do not abort the
+ * surrounding transaction (PostgreSQL-safe). Reservation create re-checks
+ * operation_id after the account lock. Usage release claims a unique sentinel
+ * before subtracting so concurrent fallbacks cannot double-release.
  */
 final class StorageQuotaService
 {
@@ -37,6 +41,11 @@ final class StorageQuotaService
 
     /**
      * Atomically reserve capacity for an upcoming upload.
+     *
+     * Matching retries with the same operation_id and reserved_bytes return the
+     * existing reservation. Conflicting reserved_bytes for the same operation_id
+     * are rejected. Concurrent callers serialize on the account row and re-check
+     * operation_id after the lock so only one insert occurs.
      *
      * @return StorageReservation  Pending reservation (or existing if same operation_id).
      *
@@ -51,23 +60,18 @@ final class StorageQuotaService
         $operationId = $operationId ?: (string) Str::uuid();
 
         return DB::transaction(function () use ($bytes, $operationId) {
-            // Idempotent: return existing outstanding/settled reservation for same operation.
+            // Serialize on the account first so concurrent same-operation_id
+            // callers cannot both pass a pre-lock absence check.
+            $account = $this->lockAccount();
+
             $existing = StorageReservation::query()
                 ->where('operation_id', $operationId)
                 ->lockForUpdate()
                 ->first();
 
             if ($existing !== null) {
-                if ($existing->state === StorageReservation::STATE_RELEASED) {
-                    throw new RuntimeException(
-                        "Reservation operation [{$operationId}] was already released."
-                    );
-                }
-
-                return $existing;
+                return $this->resolveExistingReservation($existing, $bytes, $operationId);
             }
-
-            $account = $this->lockAccount();
 
             $this->capacity->assertWithinLimit(
                 FileManagerFeatures::STORAGE_BYTES_KEY,
@@ -250,10 +254,12 @@ final class StorageQuotaService
     /**
      * Release used capacity after confirmed permanent deletion of a file.
      *
-     * Idempotent per file_id: a settled reservation linked to the file is marked
-     * usage_released once. Retries do not subtract again. Bytes are taken from
-     * the settled reservation's settled_bytes when available so callers cannot
-     * under- or over-release by repeating a mismatched amount.
+     * Idempotent per file_id under concurrency:
+     * - Settled reservation path: lock the reservation; if already usage_released, no-op;
+     *   otherwise mark usage_released and subtract settled_bytes under the account lock.
+     * - Fallback (no settled reservation): claim a unique sentinel row via insertOrIgnore
+     *   before subtracting. Only the claim winner subtracts; losers no-op without
+     *   touching the ledger.
      */
     public function releaseUsedForFile(string $fileId, int $bytes): void
     {
@@ -277,53 +283,55 @@ final class StorageQuotaService
                 ->lockForUpdate()
                 ->first();
 
-            if ($reservation !== null && $reservation->usage_released) {
-                // Already released for this file — no ledger change.
+            if ($reservation !== null) {
+                if ($reservation->usage_released) {
+                    return;
+                }
+
+                $releaseBytes = (int) $reservation->settled_bytes;
+                if ($releaseBytes <= 0) {
+                    $reservation->usage_released = true;
+                    $reservation->save();
+
+                    return;
+                }
+
+                $account = $this->lockAccount();
+                $account->used_bytes = max(0, (int) $account->used_bytes - $releaseBytes);
+                $account->save();
+
+                $reservation->usage_released = true;
+                $reservation->save();
+
                 return;
             }
 
-            $releaseBytes = $reservation !== null
-                ? (int) $reservation->settled_bytes
-                : $bytes;
+            // Fallback: claim the release before any ledger mutation so concurrent
+            // callers cannot both subtract. insertOrIgnore is portable across
+            // SQLite / MySQL / PostgreSQL and does not abort the transaction.
+            $now = now();
+            $claimed = DB::table('fm_storage_reservations')->insertOrIgnore([
+                'id' => (string) Str::uuid(),
+                'scope_key' => StorageAccount::SCOPE_TENANT,
+                'operation_id' => 'usage-release:'.$fileId,
+                'reserved_bytes' => 0,
+                'settled_bytes' => $bytes,
+                'state' => StorageReservation::STATE_SETTLED,
+                'file_id' => $fileId,
+                'usage_released' => true,
+                'notes' => 'Usage release claim without prior settled reservation.',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
 
-            if ($releaseBytes <= 0) {
-                if ($reservation !== null) {
-                    $reservation->usage_released = true;
-                    $reservation->save();
-                }
-
+            if ($claimed === 0) {
+                // Another connection already claimed this file_id release.
                 return;
             }
 
             $account = $this->lockAccount();
-            $account->used_bytes = max(0, (int) $account->used_bytes - $releaseBytes);
+            $account->used_bytes = max(0, (int) $account->used_bytes - $bytes);
             $account->save();
-
-            if ($reservation !== null) {
-                $reservation->usage_released = true;
-                $reservation->save();
-            } else {
-                // No settled reservation row (should not happen for Phase 1 FM uploads).
-                // Record a sentinel settled+released row so a retry is still idempotent.
-                $sentinel = new StorageReservation([
-                    'scope_key' => StorageAccount::SCOPE_TENANT,
-                    'operation_id' => 'usage-release:'.$fileId,
-                    'reserved_bytes' => 0,
-                    'settled_bytes' => $releaseBytes,
-                    'state' => StorageReservation::STATE_SETTLED,
-                    'file_id' => $fileId,
-                    'usage_released' => true,
-                    'notes' => 'Usage release without prior reservation link.',
-                ]);
-                try {
-                    $sentinel->save();
-                } catch (QueryException $e) {
-                    // Concurrent release won the unique operation_id or file path — treat as done.
-                    if (! $this->isUniqueViolation($e)) {
-                        throw $e;
-                    }
-                }
-            }
         });
     }
 
@@ -363,7 +371,6 @@ final class StorageQuotaService
 
     /**
      * Ensure the tenant account row exists (for focused test schemas).
-     * Uses the same concurrency-safe path as lockAccount without requiring an open transaction.
      */
     public function ensureAccount(): StorageAccount
     {
@@ -373,8 +380,9 @@ final class StorageQuotaService
     /**
      * Lock the tenant storage account row for capacity decisions.
      *
-     * Safe when the row is missing: unique scope_key + catch concurrent insert,
-     * then re-select with FOR UPDATE so all callers serialize on the same row.
+     * Missing-row bootstrap uses insertOrIgnore so a unique conflict does not
+     * abort the surrounding transaction (required for PostgreSQL). The winner
+     * and losers then SELECT ... FOR UPDATE on the same row.
      *
      * @throws RuntimeException
      */
@@ -390,19 +398,15 @@ final class StorageQuotaService
             return $account;
         }
 
-        try {
-            $created = new StorageAccount([
-                'scope_key' => StorageAccount::SCOPE_TENANT,
-                'used_bytes' => 0,
-                'reserved_bytes' => 0,
-            ]);
-            $created->save();
-        } catch (QueryException $e) {
-            if (! $this->isUniqueViolation($e)) {
-                throw $e;
-            }
-            // Concurrent initializer won the unique scope_key insert.
-        }
+        $now = now();
+        DB::table('fm_storage_accounts')->insertOrIgnore([
+            'id' => (string) Str::uuid(),
+            'scope_key' => StorageAccount::SCOPE_TENANT,
+            'used_bytes' => 0,
+            'reserved_bytes' => 0,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
 
         $account = StorageAccount::query()
             ->where('scope_key', StorageAccount::SCOPE_TENANT)
@@ -416,14 +420,29 @@ final class StorageQuotaService
         return $account;
     }
 
-    private function isUniqueViolation(QueryException $e): bool
-    {
-        // SQLSTATE 23000 (integrity constraint) covers SQLite/MySQL unique violations.
-        $sqlState = (string) ($e->errorInfo[0] ?? '');
-        $message = strtolower($e->getMessage());
+    /**
+     * @throws RuntimeException
+     */
+    private function resolveExistingReservation(
+        StorageReservation $existing,
+        int $requestedBytes,
+        string $operationId,
+    ): StorageReservation {
+        if ($existing->state === StorageReservation::STATE_RELEASED) {
+            throw new RuntimeException(
+                "Reservation operation [{$operationId}] was already released."
+            );
+        }
 
-        return $sqlState === '23000'
-            || str_contains($message, 'unique')
-            || str_contains($message, 'duplicate');
+        // Matching retry: same operation_id and same reserved amount.
+        if ((int) $existing->reserved_bytes === $requestedBytes) {
+            return $existing;
+        }
+
+        throw new RuntimeException(
+            "Conflicting reservation arguments for operation [{$operationId}]. "
+            .'Expected reserved_bytes='.(int) $existing->reserved_bytes
+            ."; got reserved_bytes={$requestedBytes}."
+        );
     }
 }
