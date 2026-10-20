@@ -7,13 +7,16 @@ use App\Enums\FileManager\ManagedBy;
 use App\Enums\FileManager\Ownership;
 use App\Models\FileManager\File;
 use App\Models\FileManager\Folder;
+use App\Models\FileManager\StorageReservation;
 use App\Models\StorageProvider;
 use App\Services\Storage\StorageProviderManager;
+use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
 use App\Support\FileManager\FolderCapabilityResolver;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
@@ -23,6 +26,10 @@ use Throwable;
  *
  * Physical write and DB persistence are coordinated; compensating cleanup on
  * reverse failure; no silent provider fallback.
+ *
+ * Phase 1 entitlement integration: storage capacity is reserved before the
+ * physical write and settled against the authoritative recorded size_bytes.
+ * Direct Spatie Media Library uploads are not covered by this quota.
  */
 final class FileService
 {
@@ -31,6 +38,7 @@ final class FileService
         private readonly FileObjectStorage $objectStorage,
         private readonly FolderService $folders,
         private readonly ModuleConfigurationService $modules,
+        private readonly StorageQuotaService $storageQuota,
     ) {}
 
     /**
@@ -231,17 +239,36 @@ final class FileService
         // Snapshot location-affecting config used for the physical write.
         $writeFingerprint = $this->storageProviders->locationFingerprint($provider);
 
+        // Entitlement gate: atomic capacity reservation before physical write.
+        // Requested size is the client-reported upload size (upper bound for reservation).
+        // Settlement uses the authoritative recorded size_bytes from the provider write.
+        $requestedBytes = max(0, (int) $upload->getSize());
+        $operationId = (string) Str::uuid();
+        $reservation = null;
+
+        try {
+            $reservation = $this->storageQuota->reserve($requestedBytes, $operationId);
+        } catch (InsufficientCapacityException $e) {
+            throw new InvalidArgumentException(
+                'Insufficient File Manager storage capacity for this upload. '
+                .'Requested '.$e->requested.' bytes; available '.$e->available.' of '.$e->limit.'.',
+                0,
+                $e
+            );
+        }
+
         // 1–3: authorize + resolve already done; write physical object.
         try {
             $written = $this->objectStorage->write($provider, $storageKey, $upload);
         } catch (Throwable $e) {
-            // Physical write failed — no File record.
+            // Physical write failed — no object should exist; release reservation.
+            $this->safeReleaseReservation($reservation, 'Physical write failed before object creation.');
             throw $e instanceof RuntimeException
                 ? $e
                 : new RuntimeException('Physical write to storage provider failed.', 0, $e);
         }
 
-        // 4: persist metadata.
+        // 4: persist metadata + settle reservation in one transaction path.
         try {
             $file = DB::transaction(function () use (
                 $ownership,
@@ -253,7 +280,8 @@ final class FileService
                 $written,
                 $managedBy,
                 $moduleCode,
-                $writeFingerprint
+                $writeFingerprint,
+                $reservation
             ) {
                 // Serialize registration against provider delete/disable/reconfigure.
                 /** @var StorageProvider|null $lockedProvider */
@@ -293,6 +321,13 @@ final class FileService
                 ]);
                 $file->save();
 
+                // Settle reservation against authoritative size (may differ from requested).
+                $this->storageQuota->settle(
+                    $reservation,
+                    $file->id,
+                    (int) $written['size_bytes']
+                );
+
                 return $file;
             });
         } catch (Throwable $e) {
@@ -303,7 +338,13 @@ final class FileService
                     'provider_id' => $provider->id,
                     'storage_key_prefix' => substr($storageKey, 0, 8).'…',
                     'recovery' => 'Manual inspection of provider objects may be required; File row was not created.',
+                    'reservation_id' => $reservation->id,
                 ]);
+                // Uncertain cleanup: retain reservation accounting.
+                $this->storageQuota->markUncertain(
+                    $reservation,
+                    'Metadata persistence failed and compensating delete was not confirmed.'
+                );
                 throw new RuntimeException(
                     'File metadata could not be saved and compensating storage cleanup failed. '
                     .'The upload is not reported as successful; operators should inspect provider logs.',
@@ -311,6 +352,11 @@ final class FileService
                     $e
                 );
             }
+
+            $this->safeReleaseReservation(
+                $reservation,
+                'Metadata persistence failed; physical object removed by compensating delete.'
+            );
 
             throw new RuntimeException(
                 'File metadata could not be saved after a successful storage write. '
@@ -321,6 +367,29 @@ final class FileService
         }
 
         return $file->fresh();
+    }
+
+    /**
+     * Best-effort reservation release; never swallows the primary failure.
+     */
+    private function safeReleaseReservation(StorageReservation $reservation, string $notes): void
+    {
+        try {
+            $this->storageQuota->release($reservation, $notes);
+        } catch (Throwable $releaseError) {
+            Log::error('file_manager.reservation_release_failed', [
+                'reservation_id' => $reservation->id,
+                'operation_id' => $reservation->operation_id,
+                'notes' => $notes,
+                'error' => $releaseError->getMessage(),
+            ]);
+            // Retain capacity rather than free it on an uncertain release path.
+            try {
+                $this->storageQuota->markUncertain($reservation, 'Release failed: '.$releaseError->getMessage());
+            } catch (Throwable) {
+                // Last resort: leave row as-is for reconciliation.
+            }
+        }
     }
 
     /**
