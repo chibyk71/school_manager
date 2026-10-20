@@ -186,5 +186,41 @@ final class FileManagerTestSchema
             $table->timestamps();
             $table->unique(['school_id', 'module_code'], 'fm_school_module_unique');
         });
+
+        // Entitlement Phase 1: storage quota accounting
+        Schema::dropIfExists('fm_storage_reservations');
+        Schema::dropIfExists('fm_storage_accounts');
+
+        Schema::create('fm_storage_accounts', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('scope_key', 64)->unique();
+            $table->unsignedBigInteger('used_bytes')->default(0);
+            $table->unsignedBigInteger('reserved_bytes')->default(0);
+            $table->timestamps();
+        });
+
+        Schema::create('fm_storage_reservations', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('scope_key', 64);
+            $table->string('operation_id', 64)->unique();
+            $table->unsignedBigInteger('reserved_bytes');
+            $table->unsignedBigInteger('settled_bytes')->nullable();
+            $table->string('state', 32);
+            $table->uuid('file_id')->nullable();
+            $table->boolean('usage_released')->default(false);
+            $table->text('notes')->nullable();
+            $table->timestamps();
+            $table->index(['scope_key', 'state']);
+            $table->index('file_id');
+        });
+
+        \Illuminate\Support\Facades\DB::table('fm_storage_accounts')->insert([
+            'id' => (string) \Illuminate\Support\Str::uuid(),
+            'scope_key' => 'tenant',
+            'used_bytes' => 0,
+            'reserved_bytes' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }

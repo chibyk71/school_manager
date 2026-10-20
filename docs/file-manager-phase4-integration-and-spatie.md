@@ -83,3 +83,9 @@ No demonstrated blocker requiring code change in Phase 4 beyond browser UX and d
 - Mass migration, dual-write, storage rewrites
 - Changing existing Spatie behavior as a side effect of Phase 4
 - File rename product feature
+
+## 5. Storage quota (Entitlement Phase 1)
+
+File Manager storage entitlement (`file_manager.storage_bytes`, default 1 TiB) applies **only** to File Manager-managed objects that pass through `FileService::upload` / `registerModuleManaged`.
+
+Direct Spatie Media Library upload paths listed above are **not** covered by the quota. No dual-write or migration was performed in Entitlement Phase 1. See `docs/entitlements/feature-entitlement-registry-phase-1.md`.

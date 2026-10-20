@@ -29,6 +29,39 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
+        // Feature & Entitlement Registry (Phase 1)
+        $this->app->singleton(\App\Support\Entitlements\EntitlementRegistry::class, function () {
+            $registry = new \App\Support\Entitlements\EntitlementRegistry();
+            \App\Entitlements\Definitions\FileManagerFeatures::register($registry);
+            $registry->seal();
+
+            return $registry;
+        });
+
+        $this->app->singleton(\App\Support\Entitlements\DefaultEntitlementProfile::class, function () {
+            return new \App\Support\Entitlements\DefaultEntitlementProfile();
+        });
+
+        $this->app->singleton(\App\Support\Entitlements\EntitlementResolver::class, function ($app) {
+            return new \App\Support\Entitlements\EntitlementResolver(
+                $app->make(\App\Support\Entitlements\EntitlementRegistry::class),
+                [], // future SaaS providers bind here, highest priority first
+                $app->make(\App\Support\Entitlements\DefaultEntitlementProfile::class),
+            );
+        });
+
+        $this->app->singleton(\App\Support\Entitlements\FeatureAccess::class, function ($app) {
+            return new \App\Support\Entitlements\FeatureAccess(
+                $app->make(\App\Support\Entitlements\EntitlementResolver::class)
+            );
+        });
+
+        $this->app->singleton(\App\Support\Entitlements\CapacityEvaluator::class, function ($app) {
+            return new \App\Support\Entitlements\CapacityEvaluator(
+                $app->make(\App\Support\Entitlements\EntitlementResolver::class)
+            );
+        });
+
         $this->app->bind(
             Authorization::class,
             \App\Services\Permission\AuthorizationService::class
