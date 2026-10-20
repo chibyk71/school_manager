@@ -191,6 +191,7 @@ final class FileService
                 || ($ownership === Ownership::School && $folder->school_id !== $actingSchoolId)) {
                 throw new InvalidArgumentException('File and folder ownership boundaries must match.');
             }
+            // Operation-time capability: upload into this folder
             FolderCapabilityResolver::assertAllows(
                 $folder,
                 Capability::Upload
@@ -213,16 +214,20 @@ final class FileService
         $extension = $upload->getClientOriginalExtension() ?: pathinfo($upload->getClientOriginalName(), PATHINFO_EXTENSION);
         $storageKey = $this->objectStorage->generateStorageKey(is_string($extension) ? $extension : null);
 
+        // Snapshot location-affecting config used for the physical write.
         $writeFingerprint = $this->storageProviders->locationFingerprint($provider);
 
+        // 1–3: authorize + resolve already done; write physical object.
         try {
             $written = $this->objectStorage->write($provider, $storageKey, $upload);
         } catch (Throwable $e) {
+            // Physical write failed — no File record.
             throw $e instanceof RuntimeException
                 ? $e
                 : new RuntimeException('Physical write to storage provider failed.', 0, $e);
         }
 
+        // 4: persist metadata.
         try {
             $file = DB::transaction(function () use (
                 $ownership,
@@ -236,6 +241,7 @@ final class FileService
                 $moduleCode,
                 $writeFingerprint
             ) {
+                // Serialize registration against provider delete/disable/reconfigure.
                 /** @var StorageProvider|null $lockedProvider */
                 $lockedProvider = StorageProvider::query()
                     ->whereKey($provider->id)
@@ -250,6 +256,7 @@ final class FileService
                     throw new InvalidArgumentException('Storage provider is disabled.');
                 }
 
+                // Fail closed if location-affecting configuration changed after the physical write.
                 $currentFingerprint = $this->storageProviders->locationFingerprint($lockedProvider);
                 if (! hash_equals($writeFingerprint, $currentFingerprint)) {
                     throw new InvalidArgumentException(
@@ -275,6 +282,7 @@ final class FileService
                 return $file;
             });
         } catch (Throwable $e) {
+            // 5–6: compensating cleanup.
             $cleaned = $this->objectStorage->attemptCompensatingDelete($provider, $storageKey);
             if (! $cleaned) {
                 Log::error('file_manager.upload_orphaned_object', [

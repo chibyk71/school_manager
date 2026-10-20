@@ -5,12 +5,10 @@ namespace App\Services\FileManager;
 use App\Enums\FileManager\Capability;
 use App\Enums\FileManager\Ownership;
 use App\Models\FileManager\Folder;
-use App\Models\StorageProvider;
 use App\Services\Storage\StorageProviderManager;
 use App\Support\FileManager\FolderCapabilityResolver;
 use App\Support\FileManager\ModuleDefinitionRegistry;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**

@@ -13,6 +13,7 @@ use App\Services\FileManager\FileService;
 use App\Services\FileManager\FolderService;
 use App\Support\FileManager\ModuleDefinitionRegistry;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Tests\Support\FileManagerTestSchema;

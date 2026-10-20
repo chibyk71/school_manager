@@ -77,7 +77,6 @@ class BrowserController extends Controller
         }
 
         $providers = $this->providers->listForContext($schoolId);
-
         $user = $request->user();
         $crumbs = $this->buildCrumbs($current, $schoolId);
 

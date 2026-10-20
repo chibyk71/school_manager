@@ -41,7 +41,7 @@ Backend authorization remains authoritative. UI capabilities are hints only.
 
 ## Search and filters
 
-- Query params: `q` (search term, max 100 chars), `managed_by` (`file_manager` \| `module`)
+- Query params: `q` (search term, max 100 chars), `managed_by` (`file_manager` | `module`)
 - Applied only within the current folder and school/system ownership boundary
 - Results bounded (service limit 100 by default, max 200)
 - Ordinary browse never returns trashed files

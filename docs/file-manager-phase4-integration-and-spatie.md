@@ -1,6 +1,5 @@
 # File Manager Phase 4 — Integration Audit & Spatie Assessment
 
-**Branch:** feature/file-manager-phase-4-admin-ux-integration-readiness  
 **Assessment only** for Spatie: no migration, dual-write, or legacy behavior changes in this phase.
 
 ## 1. Registration and attachment contracts (unchanged)
@@ -59,8 +58,6 @@ No demonstrated blocker requiring code change in Phase 4 beyond browser UX and d
 
 ## 3. Spatie Media Library inventory (repository evidence)
 
-Discovered `addMedia` / `InteractsWithMedia` consumers include:
-
 | Area | Collections / notes |
 |------|---------------------|
 | Profile avatars | `avatar` via `HasAvatar` |
@@ -70,29 +67,19 @@ Discovered `addMedia` / `InteractsWithMedia` consumers include:
 | Book lists | `book_covers` |
 | Lesson plans / details | `lesson_plan_files`, `lesson_plan_detail_files` |
 | Syllabus / details | `syllabus_files`, `syllabus_detail_files` |
-| Other | Custom fields, vehicle/expense (search for additional `toMediaCollection` as needed) |
 
 **Unknowns (do not invent):** production media volume, disk layout per environment, conversion dependency depth in production URLs.
 
 ### Migration risk factors (future)
 
-1. **Stable identity** — Spatie media IDs/paths vs FM UUID identity  
-2. **Ownership mapping** — school/tenant boundaries must map cleanly  
-3. **URL and conversion compatibility** — existing links and named conversions  
-4. **Lifecycle** — trash/restore/purge semantics differ from Spatie soft delete  
-5. **Rollout** — prefer pilot on one educational collection (e.g. lesson plans) after dual-read design (not dual-write)
-
-### Recommended future sequence (not implemented)
-
-1. Inventory + volume measurement in production  
-2. Ownership and authorization mapping design  
-3. Pilot module-managed registration for one educational collection  
-4. Read path compatibility layer  
-5. Backfill + verification  
-6. Cutover and decommission per collection  
+1. Stable identity — Spatie media IDs/paths vs FM UUID identity
+2. Ownership mapping — school/tenant boundaries must map cleanly
+3. URL and conversion compatibility
+4. Lifecycle — trash/restore/purge semantics differ from Spatie soft delete
+5. Rollout — prefer pilot on one educational collection after dual-read design (not dual-write)
 
 ## 4. Deferred / non-goals
 
-- Mass migration, dual-write, storage rewrites  
-- Changing existing Spatie behavior as a side effect of Phase 4  
-- File rename product feature  
+- Mass migration, dual-write, storage rewrites
+- Changing existing Spatie behavior as a side effect of Phase 4
+- File rename product feature
