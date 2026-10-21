@@ -96,6 +96,19 @@ const profileItems = ref<ProfileMenuItem[]>([
     { name: 'Logout', value: 'logout', icon: 'pi pi-sign-out', route: 'logout', method: 'post' },
 ]);
 
+/**
+ * Resolve a named Ziggy route to a concrete URL string.
+ * Passing an empty params object selects the URL overload of route()
+ * (not the parameterless Router overload), which Inertia Link requires.
+ */
+function namedRouteUrl(name: string | undefined): string {
+    if (!name) {
+        return '#';
+    }
+    const url = route(name, {});
+    return typeof url === 'string' ? url : String(url);
+}
+
 const unreadNotifications = ref(2);
 const unreadMessages = ref(3);
 
@@ -207,7 +220,7 @@ const { toggle: openProfile } = usePopup('profile');
                 <template #item="{ item }">
                     <Link
                         v-if="item.available && item.route"
-                        :href="route(item.route)"
+                        :href="namedRouteUrl(item.route)"
                         class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
                     >
                         <i class="pi pi-plus-circle text-primary" />
@@ -324,7 +337,7 @@ const { toggle: openProfile } = usePopup('profile');
                 <template #item="{ item }">
                     <Link
                         v-if="item.route"
-                        :href="route(item.route)"
+                        :href="namedRouteUrl(item.route)"
                         :method="item.method === 'post' ? 'post' : 'get'"
                         as="button"
                         class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
