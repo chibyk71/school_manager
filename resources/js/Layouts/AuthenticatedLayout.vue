@@ -1,21 +1,21 @@
-<!-- resources/js/Layout/AuthenticatedLayout.vue -->
+<!-- resources/js/Layouts/AuthenticatedLayout.vue -->
 <script setup lang="ts">
-import { ref, onBeforeUnmount } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Navbar from '@/Components/menu/Navbar.vue';
 import PageHeader from '@/Components/menu/PageHeader.vue';
 import SidePanel from '@/Components/menu/SidePanel.vue';
 import { ButtonEmits, ButtonProps, ConfirmDialog, Toast } from 'primevue';
 import DynamicDialog from 'primevue/dynamicdialog';
 import ResourceDialogWrapper from '@/Components/Modals/ResourceDialog.vue';
-import { sidebarCollapsed } from '@/store';
+import {
+    isLayoutMobileViewport,
+    mobileSidebarOpen,
+    SIDEBAR_WIDTH_COLLAPSED,
+    SIDEBAR_WIDTH_EXPANDED,
+    sidebarCollapsed,
+} from '@/store/layout';
+import { usePage } from '@inertiajs/vue3';
 
-/**
- * Props for the authenticated layout.
- *
- * @prop {string} title – Page title shown in the header.
- * @prop {Array<{icon?: string; label?: string; url?: string}>} crumb – Breadcrumb items.
- * @prop {Array<ButtonProps & Partial<ButtonEmits>>} [buttons] – Optional header buttons.
- */
 defineProps<{
     title: string;
     crumb: Array<{ icon?: string; label?: string; url?: string }>;
@@ -23,55 +23,73 @@ defineProps<{
     canSeeTrashed?: boolean;
 }>();
 
-/**
- * ----------------------------------------------------------------------
- *  GLOBAL UI COMPONENTS
- * ----------------------------------------------------------------------
- * PrimeVue global components are mounted once per layout.  They are
- * automatically removed when the layout is destroyed.
- */
-const toast = ref<InstanceType<typeof Toast> | null>(null);
-const confirm = ref<InstanceType<typeof ConfirmDialog> | null>(null);
-const dynamic = ref<InstanceType<typeof DynamicDialog> | null>(null);
+const page = usePage();
+const isMobile = ref(false);
 
-/* ----------------------------------------------------------------------
- *  CLEAN-UP
- * -------------------------------------------------------------------- */
+const contentOffset = computed(() => {
+    if (isMobile.value) return 0;
+    return sidebarCollapsed.value ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED;
+});
+
+const closeMobileSidebar = () => {
+    mobileSidebarOpen.value = false;
+};
+
+const syncViewport = () => {
+    const mobile = isLayoutMobileViewport();
+    isMobile.value = mobile;
+    // Crossing into desktop: force-close drawer/backdrop so state cannot stick
+    if (!mobile) {
+        mobileSidebarOpen.value = false;
+    }
+};
+
+watch(
+    () => page.url,
+    () => {
+        mobileSidebarOpen.value = false;
+    },
+);
+
+onMounted(() => {
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+});
+
 onBeforeUnmount(() => {
-    toast.value = null;
-    confirm.value = null;
-    dynamic.value = null;
+    window.removeEventListener('resize', syncViewport);
 });
 </script>
 
 <template>
-    <div class="main-wrapper">
-        <!-- ------------------------------------------------------------------
-       GLOBAL NAVIGATION
-       ------------------------------------------------------------------ -->
-        <Navbar />
+    <div class="main-wrapper relative min-h-screen bg-white dark:bg-dark-bg-primary">
+        <Transition name="fade">
+            <div
+                v-if="mobileSidebarOpen"
+                class="fixed inset-0 z-40 bg-black/40 min-[992px]:hidden"
+                aria-hidden="true"
+                @click="closeMobileSidebar"
+            />
+        </Transition>
+
         <SidePanel />
 
-        <!-- ------------------------------------------------------------------
-       PAGE CONTENT WRAPPER
-       ------------------------------------------------------------------ -->
-        <div class="page-wrapper flex-1 overflow-auto relative z-10 left-0 m-0 ml-[252px] transition-all duration-300" :class="{ 'ml-20!': sidebarCollapsed }">
-            <div class="content !pb-12 p-6 lg:p-8 min-h-[calc(100vh-56px)] dark:bg-dark-bg-primary ">
-                <!-- Header slot – fallback to PageHeader if not overridden -->
+        <div
+            class="page-wrapper relative z-10 flex min-h-screen flex-col transition-[margin] duration-300 ease-in-out"
+            :style="{ marginLeft: `${contentOffset}px` }"
+        >
+            <Navbar />
+
+            <div class="content min-h-0 flex-1 overflow-auto p-4 pb-12 lg:p-6 dark:bg-dark-bg-primary">
                 <slot name="header">
                     <PageHeader :title="title" :crumb :buttons :can-see-trashed />
                 </slot>
 
-                <!-- Main page content -->
                 <slot />
             </div>
         </div>
-
     </div>
 
-    <!-- ------------------------------------------------------------------
-       GLOBAL PRIMEVUE DIALOGS (once per app)
-       ------------------------------------------------------------------ -->
     <DynamicDialog />
     <ResourceDialogWrapper />
     <ConfirmDialog />
@@ -79,5 +97,19 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
+}
 
+/* Mobile: content flush to edge (drawer overlays). Keep in sync with LAYOUT_DESKTOP_MIN. */
+@media (max-width: 991px) {
+    .page-wrapper {
+        margin-left: 0 !important;
+    }
+}
 </style>

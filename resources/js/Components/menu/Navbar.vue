@@ -1,30 +1,52 @@
 <script lang="ts" setup>
 import { usePopup } from '@/helpers';
-import { isDarkTheme, sidebarCollapsed } from '@/store';
-import { Link } from '@inertiajs/vue3';
-import { Avatar, Button, IconField, Image, InputIcon, InputText, Menu, Menubar, OverlayBadge, Select } from 'primevue';
-import { ref } from 'vue';
+import { isDarkTheme } from '@/store';
+import { isLayoutMobileViewport, mobileSidebarOpen, sidebarCollapsed } from '@/store/layout';
+import { Link, usePage } from '@inertiajs/vue3';
+import {
+    Avatar,
+    Button,
+    IconField,
+    Image,
+    InputIcon,
+    InputText,
+    Menu,
+    OverlayBadge,
+    Select,
+} from 'primevue';
+import { computed, ref } from 'vue';
 
-const searchValue = ref("");
-const selectedAcademicSession = ref(2025); // TODO: Fetch dynamic options from server
-const selectedLanguage = ref({ name: 'English', value: 'us' }); // TODO: Make selection persist and affect app
+const page = usePage();
+const searchValue = ref('');
+const selectedAcademicSession = ref(2025);
+const selectedLanguage = ref({ name: 'English', value: 'us' });
 
 const toggleDarkMode = () => {
     isDarkTheme.value = !!document.querySelector('html')?.classList.toggle('dark');
 };
 
 const toggleSidebar = () => {
+    if (isLayoutMobileViewport()) {
+        mobileSidebarOpen.value = !mobileSidebarOpen.value;
+        return;
+    }
     sidebarCollapsed.value = !sidebarCollapsed.value;
     document.body.classList.toggle('mini-sidebar', sidebarCollapsed.value);
-    document.body.classList.toggle('expand-menu', !sidebarCollapsed.value);
 };
 
-// Mock data for menus – TODO: Replace with dynamic data from API or props
-const addNewItems = ref([
-    { name: 'Add Student', value: 'student', route: 'add-student' },
-    { name: 'Add Teacher', value: 'teacher', route: 'add-teacher' },
-    { name: 'Add Staff', value: 'staff', route: 'add-staff' },
-    { name: 'Add Invoice', value: 'invoice', route: 'add-invoice' },
+/** Only include route when the named Ziggy route is known to exist. */
+type QuickAddItem = {
+    name: string;
+    value: string;
+    route?: string;
+    available: boolean;
+};
+
+const addNewItems = ref<QuickAddItem[]>([
+    { name: 'Add Student', value: 'student', route: 'students.create', available: true },
+    { name: 'Add Teacher', value: 'teacher', available: false },
+    { name: 'Add Staff', value: 'staff', route: 'staff.create', available: true },
+    { name: 'Add Invoice', value: 'invoice', available: false },
 ]);
 
 const languageItems = ref([
@@ -35,24 +57,65 @@ const languageItems = ref([
 ]);
 
 const notificationItems = ref([
-    // Mock notifications – TODO: Fetch from API
-    { id: 1, avatar: 'assets/img/profiles/avatar-27.jpg', message: '<span class="font-semibold text-dark">Shawn</span> performance in Math is below the threshold.', time: 'Just Now' },
-    { id: 2, avatar: 'assets/img/profiles/avatar-23.jpg', message: '<span class="font-semibold text-dark">Sylvia</span> added appointment on 02:00 PM', time: '10 mins ago', actions: true },
-    { id: 3, avatar: 'assets/img/profiles/avatar-25.jpg', message: 'New student record <span class="font-semibold text-dark">George</span> is created by <span class="font-semibold text-dark">Teressa</span>', time: '2 hrs ago' },
-    { id: 4, avatar: 'assets/img/profiles/avatar-01.jpg', message: 'A new teacher record for <span class="font-semibold text-dark">Elisa</span>', time: '09:45 AM' },
+    {
+        id: 1,
+        avatar: 'assets/img/profiles/avatar-27.jpg',
+        message: '<span class="font-semibold text-dark">Shawn</span> performance in Math is below the threshold.',
+        time: 'Just Now',
+    },
+    {
+        id: 2,
+        avatar: 'assets/img/profiles/avatar-23.jpg',
+        message: '<span class="font-semibold text-dark">Sylvia</span> added appointment on 02:00 PM',
+        time: '10 mins ago',
+        actions: true,
+    },
+    {
+        id: 3,
+        avatar: 'assets/img/profiles/avatar-25.jpg',
+        message:
+            'New student record <span class="font-semibold text-dark">George</span> is created by <span class="font-semibold text-dark">Teressa</span>',
+        time: '2 hrs ago',
+    },
 ]);
 
-const profileItems = ref([
-    { name: 'My Profile', value: 'profile', icon: 'pi pi-user', route: 'profile' },
-    { name: 'Settings', value: 'settings', icon: 'pi pi-cog', route: 'profile-settings' },
-    { name: 'Logout', value: 'logout', icon: 'pi pi-sign-out', route: 'logout' },
+type ProfileMenuItem = {
+    name: string;
+    value: string;
+    icon: string;
+    /** Named Ziggy route when navigating via GET Link */
+    route?: string;
+    /** Inertia visit method (logout is POST) */
+    method?: 'get' | 'post';
+};
+
+const profileItems = ref<ProfileMenuItem[]>([
+    { name: 'My Profile', value: 'profile', icon: 'pi pi-user', route: 'profile.edit', method: 'get' },
+    // settings.general.security is a real settings page (see useSettingsNavigation)
+    { name: 'Settings', value: 'settings', icon: 'pi pi-cog', route: 'settings.general.security', method: 'get' },
+    { name: 'Logout', value: 'logout', icon: 'pi pi-sign-out', route: 'logout', method: 'post' },
 ]);
 
-// Unread notifications count – TODO: Dynamic
+/**
+ * Resolve a named Ziggy route to a concrete URL string.
+ * Passing an empty params object selects the URL overload of route()
+ * (not the parameterless Router overload), which Inertia Link requires.
+ */
+function namedRouteUrl(name: string | undefined): string {
+    if (!name) {
+        return '#';
+    }
+    const url = route(name, {});
+    return typeof url === 'string' ? url : String(url);
+}
+
 const unreadNotifications = ref(2);
 const unreadMessages = ref(3);
 
-// Handle fullscreen toggle
+const user = computed(
+    () => (page.props as { auth?: { user?: { name?: string; email?: string } } }).auth?.user,
+);
+
 const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen();
@@ -61,181 +124,229 @@ const toggleFullscreen = () => {
     }
 };
 
-// That's it! One line per dropdown, fully typed, zero unknown errors
-const { toggle: openAdd }         = usePopup('add')
-const { toggle: openLang }        = usePopup('language')
-const { toggle: openNotif }       = usePopup('notification')
-const { toggle: openProfile }     = usePopup('profile')
-const { toggle: openMobileMenu }  = usePopup('mobileMenu')
+const { toggle: openAdd } = usePopup('add');
+const { toggle: openLang } = usePopup('language');
+const { toggle: openNotif } = usePopup('notification');
+const { toggle: openProfile } = usePopup('profile');
 </script>
 
 <template>
-    <Menubar class="app-header !border-b fixed w-full top-0 right-0 left-0 overflow-hidden z-70 bg-white dark:bg-dark-bg-primary">
-        <!-- Brand Logo & Sidebar Toggle -->
-        <template #start>
-            <div class="flex items-center">
-                <!-- Mobile Sidebar Toggle -->
-                <Button @click="toggleSidebar" icon="pi pi-bars" class="p-button-text p-button-plain mr-2" />
+    <header
+        class="app-header sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-dark-bg-primary lg:px-5"
+    >
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+            <Button
+                type="button"
+                icon="pi pi-bars"
+                text
+                rounded
+                severity="secondary"
+                class="!h-9 !w-9"
+                aria-label="Toggle sidebar"
+                @click="toggleSidebar"
+            />
 
-                <!-- Logo -->
-                <Link :href="route('dashboard')" class="logo flex items-center">
-                    <Image class="brand-img h-8 w-auto mr-2" src="assets/img/logo-small.svg" alt="Logo" />
-                    <span class="brand-text text-xl font-bold text-dark dark:text-dark-text-primary">HUD ADMIN
-                        <span class="text-xs font-bold opacity-50 absolute top-1.5 -ml-4">TM</span>
-                    </span>
-                </Link>
-            </div>
-        </template>
-
-        <!-- Search Input (Responsive: Hidden on mobile, shown on lg+) -->
-        <template #item>
-            <IconField class="hidden lg:flex ml-4 w-64">
-                <InputIcon class="pi pi-search text-gray-500" />
-                <InputText class="!bg-transparent border-none focus:shadow-none" v-model="searchValue" placeholder="Search" />
+            <IconField class="hidden max-w-md flex-1 sm:flex">
+                <InputIcon class="pi pi-search text-gray-400" />
+                <InputText
+                    v-model="searchValue"
+                    placeholder="Search students, staff, invoices..."
+                    class="w-full !border-gray-200 !bg-gray-50 dark:!border-gray-600 dark:!bg-dark-bg-secondary"
+                />
             </IconField>
-        </template>
+        </div>
 
-        <!-- Right Side Items -->
-        <template #end>
-            <div class="flex items-center gap-x-2">
-                <!-- Academic Session Select -->
-                <Select v-model="selectedAcademicSession" :options="[2021, 2022, 2023, 2024, 2025]" placeholder="Select Academic Session" class="bg-transparent border border-gray-300 dark:border-gray-700 rounded-md">
-                    <template #value="slotProps">
-                        <div v-if="slotProps.value" class="flex items-center">
-                            <i class="pi pi-calendar-clock mr-2 text-gray-500"></i>
-                            Academic Year: {{ slotProps.value }}/{{ slotProps.value + 1 }}
+        <div class="flex shrink-0 items-center gap-1 sm:gap-1.5">
+            <Select
+                v-model="selectedAcademicSession"
+                :options="[2023, 2024, 2025, 2026]"
+                class="hidden !h-9 max-w-[11rem] border border-gray-200 dark:border-gray-600 md:flex"
+            >
+                <template #value="slotProps">
+                    <div v-if="slotProps.value" class="flex items-center text-sm">
+                        <i class="pi pi-calendar mr-1.5 text-gray-400" />
+                        <span class="truncate">AY {{ slotProps.value }}/{{ slotProps.value + 1 }}</span>
+                    </div>
+                    <span v-else>{{ slotProps.placeholder }}</span>
+                </template>
+                <template #option="slotProps">
+                    {{ slotProps.option }}/{{ slotProps.option + 1 }}
+                </template>
+            </Select>
+
+            <Button
+                type="button"
+                text
+                rounded
+                severity="secondary"
+                class="!h-9 !w-9 hidden sm:inline-flex"
+                @click="openLang"
+            >
+                <Image
+                    class="h-5 w-5 rounded-full"
+                    :src="`assets/img/flags/${selectedLanguage.value}.png`"
+                    alt="Language"
+                />
+            </Button>
+            <Menu ref="language" :popup="true" :model="languageItems">
+                <template #item="{ item }">
+                    <div class="flex items-center gap-2 p-2">
+                        <Image
+                            class="h-5 w-5 rounded-full"
+                            :src="`assets/img/flags/${item.value}.png`"
+                            alt="Flag"
+                        />
+                        <span class="text-sm font-medium">{{ item.name }}</span>
+                    </div>
+                </template>
+            </Menu>
+
+            <Button
+                type="button"
+                icon="pi pi-plus"
+                rounded
+                severity="secondary"
+                outlined
+                class="!h-9 !w-9"
+                aria-label="Add new"
+                @click="openAdd"
+            />
+            <Menu ref="add" :popup="true" :model="addNewItems">
+                <template #start>
+                    <div class="border-b p-3">
+                        <h5 class="text-sm font-semibold">Add New</h5>
+                    </div>
+                </template>
+                <template #item="{ item }">
+                    <Link
+                        v-if="item.available && item.route"
+                        :href="namedRouteUrl(item.route)"
+                        class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                        <i class="pi pi-plus-circle text-primary" />
+                        {{ item.name }}
+                    </Link>
+                    <div
+                        v-else
+                        class="flex cursor-not-allowed items-center gap-2 px-3 py-2 text-sm text-gray-400 opacity-70"
+                        :title="'Not available yet'"
+                    >
+                        <i class="pi pi-plus-circle" />
+                        <span>{{ item.name }}</span>
+                        <span class="ml-auto text-[10px] uppercase tracking-wide">Soon</span>
+                    </div>
+                </template>
+            </Menu>
+
+            <Button
+                type="button"
+                :icon="`pi pi-${isDarkTheme ? 'sun' : 'moon'}`"
+                rounded
+                severity="secondary"
+                outlined
+                class="!h-9 !w-9"
+                aria-label="Toggle theme"
+                @click="toggleDarkMode"
+            />
+
+            <OverlayBadge :value="unreadNotifications" severity="danger">
+                <Button
+                    type="button"
+                    icon="pi pi-bell"
+                    rounded
+                    severity="secondary"
+                    outlined
+                    class="!h-9 !w-9"
+                    aria-label="Notifications"
+                    @click="openNotif"
+                />
+            </OverlayBadge>
+            <Menu ref="notification" :popup="true" :model="notificationItems" class="w-80">
+                <template #start>
+                    <div class="flex items-center justify-between border-b px-3 py-2">
+                        <h4 class="text-sm font-semibold">Notifications</h4>
+                        <Button label="Mark all read" text size="small" />
+                    </div>
+                </template>
+                <template #item="{ item }">
+                    <div class="border-b px-3 py-2 last:border-0">
+                        <div class="flex gap-2">
+                            <Avatar :image="item.avatar" shape="circle" class="!h-9 !w-9" />
+                            <div class="min-w-0 flex-1">
+                                <p class="mb-0.5 text-sm" v-html="item.message" />
+                                <span class="text-xs text-gray-500">{{ item.time }}</span>
+                            </div>
                         </div>
-                        <span v-else>{{ slotProps.placeholder }}</span>
-                    </template>
-                    <template #option="slotProps">
-                        {{ slotProps.option }}/{{ slotProps.option + 1 }}
-                    </template>
-                </Select>
+                    </div>
+                </template>
+            </Menu>
 
-                <!-- Language Dropdown -->
-                <div class="flex items-center">
-                    <Button @click="(e) => openLang" variant="outlined" class="p-button-rounded p-button-plain">
-                        <Image class="w-6 h-6 rounded-full" :src="`assets/img/flags/${selectedLanguage.value}.png`" alt="Language" />
-                    </Button>
-                    <Menu ref="language" :popup="true" :model="languageItems">
-                        <template #item="{ item }">
-                            <div class="flex items-center p-2">
-                                <Image class="w-6 h-6 mr-2 rounded-full" :src="`assets/img/flags/${item.value}.png`" alt="Flag" />
-                                <span class="font-semibold">{{ item.name }}</span>
-                            </div>
-                        </template>
-                    </Menu>
-                </div>
+            <OverlayBadge :value="unreadMessages" severity="success" class="hidden sm:inline-flex">
+                <Button
+                    :as="Link"
+                    href="/chat"
+                    icon="pi pi-envelope"
+                    rounded
+                    severity="secondary"
+                    outlined
+                    class="!h-9 !w-9"
+                    aria-label="Messages"
+                />
+            </OverlayBadge>
 
-                <!-- Add New Dropdown -->
-                <div class="flex items-center">
-                    <Button icon="pi pi-plus" @click="openAdd" variant="outlined" severity="secondary" class="p-button-rounded" />
-                    <Menu ref="add" :popup="true" :model="addNewItems" :pt="{ list: { class: 'grid grid-cols-2 gap-4 p-3' } }">
-                        <template #start>
-                            <div class="p-3 border-b">
-                                <h5 class="text-lg font-semibold">Add New</h5>
-                            </div>
-                        </template>
-                        <template #item="{ item }">
-                            <!-- TODO replace with this :href="route(item.route)" -->
-                            <Link href="" class="block bg-primary-transparent rounded p-3 text-center hover:bg-primary/20 transition-colors">
-                                <div class="avatar avatar-lg mb-2">
-                                    <span class="inline-flex items-center justify-center w-12 h-12 bg-primary rounded-full"><i class="pi pi-plus"></i></span>
-                                </div>
-                                <p class="text-dark dark:text-dark-text-primary font-medium">{{ item.name }}</p>
-                            </Link>
-                        </template>
-                    </Menu>
-                </div>
+            <Button
+                type="button"
+                icon="pi pi-expand"
+                rounded
+                severity="secondary"
+                outlined
+                class="!h-9 !w-9 hidden md:inline-flex"
+                aria-label="Fullscreen"
+                @click="toggleFullscreen"
+            />
 
-                <!-- Dark Mode Toggle -->
-                <Button :icon="`pi pi-${isDarkTheme ? 'sun' : 'moon'}`" @click="toggleDarkMode" variant="outlined" severity="secondary" class="p-button-rounded" />
-
-                <!-- Notifications -->
-                <div class="flex items-center">
-                    <OverlayBadge :value="unreadNotifications" severity="danger">
-                        <Button icon="pi pi-bell" @click="openNotif" variant="outlined" severity="secondary" class="p-button-rounded" />
-                    </OverlayBadge>
-                    <Menu ref="notification" :popup="true" :model="notificationItems" :pt="{ list: { class: 'h-72 overflow-y-auto p-4' } }">
-                        <template #start>
-                            <div class="flex items-center justify-between border-b pb-3 mb-3">
-                                <h4 class="text-lg font-semibold">Notifications ({{ unreadNotifications }})</h4>
-                                <Button variant="text" severity="primary" class="text-sm">Mark all as read</Button>
-                            </div>
-                        </template>
-                        <template #item="{ item }">
-                            <div class="border-b mb-3 pb-3">
-                                <Link :href="route('activities')">
-                                    <div class="flex items-start">
-                                        <Avatar :image="item.avatar" size="large" shape="circle" class="mr-2" />
-                                        <div class="flex-grow">
-                                            <p class="mb-1 text-sm" v-html="item.message"></p>
-                                            <span class="text-xs text-gray-500">{{ item.time }}</span>
-                                            <div v-if="item.actions" class="mt-2 flex gap-2">
-                                                <Button severity="secondary" label="Deny" size="small" />
-                                                <Button severity="primary" label="Approve" size="small" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </Link>
-                            </div>
-                        </template>
-                        <template #end>
-                            <div class="flex gap-2 pt-3 border-t">
-                                <Button severity="danger" label="Cancel" class="w-1/2" />
-                                <Button severity="primary" label="View All" class="w-1/2" />
-                            </div>
-                        </template>
-                    </Menu>
-                </div>
-
-                <!-- Messages -->
-                <OverlayBadge :value="unreadMessages" severity="success">
-                    <Button :as="Link" href="/chat" icon="pi pi-envelope" variant="outlined" severity="secondary" class="p-button-rounded" />
-                </OverlayBadge>
-
-                <!-- Fullscreen -->
-                <Button icon="pi pi-expand" @click="toggleFullscreen" variant="outlined" severity="secondary" class="p-button-rounded" />
-
-                <!-- Profile Dropdown -->
-                <div class="flex items-center">
-                    <Avatar @click="openProfile" image="assets/img/profiles/avatar-27.jpg" shape="circle" size="large" />
-                    <Menu ref="profile" :popup="true" :model="profileItems">
-                        <template #start>
-                            <div class="flex items-center p-3 border-b">
-                                <Avatar image="assets/img/profiles/avatar-27.jpg" size="large" shape="circle" class="mr-2" />
-                                <div>
-                                    <h6 class="font-semibold">Kevin Larry</h6>
-                                    <p class="text-primary text-sm mb-0">Administrator</p>
-                                </div>
-                            </div>
-                        </template>
-                        <template #item="{ item }">
-                            <Button :as="Link" :href="route(item.route)" :icon="item.icon" :label="item.name" variant="text" severity="secondary" class="w-full justify-start" />
-                        </template>
-                    </Menu>
-                </div>
-
-                <!-- Mobile User Menu (Ellipsis for small screens) -->
-                <div class="lg:hidden">
-                    <Button icon="pi pi-ellipsis-v" @click="openMobileMenu" variant="text" class="p-button-plain" />
-                    <Menu ref="mobileMenu" :popup="true" :model="profileItems" />
-                </div>
-            </div>
-        </template>
-    </Menubar>
+            <button
+                type="button"
+                class="ml-0.5 flex items-center gap-2 rounded-full p-0.5 transition hover:bg-gray-100 dark:hover:bg-gray-800"
+                @click="openProfile"
+            >
+                <Avatar
+                    image="assets/img/profiles/avatar-27.jpg"
+                    shape="circle"
+                    class="!h-9 !w-9"
+                />
+            </button>
+            <Menu ref="profile" :popup="true" :model="profileItems">
+                <template #start>
+                    <div class="flex items-center gap-2 border-b p-3">
+                        <Avatar
+                            image="assets/img/profiles/avatar-27.jpg"
+                            shape="circle"
+                            class="!h-10 !w-10"
+                        />
+                        <div class="min-w-0">
+                            <h6 class="truncate text-sm font-semibold">
+                                {{ user?.name || 'User' }}
+                            </h6>
+                            <p class="truncate text-xs text-primary">
+                                {{ user?.email || 'Account' }}
+                            </p>
+                        </div>
+                    </div>
+                </template>
+                <template #item="{ item }">
+                    <Link
+                        v-if="item.route"
+                        :href="namedRouteUrl(item.route)"
+                        :method="item.method === 'post' ? 'post' : 'get'"
+                        as="button"
+                        class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                        <i :class="item.icon" />
+                        <span>{{ item.name }}</span>
+                    </Link>
+                </template>
+            </Menu>
+        </div>
+    </header>
 </template>
-
-<style scoped lang="postcss">
-/* Custom styles if needed, but prefer Tailwind classes */
-.app-header {
-    @apply shadow-md;
-}
-
-/* Responsive adjustments */
-@media (max-width: 767px) {
-    .app-header {
-        @apply flex-wrap justify-between;
-    }
-}
-</style>
