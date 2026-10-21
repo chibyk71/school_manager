@@ -34,11 +34,19 @@ const toggleSidebar = () => {
     document.body.classList.toggle('mini-sidebar', sidebarCollapsed.value);
 };
 
-const addNewItems = ref([
-    { name: 'Add Student', value: 'student', route: 'add-student' },
-    { name: 'Add Teacher', value: 'teacher', route: 'add-teacher' },
-    { name: 'Add Staff', value: 'staff', route: 'add-staff' },
-    { name: 'Add Invoice', value: 'invoice', route: 'add-invoice' },
+/** Only include route when the named Ziggy route is known to exist. */
+type QuickAddItem = {
+    name: string;
+    value: string;
+    route?: string;
+    available: boolean;
+};
+
+const addNewItems = ref<QuickAddItem[]>([
+    { name: 'Add Student', value: 'student', route: 'students.create', available: true },
+    { name: 'Add Teacher', value: 'teacher', available: false },
+    { name: 'Add Staff', value: 'staff', route: 'staff.create', available: true },
+    { name: 'Add Invoice', value: 'invoice', available: false },
 ]);
 
 const languageItems = ref([
@@ -71,10 +79,21 @@ const notificationItems = ref([
     },
 ]);
 
-const profileItems = ref([
-    { name: 'My Profile', value: 'profile', icon: 'pi pi-user', route: 'profile' },
-    { name: 'Settings', value: 'settings', icon: 'pi pi-cog', route: 'profile' },
-    { name: 'Logout', value: 'logout', icon: 'pi pi-sign-out', route: 'logout' },
+type ProfileMenuItem = {
+    name: string;
+    value: string;
+    icon: string;
+    /** Named Ziggy route when navigating via GET Link */
+    route?: string;
+    /** Inertia visit method (logout is POST) */
+    method?: 'get' | 'post';
+};
+
+const profileItems = ref<ProfileMenuItem[]>([
+    { name: 'My Profile', value: 'profile', icon: 'pi pi-user', route: 'profile.edit', method: 'get' },
+    // settings.general.security is a real settings page (see useSettingsNavigation)
+    { name: 'Settings', value: 'settings', icon: 'pi pi-cog', route: 'settings.general.security', method: 'get' },
+    { name: 'Logout', value: 'logout', icon: 'pi pi-sign-out', route: 'logout', method: 'post' },
 ]);
 
 const unreadNotifications = ref(2);
@@ -186,10 +205,23 @@ const { toggle: openProfile } = usePopup('profile');
                     </div>
                 </template>
                 <template #item="{ item }">
-                    <Link href="#" class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                    <Link
+                        v-if="item.available && item.route"
+                        :href="route(item.route)"
+                        class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
                         <i class="pi pi-plus-circle text-primary" />
                         {{ item.name }}
                     </Link>
+                    <div
+                        v-else
+                        class="flex cursor-not-allowed items-center gap-2 px-3 py-2 text-sm text-gray-400 opacity-70"
+                        :title="'Not available yet'"
+                    >
+                        <i class="pi pi-plus-circle" />
+                        <span>{{ item.name }}</span>
+                        <span class="ml-auto text-[10px] uppercase tracking-wide">Soon</span>
+                    </div>
                 </template>
             </Menu>
 
@@ -290,15 +322,16 @@ const { toggle: openProfile } = usePopup('profile');
                     </div>
                 </template>
                 <template #item="{ item }">
-                    <Button
-                        :as="Link"
+                    <Link
+                        v-if="item.route"
                         :href="route(item.route)"
-                        :icon="item.icon"
-                        :label="item.name"
-                        text
-                        severity="secondary"
-                        class="w-full !justify-start"
-                    />
+                        :method="item.method === 'post' ? 'post' : 'get'"
+                        as="button"
+                        class="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                        <i :class="item.icon" />
+                        <span>{{ item.name }}</span>
+                    </Link>
                 </template>
             </Menu>
         </div>
