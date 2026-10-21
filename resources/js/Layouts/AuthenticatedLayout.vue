@@ -12,7 +12,7 @@ import {
     SIDEBAR_WIDTH_COLLAPSED,
     SIDEBAR_WIDTH_EXPANDED,
     sidebarCollapsed,
-} from '@/store';
+} from '@/store/layout';
 import { usePage } from '@inertiajs/vue3';
 
 defineProps<{
