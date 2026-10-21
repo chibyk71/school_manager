@@ -4,13 +4,13 @@ import { Link, usePage } from '@inertiajs/vue3';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { Avatar } from 'primevue';
 import type { MenuItem } from '@/types';
+import { menuItems } from '@/store';
 import {
-    menuItems,
     mobileSidebarOpen,
     SIDEBAR_WIDTH_COLLAPSED,
     SIDEBAR_WIDTH_EXPANDED,
     sidebarCollapsed,
-} from '@/store';
+} from '@/store/layout';
 
 const page = usePage();
 const isMobile = ref(false);
