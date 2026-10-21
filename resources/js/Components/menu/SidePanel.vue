@@ -1,151 +1,280 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Link } from '@inertiajs/vue3'
-import { PerfectScrollbar } from 'vue3-perfect-scrollbar'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { Link, usePage } from '@inertiajs/vue3';
+import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
+import { Avatar } from 'primevue';
+import type { MenuItem } from '@/types';
+import {
+    menuItems,
+    mobileSidebarOpen,
+    SIDEBAR_WIDTH_COLLAPSED,
+    SIDEBAR_WIDTH_EXPANDED,
+    sidebarCollapsed,
+} from '@/store';
 
-import type { SidebarMenu, MenuItem } from '@/types' // adjust path as needed
-import { menuItems, sidebarCollapsed } from '@/store'
+const page = usePage();
+const isMobile = ref(false);
 
-// Track open submenu keys (using title as key – stable and unique enough)
-const openSubmenus = ref<Set<string>>(new Set())
+const updateIsMobile = () => {
+    isMobile.value = window.innerWidth < 992;
+};
+
+onMounted(() => {
+    updateIsMobile();
+    window.addEventListener('resize', updateIsMobile);
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('resize', updateIsMobile);
+});
+
+const openSubmenus = ref<Set<string>>(new Set());
+
+const isCollapsed = computed(() => !isMobile.value && sidebarCollapsed.value);
+
+const sidebarWidth = computed(() =>
+    isCollapsed.value ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
+);
 
 const toggleSubmenu = (item: MenuItem) => {
-    const key = item.title
+    const key = item.title;
     if (openSubmenus.value.has(key)) {
-        openSubmenus.value.delete(key)
+        openSubmenus.value.delete(key);
     } else {
-        openSubmenus.value.add(key)
+        openSubmenus.value.add(key);
     }
-}
+};
 
-const isSubmenuOpen = (item: MenuItem): boolean => {
-    return openSubmenus.value.has(item.title)
-}
+const isSubmenuOpen = (item: MenuItem): boolean => openSubmenus.value.has(item.title);
 
-// Optional: close all on mobile route change
-import { usePage } from '@inertiajs/vue3'
-import { watch } from 'vue'
-import { Avatar } from 'primevue'
-const page = usePage()
+const isActiveLink = (link?: string): boolean => {
+    if (!link || link.endsWith('.html')) return false;
+    const current = page.url.split('?')[0];
+    if (link === '/' || link === '/dashboard') {
+        return current === '/' || current === '/dashboard';
+    }
+    return current === link || current.startsWith(link + '/');
+};
+
+const hasActiveChild = (item: MenuItem): boolean =>
+    !!item.submenu?.some((sub) => isActiveLink(sub.link));
 
 watch(
-    () => page.props.url,
+    () => page.url,
     () => {
-        if (window.innerWidth < 1024) {
-            openSubmenus.value.clear()
+        for (const section of menuItems.value) {
+            for (const item of section.items) {
+                if (item.submenu && hasActiveChild(item)) {
+                    openSubmenus.value.add(item.title);
+                }
+            }
+        }
+    },
+    { immediate: true },
+);
+
+const user = computed(
+    () => (page.props as { auth?: { user?: { name?: string; email?: string } } }).auth?.user,
+);
+const schoolName = computed(() => {
+    const props = page.props as {
+        school?: { name?: string };
+        auth?: { school?: { name?: string } };
+    };
+    return props.school?.name || props.auth?.school?.name || 'School Manager';
+});
+
+const profileHref = computed(() => {
+    try {
+        return route('profile');
+    } catch {
+        try {
+            return route('profile.edit');
+        } catch {
+            return '/profile';
         }
     }
-)
+});
 </script>
 
 <template>
     <aside
-        class="sidebar fixed inset-y-0 left-0 z-50 w-72 border-r bg-white pt-16 transition-all duration-300 dark:bg-[var(--dark-bg-secondary)] dark:border-gray-700"
-        :class="{ '!w-20': sidebarCollapsed }">
-        <PerfectScrollbar class="h-full">
-            <div class="flex h-full flex-col">
-                <!-- Brand / Logo -->
-                <div class="w-full flex items-center justify-center mt-5">
-                    <Link href="/" class="flex items-center gap-3 border border-gray-200 hover:border-gray-300 dark:hover:border-gray-600 p-2 rounded">
-                        <Avatar image="assets/img/icons/global-img.svg" size="large" class="h-10 w-10 flex-shrink-0" >
-                        </Avatar>
-                        <span class="text-lg font-semibold text-gray-900 transition-all dark:text-white inline-block"
-                            :class="{ 'opacity-0 !hidden': sidebarCollapsed }">
-                            Global International
-                        </span>
-                    </Link>
-                </div>
+        class="sidebar fixed inset-y-0 left-0 z-50 flex flex-col border-r border-gray-200 bg-white transition-all duration-300 dark:border-gray-700 dark:bg-dark-bg-secondary"
+        :class="[
+            mobileSidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full',
+            isCollapsed ? 'items-center' : '',
+        ]"
+        :style="{ width: `${sidebarWidth}px` }"
+    >
+        <div
+            class="flex h-14 shrink-0 items-center gap-2 border-b border-gray-100 px-3 dark:border-gray-700"
+            :class="isCollapsed ? 'justify-center' : 'justify-start'"
+        >
+            <Link :href="route('dashboard')" class="flex min-w-0 items-center gap-2">
+                <span
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-white"
+                >
+                    SM
+                </span>
+                <span
+                    v-show="!isCollapsed"
+                    class="truncate text-lg font-bold tracking-tight text-dark dark:text-dark-text-primary"
+                >
+                    School Manager
+                </span>
+            </Link>
+        </div>
 
-                <!-- Scrollable Menu -->
-                <nav class="flex-1 space-y-6 px-3 py-6">
-                    <template v-for="section in menuItems" :key="section.header">
-                        <!-- Section Header -->
-                        <h6 class="px-3 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 transition-all" :class="{ 'hidden opacity-0 pointer-events-none': sidebarCollapsed }">
+        <div v-show="!isCollapsed" class="shrink-0 px-3 pt-3">
+            <div
+                class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 dark:border-gray-600 dark:bg-dark-bg-primary"
+            >
+                <Avatar
+                    image="assets/img/icons/global-img.svg"
+                    shape="circle"
+                    class="!h-8 !w-8 shrink-0"
+                />
+                <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-semibold text-dark dark:text-dark-text-primary">
+                        {{ schoolName }}
+                    </p>
+                    <p class="truncate text-xs text-gray-500 dark:text-dark-text-muted">
+                        School Management
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <PerfectScrollbar class="min-h-0 flex-1">
+            <nav class="space-y-5 px-2 py-4">
+                <template v-for="section in menuItems" :key="section.header">
+                    <div>
+                        <h6
+                            v-show="!isCollapsed"
+                            class="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500"
+                        >
                             {{ section.header }}
                         </h6>
 
-                        <!-- Menu Items -->
-                        <ul class="space-y-1">
+                        <ul class="space-y-0.5">
                             <li v-for="item in section.items" :key="item.title">
-                                <!-- Has Submenu -->
                                 <div v-if="item.submenu">
-                                    <button @click="toggleSubmenu(item)"
-                                        class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium transition-all" :class="[isSubmenuOpen(item)? 'bg-soft-primary !text-primary dark:bg-primary/20 [&_i.icon]:bg-surface-50 [&_i]:text-primary' : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800']">
-                                        <div class="flex items-center gap-3">
-                                            <i v-if="item.icon" :class="item.icon"
-                                                class="icon size-8 text-lg text-gray-500 transition-colors group-hover:text-primary flex items-center justify-center rounded bg-soft-secondary" />
-                                            <span :class="{ 'opacity-0 hidden': sidebarCollapsed }" class="transition-all">
-                                                {{ item.title }}
-                                            </span>
-                                        </div>
-                                        <i class="ti ti-chevron-right text-base transition-transform font-extrabold" :class="{ 'rotate-90': isSubmenuOpen(item), 'opacity-0 hidden': sidebarCollapsed }" />
+                                    <button
+                                        type="button"
+                                        class="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition-colors"
+                                        :class="[
+                                            isSubmenuOpen(item) || hasActiveChild(item)
+                                                ? 'bg-primary/10 text-primary dark:bg-primary/20'
+                                                : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800',
+                                            isCollapsed ? 'justify-center' : 'justify-between',
+                                        ]"
+                                        :title="isCollapsed ? item.title : undefined"
+                                        @click="toggleSubmenu(item)"
+                                    >
+                                        <span class="flex min-w-0 items-center gap-2.5">
+                                            <i
+                                                v-if="item.icon"
+                                                :class="item.icon"
+                                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-soft-secondary text-base text-gray-500 group-hover:text-primary"
+                                            />
+                                            <span v-show="!isCollapsed" class="truncate">{{ item.title }}</span>
+                                        </span>
+                                        <i
+                                            v-show="!isCollapsed"
+                                            class="ti text-base transition-transform"
+                                            :class="isSubmenuOpen(item) ? 'ti-minus' : 'ti-plus'"
+                                        />
                                     </button>
 
-                                    <!-- Submenu -->
                                     <Transition name="slide">
-                                        <ul v-if="isSubmenuOpen(item)" class="mt-1 space-y-1 border-l-2 border-gray-200 pl-8 dark:border-gray-700">
+                                        <ul
+                                            v-if="isSubmenuOpen(item) && !isCollapsed"
+                                            class="ml-5 mt-0.5 space-y-0.5 border-l border-gray-200 py-1 pl-4 dark:border-gray-700"
+                                        >
                                             <li v-for="sub in item.submenu" :key="sub.title">
-                                                <Link :href="sub.link!" class="block rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 hover:text-primary dark:text-gray-400 dark:hover:bg-gray-800">
-                                                {{ sub.title }}
+                                                <Link
+                                                    :href="sub.link || '#'"
+                                                    class="block rounded-md px-2.5 py-1.5 text-sm transition-colors"
+                                                    :class="
+                                                        isActiveLink(sub.link)
+                                                            ? 'bg-primary/10 font-medium text-primary'
+                                                            : 'text-gray-600 hover:bg-gray-100 hover:text-primary dark:text-gray-400 dark:hover:bg-gray-800'
+                                                    "
+                                                >
+                                                    {{ sub.title }}
                                                 </Link>
                                             </li>
                                         </ul>
                                     </Transition>
                                 </div>
 
-                                <!-- Leaf Item (direct link) -->
-                                <Link v-else :href="item.link!"
-                                    class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all hover:bg-gray-100 hover:text-primary"
+                                <Link
+                                    v-else
+                                    :href="item.link || '#'"
+                                    class="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors"
                                     :class="[
-                                        $page.url === item.link
+                                        isActiveLink(item.link)
                                             ? 'bg-primary/10 text-primary dark:bg-primary/20'
-                                            : 'text-gray-700 dark:text-gray-300'
-                                    ]">
-                                <i v-if="item.icon" :class="item.icon"
-                                    class="size-8! text-lg text-gray-500 transition-colors group-hover:text-primary flex items-center justify-center rounded bg-soft-secondary" />
-                                <span :class="{ 'opacity-0 hidden': sidebarCollapsed }" class="transition-all">
-                                    {{ item.title }}
-                                </span>
-                                <span v-if="item.badge"
-                                    class="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                                    {{ item.badge }}
-                                </span>
+                                            : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800',
+                                        isCollapsed ? 'justify-center' : '',
+                                    ]"
+                                    :title="isCollapsed ? item.title : undefined"
+                                >
+                                    <i
+                                        v-if="item.icon"
+                                        :class="item.icon"
+                                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-soft-secondary text-base text-gray-500 group-hover:text-primary"
+                                    />
+                                    <span v-show="!isCollapsed" class="truncate">{{ item.title }}</span>
+                                    <span
+                                        v-if="item.badge && !isCollapsed"
+                                        class="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                                    >
+                                        {{ item.badge }}
+                                    </span>
                                 </Link>
                             </li>
                         </ul>
-                    </template>
-                </nav>
-            </div>
+                    </div>
+                </template>
+            </nav>
         </PerfectScrollbar>
+
+        <div
+            class="shrink-0 border-t border-gray-100 p-3 dark:border-gray-700"
+            :class="isCollapsed ? 'flex justify-center' : ''"
+        >
+            <Link
+                :href="profileHref"
+                class="flex items-center gap-2.5 rounded-lg border border-gray-200 px-2 py-2 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
+                :class="isCollapsed ? 'justify-center border-0 p-1' : ''"
+            >
+                <Avatar
+                    image="assets/img/profiles/avatar-27.jpg"
+                    shape="circle"
+                    class="!h-9 !w-9 shrink-0"
+                />
+                <div v-show="!isCollapsed" class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-semibold text-dark dark:text-dark-text-primary">
+                        {{ user?.name || 'User' }}
+                    </p>
+                    <p class="truncate text-xs text-gray-500 dark:text-dark-text-muted">
+                        {{ user?.email || 'Account' }}
+                    </p>
+                </div>
+            </Link>
+        </div>
     </aside>
 </template>
 
-<style scoped lang='postcss'>
-/* Smooth slide animation */
+<style scoped lang="postcss">
 .slide-enter-active,
 .slide-leave-active {
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
-
 .slide-enter-from,
 .slide-leave-to {
     opacity: 0;
-    transform: translateY(-8px);
-}
-
-/* Active route highlight */
-.router-link-active {
-    @apply bg-primary/10 text-primary dark:bg-primary/20;
-}
-
-/* Collapsed mode: hide text smoothly */
-@media (min-width: 1024px) {
-    .w-20 span:not([class*="badge"]) {
-        @apply opacity-0 pointer-events-none;
-    }
-
-    .w-20 h6 {
-        @apply opacity-0;
-    }
+    transform: translateY(-6px);
 }
 </style>
