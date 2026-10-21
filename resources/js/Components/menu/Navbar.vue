@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { usePopup } from '@/helpers';
-import { isDarkTheme, mobileSidebarOpen, sidebarCollapsed } from '@/store';
+import { isDarkTheme } from '@/store';
+import { mobileSidebarOpen, sidebarCollapsed } from '@/store/layout';
 import { Link, usePage } from '@inertiajs/vue3';
 import {
     Avatar,
