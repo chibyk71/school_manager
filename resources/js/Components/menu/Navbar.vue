@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { usePopup } from '@/helpers';
 import { isDarkTheme } from '@/store';
-import { mobileSidebarOpen, sidebarCollapsed } from '@/store/layout';
+import { isLayoutMobileViewport, mobileSidebarOpen, sidebarCollapsed } from '@/store/layout';
 import { Link, usePage } from '@inertiajs/vue3';
 import {
     Avatar,
@@ -26,7 +26,7 @@ const toggleDarkMode = () => {
 };
 
 const toggleSidebar = () => {
-    if (window.innerWidth < 992) {
+    if (isLayoutMobileViewport()) {
         mobileSidebarOpen.value = !mobileSidebarOpen.value;
         return;
     }
