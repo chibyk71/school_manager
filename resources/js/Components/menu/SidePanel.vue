@@ -6,6 +6,7 @@ import { Avatar } from 'primevue';
 import type { MenuItem } from '@/types';
 import { menuItems } from '@/store';
 import {
+    isLayoutMobileViewport,
     mobileSidebarOpen,
     SIDEBAR_WIDTH_COLLAPSED,
     SIDEBAR_WIDTH_EXPANDED,
@@ -16,7 +17,7 @@ const page = usePage();
 const isMobile = ref(false);
 
 const updateIsMobile = () => {
-    isMobile.value = window.innerWidth < 992;
+    isMobile.value = isLayoutMobileViewport();
 };
 
 onMounted(() => {
@@ -101,7 +102,7 @@ const profileHref = computed(() => {
     <aside
         class="sidebar fixed inset-y-0 left-0 z-50 flex flex-col border-r border-gray-200 bg-white transition-all duration-300 dark:border-gray-700 dark:bg-dark-bg-secondary"
         :class="[
-            mobileSidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full',
+            mobileSidebarOpen ? 'translate-x-0' : 'max-[991px]:-translate-x-full',
             isCollapsed ? 'items-center' : '',
         ]"
         :style="{ width: `${sidebarWidth}px` }"
