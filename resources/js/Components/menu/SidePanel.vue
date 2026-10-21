@@ -38,6 +38,14 @@ const sidebarWidth = computed(() =>
 );
 
 const toggleSubmenu = (item: MenuItem) => {
+    // Collapsed desktop rail: expand shell first so child links become visible
+    if (isCollapsed.value) {
+        sidebarCollapsed.value = false;
+        document.body.classList.remove('mini-sidebar');
+        openSubmenus.value.add(item.title);
+        return;
+    }
+
     const key = item.title;
     if (openSubmenus.value.has(key)) {
         openSubmenus.value.delete(key);
@@ -87,13 +95,9 @@ const schoolName = computed(() => {
 
 const profileHref = computed(() => {
     try {
-        return route('profile');
+        return route('profile.edit');
     } catch {
-        try {
-            return route('profile.edit');
-        } catch {
-            return '/profile';
-        }
+        return '/profile';
     }
 });
 </script>
