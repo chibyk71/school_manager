@@ -1,6 +1,6 @@
 <!-- resources/js/Layouts/AuthenticatedLayout.vue -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Navbar from '@/Components/menu/Navbar.vue';
 import PageHeader from '@/Components/menu/PageHeader.vue';
 import SidePanel from '@/Components/menu/SidePanel.vue';
@@ -8,6 +8,7 @@ import { ButtonEmits, ButtonProps, ConfirmDialog, Toast } from 'primevue';
 import DynamicDialog from 'primevue/dynamicdialog';
 import ResourceDialogWrapper from '@/Components/Modals/ResourceDialog.vue';
 import {
+    isLayoutMobileViewport,
     mobileSidebarOpen,
     SIDEBAR_WIDTH_COLLAPSED,
     SIDEBAR_WIDTH_EXPANDED,
@@ -23,17 +24,22 @@ defineProps<{
 }>();
 
 const page = usePage();
+const isMobile = ref(false);
 
-const contentOffset = computed(() =>
-    sidebarCollapsed.value ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
-);
+const contentOffset = computed(() => {
+    if (isMobile.value) return 0;
+    return sidebarCollapsed.value ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED;
+});
 
 const closeMobileSidebar = () => {
     mobileSidebarOpen.value = false;
 };
 
-const onResize = () => {
-    if (window.innerWidth >= 992) {
+const syncViewport = () => {
+    const mobile = isLayoutMobileViewport();
+    isMobile.value = mobile;
+    // Crossing into desktop: force-close drawer/backdrop so state cannot stick
+    if (!mobile) {
         mobileSidebarOpen.value = false;
     }
 };
@@ -46,11 +52,12 @@ watch(
 );
 
 onMounted(() => {
-    window.addEventListener('resize', onResize);
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
 });
 
 onBeforeUnmount(() => {
-    window.removeEventListener('resize', onResize);
+    window.removeEventListener('resize', syncViewport);
 });
 </script>
 
@@ -59,7 +66,7 @@ onBeforeUnmount(() => {
         <Transition name="fade">
             <div
                 v-if="mobileSidebarOpen"
-                class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+                class="fixed inset-0 z-40 bg-black/40 min-[992px]:hidden"
                 aria-hidden="true"
                 @click="closeMobileSidebar"
             />
@@ -99,7 +106,8 @@ onBeforeUnmount(() => {
     opacity: 0;
 }
 
-@media (max-width: 991.98px) {
+/* Mobile: content flush to edge (drawer overlays). Keep in sync with LAYOUT_DESKTOP_MIN. */
+@media (max-width: 991px) {
     .page-wrapper {
         margin-left: 0 !important;
     }
