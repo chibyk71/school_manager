@@ -33,22 +33,6 @@ final class SchoolReadinessEvaluator
 
     public const CONDITION_PRIMARY_ADDRESS = 'primary_address';
 
-    /**
-     * Known school types from the existing catalogue / defaults.
-     * Extend only when the product catalogue expands.
-     *
-     * @var list<string>
-     */
-    public const CATALOGUE_TYPES = [
-        'private',
-        'public',
-        'federal',
-        'state',
-        'missionary',
-        'community',
-        'international',
-        'other',
-    ];
 
     /**
      * @return array{
@@ -144,8 +128,7 @@ final class SchoolReadinessEvaluator
         }
 
         // Prefer dynamic enum / catalogue when available; fall back to known list.
-        $allowed = self::CATALOGUE_TYPES;
-        if (! in_array($school->type, $allowed, true)) {
+        if (! \App\Support\School\SchoolTypeCatalogue::isValid($school->type)) {
             // Soft-accept unknown types that were already stored (legacy), but
             // still require a non-empty type. Product may expand the catalogue.
             // For strict readiness, require membership in the catalogue.

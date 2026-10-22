@@ -252,26 +252,19 @@ class SchoolLifecycleDomainTest extends TestCase
         $school->phone_one = '+2348000000000';
         $school->save();
 
-        // Attach a primary address when HasAddress / addresses table available.
-        if (method_exists($school, 'addAddress') && Schema::hasTable('addresses')) {
-            try {
-                $school->addAddress([
-                    'line_1' => '1 Test Street',
-                    'city' => 'Test City',
-                    'country_id' => null,
-                ], true);
-            } catch (\Throwable $e) {
-                // Focused schema may lack countries / address columns.
-            }
-        }
-
-        // If still missing primary address, force a synthetic pass only when
-        // addresses table does not exist (unit isolation).
         if (! Schema::hasTable('addresses')) {
-            // Evaluator will fail primary_address — acceptable for isolated runs
-            // that lack the full schema. Integration tests cover the path.
+            $this->markTestSkipped('addresses table required for full readiness happy-path.');
         }
 
-        return $school->fresh();
+        $school->addAddress([
+            'line_1' => '1 Test Street',
+            'city' => 'Test City',
+            'country_id' => null,
+        ], true);
+
+        $school = $school->fresh();
+        $this->assertNotNull($school->primaryAddress(), 'Primary address must persist for readiness.');
+
+        return $school;
     }
 }
