@@ -68,6 +68,43 @@ const form = useForm({
 const lifecycleBusy = ref(false);
 const readiness = ref<any>(null);
 
+const currentState = computed(() => {
+    const s = props.school?.state;
+    if (!s) return '';
+    return typeof s === 'string' ? s : (s.name || String(s));
+});
+
+const readinessConditions = computed(() => {
+    const c = readiness.value?.conditions ?? readiness.value?.checks ?? null;
+    if (!c || typeof c !== 'object') return [] as Array<{ key: string; passed: boolean; message: string | null }>;
+    return Object.entries(c).map(([key, val]: [string, any]) => ({
+        key,
+        passed: !!(val?.passed ?? val === true),
+        message: val?.message ?? null,
+    }));
+});
+
+function availableLifecycleActions(): string[] {
+    const state = String(currentState.value).toLowerCase();
+    const map: Record<string, string[]> = {
+        draft: ['schools.mark-ready'],
+        ready: ['schools.activate', 'schools.archive'],
+        active: ['schools.suspend', 'schools.archive'],
+        suspended: ['schools.reactivate', 'schools.archive'],
+        archived: ['schools.recover'],
+    };
+    return map[state] ?? [];
+}
+
+const lifecycleActionLabels: Record<string, string> = {
+    'schools.mark-ready': 'Mark Ready',
+    'schools.activate': 'Activate',
+    'schools.suspend': 'Suspend',
+    'schools.reactivate': 'Reactivate',
+    'schools.archive': 'Archive',
+    'schools.recover': 'Recover',
+};
+
 function postLifecycle(routeName: string) {
     if (!props.school?.id) return;
     lifecycleBusy.value = true;
@@ -77,20 +114,25 @@ function postLifecycle(routeName: string) {
         onError: (errors) => {
             const first = Object.values(errors)[0];
             toast.add({ severity: 'error', summary: 'Lifecycle', detail: String(first ?? 'Action failed'), life: 6000 });
+            loadReadiness();
         },
         onSuccess: () => {
             toast.add({ severity: 'success', summary: 'Lifecycle', detail: 'Action completed', life: 3000 });
             loadReadiness();
+            router.reload({ only: ['school'] });
         },
     });
 }
 
 function loadReadiness() {
     if (!props.school?.id) return;
-    fetch(route('schools.readiness', props.school.id), { headers: { Accept: 'application/json' } })
+    fetch(route('schools.readiness', props.school.id), {
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin',
+    })
         .then(r => r.json())
         .then(data => { readiness.value = data; })
-        .catch(() => {});
+        .catch(() => { readiness.value = null; });
 }
 
 if (isEdit.value) {
@@ -217,14 +259,55 @@ const schoolTypeOptions = [
                                     <TextInput label="Motto" id="motto" v-model="form.motto"
                                         :error="form.errors.motto" />
 
-                                    <div v-if="isEdit && school?.state" class="col-span-1 md:col-span-2">
-                                        <InputLabel value="Lifecycle state" />
-                                        <p class="mt-1 text-sm font-medium capitalize">{{ school.state_label || school.state }}</p>
-                                        <p class="text-xs text-muted-foreground mt-1">
-                                            Use lifecycle actions (Mark Ready, Activate, Suspend, Archive, Recover) —
-                                            status is not edited here.
-                                        </p>
-                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="isEdit" class="mt-6 p-4 border rounded-lg space-y-4 bg-gray-50 dark:bg-gray-900/40">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <h3 class="text-lg font-semibold">Lifecycle</h3>
+                                    <p class="text-sm">
+                                        State:
+                                        <span class="font-medium capitalize">{{ school?.state_label || currentState || '—' }}</span>
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p class="text-sm font-medium mb-2">Readiness checklist (six conditions)</p>
+                                    <p v-if="!readiness" class="text-xs text-muted-foreground">Loading readiness…</p>
+                                    <ul v-else class="space-y-1 text-sm">
+                                        <li
+                                            v-for="item in readinessConditions"
+                                            :key="item.key"
+                                            class="flex gap-2"
+                                            :class="item.passed ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                                        >
+                                            <span class="font-mono text-xs uppercase shrink-0 w-40">{{ item.key }}</span>
+                                            <span>{{ item.passed ? 'Passed' : (item.message || 'Not met') }}</span>
+                                        </li>
+                                    </ul>
+                                    <p
+                                        v-if="readiness"
+                                        class="mt-2 text-sm font-medium"
+                                        :class="(readiness.ready ?? readiness.is_ready) ? 'text-green-700' : 'text-amber-600'"
+                                    >
+                                        Overall: {{ (readiness.ready ?? readiness.is_ready) ? 'Ready' : 'Incomplete' }}
+                                    </p>
+                                </div>
+
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        v-for="action in availableLifecycleActions()"
+                                        :key="action"
+                                        type="button"
+                                        class="px-3 py-1.5 text-sm border rounded disabled:opacity-50"
+                                        :disabled="lifecycleBusy"
+                                        @click="postLifecycle(action)"
+                                    >
+                                        {{ lifecycleActionLabels[action] || action }}
+                                    </button>
+                                    <p v-if="availableLifecycleActions().length === 0" class="text-xs text-muted-foreground">
+                                        No lifecycle actions available for this state.
+                                    </p>
                                 </div>
                             </div>
 

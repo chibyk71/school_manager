@@ -72,9 +72,11 @@ class UpdateSchoolRequest extends FormRequest
 
         return [
             // Core school fields
+            // Name always required; code/email/type/contact may be incomplete on Draft.
+            // Format + uniqueness apply when values are provided. Ready still needs all six conditions.
             'name'      => ['required', 'string', 'max:255'],
-            'code'      => ['required', 'string', 'max:50', Rule::unique('schools', 'code')->ignore($schoolId)],
-            'email'     => ['required', 'email', 'max:255', Rule::unique('schools', 'email')->ignore($schoolId)],
+            'code'      => ['sometimes', 'nullable', 'string', 'max:50', Rule::unique('schools', 'code')->ignore($schoolId)],
+            'email'     => ['sometimes', 'nullable', 'email', 'max:255', Rule::unique('schools', 'email')->ignore($schoolId)],
             'phone_one' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'phone_two' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'type'      => ['sometimes', 'nullable', 'string', \Illuminate\Validation\Rule::in(\App\Support\School\SchoolTypeCatalogue::values())],

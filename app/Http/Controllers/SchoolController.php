@@ -528,8 +528,7 @@ class SchoolController extends BaseSchoolController
      */
     public function destroy(Request $request, ?string $id = null)
     {
-        Gate::authorize('delete', School::class);
-
+        // Policy requires a School instance — authorize each target, not School::class.
         $lifecycle = app(SchoolLifecycleService::class);
 
         try {
@@ -544,18 +543,35 @@ class SchoolController extends BaseSchoolController
             }
 
             $successCount = 0;
+            $failures = [];
+
             foreach ($ids as $schoolId) {
-                $school = School::query()->findOrFail($schoolId);
-                Gate::authorize('delete', $school);
+                $school = School::query()->find($schoolId);
+                if (! $school) {
+                    $failures[] = "School {$schoolId} not found.";
+                    continue;
+                }
+
+                try {
+                    Gate::authorize('delete', $school);
+                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                    $failures[] = "Not authorized to delete {$school->name}.";
+                    continue;
+                }
 
                 if (method_exists($school, 'canDeactivate') && ! $school->canDeactivate()) {
-                    throw ValidationException::withMessages([
-                        'ids' => "Cannot delete school {$school->name}: active dependencies exist.",
-                    ]);
+                    $failures[] = "Cannot delete {$school->name}: active dependencies exist.";
+                    continue;
                 }
 
                 $lifecycle->softDelete($school);
                 $successCount++;
+            }
+
+            if ($successCount === 0 && $failures !== []) {
+                throw ValidationException::withMessages([
+                    'ids' => implode(' ', $failures),
+                ]);
             }
 
             Cache::forget('schools.all');
@@ -563,7 +579,10 @@ class SchoolController extends BaseSchoolController
 
             $message = $successCount === 1
                 ? 'School soft-deleted successfully.'
-                : "{$successCount} schools soft-deleted successfully.";
+                : "{$successCount} school(s) soft-deleted successfully.";
+            if ($failures !== []) {
+                $message .= ' Partial failures: '.implode(' ', $failures);
+            }
 
             return $this->respondWithSuccess($request, $message, 'schools.index');
         } catch (ValidationException $e) {
@@ -582,14 +601,11 @@ class SchoolController extends BaseSchoolController
 
     public function forceDelete(Request $request)
     {
-        // Authorize: user must have general delete permission on School model
-        Gate::authorize('forceDelete', School::class);
-
+        // Authorize each soft-deleted school instance (policy requires School).
         try {
-            // Validate that ids are provided and are array of UUIDs/numeric IDs
             $request->validate([
                 'ids' => 'required|array|min:1',
-                'ids.*' => 'required|string|exists:schools,id', // assumes UUID or string ID
+                'ids.*' => 'required|string',
             ]);
 
             $ids = $request->input('ids');
@@ -597,48 +613,41 @@ class SchoolController extends BaseSchoolController
             $successCount = 0;
 
             foreach ($ids as $schoolId) {
-                // Use onlyTrashed() to ensure we only force-delete already soft-deleted schools
                 $school = School::onlyTrashed()->find($schoolId);
-
-                if (!$school) {
+                if (! $school) {
                     $failedSchools[] = "School with ID {$schoolId} not found or not soft-deleted.";
                     continue;
                 }
 
-                /*
-                 * IMPORTANT: Even for force delete, we should prevent permanent removal
-                 * if there are active dependencies (e.g., enrolled students, active users, etc.).
-                 * We reuse the existing canDeactivate() method as a safety check.
-                 * Adjust this logic if force delete should bypass certain checks.
-                 */
-                if (!$school->canDeactivate()) {
+                try {
+                    Gate::authorize('forceDelete', $school);
+                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                    $failedSchools[] = "Not authorized to permanently delete {$school->name}.";
+                    continue;
+                }
+
+                if (method_exists($school, 'canDeactivate') && ! $school->canDeactivate()) {
                     $failedSchools[] = "Cannot permanently delete {$school->name}: active dependencies exist.";
                     continue;
                 }
 
-                // Permanently delete media files associated with Spatie Media Library
                 $school->clearMediaCollection('logo');
                 $school->clearMediaCollection('small_logo');
                 $school->clearMediaCollection('favicon');
                 $school->clearMediaCollection('dark_logo');
                 $school->clearMediaCollection('dark_small_logo');
-
-                // Force delete the record permanently
                 $school->forceDelete();
-
                 $successCount++;
             }
 
-            // Invalidate related caches
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
             $message = $successCount > 0
                 ? "{$successCount} school(s) permanently deleted."
                 : 'No schools were permanently deleted.';
-
-            if (!empty($failedSchools)) {
-                $message .= ' Some failures: ' . implode(' ', $failedSchools);
+            if ($failedSchools !== []) {
+                $message .= ' Failures: '.implode(' ', $failedSchools);
             }
 
             if ($request->wantsJson()) {
@@ -646,14 +655,15 @@ class SchoolController extends BaseSchoolController
                     'message' => $message,
                     'success_count' => $successCount,
                     'failures' => $failedSchools,
-                ]);
+                ], $successCount > 0 ? 200 : 422);
             }
 
-            return redirect()->route('schools.index')
-                ->with('success', $message);
-
+            return redirect()->route('schools.index')->with(
+                $successCount > 0 ? 'success' : 'error',
+                $message
+            );
         } catch (ValidationException $e) {
-            throw $e; // Let Laravel handle validation errors (e.g., for Inertia)
+            throw $e;
         } catch (Throwable $th) {
             Log::error('Failed to force delete school(s)', [
                 'user_id' => auth()->id(),
@@ -663,7 +673,6 @@ class SchoolController extends BaseSchoolController
             ]);
 
             $errorMessage = 'Failed to permanently delete school(s).';
-
             if ($request->wantsJson()) {
                 return response()->json(['error' => $errorMessage], 500);
             }
@@ -672,26 +681,15 @@ class SchoolController extends BaseSchoolController
         }
     }
 
-    /**
-     * Restore one or multiple soft-deleted schools.
-     *
-     * This recovers schools that were previously soft-deleted (deactivated).
-     * Sets `is_active = true` and removes `deleted_at` timestamp.
-     * Accepts bulk operation via `ids` array in request.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
-     */
     public function restore(Request $request)
     {
-        Gate::authorize('restore', School::class);
-
+        // Authorize each soft-deleted school instance (policy requires School).
         $lifecycle = app(SchoolLifecycleService::class);
 
         try {
             $request->validate([
                 'ids' => 'required|array|min:1',
-                'ids.*' => 'required|string|exists:schools,id',
+                'ids.*' => 'required|string',
             ]);
 
             $restoredCount = 0;
@@ -704,9 +702,21 @@ class SchoolController extends BaseSchoolController
                     continue;
                 }
 
-                Gate::authorize('restore', $school);
-                $lifecycle->restore($school);
-                $restoredCount++;
+                try {
+                    Gate::authorize('restore', $school);
+                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                    $failedSchools[] = "Not authorized to restore {$school->name}.";
+                    continue;
+                }
+
+                try {
+                    $lifecycle->restore($school);
+                    $restoredCount++;
+                } catch (\App\Support\Entitlements\Exceptions\InsufficientCapacityException $e) {
+                    $failedSchools[] = "Cannot restore {$school->name}: school capacity limit reached.";
+                } catch (Throwable $e) {
+                    $failedSchools[] = "Failed to restore {$school->name}: ".$e->getMessage();
+                }
             }
 
             Cache::forget('schools.all');
@@ -715,7 +725,6 @@ class SchoolController extends BaseSchoolController
             $message = $restoredCount > 0
                 ? "{$restoredCount} school(s) restored successfully."
                 : 'No schools were restored.';
-
             if ($failedSchools !== []) {
                 $message .= ' Failures: '.implode(' ', $failedSchools);
             }
@@ -725,19 +734,15 @@ class SchoolController extends BaseSchoolController
                     'message' => $message,
                     'restored_count' => $restoredCount,
                     'failures' => $failedSchools,
-                ]);
+                ], $restoredCount > 0 ? 200 : 422);
             }
 
-            return redirect()->route('schools.index')->with('success', $message);
+            return redirect()->route('schools.index')->with(
+                $restoredCount > 0 ? 'success' : 'error',
+                $message
+            );
         } catch (ValidationException $e) {
             throw $e;
-        } catch (\App\Support\Entitlements\Exceptions\InsufficientCapacityException $e) {
-            $msg = 'Cannot restore school(s): school capacity limit reached.';
-            if ($request->wantsJson()) {
-                return response()->json(['error' => $msg], 422);
-            }
-
-            return redirect()->back()->with('error', $msg);
         } catch (Throwable $th) {
             Log::error('Failed to restore school(s)', [
                 'user_id' => auth()->id(),
@@ -754,10 +759,6 @@ class SchoolController extends BaseSchoolController
         }
     }
 
-    /**
-     * Retired: is_active bulk toggle is incompatible with Phase 1 lifecycle.
-     * Use explicit lifecycle actions (activate, suspend, archive, recover).
-     */
     public function bulkToggleStatus(Request $request)
     {
         $message = 'Bulk status toggle is no longer supported. Use lifecycle actions '

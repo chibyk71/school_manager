@@ -4,61 +4,156 @@ namespace Tests\Feature\School;
 
 use App\Models\School;
 use App\Models\User;
+use App\Services\School\SchoolLifecycleService;
 use App\States\School\Draft;
+use App\States\School\Ready;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Phase 1 request/controller lifecycle feature coverage.
+ * Phase 1 school lifecycle HTTP feature coverage.
+ *
+ * Uses Gate::before to model an authorized actor without depending on full
+ * Laratrust role seeders. Cross-school isolation is asserted by denying
+ * unauthorized users via a closed gate.
  */
 class SchoolLifecycleFeatureTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_store_rejects_client_assigned_is_active_and_state(): void
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (! Schema::hasTable('schools')) {
+            $this->markTestSkipped('schools table required');
+        }
+    }
+
+    private function actingAsAuthorized(): User
     {
         $user = User::factory()->create();
+        Gate::before(fn ($u, $ability) => true);
         $this->actingAs($user);
 
+        return $user;
+    }
+
+    public function test_name_only_create_yields_draft_without_is_active_true(): void
+    {
+        $this->actingAsAuthorized();
+
         $response = $this->post(route('schools.store'), [
-            'name' => 'Draft Only School',
+            'name' => 'Name Only Draft School',
+        ]);
+
+        $response->assertSuccessful();
+
+        $school = School::query()->where('name', 'Name Only Draft School')->first();
+        $this->assertNotNull($school);
+        $this->assertInstanceOf(Draft::class, $school->state);
+        $this->assertFalse((bool) $school->is_active);
+    }
+
+    public function test_store_rejects_prohibited_lifecycle_fields(): void
+    {
+        $this->actingAsAuthorized();
+
+        $response = $this->from('/schools')->post(route('schools.store'), [
+            'name' => 'Prohibited Fields School',
             'is_active' => true,
             'state' => 'active',
         ]);
 
-        // 403 if unauthorized; 422 if prohibited fields fail validation.
-        $this->assertTrue(
-            in_array($response->status(), [302, 403, 422], true),
-            'Unexpected status '.$response->status()
+        $response->assertSessionHasErrors(['is_active', 'state']);
+        $this->assertNull(
+            School::query()->where('name', 'Prohibited Fields School')->first()
         );
-
-        $school = School::query()->where('name', 'Draft Only School')->first();
-        if ($school) {
-            $this->assertInstanceOf(Draft::class, $school->state);
-            $this->assertFalse((bool) $school->is_active);
-        }
     }
 
-    public function test_bulk_toggle_is_retired(): void
+    public function test_draft_can_be_updated_while_incomplete(): void
     {
-        $user = User::factory()->create();
-        $this->actingAs($user);
+        $this->actingAsAuthorized();
+        $school = app(SchoolLifecycleService::class)->createDraft([
+            'name' => 'Incomplete Draft',
+        ]);
+
+        $response = $this->put(route('schools.update', $school), [
+            'name' => 'Incomplete Draft Updated',
+            'code' => null,
+            'email' => null,
+            'type' => null,
+            'contact_name' => null,
+        ]);
+
+        $response->assertSuccessful();
+        $school->refresh();
+        $this->assertSame('Incomplete Draft Updated', $school->name);
+        $this->assertInstanceOf(Draft::class, $school->state);
+        $this->assertNull($school->code);
+    }
+
+    public function test_update_rejects_client_assigned_state_and_is_active(): void
+    {
+        $this->actingAsAuthorized();
+        $school = app(SchoolLifecycleService::class)->createDraft([
+            'name' => 'State Guard School',
+        ]);
+
+        $response = $this->from('/schools/'.$school->id)->put(route('schools.update', $school), [
+            'name' => 'State Guard School',
+            'state' => 'active',
+            'is_active' => true,
+        ]);
+
+        $response->assertSessionHasErrors(['state', 'is_active']);
+        $school->refresh();
+        $this->assertInstanceOf(Draft::class, $school->state);
+        $this->assertFalse((bool) $school->is_active);
+    }
+
+    public function test_unauthorized_user_cannot_soft_delete_school(): void
+    {
+        $authorized = User::factory()->create();
+        Gate::before(fn ($u) => $u->is($authorized) ? true : null);
+
+        $this->actingAs($authorized);
+        $school = app(SchoolLifecycleService::class)->createDraft(['name' => 'Protected School']);
+
+        Gate::before(fn () => false);
+        $this->actingAs(User::factory()->create());
+
+        $response = $this->delete(route('schools.destroy'), ['ids' => [$school->id]]);
+
+        $response->assertForbidden();
+        $this->assertFalse($school->fresh()->trashed());
+    }
+
+    public function test_bulk_toggle_status_is_gone(): void
+    {
+        $this->actingAsAuthorized();
 
         $response = $this->post(route('schools.bulk-toggle'), [
             'ids' => ['00000000-0000-0000-0000-000000000001'],
             'is_active' => true,
         ]);
 
-        $this->assertTrue(
-            in_array($response->status(), [403, 410, 422], true),
-            'Unexpected status '.$response->status()
-        );
+        $response->assertStatus(410);
     }
 
-    public function test_store_name_only_path_documented(): void
+    public function test_mark_ready_fails_when_readiness_incomplete(): void
     {
-        $this->markTestSkipped(
-            'Requires school.create permission/role fixture; exercise via SchoolLifecycleService::createDraft in domain tests.'
-        );
+        $this->actingAsAuthorized();
+        $school = app(SchoolLifecycleService::class)->createDraft([
+            'name' => 'Not Ready School',
+        ]);
+
+        $response = $this->post(route('schools.mark-ready', $school));
+
+        $response->assertStatus(422);
+        $this->assertInstanceOf(Draft::class, $school->fresh()->state);
+        $this->assertNotInstanceOf(Ready::class, $school->fresh()->state);
     }
 }
