@@ -77,7 +77,7 @@ class UpdateSchoolRequest extends FormRequest
             'email'     => ['required', 'email', 'max:255', Rule::unique('schools', 'email')->ignore($schoolId)],
             'phone_one' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'phone_two' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
-            'type'      => ['required', 'string', 'in:private,government,community'],
+            'type'      => ['sometimes', 'nullable', 'string', \Illuminate\Validation\Rule::in(\App\Support\School\SchoolTypeCatalogue::values())],
 
             // Status – partial update allowed
             'state' => ['prohibited'],
@@ -129,10 +129,14 @@ class UpdateSchoolRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'is_active' => $this->has('is_active') ? (bool) $this->input('is_active') : null,
-            'code'      => $this->has('code') ? strtoupper($this->input('code')) : null,
-        ]);
+        // Clients cannot assign lifecycle state or is_active. Never inject them.
+        $merge = [];
+        if ($this->filled('code')) {
+            $merge['code'] = strtoupper((string) $this->input('code'));
+        }
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
     }
 
     /**

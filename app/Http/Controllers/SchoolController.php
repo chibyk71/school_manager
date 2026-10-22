@@ -528,108 +528,58 @@ class SchoolController extends BaseSchoolController
      */
     public function destroy(Request $request, ?string $id = null)
     {
-        // ---------------------------------------------------------------------
-        // 1. Authorization
-        // ---------------------------------------------------------------------
-        // Ensure the user has general permission to delete schools.
-        // Uses Laravel's Gate/Policy with 'delete' ability on the School class.
-        // A specific instance is not checked here — canDeactivate() handles business rules.
         Gate::authorize('delete', School::class);
 
+        $lifecycle = app(SchoolLifecycleService::class);
+
         try {
-            // -----------------------------------------------------------------
-            // 2. Determine operation mode: bulk or single
-            // -----------------------------------------------------------------
-            if ($request->has('ids')) {
-                // -------------------------------------------------------------
-                // 2a. Bulk deactivation
-                // -------------------------------------------------------------
-                $ids = $request->input('ids', []);
+            $ids = $request->has('ids')
+                ? (array) $request->input('ids', [])
+                : array_filter([(string) $id]);
 
-                foreach ($ids as $schoolId) {
-                    // Load the school; throws 404 if not found
-                    $school = School::findOrFail($schoolId);
-
-                    // Safety check: prevent deactivation if active dependencies exist
-                    if (!$school->canDeactivate()) {
-                        // Throw ValidationException to trigger proper form/error handling
-                        throw ValidationException::withMessages([
-                            'ids' => "Cannot deactivate school {$school->name}: active dependencies exist."
-                        ]);
-                    }
-
-                    // Mark as inactive and soft delete
-                    $school->update(['is_active' => false]);
-                    $school->delete();
-                }
-
-                $message = 'Schools deactivated successfully';
-
-            } else {
-                // -------------------------------------------------------------
-                // 2b. Single deactivation
-                // -------------------------------------------------------------
-                // $id comes from route model binding fallback (nullable string)
-                $school = School::findOrFail($id);
-
-                if (!$school->canDeactivate()) {
-                    // For single operations (often AJAX), return JSON error immediately
-                    return response()->json([
-                        'error' => "Cannot deactivate {$school->name}: active users or students exist."
-                    ], 422);
-                }
-
-                $school->update(['is_active' => false]);
-                $school->delete();
-
-                $message = 'School deactivated successfully';
+            if ($ids === []) {
+                throw ValidationException::withMessages([
+                    'ids' => 'At least one school id is required.',
+                ]);
             }
 
-            // -----------------------------------------------------------------
-            // 3. Invalidate caches
-            // -----------------------------------------------------------------
-            // Deactivation changes the visible list of schools, so clear caches
+            $successCount = 0;
+            foreach ($ids as $schoolId) {
+                $school = School::query()->findOrFail($schoolId);
+                Gate::authorize('delete', $school);
+
+                if (method_exists($school, 'canDeactivate') && ! $school->canDeactivate()) {
+                    throw ValidationException::withMessages([
+                        'ids' => "Cannot delete school {$school->name}: active dependencies exist.",
+                    ]);
+                }
+
+                $lifecycle->softDelete($school);
+                $successCount++;
+            }
+
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
-            // -----------------------------------------------------------------
-            // 4. Return appropriate response
-            // -----------------------------------------------------------------
+            $message = $successCount === 1
+                ? 'School soft-deleted successfully.'
+                : "{$successCount} schools soft-deleted successfully.";
+
             return $this->respondWithSuccess($request, $message, 'schools.index');
-
-            // ---------------------------------------------------------------------
-            // 5. Error handling
-            // ---------------------------------------------------------------------
         } catch (ValidationException $e) {
-            // Re-throw validation exceptions so Laravel/Inertia handles them properly
-            // (e.g., shows field errors on 'ids' in bulk operations)
             throw $e;
-
         } catch (Throwable $th) {
-            // Log unexpected errors with full context for debugging
-            Log::error('Failed to deactivate school(s)', [
+            Log::error('Failed to soft-delete school(s)', [
                 'user_id' => auth()->id() ?? null,
                 'input' => $request->all(),
                 'error' => $th->getMessage(),
                 'trace' => $th->getTraceAsString(),
             ]);
 
-            $errorMessage = 'Failed to deactivate school(s).';
-
-            return $this->respondWithError($request, $errorMessage);
+            return $this->respondWithError($request, 'Failed to soft-delete school(s).');
         }
     }
 
-    /**
-     * Permanently delete (force delete) one or multiple soft-deleted schools.
-     *
-     * This bypasses soft deletion and removes records permanently from the database.
-     * Only allowed if the school has no active dependencies (e.g., users, students, sessions).
-     * Accepts bulk operation via `ids` array in request.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
-     */
     public function forceDelete(Request $request)
     {
         // Authorize: user must have general delete permission on School model
@@ -734,38 +684,31 @@ class SchoolController extends BaseSchoolController
      */
     public function restore(Request $request)
     {
-        // Authorize: restoring is typically allowed under 'delete' or 'restore' policy
-        Gate::authorize('restore', School::class); // or create a specific 'restore' ability if needed
+        Gate::authorize('restore', School::class);
+
+        $lifecycle = app(SchoolLifecycleService::class);
 
         try {
-            // Validate input
             $request->validate([
                 'ids' => 'required|array|min:1',
                 'ids.*' => 'required|string|exists:schools,id',
             ]);
 
-            $ids = $request->input('ids');
             $restoredCount = 0;
             $failedSchools = [];
 
-            foreach ($ids as $schoolId) {
+            foreach ($request->input('ids') as $schoolId) {
                 $school = School::onlyTrashed()->find($schoolId);
-
-                if (!$school) {
+                if (! $school) {
                     $failedSchools[] = "School with ID {$schoolId} not found or not deleted.";
                     continue;
                 }
 
-                // Restore the soft-deleted record
-                $school->restore();
-
-                // Reactivate the school
-                $school->update(['is_active' => true]);
-
+                Gate::authorize('restore', $school);
+                $lifecycle->restore($school);
                 $restoredCount++;
             }
 
-            // Invalidate caches after restoration
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
@@ -773,8 +716,8 @@ class SchoolController extends BaseSchoolController
                 ? "{$restoredCount} school(s) restored successfully."
                 : 'No schools were restored.';
 
-            if (!empty($failedSchools)) {
-                $message .= ' Failures: ' . implode(' ', $failedSchools);
+            if ($failedSchools !== []) {
+                $message .= ' Failures: '.implode(' ', $failedSchools);
             }
 
             if ($request->wantsJson()) {
@@ -785,11 +728,16 @@ class SchoolController extends BaseSchoolController
                 ]);
             }
 
-            return redirect()->route('schools.index')
-                ->with('success', $message);
-
+            return redirect()->route('schools.index')->with('success', $message);
         } catch (ValidationException $e) {
             throw $e;
+        } catch (\App\Support\Entitlements\Exceptions\InsufficientCapacityException $e) {
+            $msg = 'Cannot restore school(s): school capacity limit reached.';
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $msg], 422);
+            }
+
+            return redirect()->back()->with('error', $msg);
         } catch (Throwable $th) {
             Log::error('Failed to restore school(s)', [
                 'user_id' => auth()->id(),
@@ -798,7 +746,6 @@ class SchoolController extends BaseSchoolController
             ]);
 
             $errorMessage = 'Failed to restore school(s).';
-
             if ($request->wantsJson()) {
                 return response()->json(['error' => $errorMessage], 500);
             }
@@ -808,164 +755,19 @@ class SchoolController extends BaseSchoolController
     }
 
     /**
-     * Bulk toggle the active status (is_active) of one or multiple schools.
-     *
-     * This method handles both single and bulk updates of the `is_active` boolean flag
-     * on School models. It is designed specifically for quick administrative actions
-     * such as mass activation or deactivation of schools from the data table
-     * (e.g., "Activate Selected" or "Deactivate Selected" bulk actions).
-     *
-     * Key Features & Design Decisions:
-     * --------------------------------
-     * - Thin controller: Only performs authorization, validation, looping, and cache invalidation.
-     *   Business rules (if any) remain in the model or service.
-     * - Accepts `ids` (array of school IDs) and `is_active` (boolean) in the request body.
-     * - Supports both authenticated Inertia/AJAX requests (JSON response) and traditional form posts.
-     * - Authorization: Uses the general 'update' ability on the School class.
-     *   Granular per-school checks can be added in a policy if required.
-     * - Safety: Skips schools that are soft-deleted (trashed) – status toggle is disabled on trashed rows
-     *   in the frontend, but we double-check here to prevent accidental API misuse.
-     * - Efficiency: Uses mass update where possible, but falls back to individual updates
-     *   to allow future per-school hooks or events.
-     * - Cache handling: Invalidates school-related caches after any change.
-     * - Comprehensive feedback: Returns detailed success/failure counts and messages.
-     * - Error resilience: Validation exceptions are re-thrown for proper Inertia/form error handling;
-     *   unexpected errors are logged with full context.
-     *
-     * Expected Routes (examples):
-     * ---------------------------
-     * POST /settings/schools/bulk-toggle  ->  settings.schools.bulk-toggle
-     *
-     * Request Payload Example:
-     * -----------------------
-     * {
-     *     "ids": ["1", "5", "12"],
-     *     "is_active": true   // or false
-     * }
-     *
-     * Response Examples:
-     * ------------------
-     * JSON (Inertia/AJAX):
-     * {
-     *     "message": "3 school(s) activated successfully.",
-     *     "updated_count": 3,
-     *     "skipped_count": 0,
-     *     "failures": []
-     * }
-     *
-     * Redirect (traditional):
-     * Redirect to schools.index with flash success message.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     *         The incoming request containing:
-     *         - ids: required array of school IDs (string|numeric)
-     *         - is_active: required boolean (true to activate, false to deactivate)
-     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
+     * Retired: is_active bulk toggle is incompatible with Phase 1 lifecycle.
+     * Use explicit lifecycle actions (activate, suspend, archive, recover).
      */
     public function bulkToggleStatus(Request $request)
     {
-        // ---------------------------------------------------------------------
-        // 1. Authorization
-        // ---------------------------------------------------------------------
-        // Requires general update permission on the School model.
-        // More granular per-school checks can be implemented in a policy if needed.
-        Gate::authorize('update', School::class);
+        $message = 'Bulk status toggle is no longer supported. Use lifecycle actions '
+            .'(activate, suspend, archive, recover) instead of mutating is_active directly.';
 
-        try {
-            // -----------------------------------------------------------------
-            // 2. Validation
-            // -----------------------------------------------------------------
-            $request->validate([
-                'ids' => 'required|array|min:1',
-                'ids.*' => 'required|string|exists:schools,id',
-                'is_active' => 'required|boolean',
-            ]);
-
-            $ids = $request->input('ids');
-            $isActive = $request->boolean('is_active'); // Safely converts to boolean
-
-            $updatedCount = 0;
-            $skippedCount = 0;
-            $failures = [];
-
-            // -----------------------------------------------------------------
-            // 3. Process each school individually
-            // -----------------------------------------------------------------
-            // Individual updates allow future event firing, logging, or per-school logic.
-            foreach ($ids as $schoolId) {
-                $school = School::find($schoolId);
-
-                // Safety guard: skip trashed (soft-deleted) schools.
-                // The frontend already disables the action on trashed rows,
-                // but we protect the endpoint from direct API calls.
-                if (!$school || $school->trashed()) {
-                    $skippedCount++;
-                    $failures[] = "School ID {$schoolId} not found or already trashed.";
-                    continue;
-                }
-
-                // Update the active status
-                $school->update(['is_active' => $isActive]);
-                $updatedCount++;
-            }
-
-            // -----------------------------------------------------------------
-            // 4. Invalidate caches
-            // -----------------------------------------------------------------
-            // Any status change affects listings, dashboards, etc.
-            Cache::forget('schools.all');
-            Cache::tags(['schools'])->flush();
-
-            // -----------------------------------------------------------------
-            // 5. Build response message
-            // -----------------------------------------------------------------
-            $action = $isActive ? 'activated' : 'deactivated';
-            $message = "{$updatedCount} school(s) {$action} successfully.";
-
-            if ($skippedCount > 0) {
-                $message .= " {$skippedCount} school(s) were skipped (not found or trashed).";
-            }
-
-            // -----------------------------------------------------------------
-            // 6. Return appropriate response
-            // -----------------------------------------------------------------
-            if ($request->wantsJson() || $request->header('X-Inertia')) {
-                return response()->json([
-                    'message' => $message,
-                    'updated_count' => $updatedCount,
-                    'skipped_count' => $skippedCount,
-                    'failures' => $failures,
-                ]);
-            }
-
-            return redirect()
-                ->route('schools.index')
-                ->with('success', $message);
-
-            // -----------------------------------------------------------------
-            // 7. Error handling
-            // -----------------------------------------------------------------
-        } catch (ValidationException $e) {
-            // Re-throw to let Laravel/Inertia handle field errors properly
-            throw $e;
-        } catch (Throwable $th) {
-            Log::error('Failed to bulk toggle school status', [
-                'user_id' => auth()->id() ?? null,
-                'input' => $request->all(),
-                'error' => $th->getMessage(),
-                'trace' => $th->getTraceAsString(),
-            ]);
-
-            $errorMessage = 'Failed to update school status.';
-
-            if ($request->wantsJson() || $request->header('X-Inertia')) {
-                return response()->json(['error' => $errorMessage], 500);
-            }
-
-            return redirect()
-                ->back()
-                ->with('error', $errorMessage);
+        if ($request->wantsJson() || $request->header('X-Inertia')) {
+            return response()->json(['error' => $message], 410);
         }
+
+        return redirect()->back()->with('error', $message);
     }
 
     // =================================================================

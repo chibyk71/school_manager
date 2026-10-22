@@ -70,7 +70,7 @@ class StoreSchoolRequest extends FormRequest
             'phone_one' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'phone_two' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'contact_name' => ['nullable', 'string', 'max:255'],
-            'type' => ['nullable', 'string', 'in:private,public,federal,state,missionary,community,international,other,government'],
+            'type' => ['nullable', 'string', \Illuminate\Validation\Rule::in(\App\Support\School\SchoolTypeCatalogue::values())],
             'description' => ['nullable', 'string', 'max:1000'],
             'motto' => ['nullable', 'string', 'max:255'],
 
@@ -121,10 +121,14 @@ class StoreSchoolRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'is_active' => $this->has('is_active') ? (bool) $this->input('is_active') : true,
-            'code' => $this->has('code') ? strtoupper($this->input('code')) : null,
-        ]);
+        // Clients cannot assign lifecycle state or is_active. Never inject them.
+        $merge = [];
+        if ($this->filled('code')) {
+            $merge['code'] = strtoupper((string) $this->input('code'));
+        }
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
     }
 
     /**

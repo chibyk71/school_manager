@@ -134,8 +134,13 @@ return new class extends Migration
             $notes
         )));
 
+        // Reconcile legacy is_active FROM lifecycle state only (not the reverse).
+        // Active/Suspended are operationally present; Draft/Ready/Archived are not "live".
+        $isActive = in_array($state, [Active::$name, Suspended::$name], true);
+
         DB::table('schools')->where('id', $id)->update([
             'state' => $state,
+            'is_active' => $isActive,
             'data' => json_encode($data),
             'updated_at' => now(),
         ]);

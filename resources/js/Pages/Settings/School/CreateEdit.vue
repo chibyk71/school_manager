@@ -10,7 +10,7 @@ CreateEdit.vue – School create/edit with Phase 4 Address integration.
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SettingsLayout from '@/Pages/Settings/Partials/SettingsLayout.vue';
-import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { Link, useForm, usePage, router } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import Dropdown from 'primevue/dropdown';
 import FileUpload from 'primevue/fileupload';
@@ -48,8 +48,10 @@ const form = useForm({
     email: props.school?.email ?? '',
     phone_one: props.school?.phone_one ?? '',
     phone_two: props.school?.phone_two ?? '',
-    type: props.school?.type ?? 'private',
-    is_active: props.school?.is_active ?? true,
+    contact_name: props.school?.contact_name ?? '',
+    description: props.school?.description ?? '',
+    motto: props.school?.motto ?? '',
+    type: props.school?.type ?? '',
 
     // Nested addresses[] on create (embedded AddressManager). Edit uses managed API.
     addresses: [] as AddressInput[],
@@ -61,6 +63,39 @@ const form = useForm({
     dark_logo: null,
     dark_small_logo: null,
 });
+
+
+const lifecycleBusy = ref(false);
+const readiness = ref<any>(null);
+
+function postLifecycle(routeName: string) {
+    if (!props.school?.id) return;
+    lifecycleBusy.value = true;
+    router.post(route(routeName, props.school.id), {}, {
+        preserveScroll: true,
+        onFinish: () => { lifecycleBusy.value = false; },
+        onError: (errors) => {
+            const first = Object.values(errors)[0];
+            toast.add({ severity: 'error', summary: 'Lifecycle', detail: String(first ?? 'Action failed'), life: 6000 });
+        },
+        onSuccess: () => {
+            toast.add({ severity: 'success', summary: 'Lifecycle', detail: 'Action completed', life: 3000 });
+            loadReadiness();
+        },
+    });
+}
+
+function loadReadiness() {
+    if (!props.school?.id) return;
+    fetch(route('schools.readiness', props.school.id), { headers: { Accept: 'application/json' } })
+        .then(r => r.json())
+        .then(data => { readiness.value = data; })
+        .catch(() => {});
+}
+
+if (isEdit.value) {
+    loadReadiness();
+}
 
 const submit = () => {
     const url = isEdit.value
@@ -122,6 +157,7 @@ const clearFile = (field: 'logo' | 'small_logo' | 'favicon' | 'dark_logo' | 'dar
 const schoolTypeOptions = [
     { label: 'Private', value: 'private' },
     { label: 'Government', value: 'government' },
+    { label: 'Community', value: 'community' },
     { label: 'Community', value: 'community' }
 ];
 </script>
@@ -147,13 +183,13 @@ const schoolTypeOptions = [
                                         :error="form.errors.name" required />
 
                                     <TextInput label="School Code" id="code" v-model="form.code"
-                                        :error="form.errors.code" required />
+                                        :error="form.errors.code" />
 
                                     <TextInput label="School Email" id="email" type="email" v-model="form.email"
-                                        :error="form.errors.email" required />
+                                        :error="form.errors.email" />
 
                                     <div>
-                                        <InputLabel for="type" value="School Type" required />
+                                        <InputLabel for="type" value="School Type" />
                                         <Select id="type" v-model="form.type" :options="schoolTypeOptions"
                                             optionLabel="label" optionValue="value" placeholder="Select school type"
                                             class="w-full" :class="{ 'p-invalid': form.errors.type }" filter>
@@ -171,13 +207,23 @@ const schoolTypeOptions = [
                                     <TextInput label="Secondary Phone" id="phone_two" :error="form.errors.phone_two"
                                         v-model="form.phone_two" />
 
-                                    <div class="col-span-1 md:col-span-2 flex items-center">
-                                        <div class="flex items-center">
-                                            <input type="checkbox" id="is_active" v-model="form.is_active"
-                                                class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 focus:ring-2 dark:bg-gray-700 dark:border-gray-600" />
-                                            <InputLabel for="is_active" value="Active School"
-                                                class="ml-2 mb-0 !text-base !font-normal" />
-                                        </div>
+                                    <TextInput label="Primary Contact Name" id="contact_name"
+                                        v-model="form.contact_name" :error="form.errors.contact_name"
+                                        hint="Contact person — not the institution name" />
+
+                                    <TextInput label="Description" id="description" v-model="form.description"
+                                        :error="form.errors.description" />
+
+                                    <TextInput label="Motto" id="motto" v-model="form.motto"
+                                        :error="form.errors.motto" />
+
+                                    <div v-if="isEdit && school?.state" class="col-span-1 md:col-span-2">
+                                        <InputLabel value="Lifecycle state" />
+                                        <p class="mt-1 text-sm font-medium capitalize">{{ school.state_label || school.state }}</p>
+                                        <p class="text-xs text-muted-foreground mt-1">
+                                            Use lifecycle actions (Mark Ready, Activate, Suspend, Archive, Recover) —
+                                            status is not edited here.
+                                        </p>
                                     </div>
                                 </div>
                             </div>
