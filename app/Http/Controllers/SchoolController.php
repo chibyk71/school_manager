@@ -7,6 +7,8 @@ use App\Models\School;
 use App\Http\Requests\StoreSchoolRequest;
 use App\Http\Requests\UpdateSchoolRequest;
 use App\Services\SchoolService;
+use App\Services\School\SchoolLifecycleService;
+use App\Services\School\SchoolReadinessEvaluator;
 use App\Support\ColumnDefinitionHelper;
 use DateTimeZone;
 use Illuminate\Http\Request;
@@ -964,5 +966,97 @@ class SchoolController extends BaseSchoolController
                 ->back()
                 ->with('error', $errorMessage);
         }
+    }
+
+    // =================================================================
+    // LIFECYCLE (Phase 1)
+    // =================================================================
+
+    public function markReady(School $school, SchoolLifecycleService $lifecycle)
+    {
+        $this->authorize('markReady', $school);
+
+        try {
+            $school = $lifecycle->markReady($school);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        }
+
+        if (request()->wantsJson() || request()->header('X-Inertia')) {
+            return response()->json([
+                'message' => 'School marked Ready.',
+                'school' => $school,
+                'readiness' => app(SchoolReadinessEvaluator::class)->evaluate($school),
+            ]);
+        }
+
+        return redirect()->back()->with('success', 'School marked Ready.');
+    }
+
+    public function activate(School $school, SchoolLifecycleService $lifecycle)
+    {
+        $this->authorize('activate', $school);
+        $school = $lifecycle->activate($school);
+
+        if (request()->wantsJson() || request()->header('X-Inertia')) {
+            return response()->json(['message' => 'School activated.', 'school' => $school]);
+        }
+
+        return redirect()->back()->with('success', 'School activated.');
+    }
+
+    public function suspend(School $school, SchoolLifecycleService $lifecycle)
+    {
+        $this->authorize('suspend', $school);
+        $school = $lifecycle->suspend($school);
+
+        if (request()->wantsJson() || request()->header('X-Inertia')) {
+            return response()->json(['message' => 'School suspended.', 'school' => $school]);
+        }
+
+        return redirect()->back()->with('success', 'School suspended.');
+    }
+
+    public function reactivate(School $school, SchoolLifecycleService $lifecycle)
+    {
+        $this->authorize('reactivate', $school);
+        $school = $lifecycle->reactivate($school);
+
+        if (request()->wantsJson() || request()->header('X-Inertia')) {
+            return response()->json(['message' => 'School reactivated.', 'school' => $school]);
+        }
+
+        return redirect()->back()->with('success', 'School reactivated.');
+    }
+
+    public function archive(School $school, SchoolLifecycleService $lifecycle)
+    {
+        $this->authorize('archive', $school);
+        $school = $lifecycle->archive($school);
+
+        if (request()->wantsJson() || request()->header('X-Inertia')) {
+            return response()->json(['message' => 'School archived.', 'school' => $school]);
+        }
+
+        return redirect()->back()->with('success', 'School archived.');
+    }
+
+    public function recover(School $school, SchoolLifecycleService $lifecycle)
+    {
+        $this->authorize('recover', $school);
+        $school = $lifecycle->recover($school);
+
+        if (request()->wantsJson() || request()->header('X-Inertia')) {
+            return response()->json(['message' => 'School recovered.', 'school' => $school]);
+        }
+
+        return redirect()->back()->with('success', 'School recovered.');
+    }
+
+    public function readiness(School $school, SchoolReadinessEvaluator $evaluator)
+    {
+        $this->authorize('view', $school);
+
+        return response()->json($evaluator->evaluate($school));
     }
 }

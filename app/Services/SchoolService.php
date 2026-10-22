@@ -60,39 +60,16 @@ class SchoolService
      */
     public function createSchool(array $data): School
     {
-        return DB::transaction(function () use ($data) {
-            $schoolData = [
-                'name'       => $data['name'],
-                'code'       => $data['code'] ?? null,
-                'email'      => $data['email'],
-                'phone_one'  => $data['phone_one'] ?? null,
-                'phone_two'  => $data['phone_two'] ?? null,
-                'type'       => $data['type'],
-                'is_active'  => $data['is_active'] ?? true,
-                'data'       => $data['extra_data'] ?? [],
-            ];
+        // Phase 1: Draft creation (name required). Capacity + state enforced by lifecycle.
+        // Clients cannot assign lifecycle state or force Active on create.
+        $lifecycle = app(\App\Services\School\SchoolLifecycleService::class);
+        $school = $lifecycle->createDraft($data);
 
-            $school = School::create($schoolData);
+        event(new SchoolCreated($school, auth()->id()));
 
-            // Nested addresses[] on create (embedded mode). First address is NOT auto-primary;
-            // is_primary comes from submitted payload only.
-            if (! empty($data['addresses']) && is_array($data['addresses'])) {
-                foreach ($data['addresses'] as $addrData) {
-                    if (! is_array($addrData)) {
-                        continue;
-                    }
-                    $isPrimary = (bool) ($addrData['is_primary'] ?? false);
-                    unset($addrData['is_primary'], $addrData['id']);
-                    $school->addAddress($addrData, $isPrimary);
-                }
-            }
+        Log::info('School created successfully', ['school_id' => $school->id]);
 
-            event(new SchoolCreated($school, auth()->id()));
-
-            Log::info('School created successfully', ['school_id' => $school->id]);
-
-            return $school;
-        });
+        return $school;
     }
 
     /**
@@ -104,21 +81,29 @@ class SchoolService
     public function updateSchool(School $school, array $data): School
     {
         return DB::transaction(function () use ($school, $data) {
+            // Lifecycle state is never assigned from ordinary update payloads.
+            unset($data['state'], $data['is_active']);
+
             $school->fill([
-                'name'       => $data['name'] ?? $school->name,
-                'code'       => $data['code'] ?? $school->code,
-                'email'      => $data['email'] ?? $school->email,
-                'phone_one'  => $data['phone_one'] ?? $school->phone_one,
-                'phone_two'  => $data['phone_two'] ?? $school->phone_two,
-                'type'       => $data['type'] ?? $school->type,
-                'is_active'  => $data['is_active'] ?? $school->is_active,
-                'data'       => array_merge($school->data ?? [], $data['extra_data'] ?? []),
+                'name'         => $data['name'] ?? $school->name,
+                'code'         => array_key_exists('code', $data) ? $data['code'] : $school->code,
+                'email'        => array_key_exists('email', $data) ? $data['email'] : $school->email,
+                'phone_one'    => array_key_exists('phone_one', $data) ? $data['phone_one'] : $school->phone_one,
+                'phone_two'    => array_key_exists('phone_two', $data) ? $data['phone_two'] : $school->phone_two,
+                'contact_name' => array_key_exists('contact_name', $data) ? $data['contact_name'] : $school->contact_name,
+                'type'         => array_key_exists('type', $data) ? $data['type'] : $school->type,
+                'description'  => array_key_exists('description', $data) ? $data['description'] : $school->description,
+                'motto'        => array_key_exists('motto', $data) ? $data['motto'] : $school->motto,
+                'data'         => array_merge($school->data ?? [], $data['extra_data'] ?? []),
             ]);
 
             $school->save();
 
+            // Ready → Draft if readiness-critical fields were cleared.
+            $school = app(\App\Services\School\SchoolLifecycleService::class)
+                ->reevaluateAfterUpdate($school);
+
             // Persisted address mutations are handled by the managed Address API (Phase 4).
-            // School update no longer upserts primary_address from the school form.
 
             Log::info('School updated successfully', ['school_id' => $school->id]);
 

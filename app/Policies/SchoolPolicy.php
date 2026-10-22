@@ -76,4 +76,37 @@ class SchoolPolicy
     {
         return $user->hasRole('super-admin') || ($user->schools->contains($school) && $user->hasPermission('school.forceDelete', null));
     }
+
+    /**
+     * Lifecycle actions — require update-level access (or dedicated permissions when seeded).
+     */
+    public function markReady(User $user, School $school): bool
+    {
+        return $this->update($user, $school);
+    }
+
+    public function activate(User $user, School $school): bool
+    {
+        return $this->update($user, $school);
+    }
+
+    public function suspend(User $user, School $school): bool
+    {
+        return $this->update($user, $school);
+    }
+
+    public function reactivate(User $user, School $school): bool
+    {
+        return $this->update($user, $school);
+    }
+
+    public function archive(User $user, School $school): bool
+    {
+        return $this->update($user, $school);
+    }
+
+    public function recover(User $user, School $school): bool
+    {
+        return $this->update($user, $school);
+    }
 }
