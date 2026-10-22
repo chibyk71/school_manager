@@ -140,6 +140,7 @@ class AddressController extends Controller
 
         if ($target->is_primary) {
             $ownerModel->unsetPrimaryAddress();
+            $this->reevaluateSchoolReadiness($ownerModel);
         }
 
         return response()->json(null, 204);

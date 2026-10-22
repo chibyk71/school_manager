@@ -228,23 +228,75 @@ class SchoolLifecycleService
     /**
      * Operational onboarding (sections, class levels, session) runs once when the
      * school first becomes Active — not on Draft creation.
-     * Idempotent: SetupSchoolOnboarding uses firstOrCreate; we also set a data flag.
+     *
+     * Safety:
+     * - Skip only when operational_onboarding_completed_at is set (job finished).
+     * - Concurrent activators: row lock + dispatch claim so only one dispatches.
+     * - Dispatch failure clears the claim so retries remain possible.
+     * - After dispatch, re-read the row so a synchronous job's completed_at is not overwritten.
      */
     public function ensureOperationalOnboarding(School $school): void
     {
-        $school->refresh();
-        $data = $school->data ?? [];
-        if (! empty($data['operational_onboarding_dispatched_at'])) {
+        $shouldDispatch = false;
+
+        DB::transaction(function () use ($school, &$shouldDispatch) {
+            $locked = School::query()->whereKey($school->id)->lockForUpdate()->firstOrFail();
+            $data = $locked->data ?? [];
+
+            if (! empty($data['operational_onboarding_completed_at'])) {
+                return;
+            }
+
+            // Another activator already claimed an in-flight dispatch.
+            if (! empty($data['operational_onboarding_dispatch_claimed_at'])) {
+                return;
+            }
+
+            $data['operational_onboarding_dispatch_claimed_at'] = now()->toIso8601String();
+            $locked->data = $data;
+            $locked->save();
+            $shouldDispatch = true;
+        });
+
+        if (! $shouldDispatch) {
             return;
         }
 
-        \App\Jobs\SetupSchoolOnboarding::dispatch($school);
+        try {
+            \App\Jobs\SetupSchoolOnboarding::dispatch($school->fresh());
+        } catch (\Throwable $e) {
+            // Failed dispatch must not permanently suppress retries.
+            DB::transaction(function () use ($school) {
+                $locked = School::query()->whereKey($school->id)->lockForUpdate()->firstOrFail();
+                $data = $locked->data ?? [];
+                if (empty($data['operational_onboarding_completed_at'])) {
+                    unset($data['operational_onboarding_dispatch_claimed_at'], $data['operational_onboarding_dispatched_at']);
+                    $locked->data = $data;
+                    $locked->save();
+                }
+            });
+            Log::error('Operational onboarding dispatch failed; claim cleared for retry', [
+                'school_id' => $school->id,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
 
-        $data['operational_onboarding_dispatched_at'] = now()->toIso8601String();
-        $school->data = $data;
-        $school->save();
+        // Sync drivers may have completed the job already — never clobber completed_at.
+        DB::transaction(function () use ($school) {
+            $locked = School::query()->whereKey($school->id)->lockForUpdate()->firstOrFail();
+            $data = $locked->data ?? [];
 
-        \Illuminate\Support\Facades\Log::info('Operational onboarding dispatched on activate', [
+            if (! empty($data['operational_onboarding_completed_at'])) {
+                return;
+            }
+
+            $data['operational_onboarding_dispatched_at'] = now()->toIso8601String();
+            $locked->data = $data;
+            $locked->save();
+        });
+
+        Log::info('Operational onboarding dispatched on activate', [
             'school_id' => $school->id,
         ]);
     }

@@ -48,6 +48,8 @@ class SetupSchoolOnboarding implements ShouldQueue
                 if ($school) {
                     $d = $school->data ?? [];
                     $d['operational_onboarding_completed_at'] = now()->toIso8601String();
+                    // Claim is no longer needed once complete.
+                    unset($d['operational_onboarding_dispatch_claimed_at']);
                     $school->data = $d;
                     $school->save();
                 }
