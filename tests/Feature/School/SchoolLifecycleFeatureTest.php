@@ -253,10 +253,11 @@ class SchoolLifecycleFeatureTest extends TestCase
         );
 
         $this->actingAs($member->fresh());
-        $memberResponse = $this->put(route('schools.update', $school), [
+        $memberResponse = $this->from('/schools/'.$school->id)->put(route('schools.update', $school), [
             'name' => 'Membership School Updated',
         ]);
-        $memberResponse->assertSuccessful();
+        $memberResponse->assertRedirect();
+        $memberResponse->assertSessionHas('success');
         $this->assertSame('Membership School Updated', $school->fresh()->name);
 
         $this->actingAs($outsider);

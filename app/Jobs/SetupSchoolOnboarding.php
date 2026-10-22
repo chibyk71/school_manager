@@ -77,21 +77,28 @@ class SetupSchoolOnboarding implements ShouldQueue
 
     /**
      * Release in-flight claim after a failed attempt (completed_at stays unset).
+     * Row-locked transaction so a concurrent successful worker's completed_at is never overwritten.
      */
     protected function clearDispatchClaim(): void
     {
         try {
-            $school = School::query()->whereKey($this->school->id)->lockForUpdate()->first();
-            if (! $school) {
-                return;
-            }
-            $data = $school->data ?? [];
-            if (! empty($data['operational_onboarding_completed_at'])) {
-                return;
-            }
-            unset($data['operational_onboarding_dispatch_claimed_at'], $data['operational_onboarding_dispatched_at']);
-            $school->data = $data;
-            $school->save();
+            DB::transaction(function () {
+                $school = School::query()->whereKey($this->school->id)->lockForUpdate()->first();
+                if (! $school) {
+                    return;
+                }
+                $data = $school->data ?? [];
+                // Never clear claim (or touch data) if onboarding already completed.
+                if (! empty($data['operational_onboarding_completed_at'])) {
+                    return;
+                }
+                unset(
+                    $data['operational_onboarding_dispatch_claimed_at'],
+                    $data['operational_onboarding_dispatched_at']
+                );
+                $school->data = $data;
+                $school->save();
+            });
         } catch (\Throwable $clearError) {
             Log::error('Failed to clear onboarding dispatch claim after job failure', [
                 'school_id' => $this->school->id,

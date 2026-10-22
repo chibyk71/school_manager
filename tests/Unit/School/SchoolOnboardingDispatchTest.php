@@ -149,4 +149,31 @@ class SchoolOnboardingDispatchTest extends TestCase
         app(SchoolLifecycleService::class)->ensureOperationalOnboarding($fresh);
         Queue::assertNotPushed(SetupSchoolOnboarding::class);
     }
+
+    public function test_clear_dispatch_claim_preserves_completed_marker(): void
+    {
+        $school = $this->makeActiveSchool('Claim Cleanup Race');
+        $school->data = array_merge($school->data ?? [], [
+            'operational_onboarding_dispatch_claimed_at' => now()->toIso8601String(),
+            'operational_onboarding_completed_at' => now()->toIso8601String(),
+        ]);
+        $school->save();
+
+        $job = new class($school) extends SetupSchoolOnboarding
+        {
+            public function exposeClearClaim(): void
+            {
+                $this->clearDispatchClaim();
+            }
+        };
+        $job->exposeClearClaim();
+
+        $data = $school->fresh()->data ?? [];
+        $this->assertNotEmpty($data['operational_onboarding_completed_at'] ?? null);
+        // Claim may remain or be absent; completed must survive.
+        $this->assertSame(
+            $school->data['operational_onboarding_completed_at'],
+            $data['operational_onboarding_completed_at']
+        );
+    }
 }
