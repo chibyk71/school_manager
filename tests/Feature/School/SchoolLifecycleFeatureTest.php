@@ -230,9 +230,11 @@ class SchoolLifecycleFeatureTest extends TestCase
         $this->assertFalse($school->fresh()->trashed());
     }
 
-    public function test_policy_boundary_member_can_delete_outsider_cannot(): void
+    public function test_policy_boundary_member_can_update_outsider_cannot(): void
     {
-        // Do not short-circuit Gate — exercise SchoolPolicy.
+        // Exercise SchoolPolicy without Gate::before short-circuit.
+        // update() is membership-gated and does not require users()->count() === 0
+        // (delete does, which conflicts with attaching the member on school_users).
         Gate::before(fn () => null);
 
         if (! Schema::hasTable('permission_user') || ! Schema::hasTable('school_users')) {
@@ -243,26 +245,65 @@ class SchoolLifecycleFeatureTest extends TestCase
         $outsider = User::factory()->create();
         $school = app(SchoolLifecycleService::class)->createDraft(['name' => 'Membership School']);
 
-        $this->attachSchoolMember($member, $school, ['school.delete', 'school.view', 'school.update']);
+        $this->attachSchoolMember($member, $school, ['school.update', 'school.view']);
 
-        // Policy delete also requires zero users relation count — school has no user rows via users().
-        $this->actingAs($member);
-        $memberResponse = $this->delete(route('schools.destroy'), ['ids' => [$school->id]]);
-        // Member may still be denied if hasPermission/hasRole path differs; assert not 500.
-        $this->assertNotEquals(500, $memberResponse->status());
+        $this->assertTrue(
+            $member->fresh()->schools->contains($school),
+            'Member fixture must establish school_users membership'
+        );
 
-        // Restore if member succeeded so outsider test has a live row.
-        if ($school->fresh()->trashed()) {
-            $school->restore();
-            $school->state = Draft::class;
-            $school->is_active = false;
-            $school->save();
-        }
+        $this->actingAs($member->fresh());
+        $memberResponse = $this->put(route('schools.update', $school), [
+            'name' => 'Membership School Updated',
+        ]);
+        $memberResponse->assertSuccessful();
+        $this->assertSame('Membership School Updated', $school->fresh()->name);
 
         $this->actingAs($outsider);
-        $outsiderResponse = $this->delete(route('schools.destroy'), ['ids' => [$school->id]]);
+        $outsiderResponse = $this->put(route('schools.update', $school), [
+            'name' => 'Hijacked Name',
+        ]);
         $outsiderResponse->assertForbidden();
-        $this->assertFalse($school->fresh()->trashed());
+        $this->assertSame('Membership School Updated', $school->fresh()->name);
+    }
+
+    public function test_policy_boundary_outsider_cannot_delete_empty_school(): void
+    {
+        Gate::before(fn () => null);
+
+        if (! Schema::hasTable('roles') || ! Schema::hasTable('role_user')) {
+            $this->markTestSkipped('roles/role_user required for super-admin fixture');
+        }
+
+        $admin = User::factory()->create();
+        $outsider = User::factory()->create();
+        $school = app(SchoolLifecycleService::class)->createDraft(['name' => 'Deletable Empty School']);
+
+        // Super-admin path on SchoolPolicy::delete (still requires users()->count() === 0).
+        $role = \App\Models\Role::query()->firstOrCreate(
+            ['name' => 'super-admin'],
+            ['display_name' => 'Super Admin']
+        );
+        DB::table('role_user')->insertOrIgnore([
+            'role_id' => $role->id,
+            'user_id' => $admin->id,
+            'user_type' => User::class,
+            'school_id' => null,
+        ]);
+
+        $this->assertSame(0, $school->users()->count());
+
+        $this->actingAs($admin->fresh());
+        $adminResponse = $this->delete(route('schools.destroy'), ['ids' => [$school->id]]);
+        $adminResponse->assertSuccessful();
+        $this->assertTrue($school->fresh()->trashed());
+
+        // Second school for outsider denial (first is already trashed).
+        $school2 = app(SchoolLifecycleService::class)->createDraft(['name' => 'Outsider Target']);
+        $this->actingAs($outsider);
+        $outsiderResponse = $this->delete(route('schools.destroy'), ['ids' => [$school2->id]]);
+        $outsiderResponse->assertForbidden();
+        $this->assertFalse($school2->fresh()->trashed());
     }
 
     public function test_bulk_toggle_status_is_gone(): void

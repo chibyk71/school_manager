@@ -6,9 +6,9 @@ use App\Jobs\SetupSchoolOnboarding;
 use App\Models\School;
 use App\Services\School\SchoolLifecycleService;
 use App\States\School\Active;
-use App\States\School\Draft;
-use App\States\School\Ready;
+use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -25,11 +25,9 @@ class SchoolOnboardingDispatchTest extends TestCase
         }
     }
 
-    private function makeActiveSchool(): School
+    private function makeActiveSchool(string $name = 'Onboard Me'): School
     {
-        $lifecycle = app(SchoolLifecycleService::class);
-        $school = $lifecycle->createDraft(['name' => 'Onboard Me']);
-        // Force Active without full readiness path for isolated onboarding tests.
+        $school = app(SchoolLifecycleService::class)->createDraft(['name' => $name]);
         $school->state = Active::class;
         $school->is_active = true;
         $school->save();
@@ -54,7 +52,7 @@ class SchoolOnboardingDispatchTest extends TestCase
     public function test_completed_school_is_not_redispatched(): void
     {
         Queue::fake();
-        $school = $this->makeActiveSchool();
+        $school = $this->makeActiveSchool('Already Done');
         $school->data = array_merge($school->data ?? [], [
             'operational_onboarding_completed_at' => now()->toIso8601String(),
         ]);
@@ -65,51 +63,90 @@ class SchoolOnboardingDispatchTest extends TestCase
         Queue::assertNotPushed(SetupSchoolOnboarding::class);
     }
 
-    public function test_sync_queue_completion_is_not_overwritten_by_dispatch_metadata(): void
+    public function test_dispatch_exception_clears_claim_and_allows_retry(): void
     {
-        // Simulate synchronous completion: job writes completed_at before post-dispatch save.
-        Queue::fake();
-        $school = $this->makeActiveSchool();
+        $school = $this->makeActiveSchool('Dispatch Fail');
+
+        $dispatcher = \Mockery::mock(BusDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
+            ->once()
+            ->andThrow(new \RuntimeException('simulated dispatch failure'));
+        $this->app->instance(BusDispatcher::class, $dispatcher);
+
         $lifecycle = app(SchoolLifecycleService::class);
 
-        // Claim + dispatch path with Queue::fake does not run the job; emulate race:
-        $lifecycle->ensureOperationalOnboarding($school);
-        $school->refresh();
-        $data = $school->data ?? [];
-        $data['operational_onboarding_completed_at'] = now()->toIso8601String();
-        unset($data['operational_onboarding_dispatch_claimed_at']);
-        $school->data = $data;
-        $school->save();
+        try {
+            $lifecycle->ensureOperationalOnboarding($school);
+            $this->fail('Expected RuntimeException from dispatch');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('simulated dispatch failure', $e->getMessage());
+        }
 
-        // Second ensure must not clear completed_at or re-dispatch.
-        $lifecycle->ensureOperationalOnboarding($school->fresh());
-        $fresh = $school->fresh();
-        $this->assertNotEmpty($fresh->data['operational_onboarding_completed_at'] ?? null);
+        $data = $school->fresh()->data ?? [];
+        $this->assertArrayNotHasKey('operational_onboarding_dispatch_claimed_at', $data);
+        $this->assertArrayNotHasKey('operational_onboarding_dispatched_at', $data);
+        $this->assertArrayNotHasKey('operational_onboarding_completed_at', $data);
+
+        // Retry with a real (faked) queue must succeed in claiming + pushing.
+        Queue::fake();
+        // Re-bind real dispatcher under Queue::fake
+        $this->app->forgetInstance(BusDispatcher::class);
+        app(SchoolLifecycleService::class)->ensureOperationalOnboarding($school->fresh());
         Queue::assertPushed(SetupSchoolOnboarding::class, 1);
     }
 
-    public function test_dispatch_failure_clears_claim_for_retry(): void
+    public function test_job_failure_clears_claim_and_does_not_set_completed(): void
     {
-        $school = $this->makeActiveSchool();
-
-        // Force dispatch failure by binding a broken bus — use partial mock via Queue::fake
-        // then manually exercise the clear-claim path by simulating exception after claim.
-        // Claim first under service rules by calling ensure with a throwing dispatch is hard;
-        // exercise the recovery path by setting claim and verifying a successful retry.
+        $school = $this->makeActiveSchool('Job Fail');
         $school->data = array_merge($school->data ?? [], [
             'operational_onboarding_dispatch_claimed_at' => now()->toIso8601String(),
         ]);
         $school->save();
 
-        Queue::fake();
-        // Stuck claim without completed_at blocks re-dispatch (in-flight). Clear claim as failure would.
-        $school->data = array_merge($school->data ?? [], []);
-        $data = $school->data ?? [];
-        unset($data['operational_onboarding_dispatch_claimed_at']);
-        $school->data = $data;
-        $school->save();
+        $job = new class($school) extends SetupSchoolOnboarding
+        {
+            protected function createDefaultSections(): void
+            {
+                throw new \RuntimeException('section bootstrap failed');
+            }
+        };
 
+        try {
+            $job->handle();
+            $this->fail('Expected job to rethrow');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('section bootstrap failed', $e->getMessage());
+        }
+
+        $data = $school->fresh()->data ?? [];
+        $this->assertArrayNotHasKey('operational_onboarding_dispatch_claimed_at', $data);
+        $this->assertArrayNotHasKey('operational_onboarding_completed_at', $data);
+
+        // Retry dispatch is allowed after claim cleared.
+        Queue::fake();
         app(SchoolLifecycleService::class)->ensureOperationalOnboarding($school->fresh());
         Queue::assertPushed(SetupSchoolOnboarding::class, 1);
+    }
+
+    public function test_synchronous_job_completion_preserves_completed_marker(): void
+    {
+        // Run the real job body (not Queue::fake) when structural tables exist.
+        if (! Schema::hasTable('school_sections') || ! Schema::hasTable('academic_sessions')) {
+            $this->markTestSkipped('school_sections and academic_sessions required for sync onboarding job');
+        }
+
+        config(['queue.default' => 'sync']);
+
+        $school = $this->makeActiveSchool('Sync Complete');
+        app(SchoolLifecycleService::class)->ensureOperationalOnboarding($school);
+
+        $fresh = $school->fresh();
+        $data = $fresh->data ?? [];
+        $this->assertNotEmpty($data['operational_onboarding_completed_at'] ?? null);
+        $this->assertArrayNotHasKey('operational_onboarding_dispatch_claimed_at', $data);
+
+        Queue::fake();
+        app(SchoolLifecycleService::class)->ensureOperationalOnboarding($fresh);
+        Queue::assertNotPushed(SetupSchoolOnboarding::class);
     }
 }

@@ -66,6 +66,37 @@ class SetupSchoolOnboarding implements ShouldQueue
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            // Clear the dispatch claim so a later activate/retry can re-dispatch.
+            // Do not set completed_at. Re-throw so the queue marks the job failed.
+            $this->clearDispatchClaim();
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Release in-flight claim after a failed attempt (completed_at stays unset).
+     */
+    protected function clearDispatchClaim(): void
+    {
+        try {
+            $school = School::query()->whereKey($this->school->id)->lockForUpdate()->first();
+            if (! $school) {
+                return;
+            }
+            $data = $school->data ?? [];
+            if (! empty($data['operational_onboarding_completed_at'])) {
+                return;
+            }
+            unset($data['operational_onboarding_dispatch_claimed_at'], $data['operational_onboarding_dispatched_at']);
+            $school->data = $data;
+            $school->save();
+        } catch (\Throwable $clearError) {
+            Log::error('Failed to clear onboarding dispatch claim after job failure', [
+                'school_id' => $this->school->id,
+                'error' => $clearError->getMessage(),
+            ]);
         }
     }
 
