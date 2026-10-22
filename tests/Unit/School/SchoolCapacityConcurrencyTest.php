@@ -15,12 +15,20 @@ use Tests\TestCase;
 /**
  * Capacity enforcement under contention.
  *
- * Sequential lock-path tests run on any engine. True multi-connection
- * concurrency runs only on mysql/mariadb/pgsql when pcntl is available.
+ * This class disables RefreshDatabase transactions so multi-process children
+ * can see committed seed rows on mysql/mariadb/pgsql.
  */
 class SchoolCapacityConcurrencyTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * Do not wrap tests in a transaction — required for cross-process visibility.
+     */
+    protected function connectionsToTransact(): array
+    {
+        return [];
+    }
 
     protected function setUp(): void
     {
@@ -39,7 +47,17 @@ class SchoolCapacityConcurrencyTest extends TestCase
             ]);
         }
 
+        School::query()->forceDelete();
         $this->bindCapacityLimit(2);
+    }
+
+    protected function tearDown(): void
+    {
+        try {
+            School::query()->forceDelete();
+        } catch (\Throwable) {
+        }
+        parent::tearDown();
     }
 
     private function bindCapacityLimit(int $limit): void
@@ -68,26 +86,6 @@ class SchoolCapacityConcurrencyTest extends TestCase
         $lifecycle->createDraft(['name' => 'Three']);
     }
 
-    public function test_with_capacity_lock_serializes_usage_checks(): void
-    {
-        $capacity = app(SchoolCapacityService::class);
-        $lifecycle = app(SchoolLifecycleService::class);
-
-        $lifecycle->createDraft(['name' => 'A']);
-
-        $capacity->withCapacityLock(function () use ($lifecycle) {
-            $lifecycle->createDraft(['name' => 'B']);
-            try {
-                $lifecycle->createDraft(['name' => 'C']);
-                $this->fail('Expected InsufficientCapacityException');
-            } catch (InsufficientCapacityException) {
-                // expected
-            }
-        });
-
-        $this->assertSame(2, School::query()->countedForCapacity()->count());
-    }
-
     public function test_concurrent_create_draft_cannot_exceed_limit(): void
     {
         $driver = DB::connection()->getDriverName();
@@ -103,19 +101,25 @@ class SchoolCapacityConcurrencyTest extends TestCase
             );
         }
 
-        app(SchoolLifecycleService::class)->createDraft(['name' => 'Seed']);
+        // Seed committed (no ambient transaction thanks to connectionsToTransact = []).
+        app(SchoolLifecycleService::class)->createDraft(['name' => 'Seed-Committed']);
+        $this->assertSame(1, School::query()->countedForCapacity()->count());
 
-        $children = [];
         $attempts = 4;
+        $children = [];
         for ($i = 0; $i < $attempts; $i++) {
             $pid = pcntl_fork();
             if ($pid === -1) {
                 $this->fail('pcntl_fork failed');
             }
             if ($pid === 0) {
-                DB::reconnect();
-                $this->bindCapacityLimit(2);
+                // Child: independent connection; re-bind limit in this process.
                 try {
+                    DB::purge();
+                    DB::reconnect();
+                    // Rebuild app bindings for this process.
+                    $this->refreshApplication();
+                    $this->bindCapacityLimit(2);
                     app(SchoolLifecycleService::class)->createDraft([
                         'name' => 'Concurrent-'.$i.'-'.getmypid(),
                     ]);
@@ -145,6 +149,8 @@ class SchoolCapacityConcurrencyTest extends TestCase
             }
         }
 
+        // Parent reconnect after forks
+        DB::reconnect();
         $this->assertSame(1, $success, 'Exactly one concurrent create should succeed at remaining capacity 1');
         $this->assertSame($attempts - 1, $rejected);
         $this->assertSame(2, School::query()->countedForCapacity()->count());

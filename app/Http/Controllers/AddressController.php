@@ -66,6 +66,7 @@ class AddressController extends Controller
         unset($data['is_primary']);
 
         $address = $ownerModel->addAddress($data, $isPrimary);
+        $this->reevaluateSchoolReadiness($ownerModel);
         $address->load(['country', 'state', 'city']);
 
         return (new AddressResource($address))
@@ -86,6 +87,7 @@ class AddressController extends Controller
         Gate::authorize('update', $ownerModel);
 
         $updated = $ownerModel->updateAddress($address, $request->validated());
+        $this->reevaluateSchoolReadiness($ownerModel);
         $updated->load(['country', 'state', 'city']);
 
         return new AddressResource($updated);
@@ -100,6 +102,7 @@ class AddressController extends Controller
         Gate::authorize('update', $ownerModel);
 
         $ownerModel->deleteAddress($address);
+        $this->reevaluateSchoolReadiness($ownerModel);
 
         return response()->json(null, 204);
     }
@@ -113,6 +116,7 @@ class AddressController extends Controller
         Gate::authorize('update', $ownerModel);
 
         $primary = $ownerModel->setPrimaryAddress($address);
+        $this->reevaluateSchoolReadiness($ownerModel);
         $primary->load(['country', 'state', 'city']);
 
         return new AddressResource($primary);
@@ -147,6 +151,20 @@ class AddressController extends Controller
      * @throws NotFoundHttpException
      * @throws ValidationException
      */
+
+    /**
+     * Ready → Draft when a School owner loses readiness via address mutation.
+     */
+    private function reevaluateSchoolReadiness(mixed $ownerModel): void
+    {
+        if (! $ownerModel instanceof School) {
+            return;
+        }
+
+        app(\App\Services\School\SchoolLifecycleService::class)
+            ->reevaluateAfterUpdate($ownerModel->fresh());
+    }
+
     private function resolveOwner(string $ownerAlias, string $ownerId): Model
     {
         $alias = strtolower(trim($ownerAlias));

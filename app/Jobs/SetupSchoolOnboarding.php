@@ -29,10 +29,28 @@ class SetupSchoolOnboarding implements ShouldQueue
     public function handle(): void
     {
         try {
+            $this->school->refresh();
+            $data = $this->school->data ?? [];
+            if (! empty($data['operational_onboarding_completed_at'])) {
+                Log::info('School onboarding skipped — already completed', [
+                    'school_id' => $this->school->id,
+                ]);
+
+                return;
+            }
+
             DB::transaction(function () {
                 $this->createDefaultSections();
                 $this->createDefaultClassLevels();
                 $this->createCurrentAcademicSession();
+
+                $school = School::query()->whereKey($this->school->id)->lockForUpdate()->first();
+                if ($school) {
+                    $d = $school->data ?? [];
+                    $d['operational_onboarding_completed_at'] = now()->toIso8601String();
+                    $school->data = $d;
+                    $school->save();
+                }
             });
 
             Log::info('School onboarding setup completed successfully', [

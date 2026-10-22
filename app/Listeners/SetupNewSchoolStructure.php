@@ -80,11 +80,11 @@ class SetupNewSchoolStructure implements ShouldQueue
                 $admin?->notify(new SchoolWelcomeNotification($event->school));
             }
 
-            // Dispatch the heavy onboarding job
-            // This runs asynchronously on the queue
-            SetupSchoolOnboarding::dispatch($event->school);
-
-            Log::info('SetupNewSchoolStructure listener triggered onboarding job', [
+            // Phase 1: Draft creation must NOT run operational onboarding
+            // (sections/class levels/Active academic session). That runs once
+            // on first Activate via SchoolLifecycleService::ensureOperationalOnboarding.
+            // Welcome notification remains appropriate for the creator.
+            Log::info('SetupNewSchoolStructure: welcome only; operational onboarding deferred to Activate', [
                 'school_id' => $event->school->id,
                 'school_name' => $event->school->name,
                 'creator_id' => $event->creatorId,

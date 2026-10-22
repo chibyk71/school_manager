@@ -63,7 +63,7 @@ class SchoolLifecycleService
      */
     public function activate(School $school): School
     {
-        return DB::transaction(function () use ($school) {
+        $school = DB::transaction(function () use ($school) {
             $school = School::query()->whereKey($school->id)->lockForUpdate()->firstOrFail();
 
             if (! ($school->state instanceof Ready)) {
@@ -80,7 +80,12 @@ class SchoolLifecycleService
 
             return $school->fresh();
         });
+
+        $this->ensureOperationalOnboarding($school);
+
+        return $school->fresh();
     }
+
 
     /**
      * Active → Suspended.
@@ -219,6 +224,31 @@ class SchoolLifecycleService
      *
      * @param  array<string, mixed>  $data
      */
+
+    /**
+     * Operational onboarding (sections, class levels, session) runs once when the
+     * school first becomes Active — not on Draft creation.
+     * Idempotent: SetupSchoolOnboarding uses firstOrCreate; we also set a data flag.
+     */
+    public function ensureOperationalOnboarding(School $school): void
+    {
+        $school->refresh();
+        $data = $school->data ?? [];
+        if (! empty($data['operational_onboarding_dispatched_at'])) {
+            return;
+        }
+
+        \App\Jobs\SetupSchoolOnboarding::dispatch($school);
+
+        $data['operational_onboarding_dispatched_at'] = now()->toIso8601String();
+        $school->data = $data;
+        $school->save();
+
+        \Illuminate\Support\Facades\Log::info('Operational onboarding dispatched on activate', [
+            'school_id' => $school->id,
+        ]);
+    }
+
     public function createDraft(array $data): School
     {
         return $this->capacity->withCapacityLock(function () use ($data) {

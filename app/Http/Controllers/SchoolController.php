@@ -443,37 +443,32 @@ class SchoolController extends BaseSchoolController
         Gate::authorize('update', $school);
 
         try {
-            // 1. Handle quick status toggle (inline table actions)
-            if ($request->has('is_active')) {
-                $school->update(['is_active' => $request->boolean('is_active')]);
-            } else {
-                // 2. Full update: core attributes only.
-                // Address mutations for persisted schools use the managed Address API (Phase 4).
-                $school->update($request->safe()->except(['addresses', 'primary_address']));
+            // Core update via SchoolService (strips state/is_active, reevaluates Ready → Draft).
+            // Address mutations use the managed Address API and trigger the same reevaluation.
+            $school = $this->schoolService->updateSchool(
+                $school,
+                $request->safe()->except(['addresses', 'primary_address', 'logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'])->toArray()
+            );
 
-                // 4. Handle media replacements
-                $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];
-                foreach ($mediaCollections as $collection) {
-                    if ($request->hasFile($collection)) {
-                        $school->addMediaFromRequest($collection)
-                            ->toMediaCollection($collection);
-                    }
+            $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];
+            foreach ($mediaCollections as $collection) {
+                if ($request->hasFile($collection)) {
+                    $school->addMediaFromRequest($collection)
+                        ->toMediaCollection($collection);
                 }
             }
 
-            // 5. Cache invalidation
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
-            // 6. Success response
             $message = 'School updated successfully';
 
-            if ($request->wantsJson()) {
-                return response()->json(['message' => $message]);
+            if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+                return response()->json(['message' => $message, 'school' => $school->fresh()]);
             }
 
             return redirect()
-                ->route('schools.index')
+                ->back()
                 ->with('success', $message);
 
         } catch (Throwable $th) {
@@ -484,7 +479,7 @@ class SchoolController extends BaseSchoolController
                 'trace' => $th->getTraceAsString(),
             ]);
 
-            if ($request->wantsJson()) {
+            if ($request->wantsJson() && ! $request->header('X-Inertia')) {
                 return response()->json(['error' => 'Failed to update school.'], 500);
             }
 
@@ -568,9 +563,15 @@ class SchoolController extends BaseSchoolController
                 $successCount++;
             }
 
-            if ($successCount === 0 && $failures !== []) {
+            if ($successCount === 0) {
+                $authOnly = $failures !== [] && collect($failures)->every(
+                    fn (string $f) => str_contains($f, 'Not authorized')
+                );
+                if ($authOnly) {
+                    abort(403, implode(' ', $failures));
+                }
                 throw ValidationException::withMessages([
-                    'ids' => implode(' ', $failures),
+                    'ids' => $failures !== [] ? implode(' ', $failures) : 'No schools were deleted.',
                 ]);
             }
 
@@ -643,6 +644,15 @@ class SchoolController extends BaseSchoolController
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
+            if ($successCount === 0) {
+                $authOnly = $failedSchools !== [] && collect($failedSchools)->every(
+                    fn (string $f) => str_contains($f, 'Not authorized')
+                );
+                if ($authOnly) {
+                    abort(403, implode(' ', $failedSchools));
+                }
+            }
+
             $message = $successCount > 0
                 ? "{$successCount} school(s) permanently deleted."
                 : 'No schools were permanently deleted.';
@@ -650,7 +660,7 @@ class SchoolController extends BaseSchoolController
                 $message .= ' Failures: '.implode(' ', $failedSchools);
             }
 
-            if ($request->wantsJson()) {
+            if ($request->wantsJson() && ! $request->header('X-Inertia')) {
                 return response()->json([
                     'message' => $message,
                     'success_count' => $successCount,
@@ -722,6 +732,15 @@ class SchoolController extends BaseSchoolController
             Cache::forget('schools.all');
             Cache::tags(['schools'])->flush();
 
+            if ($restoredCount === 0) {
+                $authOnly = $failedSchools !== [] && collect($failedSchools)->every(
+                    fn (string $f) => str_contains($f, 'Not authorized')
+                );
+                if ($authOnly) {
+                    abort(403, implode(' ', $failedSchools));
+                }
+            }
+
             $message = $restoredCount > 0
                 ? "{$restoredCount} school(s) restored successfully."
                 : 'No schools were restored.';
@@ -729,7 +748,7 @@ class SchoolController extends BaseSchoolController
                 $message .= ' Failures: '.implode(' ', $failedSchools);
             }
 
-            if ($request->wantsJson()) {
+            if ($request->wantsJson() && ! $request->header('X-Inertia')) {
                 return response()->json([
                     'message' => $message,
                     'restored_count' => $restoredCount,
@@ -775,85 +794,135 @@ class SchoolController extends BaseSchoolController
     // LIFECYCLE (Phase 1)
     // =================================================================
 
+    /**
+     * Lifecycle action response: Inertia gets redirect+flash; pure JSON clients get JSON.
+     * X-Inertia alone must not force JSON (router.post is an Inertia visit).
+     */
+    protected function respondLifecycle(Request $request, string $message, School $school, int $errorStatus = 200)
+    {
+        if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+            $payload = ['message' => $message, 'school' => $school->fresh()];
+            if ($errorStatus >= 400) {
+                return response()->json(['error' => $message] + $payload, $errorStatus);
+            }
+
+            return response()->json($payload);
+        }
+
+        return redirect()->back()->with($errorStatus >= 400 ? 'error' : 'success', $message);
+    }
+
+    protected function respondLifecycleError(Request $request, string $message, int $status = 422)
+    {
+        if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+            return response()->json(['error' => $message, 'message' => $message], $status);
+        }
+
+        return redirect()->back()->with('error', $message);
+    }
+
+
+
     public function markReady(School $school, SchoolLifecycleService $lifecycle)
     {
         $this->authorize('markReady', $school);
 
         try {
             $school = $lifecycle->markReady($school);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+
+            return $this->respondLifecycle($request = request(), 'School marked ready.', $school);
+        } catch (ValidationException $e) {
             throw $e;
-        }
+        } catch (Throwable $th) {
+            Log::error('markReady failed', ['school_id' => $school->id, 'error' => $th->getMessage()]);
 
-        if (request()->wantsJson() || request()->header('X-Inertia')) {
-            return response()->json([
-                'message' => 'School marked Ready.',
-                'school' => $school,
-                'readiness' => app(SchoolReadinessEvaluator::class)->evaluate($school),
-            ]);
+            return $this->respondLifecycleError(request(), $th->getMessage() ?: 'Failed to mark school ready.');
         }
-
-        return redirect()->back()->with('success', 'School marked Ready.');
     }
 
     public function activate(School $school, SchoolLifecycleService $lifecycle)
     {
         $this->authorize('activate', $school);
-        $school = $lifecycle->activate($school);
 
-        if (request()->wantsJson() || request()->header('X-Inertia')) {
-            return response()->json(['message' => 'School activated.', 'school' => $school]);
+        try {
+            $school = $lifecycle->activate($school);
+
+            return $this->respondLifecycle(request(), 'School activated.', $school);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $th) {
+            Log::error('activate failed', ['school_id' => $school->id, 'error' => $th->getMessage()]);
+
+            return $this->respondLifecycleError(request(), $th->getMessage() ?: 'Failed to activate school.');
         }
-
-        return redirect()->back()->with('success', 'School activated.');
     }
 
     public function suspend(School $school, SchoolLifecycleService $lifecycle)
     {
         $this->authorize('suspend', $school);
-        $school = $lifecycle->suspend($school);
 
-        if (request()->wantsJson() || request()->header('X-Inertia')) {
-            return response()->json(['message' => 'School suspended.', 'school' => $school]);
+        try {
+            $school = $lifecycle->suspend($school);
+
+            return $this->respondLifecycle(request(), 'School suspended.', $school);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $th) {
+            Log::error('suspend failed', ['school_id' => $school->id, 'error' => $th->getMessage()]);
+
+            return $this->respondLifecycleError(request(), $th->getMessage() ?: 'Failed to suspend school.');
         }
-
-        return redirect()->back()->with('success', 'School suspended.');
     }
 
     public function reactivate(School $school, SchoolLifecycleService $lifecycle)
     {
         $this->authorize('reactivate', $school);
-        $school = $lifecycle->reactivate($school);
 
-        if (request()->wantsJson() || request()->header('X-Inertia')) {
-            return response()->json(['message' => 'School reactivated.', 'school' => $school]);
+        try {
+            $school = $lifecycle->reactivate($school);
+
+            return $this->respondLifecycle(request(), 'School reactivated.', $school);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $th) {
+            Log::error('reactivate failed', ['school_id' => $school->id, 'error' => $th->getMessage()]);
+
+            return $this->respondLifecycleError(request(), $th->getMessage() ?: 'Failed to reactivate school.');
         }
-
-        return redirect()->back()->with('success', 'School reactivated.');
     }
 
     public function archive(School $school, SchoolLifecycleService $lifecycle)
     {
         $this->authorize('archive', $school);
-        $school = $lifecycle->archive($school);
 
-        if (request()->wantsJson() || request()->header('X-Inertia')) {
-            return response()->json(['message' => 'School archived.', 'school' => $school]);
+        try {
+            $school = $lifecycle->archive($school);
+
+            return $this->respondLifecycle(request(), 'School archived.', $school);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $th) {
+            Log::error('archive failed', ['school_id' => $school->id, 'error' => $th->getMessage()]);
+
+            return $this->respondLifecycleError(request(), $th->getMessage() ?: 'Failed to archive school.');
         }
-
-        return redirect()->back()->with('success', 'School archived.');
     }
 
     public function recover(School $school, SchoolLifecycleService $lifecycle)
     {
         $this->authorize('recover', $school);
-        $school = $lifecycle->recover($school);
 
-        if (request()->wantsJson() || request()->header('X-Inertia')) {
-            return response()->json(['message' => 'School recovered.', 'school' => $school]);
+        try {
+            $school = $lifecycle->recover($school);
+
+            return $this->respondLifecycle(request(), 'School recovered.', $school);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $th) {
+            Log::error('recover failed', ['school_id' => $school->id, 'error' => $th->getMessage()]);
+
+            return $this->respondLifecycleError(request(), $th->getMessage() ?: 'Failed to recover school.');
         }
-
-        return redirect()->back()->with('success', 'School recovered.');
     }
 
     public function readiness(School $school, SchoolReadinessEvaluator $evaluator)
