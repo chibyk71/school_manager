@@ -20,6 +20,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
+use Spatie\ModelStates\HasStates;
+use App\States\School\SchoolState;
+use App\States\School\Draft;
 
 /**
  * School Model – Central Tenant Representation + Laratrust Team
@@ -77,6 +80,7 @@ class School extends Team implements HasMedia
     use LogsActivity;
     use SoftDeletes;
     use Sortable;
+    use HasStates;
 
     /**
      * Explicit table so Laratrust Team constructor resolution cannot drift.
@@ -95,8 +99,12 @@ class School extends Team implements HasMedia
         'email',
         'phone_one',
         'phone_two',
+        'contact_name',
         'type',
+        'description',
+        'motto',
         'is_active',
+        'state',
         'data',
     ];
 
@@ -106,6 +114,7 @@ class School extends Team implements HasMedia
     protected $casts = [
         'data' => 'array',
         'is_active' => 'boolean',
+        'state' => SchoolState::class,
     ];
 
     /**
@@ -337,5 +346,20 @@ class School extends Team implements HasMedia
     public function getDarkSmallLogoUrlAttribute(): ?string
     {
         return $this->getFirstMediaUrl('dark_small_logo', 'thumb') ?: $this->getFirstMediaUrl('dark_small_logo');
+    }
+    // =================================================================
+    // LIFECYCLE (Phase 1)
+    // =================================================================
+
+    public function getStateLabelAttribute(): string
+    {
+        return $this->state instanceof SchoolState
+            ? $this->state->label()
+            : ucfirst((string) $this->state);
+    }
+
+    public function scopeCountedForCapacity($query)
+    {
+        return $query->whereIn('state', \App\Services\School\SchoolCapacityService::countedStateNames());
     }
 }

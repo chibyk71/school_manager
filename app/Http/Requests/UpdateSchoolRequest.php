@@ -80,7 +80,11 @@ class UpdateSchoolRequest extends FormRequest
             'type'      => ['required', 'string', 'in:private,government,community'],
 
             // Status – partial update allowed
-            'is_active' => ['sometimes', 'boolean'],
+            'state' => ['prohibited'],
+            'is_active' => ['prohibited'],
+            'contact_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'motto' => ['sometimes', 'nullable', 'string', 'max:255'],
 
             // Primary address payload – optional array only (validation delegated to HasAddress trait)
             'addresses' => ['sometimes', 'array'],

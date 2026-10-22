@@ -62,16 +62,21 @@ class StoreSchoolRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // Core school fields
+            // Phase 1 Draft creation: only name is required.
+            // code/email/type/contact become required for Ready (readiness evaluator).
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:50', 'unique:schools,code'],
-            'email' => ['required', 'email', 'max:255', 'unique:schools,email'],
+            'code' => ['nullable', 'string', 'max:50', 'unique:schools,code'],
+            'email' => ['nullable', 'email', 'max:255', 'unique:schools,email'],
             'phone_one' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'phone_two' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
-            'type' => ['required', 'string', 'in:private,government,community'],
+            'contact_name' => ['nullable', 'string', 'max:255'],
+            'type' => ['nullable', 'string', 'in:private,public,federal,state,missionary,community,international,other,government'],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'motto' => ['nullable', 'string', 'max:255'],
 
-            // Status
-            'is_active' => ['sometimes', 'boolean'],
+            // Lifecycle state is never client-assignable on create/update.
+            'state' => ['prohibited'],
+            'is_active' => ['prohibited'],
 
             // Primary address – now optional array (validated in HasAddress trait)
             'addresses' => ['sometimes', 'array'], // No deep rules here
