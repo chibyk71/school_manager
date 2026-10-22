@@ -33,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(\App\Support\Entitlements\EntitlementRegistry::class, function () {
             $registry = new \App\Support\Entitlements\EntitlementRegistry();
             \App\Entitlements\Definitions\FileManagerFeatures::register($registry);
+            \App\Entitlements\Definitions\SchoolManagementFeatures::register($registry);
             $registry->seal();
 
             return $registry;
