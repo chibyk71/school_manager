@@ -444,10 +444,11 @@ class SchoolController extends BaseSchoolController
         try {
             // Core update via SchoolService (strips state/is_active, reevaluates Ready → Draft).
             // Address mutations use the managed Address API and trigger the same reevaluation.
-            $school = $this->schoolService->updateSchool(
-                $school,
-                $request->safe()->except(['addresses', 'primary_address', 'logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'])->toArray()
-            );
+            $payload = $request->validated();
+            foreach (['addresses', 'primary_address', 'logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'] as $drop) {
+                unset($payload[$drop]);
+            }
+            $school = $this->schoolService->updateSchool($school, $payload);
 
             $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];
             foreach ($mediaCollections as $collection) {
@@ -525,11 +526,22 @@ class SchoolController extends BaseSchoolController
         $lifecycle = app(SchoolLifecycleService::class);
 
         try {
-            $ids = $request->has('ids')
-                ? (array) $request->input('ids', [])
-                : array_filter([(string) $id]);
+            $ids = $request->input('ids', $request->query('ids', []));
+            if (! is_array($ids)) {
+                $ids = array_filter([(string) $ids]);
+            }
+            if ($ids === [] && $id) {
+                $ids = [(string) $id];
+            }
+            $ids = array_values(array_filter(array_map('strval', $ids)));
 
             if ($ids === []) {
+                if ($request->expectsJson() || $request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'At least one school id is required.',
+                        'errors' => ['ids' => ['At least one school id is required.']],
+                    ], 422);
+                }
                 throw ValidationException::withMessages([
                     'ids' => 'At least one school id is required.',
                 ]);
@@ -564,7 +576,11 @@ class SchoolController extends BaseSchoolController
                     fn (string $f) => str_contains($f, 'Not authorized')
                 );
                 if ($authOnly) {
-                    abort(403, implode(' ', $failures));
+                    $msg = implode(' ', $failures);
+                    if ($request->expectsJson() || $request->wantsJson()) {
+                        return response()->json(['message' => $msg], 403);
+                    }
+                    abort(403, $msg);
                 }
                 throw ValidationException::withMessages([
                     'ids' => $failures !== [] ? implode(' ', $failures) : 'No schools were deleted.',

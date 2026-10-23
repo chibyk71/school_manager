@@ -80,35 +80,33 @@ class SchoolService
      */
     public function updateSchool(School $school, array $data): School
     {
-        return DB::transaction(function () use ($school, $data) {
-            // Lifecycle state is never assigned from ordinary update payloads.
-            unset($data['state'], $data['is_active']);
+        // Lifecycle state is never assigned from ordinary update payloads.
+        unset($data['state'], $data['is_active'], $data['addresses'], $data['primary_address']);
 
-            $school->fill([
-                'name'         => $data['name'] ?? $school->name,
-                'code'         => array_key_exists('code', $data) ? $data['code'] : $school->code,
-                'email'        => array_key_exists('email', $data) ? $data['email'] : $school->email,
-                'phone_one'    => array_key_exists('phone_one', $data) ? $data['phone_one'] : $school->phone_one,
-                'phone_two'    => array_key_exists('phone_two', $data) ? $data['phone_two'] : $school->phone_two,
-                'contact_name' => array_key_exists('contact_name', $data) ? $data['contact_name'] : $school->contact_name,
-                'type'         => array_key_exists('type', $data) ? $data['type'] : $school->type,
-                'description'  => array_key_exists('description', $data) ? $data['description'] : $school->description,
-                'motto'        => array_key_exists('motto', $data) ? $data['motto'] : $school->motto,
-                'data'         => array_merge($school->data ?? [], $data['extra_data'] ?? []),
-            ]);
+        $assignable = [
+            'name', 'code', 'email', 'phone_one', 'phone_two',
+            'contact_name', 'type', 'description', 'motto',
+        ];
 
-            $school->save();
+        foreach ($assignable as $field) {
+            if (array_key_exists($field, $data)) {
+                $school->{$field} = $data[$field];
+            }
+        }
 
-            // Ready → Draft if readiness-critical fields were cleared.
-            $school = app(\App\Services\School\SchoolLifecycleService::class)
-                ->reevaluateAfterUpdate($school);
+        if (array_key_exists('extra_data', $data) && is_array($data['extra_data'])) {
+            $school->data = array_merge($school->data ?? [], $data['extra_data']);
+        }
 
-            // Persisted address mutations are handled by the managed Address API (Phase 4).
+        $school->save();
 
-            Log::info('School updated successfully', ['school_id' => $school->id]);
+        // Ready → Draft if readiness-critical fields were cleared (own transaction).
+        $school = app(\App\Services\School\SchoolLifecycleService::class)
+            ->reevaluateAfterUpdate($school->fresh() ?? $school);
 
-            return $school;
-        });
+        Log::info('School updated successfully', ['school_id' => $school->id]);
+
+        return $school->fresh() ?? $school;
     }
 
     public function assignAdmin(array $userData, School $school): User

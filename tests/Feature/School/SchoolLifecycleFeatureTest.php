@@ -130,15 +130,12 @@ class SchoolLifecycleFeatureTest extends TestCase
             'name' => 'Incomplete Draft',
         ]);
 
-        $response = $this->put(route('schools.update', $school), [
+        $response = $this->from('/schools/'.$school->id)->put(route('schools.update', $school), [
             'name' => 'Incomplete Draft Updated',
-            'code' => null,
-            'email' => null,
-            'type' => null,
-            'contact_name' => null,
         ]);
 
         $response->assertRedirect();
+        $response->assertSessionMissing('errors');
         $school->refresh();
         $this->assertSame('Incomplete Draft Updated', $school->name);
         $this->assertInstanceOf(Draft::class, $school->state);
@@ -232,9 +229,10 @@ class SchoolLifecycleFeatureTest extends TestCase
         Gate::before(fn () => false);
         $this->actingAs(User::factory()->create());
 
-        $response = $this->deleteJson(route('schools.destroy'), ['ids' => [$school->id]]);
+        $response = $this->deleteJson(route('schools.destroy').'?ids[]='.$school->id);
 
         $response->assertForbidden();
+        $this->assertFalse($school->fresh()->trashed());
         $this->assertFalse($school->fresh()->trashed());
     }
 
@@ -309,7 +307,7 @@ class SchoolLifecycleFeatureTest extends TestCase
         // Second school for outsider denial (first is already trashed).
         $school2 = app(SchoolLifecycleService::class)->createDraft(['name' => 'Outsider Target']);
         $this->actingAs($outsider);
-        $outsiderResponse = $this->deleteJson(route('schools.destroy'), ['ids' => [$school2->id]]);
+        $outsiderResponse = $this->deleteJson(route('schools.destroy').'?ids[]='.$school2->id);
         $outsiderResponse->assertForbidden();
         $this->assertFalse($school2->fresh()->trashed());
     }
