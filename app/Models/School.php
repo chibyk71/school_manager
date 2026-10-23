@@ -13,6 +13,7 @@ use App\Traits\HasTableQuery;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laratrust\Models\Team;
 use Spatie\Activitylog\LogOptions;
@@ -162,6 +163,21 @@ class School extends Team implements HasMedia
     protected static function boot(): void
     {
         parent::boot();
+
+        // Phase 1 lifecycle adds schools.state. Focused unit schemas that predate
+        // that column must still be able to insert School rows without failing.
+        static::saving(function (self $school): void {
+            if (! array_key_exists('state', $school->getAttributes())) {
+                return;
+            }
+            try {
+                if (! Schema::hasColumn($school->getTable(), 'state')) {
+                    unset($school->attributes['state']);
+                }
+            } catch (\Throwable) {
+                unset($school->attributes['state']);
+            }
+        });
 
         // File Manager Phase 1: cascade soft-delete school-owned providers on deleted.
         // Mark each with deleted_via_school_cascade = true as explicit provenance

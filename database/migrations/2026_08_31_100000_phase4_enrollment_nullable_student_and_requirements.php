@@ -58,6 +58,10 @@ return new class extends Migration
 
     protected function rebuildEnrollmentsForSqlite(): void
     {
+        // SQLite keeps index names globally across RENAME TABLE. Drop named indexes
+        // before rename so the rebuilt enrollments table can recreate the same names.
+        $this->dropEnrollmentsNamedIndexesIfPresent();
+
         Schema::rename('enrollments', 'enrollments_old_phase4');
 
         Schema::create('enrollments', function (Blueprint $table) {

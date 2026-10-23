@@ -18,6 +18,8 @@ class SchoolFactory extends Factory
     {
         return [
             'name' => $this->faker->company(),
+            // Default lifecycle state (ignored when schools.state column is absent).
+            'state' => \App\States\School\Draft::$name,
             'email' => $this->faker->companyEmail(),
             'logo' => 'https://via.placeholder.com/150',
             'phone_one' => $this->faker->phoneNumber(),
