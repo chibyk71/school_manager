@@ -60,7 +60,21 @@ return new class extends Migration
     {
         // SQLite keeps index names globally across RENAME TABLE. Drop named indexes
         // before rename so the rebuilt enrollments table can recreate the same names.
-        $this->dropEnrollmentsNamedIndexesIfPresent();
+        foreach ([
+            'uq_enrollments_admission_id',
+            'idx_enrollments_school_status',
+            'idx_enrollments_school_session',
+            'idx_enrollments_student_session',
+            'idx_enrollments_school_deleted',
+        ] as $index) {
+            try {
+                Schema::table('enrollments', function (Blueprint $table) use ($index) {
+                    $table->dropIndex($index);
+                });
+            } catch (\Throwable) {
+                // Index may not exist on partial / prior schema shapes.
+            }
+        }
 
         Schema::rename('enrollments', 'enrollments_old_phase4');
 

@@ -160,21 +160,80 @@ class School extends Team implements HasMedia
     /**
      * Boot method – handles slug generation and extra data merging.
      */
+
+    /**
+     * Whether the schools table currently has a lifecycle state column.
+     * Bypasses Schema builder cache (stale after focused test schema rebuilds).
+     */
+    public function hasStateColumn(): bool
+    {
+        try {
+            $table = $this->getTable();
+            $connection = $this->getConnection();
+            $driver = $connection->getDriverName();
+
+            if ($driver === 'sqlite') {
+                $rows = $connection->select("PRAGMA table_info({$table})");
+                foreach ($rows as $row) {
+                    $name = is_object($row) ? ($row->name ?? null) : ($row['name'] ?? null);
+                    if ($name === 'state') {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            if (in_array($driver, ['mysql', 'mariadb'], true)) {
+                $database = $connection->getDatabaseName();
+                $rows = $connection->select(
+                    'select 1 from information_schema.columns where table_schema = ? and table_name = ? and column_name = ? limit 1',
+                    [$database, $table, 'state']
+                );
+
+                return $rows !== [];
+            }
+
+            if ($driver === 'pgsql') {
+                $rows = $connection->select(
+                    'select 1 from information_schema.columns where table_name = ? and column_name = ? limit 1',
+                    [$table, 'state']
+                );
+
+                return $rows !== [];
+            }
+
+            return Schema::hasColumn($table, 'state');
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Ignore lifecycle state assignment when the column is absent (focused schemas).
+     */
+    public function setAttribute($key, $value)
+    {
+        if ($key === 'state' && ! $this->hasStateColumn()) {
+            return $this;
+        }
+
+        return parent::setAttribute($key, $value);
+    }
+
     protected static function boot(): void
     {
         parent::boot();
 
         // Phase 1 lifecycle adds schools.state. Focused unit schemas that predate
         // that column must still be able to insert School rows without failing.
+        // Use raw column detection (not Schema::hasColumn) to avoid stale schema cache
+        // after tests drop/rebuild schools without the lifecycle column.
         static::saving(function (self $school): void {
             if (! array_key_exists('state', $school->getAttributes())) {
                 return;
             }
-            try {
-                if (! Schema::hasColumn($school->getTable(), 'state')) {
-                    unset($school->attributes['state']);
-                }
-            } catch (\Throwable) {
+            if (! $school->hasStateColumn()) {
                 unset($school->attributes['state']);
             }
         });
