@@ -36,11 +36,7 @@ return new class extends Migration
         $driver = Schema::getConnection()->getDriverName();
 
         if (Schema::hasColumn('terms', 'school_id')) {
-            if ($driver === 'sqlite') {
-                // SQLite cannot ALTER DROP a column that participates in FKs cleanly.
-                // Rebuild the table without school_id (same pattern as enrollments phase4).
-                $this->rebuildTermsWithoutSchoolIdForSqlite();
-            } else {
+            if ($driver !== 'sqlite') {
                 try {
                     Schema::table('terms', function (Blueprint $table) {
                         $table->dropForeign(['school_id']);
@@ -48,11 +44,11 @@ return new class extends Migration
                 } catch (\Throwable $e) {
                     // FK may already be absent
                 }
-
-                Schema::table('terms', function (Blueprint $table) {
-                    $table->dropColumn('school_id');
-                });
             }
+
+            Schema::table('terms', function (Blueprint $table) {
+                $table->dropColumn('school_id');
+            });
         }
 
         try {
@@ -74,97 +70,6 @@ return new class extends Migration
             }
         }
     }
-
-
-    /**
-     * SQLite-safe removal of terms.school_id (column + FK).
-     */
-    protected function rebuildTermsWithoutSchoolIdForSqlite(): void
-    {
-        foreach ([
-            'terms_session_name_unique',
-            'terms_session_active_idx',
-            'terms_status_idx',
-            'terms_ordinal_idx',
-            'terms_session_ordinal_unique',
-        ] as $index) {
-            try {
-                Schema::table('terms', function (Blueprint $table) use ($index) {
-                    $table->dropIndex($index);
-                });
-            } catch (\Throwable) {
-                // optional
-            }
-        }
-
-        Schema::rename('terms', 'terms_old_phase3');
-
-        $oldCols = Schema::getColumnListing('terms_old_phase3');
-        $has = static function (string $c) use ($oldCols): bool {
-            return in_array($c, $oldCols, true);
-        };
-
-        Schema::create('terms', function (Blueprint $table) use ($has) {
-            $table->uuid('id')->primary();
-            $table->uuid('academic_session_id');
-            $table->string('name', 60);
-            $table->string('short_name', 10)->nullable();
-            $table->unsignedTinyInteger('ordinal_number');
-            $table->date('start_date')->nullable();
-            $table->date('end_date')->nullable();
-            if ($has('state')) {
-                $table->string('state')->nullable();
-            }
-            if ($has('status')) {
-                $table->string('status', 20)->default('pending');
-            }
-            if ($has('is_active')) {
-                $table->boolean('is_active')->default(false);
-            }
-            if ($has('is_closed')) {
-                $table->boolean('is_closed')->default(false);
-            }
-            if ($has('closed_at')) {
-                $table->timestamp('closed_at')->nullable();
-            }
-            if ($has('color')) {
-                $table->string('color', 20)->nullable();
-            }
-            if ($has('options')) {
-                $table->json('options')->nullable();
-            }
-            $table->timestamps();
-            $table->softDeletes();
-
-            $table->foreign('academic_session_id')
-                ->references('id')
-                ->on('academic_sessions')
-                ->restrictOnDelete()
-                ->cascadeOnUpdate();
-        });
-
-        $newCols = Schema::getColumnListing('terms');
-        $cols = array_values(array_intersect(
-            array_values(array_filter($oldCols, static fn ($c) => $c !== 'school_id')),
-            $newCols
-        ));
-        if ($cols !== []) {
-            $list = implode(', ', array_map(static fn ($c) => '"'.$c.'"', $cols));
-            DB::statement("INSERT INTO terms ({$list}) SELECT {$list} FROM terms_old_phase3");
-        }
-
-        // SQLite may retain FK metadata against the renamed table; disable checks for drop.
-        try {
-            \Illuminate\Support\Facades\DB::statement('PRAGMA foreign_keys = OFF');
-        } catch (\Throwable) {
-        }
-        Schema::drop('terms_old_phase3');
-        try {
-            \Illuminate\Support\Facades\DB::statement('PRAGMA foreign_keys = ON');
-        } catch (\Throwable) {
-        }
-    }
-
 
     public function down(): void
     {
