@@ -271,8 +271,7 @@ class SchoolController extends BaseSchoolController
             $this->schoolService->setActiveSchool($school);
 
             // 6. Cache invalidation
-            Cache::forget('schools.all');
-            Cache::tags(['schools'])->flush();
+            $this->invalidateSchoolCaches();
 
             // 7. Success response
             $message = 'School created successfully!';
@@ -458,8 +457,7 @@ class SchoolController extends BaseSchoolController
                 }
             }
 
-            Cache::forget('schools.all');
-            Cache::tags(['schools'])->flush();
+            $this->invalidateSchoolCaches();
 
             $message = 'School updated successfully';
 
@@ -547,9 +545,7 @@ class SchoolController extends BaseSchoolController
                     continue;
                 }
 
-                try {
-                    Gate::authorize('delete', $school);
-                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                if (! Gate::forUser($request->user())->allows('delete', $school)) {
                     $failures[] = "Not authorized to delete {$school->name}.";
                     continue;
                 }
@@ -575,8 +571,7 @@ class SchoolController extends BaseSchoolController
                 ]);
             }
 
-            Cache::forget('schools.all');
-            Cache::tags(['schools'])->flush();
+            $this->invalidateSchoolCaches();
 
             $message = $successCount === 1
                 ? 'School soft-deleted successfully.'
@@ -641,8 +636,7 @@ class SchoolController extends BaseSchoolController
                 $successCount++;
             }
 
-            Cache::forget('schools.all');
-            Cache::tags(['schools'])->flush();
+            $this->invalidateSchoolCaches();
 
             if ($successCount === 0) {
                 $authOnly = $failedSchools !== [] && collect($failedSchools)->every(
@@ -729,8 +723,7 @@ class SchoolController extends BaseSchoolController
                 }
             }
 
-            Cache::forget('schools.all');
-            Cache::tags(['schools'])->flush();
+            $this->invalidateSchoolCaches();
 
             if ($restoredCount === 0) {
                 $authOnly = $failedSchools !== [] && collect($failedSchools)->every(
@@ -780,14 +773,15 @@ class SchoolController extends BaseSchoolController
 
     public function bulkToggleStatus(Request $request)
     {
-        $message = 'Bulk status toggle is no longer supported. Use lifecycle actions '
-            .'(activate, suspend, archive, recover) instead of mutating is_active directly.';
+        // Phase 1: lifecycle state is never toggled via bulk is_active.
+        $message = 'Bulk status toggle is retired. Use lifecycle actions (activate, suspend, archive) instead.';
 
-        if ($request->wantsJson() || $request->header('X-Inertia')) {
-            return response()->json(['error' => $message], 410);
+        if ($request->expectsJson() || $request->wantsJson() || $request->ajax()) {
+            return response()->json(['message' => $message, 'error' => $message], 410);
         }
 
-        return redirect()->back()->with('error', $message);
+        // Always Gone — do not soft-redirect as success-looking 302.
+        return response($message, 410)->header('Content-Type', 'text/plain; charset=UTF-8');
     }
 
     // =================================================================
@@ -798,6 +792,27 @@ class SchoolController extends BaseSchoolController
      * Lifecycle action response: Inertia gets redirect+flash; pure JSON clients get JSON.
      * X-Inertia alone must not force JSON (router.post is an Inertia visit).
      */
+    
+    /**
+     * Invalidate school list caches without requiring a tag-aware driver.
+     * database/file drivers throw on Cache::tags(); array/redis support tags.
+     */
+    protected function invalidateSchoolCaches(): void
+    {
+        try {
+            Cache::forget('schools.all');
+        } catch (\Throwable) {
+        }
+
+        try {
+            if (method_exists(Cache::getStore(), 'tags')) {
+                Cache::tags(['schools'])->flush();
+            }
+        } catch (\Throwable) {
+            // Non-tag drivers (database, file) — list key already forgotten.
+        }
+    }
+
     protected function respondLifecycle(Request $request, string $message, School $school, int $errorStatus = 200)
     {
         if ($request->wantsJson() && ! $request->header('X-Inertia')) {

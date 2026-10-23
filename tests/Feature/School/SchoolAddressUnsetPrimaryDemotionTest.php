@@ -5,6 +5,7 @@ namespace Tests\Feature\School;
 use App\Models\School;
 use App\Models\User;
 use App\Services\School\SchoolLifecycleService;
+use App\Services\DynamicEnum\DynamicEnumLifecycleService;
 use App\Services\School\SchoolReadinessEvaluator;
 use App\States\School\Draft;
 use App\States\School\Ready;
@@ -30,6 +31,12 @@ class SchoolAddressUnsetPrimaryDemotionTest extends TestCase
         Gate::before(fn () => true);
         $this->actingAs($user);
 
+        if (class_exists(DynamicEnumLifecycleService::class) && Schema::hasTable('dynamic_enums')) {
+            $enum = app(DynamicEnumLifecycleService::class);
+            $def = $enum->ensureDefinition('address.type', 'Address type');
+            $enum->createTenantOption($def, 'physical', 'Physical', ['sort_order' => 1]);
+        }
+
         $lifecycle = app(SchoolLifecycleService::class);
         $school = $lifecycle->createDraft([
             'name' => 'Ready Endpoint School',
@@ -40,6 +47,7 @@ class SchoolAddressUnsetPrimaryDemotionTest extends TestCase
             'phone_one' => '08012345678',
         ]);
 
+        // type is Dynamic Enum–backed; omit when catalogue not seeded in tests.
         $address = $school->addAddress([
             'address_line_1' => '1 Endpoint Road',
             'city' => 'Test City',
