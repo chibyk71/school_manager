@@ -79,7 +79,9 @@ class SchoolLifecycleFeatureTest extends TestCase
             'name' => 'Name Only Draft School',
         ]);
 
-        $response->assertSuccessful();
+        // Form posts redirect with flash (Inertia/web); not a bare 2xx JSON body.
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
 
         $school = School::query()->where('name', 'Name Only Draft School')->first();
         $this->assertNotNull($school);
@@ -94,7 +96,7 @@ class SchoolLifecycleFeatureTest extends TestCase
 
         $this->post(route('schools.store'), [
             'name' => 'Draft No Onboarding',
-        ])->assertSuccessful();
+        ])->assertRedirect();
 
         Queue::assertNotPushed(SetupSchoolOnboarding::class);
     }
@@ -130,7 +132,7 @@ class SchoolLifecycleFeatureTest extends TestCase
             'contact_name' => null,
         ]);
 
-        $response->assertSuccessful();
+        $response->assertRedirect();
         $school->refresh();
         $this->assertSame('Incomplete Draft Updated', $school->name);
         $this->assertInstanceOf(Draft::class, $school->state);
@@ -296,7 +298,7 @@ class SchoolLifecycleFeatureTest extends TestCase
 
         $this->actingAs($admin->fresh());
         $adminResponse = $this->delete(route('schools.destroy'), ['ids' => [$school->id]]);
-        $adminResponse->assertSuccessful();
+        $this->assertTrue(in_array($adminResponse->status(), [200, 204, 302], true), 'expected success or redirect, got '.$adminResponse->status());
         $this->assertTrue($school->fresh()->trashed());
 
         // Second school for outsider denial (first is already trashed).

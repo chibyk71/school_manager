@@ -41,8 +41,9 @@ class SchoolAddressUnsetPrimaryDemotionTest extends TestCase
         ]);
 
         $address = $school->addAddress([
-            'line_1' => '1 Endpoint Road',
+            'address_line_1' => '1 Endpoint Road',
             'city' => 'Test City',
+            'type' => 'physical',
         ], true);
         $school = $school->fresh();
 

@@ -242,3 +242,56 @@ if (!function_exists('send_school_sms')) {
     }
 }
 
+
+
+
+if (! function_exists('getMergedSettings')) {
+    /**
+     * Resolve a settings group for a school/user owner.
+     *
+     * Many call sites predate SettingsResolver and expect a flat array.
+     * Prefer empty defaults when the group cannot be resolved so middleware
+     * (e.g. maintenance) and services can apply their own fallbacks.
+     *
+     * @param  string  $group
+     * @param  mixed  $owner
+     * @return array<string, mixed>
+     */
+    function getMergedSettings(string $group, $owner = null): array
+    {
+        try {
+            if (! app()->bound(\App\Support\Settings\SettingsRegistry::class)
+                || ! app()->bound(\App\Support\Settings\SettingsResolver::class)
+            ) {
+                return [];
+            }
+
+            /** @var \App\Support\Settings\SettingsRegistry $registry */
+            $registry = app(\App\Support\Settings\SettingsRegistry::class);
+            /** @var \App\Support\Settings\SettingsResolver $resolver */
+            $resolver = app(\App\Support\Settings\SettingsResolver::class);
+
+            $scope = 'global';
+            if ($owner instanceof \App\Models\School && $owner->getKey()) {
+                $scope = 'school:'.$owner->getKey();
+            }
+
+            $out = [];
+            foreach ($registry->forGroup($group) as $definition) {
+                $key = $definition->key;
+                $short = str_starts_with($key, $group.'.')
+                    ? substr($key, strlen($group) + 1)
+                    : $key;
+                try {
+                    $out[$short] = $resolver->get($key, $scope);
+                } catch (\Throwable) {
+                    $out[$short] = $definition->default ?? null;
+                }
+            }
+
+            return $out;
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+}

@@ -58,7 +58,18 @@ class UpdateSchoolRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return auth()->user()->hasPermission('school.update');
+        $user = $this->user();
+        if (! $user) {
+            return false;
+        }
+
+        $school = $this->route('school');
+        if ($school instanceof \App\Models\School) {
+            return $user->can('update', $school);
+        }
+
+        return $user->can('create', \App\Models\School::class)
+            || (method_exists($user, 'hasPermission') && (bool) $user->hasPermission('school.update'));
     }
 
     /**
