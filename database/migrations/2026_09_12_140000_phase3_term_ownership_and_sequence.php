@@ -153,8 +153,18 @@ return new class extends Migration
             DB::statement("INSERT INTO terms ({$list}) SELECT {$list} FROM terms_old_phase3");
         }
 
+        // SQLite may retain FK metadata against the renamed table; disable checks for drop.
+        try {
+            \Illuminate\Support\Facades\DB::statement('PRAGMA foreign_keys = OFF');
+        } catch (\Throwable) {
+        }
         Schema::drop('terms_old_phase3');
+        try {
+            \Illuminate\Support\Facades\DB::statement('PRAGMA foreign_keys = ON');
+        } catch (\Throwable) {
+        }
     }
+
 
     public function down(): void
     {
