@@ -6,15 +6,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Repair: staff create migration previously declared indexes on section_id and
- * department_id without ever adding those columns. That left SQLite unable to
- * rebuild unrelated tables (e.g. devices drop column) with:
- *   error in index staff_school_id_section_id_index after drop column:
- *   no such column: section_id
+ * Second idempotent pass of the orphan staff-index repair.
  *
- * Production MySQL/MariaDB typically rejected the bad CREATE INDEX at migrate
- * time, or never had the orphan indexes. This migration is defensive and
- * idempotent.
+ * Primary fix for the SQLite devices.ip failure path is
+ * 2026_02_15_111554_drop_orphan_staff_indexes_without_columns (runs before
+ * remove_ip_from_devices). This later migration remains so installs that
+ * already migrated past devices (e.g. MySQL) still drop any residual bad
+ * indexes without requiring a rename of historical migration files.
  */
 return new class extends Migration
 {
@@ -27,7 +25,6 @@ return new class extends Migration
         $this->dropIndexIfExists('staff', 'staff_school_id_section_id_index');
         $this->dropIndexIfExists('staff', 'staff_department_id_index');
 
-        // Ensure school scoping index exists (replacement for the invalid composite).
         if (Schema::hasColumn('staff', 'school_id') && ! $this->indexExists('staff', 'staff_school_id_index')) {
             Schema::table('staff', function (Blueprint $table) {
                 $table->index('school_id', 'staff_school_id_index');
@@ -37,12 +34,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Do not recreate indexes on non-existent columns.
-        if (Schema::hasTable('staff') && $this->indexExists('staff', 'staff_school_id_index')) {
-            Schema::table('staff', function (Blueprint $table) {
-                $table->dropIndex('staff_school_id_index');
-            });
-        }
+        // no-op: do not recreate indexes on non-existent columns
     }
 
     private function dropIndexIfExists(string $table, string $index): void
