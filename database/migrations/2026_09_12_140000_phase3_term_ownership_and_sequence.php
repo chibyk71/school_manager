@@ -11,6 +11,10 @@ use Illuminate\Support\Facades\Schema;
  * - Verify no contradictory school_id vs session.school_id (including soft-deleted)
  * - Drop terms.school_id
  * - UNIQUE(academic_session_id, ordinal_number) — fail loudly if it cannot be created
+ *
+ * SQLite: table rebuild must re-apply intended indexes/uniques from the original
+ * terms create migration (name unique, session/active, status, ordinal, date range)
+ * plus terms_session_ordinal_unique from this migration.
  */
 return new class extends Migration
 {
@@ -37,8 +41,6 @@ return new class extends Migration
 
         if (Schema::hasColumn('terms', 'school_id')) {
             if ($driver === 'sqlite') {
-                // SQLite cannot ALTER DROP a column that participates in FKs cleanly.
-                // Rebuild the table without school_id (same pattern as enrollments phase4).
                 $this->rebuildTermsWithoutSchoolIdForSqlite();
             } else {
                 try {
@@ -55,6 +57,11 @@ return new class extends Migration
             }
         }
 
+        $this->ensureSessionOrdinalUnique();
+    }
+
+    protected function ensureSessionOrdinalUnique(): void
+    {
         try {
             Schema::table('terms', function (Blueprint $table) {
                 $table->unique(['academic_session_id', 'ordinal_number'], 'terms_session_ordinal_unique');
@@ -75,10 +82,6 @@ return new class extends Migration
         }
     }
 
-
-    /**
-     * SQLite-safe removal of terms.school_id (column + FK).
-     */
     protected function rebuildTermsWithoutSchoolIdForSqlite(): void
     {
         foreach ([
@@ -86,6 +89,7 @@ return new class extends Migration
             'terms_session_active_idx',
             'terms_status_idx',
             'terms_ordinal_idx',
+            'terms_date_range_idx',
             'terms_session_ordinal_unique',
         ] as $index) {
             try {
@@ -93,7 +97,7 @@ return new class extends Migration
                     $table->dropIndex($index);
                 });
             } catch (\Throwable) {
-                // optional
+                // optional / may not exist on partial schemas
             }
         }
 
@@ -153,18 +157,44 @@ return new class extends Migration
             DB::statement("INSERT INTO terms ({$list}) SELECT {$list} FROM terms_old_phase3");
         }
 
-        // SQLite may retain FK metadata against the renamed table; disable checks for drop.
         try {
-            \Illuminate\Support\Facades\DB::statement('PRAGMA foreign_keys = OFF');
+            DB::statement('PRAGMA foreign_keys = OFF');
         } catch (\Throwable) {
         }
         Schema::drop('terms_old_phase3');
         try {
-            \Illuminate\Support\Facades\DB::statement('PRAGMA foreign_keys = ON');
+            DB::statement('PRAGMA foreign_keys = ON');
         } catch (\Throwable) {
         }
+
+        // Restore indexes from the original create_terms migration.
+        // terms_session_ordinal_unique is applied by ensureSessionOrdinalUnique() after rebuild.
+        $this->restoreTermsIndexesAfterSqliteRebuild();
     }
 
+    protected function restoreTermsIndexesAfterSqliteRebuild(): void
+    {
+        $cols = Schema::getColumnListing('terms');
+        $has = static fn (string $c): bool => in_array($c, $cols, true);
+
+        Schema::table('terms', function (Blueprint $table) use ($has) {
+            if ($has('academic_session_id') && $has('name')) {
+                $table->unique(['academic_session_id', 'name'], 'terms_session_name_unique');
+            }
+            if ($has('academic_session_id') && $has('is_active')) {
+                $table->index(['academic_session_id', 'is_active'], 'terms_session_active_idx');
+            }
+            if ($has('status')) {
+                $table->index('status', 'terms_status_idx');
+            }
+            if ($has('ordinal_number')) {
+                $table->index('ordinal_number', 'terms_ordinal_idx');
+            }
+            if ($has('start_date') && $has('end_date')) {
+                $table->index(['start_date', 'end_date'], 'terms_date_range_idx');
+            }
+        });
+    }
 
     public function down(): void
     {
