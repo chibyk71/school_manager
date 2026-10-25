@@ -80,7 +80,7 @@ Route::get('/dynamic-enums/{key}/options', [DynamicEnumController::class, 'optio
 Route::middleware('auth')->group(function () {
 
     // Academics
-    Route::resource('schools', SchoolController::class)->only(['index', 'store', 'show', 'update']);
+    Route::resource('schools', SchoolController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
     Route::delete('/schools', [SchoolController::class, 'destroy'])->name('schools.destroy');
     Route::post('schools/force-delete', [SchoolController::class, 'forceDelete'])
         ->name('schools.force-delete');
