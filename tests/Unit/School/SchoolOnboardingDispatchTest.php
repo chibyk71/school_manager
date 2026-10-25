@@ -87,10 +87,9 @@ class SchoolOnboardingDispatchTest extends TestCase
         $this->assertArrayNotHasKey('operational_onboarding_dispatched_at', $data);
         $this->assertArrayNotHasKey('operational_onboarding_completed_at', $data);
 
-        // Retry with a real (faked) queue must succeed in claiming + pushing.
-        Queue::fake();
-        // Re-bind real dispatcher under Queue::fake
+        // Clear mock *before* Queue::fake so the fake can bind a working Dispatcher.
         $this->app->forgetInstance(BusDispatcher::class);
+        Queue::fake();
         app(SchoolLifecycleService::class)->ensureOperationalOnboarding($school->fresh());
         Queue::assertPushed(SetupSchoolOnboarding::class, 1);
     }
