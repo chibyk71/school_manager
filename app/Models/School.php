@@ -58,7 +58,7 @@ use App\States\School\Draft;
  * -------------------
  * - Addresses: Uses the polymorphic HasAddress trait – primary address is automatically available via $school->primaryAddress()
  * - Media: Logos and favicons are stored in dedicated single-file collections with fallback URLs
- * - Relationships: Users (pivot), class levels (through sections), academic sessions, vehicles, dynamic enums
+ * - Relationships: Users (pivot), sections, class levels (through sections), academic sessions, vehicles, dynamic enums
  * - Frontend: Props like logo_url, primary address fields are automatically appended/serialized for Inertia
  *
  * Problems Solved:
@@ -317,6 +317,11 @@ class School extends Team implements HasMedia
     public function users()
     {
         return $this->belongsToMany(User::class, 'school_users');
+    }
+
+    public function sections()
+    {
+        return $this->hasMany(SchoolSection::class);
     }
 
     public function classLevels()
