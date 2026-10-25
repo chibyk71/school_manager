@@ -13,21 +13,25 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Capacity enforcement under contention.
+ * Capacity enforcement: sequential limit on any driver; multi-process concurrency
+ * only on mysql/mariadb/pgsql with pcntl.
  *
- * This class disables RefreshDatabase transactions so multi-process children
- * can see committed seed rows on mysql/mariadb/pgsql.
+ * Important: do not disable RefreshDatabase transactions for the whole class.
+ * On sqlite :memory:, empty connectionsToTransact() can leave a fresh empty DB
+ * after application refresh while RefreshDatabaseState still thinks migrations ran.
  */
 class SchoolCapacityConcurrencyTest extends TestCase
 {
     use RefreshDatabase;
 
-    /**
-     * Do not wrap tests in a transaction — required for cross-process visibility.
-     */
     protected function connectionsToTransact(): array
     {
-        return [];
+        // Concurrent multi-process test needs committed rows visible to child processes.
+        if ($this->isConcurrentTestCase()) {
+            return [];
+        }
+
+        return [config('database.default')];
     }
 
     protected function setUp(): void
@@ -47,9 +51,14 @@ class SchoolCapacityConcurrencyTest extends TestCase
             ]);
         }
 
+        // Concurrent test skips on sqlite before needing schools.
+        if ($this->isConcurrentTestCase() && ! $this->supportsProductionConcurrency()) {
+            return;
+        }
+
         $this->assertTrue(
             Schema::hasTable('schools'),
-            'schools table missing after RefreshDatabase — migrations did not complete (check SQLite migrate / terms_old_phase3 residuals).'
+            'schools table missing after RefreshDatabase — migrations did not complete.'
         );
 
         $this->purgeAllSchoolsSafely();
@@ -59,15 +68,27 @@ class SchoolCapacityConcurrencyTest extends TestCase
     protected function tearDown(): void
     {
         try {
-            $this->purgeAllSchoolsSafely();
+            if (Schema::hasTable('schools')) {
+                $this->purgeAllSchoolsSafely();
+            }
         } catch (\Throwable) {
         }
         parent::tearDown();
     }
 
-    /**
-     * Empty schools without tripping residual SQLite FK metadata (terms_old_phase3).
-     */
+    private function isConcurrentTestCase(): bool
+    {
+        return str_contains($this->name(), 'concurrent_create_draft_cannot_exceed_limit');
+    }
+
+    private function supportsProductionConcurrency(): bool
+    {
+        $driver = DB::connection()->getDriverName();
+
+        return in_array($driver, ['mysql', 'mariadb', 'pgsql'], true)
+            && function_exists('pcntl_fork');
+    }
+
     private function purgeAllSchoolsSafely(): void
     {
         if (! Schema::hasTable('schools')) {
@@ -133,7 +154,10 @@ class SchoolCapacityConcurrencyTest extends TestCase
             );
         }
 
-        // Seed committed (no ambient transaction thanks to connectionsToTransact = []).
+        $this->assertTrue(Schema::hasTable('schools'), 'schools required for concurrency test');
+        $this->purgeAllSchoolsSafely();
+        $this->bindCapacityLimit(2);
+
         app(SchoolLifecycleService::class)->createDraft(['name' => 'Seed-Committed']);
         $this->assertSame(1, School::query()->countedForCapacity()->count());
 
@@ -145,11 +169,9 @@ class SchoolCapacityConcurrencyTest extends TestCase
                 $this->fail('pcntl_fork failed');
             }
             if ($pid === 0) {
-                // Child: independent connection; re-bind limit in this process.
                 try {
                     DB::purge();
                     DB::reconnect();
-                    // Rebuild app bindings for this process.
                     $this->refreshApplication();
                     $this->bindCapacityLimit(2);
                     app(SchoolLifecycleService::class)->createDraft([
@@ -181,7 +203,6 @@ class SchoolCapacityConcurrencyTest extends TestCase
             }
         }
 
-        // Parent reconnect after forks
         DB::reconnect();
         $this->assertSame(1, $success, 'Exactly one concurrent create should succeed at remaining capacity 1');
         $this->assertSame($attempts - 1, $rejected);
