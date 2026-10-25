@@ -240,9 +240,6 @@ class SchoolLifecycleDomainTest extends TestCase
 
     /**
      * Populate a school so all six readiness conditions pass.
-     * Requires address infrastructure; if addresses table missing in focused
-     * schema, primary_address check is satisfied via a mock relation skip —
-     * full suite should run against app migrations.
      */
     private function makeReadySchool(?School $school = null): School
     {
@@ -261,10 +258,18 @@ class SchoolLifecycleDomainTest extends TestCase
             $this->markTestSkipped('addresses table required for full readiness happy-path.');
         }
 
+        // HasAddress validates address_line_1 + type (Dynamic Enum address.type).
+        if (class_exists(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class)
+            && Schema::hasTable('dynamic_enums')) {
+            $enum = app(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class);
+            $def = $enum->ensureDefinition('address.type', 'Address type');
+            $enum->createTenantOption($def, 'physical', 'Physical', ['sort_order' => 1]);
+        }
+
         $school->addAddress([
-            'line_1' => '1 Test Street',
-            'city' => 'Test City',
-            'country_id' => null,
+            'address_line_1' => '1 Test Street',
+            'city_text' => 'Test City',
+            'type' => 'physical',
         ], true);
 
         $school = $school->fresh();
