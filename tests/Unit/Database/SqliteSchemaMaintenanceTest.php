@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Database;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -59,8 +60,22 @@ class SqliteSchemaMaintenanceTest extends TestCase
     }
 
     /**
-     * Existing-DB path: staff create already recorded with legacy-named indexes present.
-     * Repair must drop them so a subsequent devices column drop (table rebuild) succeeds.
+     * Repair-order simulation for existing databases.
+     *
+     * What this establishes:
+     * - When the legacy *index names* are present on staff, the early repair
+     *   migration removes them.
+     * - After repair, a devices column drop (SQLite table rebuild) completes.
+     *
+     * What this does not establish:
+     * - It does not reconstruct a historical sqlite_master entry that indexed
+     *   a missing section_id column (SQLite will not CREATE INDEX on a missing
+     *   column). It uses the same index *names* on a real column so the repair
+     *   + rebuild path can be exercised.
+     * - Fresh installs rely on the corrected create_staff_table (no bad indexes).
+     * - Production installs that already recorded staff create depend on the
+     *   early migration running before remove_ip_from_devices (ordering), which
+     *   this test complements rather than fully replaying.
      */
     public function test_legacy_named_staff_indexes_are_repaired_before_devices_rebuild(): void
     {
@@ -128,6 +143,71 @@ class SqliteSchemaMaintenanceTest extends TestCase
         }
     }
 
+    /**
+     * Prove UNIQUE constraints reject duplicates — not merely that index names exist.
+     */
+    public function test_terms_unique_constraints_reject_duplicate_ordinal_and_name(): void
+    {
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('SQLite-only');
+        }
+        if (! Schema::hasTable('terms') || ! Schema::hasTable('academic_sessions') || ! Schema::hasTable('schools')) {
+            $this->markTestSkipped('terms + parents required');
+        }
+
+        [$schoolId, $sessionId] = $this->insertSchoolAndSession('uniq');
+
+        $base = [
+            'academic_session_id' => $sessionId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+        if (Schema::hasColumn('terms', 'status')) {
+            $base['status'] = 'pending';
+        }
+
+        DB::table('terms')->insert(array_merge($base, [
+            'id' => (string) Str::uuid(),
+            'name' => 'First Term',
+            'ordinal_number' => 1,
+        ]));
+
+        try {
+            DB::table('terms')->insert(array_merge($base, [
+                'id' => (string) Str::uuid(),
+                'name' => 'Other Name',
+                'ordinal_number' => 1,
+            ]));
+            $this->fail('Expected uniqueness violation for duplicate (academic_session_id, ordinal_number)');
+        } catch (QueryException $e) {
+            $this->assertTrue(
+                $this->isUniqueConstraintFailure($e),
+                'Expected UNIQUE constraint failure for ordinal, got: '.$e->getMessage()
+            );
+        }
+
+        try {
+            DB::table('terms')->insert(array_merge($base, [
+                'id' => (string) Str::uuid(),
+                'name' => 'First Term',
+                'ordinal_number' => 2,
+            ]));
+            $this->fail('Expected uniqueness violation for duplicate (academic_session_id, name)');
+        } catch (QueryException $e) {
+            $this->assertTrue(
+                $this->isUniqueConstraintFailure($e),
+                'Expected UNIQUE constraint failure for name, got: '.$e->getMessage()
+            );
+        }
+
+        DB::table('terms')->insert(array_merge($base, [
+            'id' => (string) Str::uuid(),
+            'name' => 'Second Term',
+            'ordinal_number' => 2,
+        ]));
+        $this->assertSame(2, DB::table('terms')->where('academic_session_id', $sessionId)->count());
+    }
+
     public function test_enrollments_named_indexes_exist_after_phase4(): void
     {
         if (! Schema::hasTable('enrollments')) {
@@ -160,49 +240,8 @@ class SqliteSchemaMaintenanceTest extends TestCase
             $this->markTestSkipped('enrollments + parents required');
         }
 
-        $schoolId = (string) Str::uuid();
-        $sessionId = (string) Str::uuid();
+        [$schoolId, $sessionId] = $this->insertSchoolAndSession('enroll');
         $enrollmentId = (string) Str::uuid();
-
-        if (! DB::table('schools')->where('id', $schoolId)->exists()) {
-            $schoolRow = [
-                'id' => $schoolId,
-                'name' => 'Maint School',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-            // Master schools schema requires non-null unique code/email.
-            if (Schema::hasColumn('schools', 'code')) {
-                $schoolRow['code'] = 'MNT1-'.substr($schoolId, 0, 8);
-            }
-            if (Schema::hasColumn('schools', 'email')) {
-                $schoolRow['email'] = 'maint-'.substr($schoolId, 0, 8).'@example.test';
-            }
-            if (Schema::hasColumn('schools', 'slug')) {
-                $schoolRow['slug'] = 'maint-school-'.substr($schoolId, 0, 8);
-            }
-            if (Schema::hasColumn('schools', 'is_active')) {
-                $schoolRow['is_active'] = false;
-            }
-            DB::table('schools')->insert($schoolRow);
-        }
-
-        if (! DB::table('academic_sessions')->where('id', $sessionId)->exists()) {
-            $sessionRow = [
-                'id' => $sessionId,
-                'school_id' => $schoolId,
-                'name' => '2026 Session',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-            if (Schema::hasColumn('academic_sessions', 'start_date')) {
-                $sessionRow['start_date'] = '2026-01-01';
-            }
-            if (Schema::hasColumn('academic_sessions', 'end_date')) {
-                $sessionRow['end_date'] = '2026-12-31';
-            }
-            DB::table('academic_sessions')->insert($sessionRow);
-        }
 
         $enrollRow = [
             'id' => $enrollmentId,
@@ -253,48 +292,8 @@ class SqliteSchemaMaintenanceTest extends TestCase
             $this->markTestSkipped('terms + parents required');
         }
 
-        $schoolId = (string) Str::uuid();
-        $sessionId = (string) Str::uuid();
+        [$schoolId, $sessionId] = $this->insertSchoolAndSession('terms');
         $termId = (string) Str::uuid();
-
-        if (! DB::table('schools')->where('id', $schoolId)->exists()) {
-            $schoolRow = [
-                'id' => $schoolId,
-                'name' => 'Terms School',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-            if (Schema::hasColumn('schools', 'code')) {
-                $schoolRow['code'] = 'TRM1-'.substr($schoolId, 0, 8);
-            }
-            if (Schema::hasColumn('schools', 'email')) {
-                $schoolRow['email'] = 'terms-'.substr($schoolId, 0, 8).'@example.test';
-            }
-            if (Schema::hasColumn('schools', 'slug')) {
-                $schoolRow['slug'] = 'terms-school-'.substr($schoolId, 0, 8);
-            }
-            if (Schema::hasColumn('schools', 'is_active')) {
-                $schoolRow['is_active'] = false;
-            }
-            DB::table('schools')->insert($schoolRow);
-        }
-
-        if (! DB::table('academic_sessions')->where('id', $sessionId)->exists()) {
-            $sessionRow = [
-                'id' => $sessionId,
-                'school_id' => $schoolId,
-                'name' => 'Terms Session',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-            if (Schema::hasColumn('academic_sessions', 'start_date')) {
-                $sessionRow['start_date'] = '2026-01-01';
-            }
-            if (Schema::hasColumn('academic_sessions', 'end_date')) {
-                $sessionRow['end_date'] = '2026-12-31';
-            }
-            DB::table('academic_sessions')->insert($sessionRow);
-        }
 
         $termRow = [
             'id' => $termId,
@@ -346,6 +345,37 @@ class SqliteSchemaMaintenanceTest extends TestCase
             in_array('terms_session_ordinal_unique', $indexes, true)
             || $this->indexNameContains($indexes, 'ordinal')
         );
+
+        $base = [
+            'academic_session_id' => $sessionId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+        if (Schema::hasColumn('terms', 'status')) {
+            $base['status'] = 'pending';
+        }
+
+        try {
+            DB::table('terms')->insert(array_merge($base, [
+                'id' => (string) Str::uuid(),
+                'name' => 'Other',
+                'ordinal_number' => 1,
+            ]));
+            $this->fail('Post-rebuild: expected UNIQUE failure for duplicate ordinal');
+        } catch (QueryException $e) {
+            $this->assertTrue($this->isUniqueConstraintFailure($e), $e->getMessage());
+        }
+
+        try {
+            DB::table('terms')->insert(array_merge($base, [
+                'id' => (string) Str::uuid(),
+                'name' => 'First Term',
+                'ordinal_number' => 9,
+            ]));
+            $this->fail('Post-rebuild: expected UNIQUE failure for duplicate name');
+        } catch (QueryException $e) {
+            $this->assertTrue($this->isUniqueConstraintFailure($e), $e->getMessage());
+        }
     }
 
     public function test_user_factory_creates_user_without_email_column_requirement(): void
@@ -359,6 +389,63 @@ class SqliteSchemaMaintenanceTest extends TestCase
         if (Schema::hasColumn('users', 'username')) {
             $this->assertNotEmpty($user->username);
         }
+    }
+
+    /**
+     * @return array{0: string, 1: string} [schoolId, sessionId]
+     */
+    private function insertSchoolAndSession(string $prefix): array
+    {
+        $schoolId = (string) Str::uuid();
+        $sessionId = (string) Str::uuid();
+        $suffix = substr($schoolId, 0, 8);
+
+        $schoolRow = [
+            'id' => $schoolId,
+            'name' => $prefix.' School',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+        if (Schema::hasColumn('schools', 'code')) {
+            $schoolRow['code'] = strtoupper(substr($prefix, 0, 4)).'-'.$suffix;
+        }
+        if (Schema::hasColumn('schools', 'email')) {
+            $schoolRow['email'] = $prefix.'-'.$suffix.'@example.test';
+        }
+        if (Schema::hasColumn('schools', 'slug')) {
+            $schoolRow['slug'] = $prefix.'-school-'.$suffix;
+        }
+        if (Schema::hasColumn('schools', 'is_active')) {
+            $schoolRow['is_active'] = false;
+        }
+        DB::table('schools')->insert($schoolRow);
+
+        $sessionRow = [
+            'id' => $sessionId,
+            'school_id' => $schoolId,
+            'name' => $prefix.' Session',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+        if (Schema::hasColumn('academic_sessions', 'start_date')) {
+            $sessionRow['start_date'] = '2026-01-01';
+        }
+        if (Schema::hasColumn('academic_sessions', 'end_date')) {
+            $sessionRow['end_date'] = '2026-12-31';
+        }
+        DB::table('academic_sessions')->insert($sessionRow);
+
+        return [$schoolId, $sessionId];
+    }
+
+    private function isUniqueConstraintFailure(QueryException $e): bool
+    {
+        $msg = strtolower($e->getMessage());
+
+        return str_contains($msg, 'unique')
+            || str_contains($msg, 'integrity constraint')
+            || ($e->errorInfo[0] ?? null) === '23000'
+            || ($e->errorInfo[1] ?? null) === 19;
     }
 
     /**
