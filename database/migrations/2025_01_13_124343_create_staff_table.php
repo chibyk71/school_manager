@@ -67,10 +67,11 @@ return new class extends Migration
             $table->softDeletes();
 
             // Performance indexes
+            // Note: section_id was never a column on staff (multi-section via school_section_staff pivot).
+            // department_id is also not defined on this table — do not index missing columns (breaks SQLite rebuilds).
             $table->index('profile_id'); // For joining with profiles
             $table->index('staff_id_number'); // For quick staff lookups
-            $table->index(['school_id', 'section_id']); // For scoped listings (current school/section staff)
-            $table->index('department_id'); // For department-based queries
+            $table->index('school_id'); // School-scoped staff listings
         });
     }
 
