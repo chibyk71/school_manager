@@ -47,17 +47,49 @@ class SchoolCapacityConcurrencyTest extends TestCase
             ]);
         }
 
-        School::query()->forceDelete();
+        $this->assertTrue(
+            Schema::hasTable('schools'),
+            'schools table missing after RefreshDatabase — migrations did not complete (check SQLite migrate / terms_old_phase3 residuals).'
+        );
+
+        $this->purgeAllSchoolsSafely();
         $this->bindCapacityLimit(2);
     }
 
     protected function tearDown(): void
     {
         try {
-            School::query()->forceDelete();
+            $this->purgeAllSchoolsSafely();
         } catch (\Throwable) {
         }
         parent::tearDown();
+    }
+
+    /**
+     * Empty schools without tripping residual SQLite FK metadata (terms_old_phase3).
+     */
+    private function purgeAllSchoolsSafely(): void
+    {
+        if (! Schema::hasTable('schools')) {
+            return;
+        }
+
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            try {
+                DB::statement('PRAGMA foreign_keys = OFF');
+            } catch (\Throwable) {
+            }
+            Schema::dropIfExists('terms_old_phase3');
+            DB::table('schools')->delete();
+            try {
+                DB::statement('PRAGMA foreign_keys = ON');
+            } catch (\Throwable) {
+            }
+
+            return;
+        }
+
+        School::query()->forceDelete();
     }
 
     private function bindCapacityLimit(int $limit): void
