@@ -67,16 +67,18 @@ class SchoolOnboardingDispatchTest extends TestCase
     {
         $school = $this->makeActiveSchool('Dispatch Fail');
 
+        // Capture the real concrete dispatcher so we can restore it after the mock.
+        $real = $this->app->make(\Illuminate\Bus\Dispatcher::class);
+
         $dispatcher = \Mockery::mock(BusDispatcher::class);
         $dispatcher->shouldReceive('dispatch')
             ->once()
             ->andThrow(new \RuntimeException('simulated dispatch failure'));
         $this->app->instance(BusDispatcher::class, $dispatcher);
-
-        $lifecycle = app(SchoolLifecycleService::class);
+        $this->app->instance(\Illuminate\Bus\Dispatcher::class, $dispatcher);
 
         try {
-            $lifecycle->ensureOperationalOnboarding($school);
+            app(SchoolLifecycleService::class)->ensureOperationalOnboarding($school);
             $this->fail('Expected RuntimeException from dispatch');
         } catch (\RuntimeException $e) {
             $this->assertSame('simulated dispatch failure', $e->getMessage());
@@ -87,8 +89,9 @@ class SchoolOnboardingDispatchTest extends TestCase
         $this->assertArrayNotHasKey('operational_onboarding_dispatched_at', $data);
         $this->assertArrayNotHasKey('operational_onboarding_completed_at', $data);
 
-        // Clear mock *before* Queue::fake so the fake can bind a working Dispatcher.
-        $this->app->forgetInstance(BusDispatcher::class);
+        // Restore real dispatcher bindings, then install Queue fake for retry assertion.
+        $this->app->instance(\Illuminate\Bus\Dispatcher::class, $real);
+        $this->app->instance(BusDispatcher::class, $real);
         Queue::fake();
         app(SchoolLifecycleService::class)->ensureOperationalOnboarding($school->fresh());
         Queue::assertPushed(SetupSchoolOnboarding::class, 1);
