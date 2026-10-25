@@ -40,6 +40,11 @@ class SchoolLifecycleDomainTest extends TestCase
     {
         parent::setUp();
 
+        $this->assertTrue(
+            Schema::hasTable('schools'),
+            'schools table missing after RefreshDatabase — full migrations must run for School domain tests.'
+        );
+
         $this->ensureMinimalSchema();
 
         $this->readiness = app(SchoolReadinessEvaluator::class);
