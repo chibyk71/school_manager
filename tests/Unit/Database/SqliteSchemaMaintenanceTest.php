@@ -11,23 +11,26 @@ use Tests\TestCase;
 /**
  * Shared SQLite schema maintenance (not School product).
  *
- * PHPUnit (phpunit.xml) forces:
- *   DB_CONNECTION=sqlite
- *   DB_DATABASE=:memory:
+ * PHPUnit (phpunit.xml) forces DB_CONNECTION=sqlite. Shell may still override
+ * DB_DATABASE to a file path when verifying migrate:fresh explicitly.
  *
- * That is independent of `php artisan migrate --env=testing`, which loads
- * .env / .env.testing and may point at MySQL. Prefer:
- *   DB_CONNECTION=sqlite DB_DATABASE=":memory:" php artisan migrate --force
- * or a file DB for inspection.
+ * `php artisan migrate --env=testing` reads .env and may use MySQL — that is
+ * unrelated to these SQLite tests.
  */
 class SqliteSchemaMaintenanceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_phpunit_uses_sqlite_memory_not_mysql(): void
+    public function test_phpunit_uses_sqlite_not_mysql(): void
     {
+        // phpunit.xml sets sqlite; shell may override DB_DATABASE to a file path
+        // (e.g. explicit migrate:fresh). Still must not be MySQL/Postgres.
         $this->assertSame('sqlite', Schema::getConnection()->getDriverName());
-        $this->assertSame(':memory:', Schema::getConnection()->getDatabaseName());
+        $db = (string) Schema::getConnection()->getDatabaseName();
+        $this->assertTrue(
+            $db === ':memory:' || str_ends_with($db, '.sqlite') || str_contains($db, 'sqlite'),
+            "Expected sqlite memory or file DB, got: {$db}"
+        );
     }
 
     public function test_staff_table_has_no_indexes_on_missing_columns(): void
@@ -168,11 +171,15 @@ class SqliteSchemaMaintenanceTest extends TestCase
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
+            // Master schools schema requires non-null unique code/email.
             if (Schema::hasColumn('schools', 'code')) {
-                $schoolRow['code'] = 'MNT1';
+                $schoolRow['code'] = 'MNT1-'.substr($schoolId, 0, 8);
+            }
+            if (Schema::hasColumn('schools', 'email')) {
+                $schoolRow['email'] = 'maint-'.substr($schoolId, 0, 8).'@example.test';
             }
             if (Schema::hasColumn('schools', 'slug')) {
-                $schoolRow['slug'] = 'maint-school';
+                $schoolRow['slug'] = 'maint-school-'.substr($schoolId, 0, 8);
             }
             if (Schema::hasColumn('schools', 'is_active')) {
                 $schoolRow['is_active'] = false;
@@ -257,8 +264,14 @@ class SqliteSchemaMaintenanceTest extends TestCase
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
+            if (Schema::hasColumn('schools', 'code')) {
+                $schoolRow['code'] = 'TRM1-'.substr($schoolId, 0, 8);
+            }
+            if (Schema::hasColumn('schools', 'email')) {
+                $schoolRow['email'] = 'terms-'.substr($schoolId, 0, 8).'@example.test';
+            }
             if (Schema::hasColumn('schools', 'slug')) {
-                $schoolRow['slug'] = 'terms-school';
+                $schoolRow['slug'] = 'terms-school-'.substr($schoolId, 0, 8);
             }
             if (Schema::hasColumn('schools', 'is_active')) {
                 $schoolRow['is_active'] = false;
