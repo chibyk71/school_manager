@@ -149,14 +149,17 @@ class SetupSchoolOnboarding implements ShouldQueue
             }
 
             foreach ($classNames as $index => $name) {
+                // class_levels requires unique (school_section_id, sequence); default sequence=1
+                // would collide for every level after the first.
                 \App\Models\Academic\ClassLevel::firstOrCreate(
                     [
                         'school_section_id' => $section->id,
                         'name' => $name,
                     ],
                     [
-                        'short_name' => $name,
-                        'order' => $index + 1,
+                        'display_name' => $name,
+                        'sequence' => $index + 1,
+                        'is_active' => true,
                     ]
                 );
             }
