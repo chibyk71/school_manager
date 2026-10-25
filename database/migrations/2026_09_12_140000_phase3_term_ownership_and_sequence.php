@@ -84,18 +84,6 @@ return new class extends Migration
 
     protected function rebuildTermsWithoutSchoolIdForSqlite(): void
     {
-        // Leftover from a previous interrupted rebuild can break later DELETE FROM schools
-        // (SQLite FK bookkeeping references main.terms_old_phase3).
-        try {
-            DB::statement('PRAGMA foreign_keys = OFF');
-        } catch (\Throwable) {
-        }
-        Schema::dropIfExists('terms_old_phase3');
-        try {
-            DB::statement('PRAGMA foreign_keys = ON');
-        } catch (\Throwable) {
-        }
-
         foreach ([
             'terms_session_name_unique',
             'terms_session_active_idx',
@@ -173,7 +161,7 @@ return new class extends Migration
             DB::statement('PRAGMA foreign_keys = OFF');
         } catch (\Throwable) {
         }
-        Schema::dropIfExists('terms_old_phase3');
+        Schema::drop('terms_old_phase3');
         try {
             DB::statement('PRAGMA foreign_keys = ON');
         } catch (\Throwable) {
