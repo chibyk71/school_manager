@@ -109,11 +109,13 @@ class SetupSchoolOnboarding implements ShouldQueue
 
     protected function createDefaultSections(): void
     {
+        // Field names must match SchoolSection fillable / school_sections schema
+        // (name slug, display_name, short_code, sort_order) — not legacy short_name/order.
         $sections = [
-            ['name' => 'Nursery', 'short_name' => 'NUR', 'order' => 1],
-            ['name' => 'Primary', 'short_name' => 'PRI', 'order' => 2],
-            ['name' => 'Junior Secondary', 'short_name' => 'JSS', 'order' => 3],
-            ['name' => 'Senior Secondary', 'short_name' => 'SSS', 'order' => 4],
+            ['name' => 'nursery', 'display_name' => 'Nursery', 'short_code' => 'NUR', 'sort_order' => 1],
+            ['name' => 'primary', 'display_name' => 'Primary', 'short_code' => 'PRI', 'sort_order' => 2],
+            ['name' => 'junior_secondary', 'display_name' => 'Junior Secondary School', 'short_code' => 'JSS', 'sort_order' => 3],
+            ['name' => 'senior_secondary', 'display_name' => 'Senior Secondary School', 'short_code' => 'SSS', 'sort_order' => 4],
         ];
 
         foreach ($sections as $sectionData) {
@@ -122,7 +124,10 @@ class SetupSchoolOnboarding implements ShouldQueue
                     'school_id' => $this->school->id,
                     'name' => $sectionData['name'],
                 ],
-                $sectionData
+                array_merge($sectionData, [
+                    'source' => 'template',
+                    'is_active' => true,
+                ])
             );
         }
     }
@@ -130,10 +135,10 @@ class SetupSchoolOnboarding implements ShouldQueue
     protected function createDefaultClassLevels(): void
     {
         $levels = [
-            'Nursery' => ['Nursery 1', 'Nursery 2', 'Nursery 3'],
-            'Primary' => ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6'],
-            'Junior Secondary' => ['JSS1', 'JSS2', 'JSS3'],
-            'Senior Secondary' => ['SSS1', 'SSS2', 'SSS3'],
+            'nursery' => ['Nursery 1', 'Nursery 2', 'Nursery 3'],
+            'primary' => ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6'],
+            'junior_secondary' => ['JSS1', 'JSS2', 'JSS3'],
+            'senior_secondary' => ['SSS1', 'SSS2', 'SSS3'],
         ];
 
         foreach ($levels as $sectionName => $classNames) {
