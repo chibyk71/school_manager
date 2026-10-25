@@ -61,14 +61,20 @@ class SchoolCapacityConcurrencyTest extends TestCase
             'schools table missing after RefreshDatabase — migrations did not complete.'
         );
 
-        $this->purgeAllSchoolsSafely();
+        // Sequential tests run inside a DB transaction — do not DELETE FROM schools
+        // (residual terms_old_phase3 FK metadata can make that fail on SQLite).
+        // Concurrent (committed) tests still need a clean slate.
+        if ($this->isConcurrentTestCase()) {
+            $this->purgeAllSchoolsSafely();
+        }
+
         $this->bindCapacityLimit(2);
     }
 
     protected function tearDown(): void
     {
         try {
-            if (Schema::hasTable('schools')) {
+            if (Schema::hasTable('schools') && $this->isConcurrentTestCase()) {
                 $this->purgeAllSchoolsSafely();
             }
         } catch (\Throwable) {
@@ -96,15 +102,12 @@ class SchoolCapacityConcurrencyTest extends TestCase
         }
 
         if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            Schema::disableForeignKeyConstraints();
             try {
-                DB::statement('PRAGMA foreign_keys = OFF');
-            } catch (\Throwable) {
-            }
-            Schema::dropIfExists('terms_old_phase3');
-            DB::table('schools')->delete();
-            try {
-                DB::statement('PRAGMA foreign_keys = ON');
-            } catch (\Throwable) {
+                Schema::dropIfExists('terms_old_phase3');
+                DB::table('schools')->delete();
+            } finally {
+                Schema::enableForeignKeyConstraints();
             }
 
             return;

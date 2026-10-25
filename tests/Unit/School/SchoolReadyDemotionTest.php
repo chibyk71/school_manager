@@ -4,7 +4,7 @@ namespace Tests\Unit\School;
 
 use App\Models\School;
 use App\Services\School\SchoolLifecycleService;
-use App\Services\School\SchoolService;
+use App\Services\SchoolService;
 use App\States\School\Draft;
 use App\States\School\Ready;
 use Illuminate\Foundation\Testing\RefreshDatabase;
