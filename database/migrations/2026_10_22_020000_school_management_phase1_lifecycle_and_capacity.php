@@ -15,13 +15,16 @@ use Illuminate\Support\Facades\Schema;
  * optional description/motto, and tenant-scoped capacity lock.
  *
  * Backfill strategy (defensive):
- * - Soft-deleted schools keep deleted_at; state set to archived for consistency
- *   when previously inactive, otherwise draft (does not restore).
- * - is_active = true alone does NOT map to Active. Active requires evidence of
- *   a complete readiness profile (name, code, email, type, contact_name,
- *   primary address). Without contact_name (new field) no legacy row can be
- *   proven Ready/Active; they are placed in Draft with a diagnostic note in
- *   data.migration_notes.
+ * - Soft-deleted schools: deleted_at is preserved (not restored). state is always
+ *   set to archived for lifecycle consistency, regardless of legacy is_active.
+ *   is_active is then reconciled from state (Archived → is_active=false).
+ * - Live schools (deleted_at null): always mapped to Draft. is_active=true alone
+ *   does NOT map to Active. Active requires proven readiness (name, code, email,
+ *   type, contact_name, primary address). contact_name is new on this migration,
+ *   so no legacy row can be proven Ready/Active; all live rows become Draft with
+ *   diagnostic notes in data.migration_notes.
+ * - is_active is derived FROM state after backfill (Active/Suspended → true;
+ *   Draft/Ready/Archived → false), never the reverse.
  * - Ambiguous rows are reported via data.migration_notes, never silently
  *   promoted to Active.
  */
@@ -84,10 +87,10 @@ return new class extends Migration
             $data = is_string($row->data) ? (json_decode($row->data, true) ?: []) : (array) ($row->data ?? []);
             $notes = [];
 
-            // Soft-deleted: preserve deletion; classify as archived for lifecycle consistency.
+            // Soft-deleted: preserve deletion; always Archived (not Draft), independent of is_active.
             if ($row->deleted_at !== null) {
                 $state = Archived::$name;
-                $notes[] = 'Backfill: soft-deleted school mapped to archived (not restored).';
+                $notes[] = 'Backfill: soft-deleted school mapped to archived (deleted_at preserved; not restored).';
                 $this->updateSchoolState($row->id, $state, $data, $notes);
 
                 continue;
