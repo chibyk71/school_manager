@@ -31,9 +31,17 @@ class SchoolPrimaryAddressUnsetDemotionTest extends TestCase
             'phone_one' => '08012345678',
         ]);
 
+        if (class_exists(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class)
+            && Schema::hasTable('dynamic_enums')) {
+            $enum = app(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class);
+            $def = $enum->ensureDefinition('address.type', 'Address type');
+            $enum->createTenantOption($def, 'physical', 'Physical', ['sort_order' => 1]);
+        }
+
         $address = $school->addAddress([
-            'line_1' => '1 Test Road',
-            'city' => 'Test City',
+            'address_line_1' => '1 Test Road',
+            'city_text' => 'Test City',
+            'type' => 'physical',
         ], true);
         $school = $school->fresh();
 
