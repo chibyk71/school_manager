@@ -7,6 +7,7 @@ use App\Http\Requests\Address\UpdateAddressRequest;
 use App\Http\Resources\AddressResource;
 use App\Models\Address;
 use App\Models\School;
+use App\Services\School\SchoolLifecycleService;
 use App\Traits\HasAddress;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -162,7 +163,7 @@ class AddressController extends Controller
             return;
         }
 
-        app(\App\Services\School\SchoolLifecycleService::class)
+        app(SchoolLifecycleService::class)
             ->reevaluateAfterUpdate($ownerModel->fresh());
     }
 

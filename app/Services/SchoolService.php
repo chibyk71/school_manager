@@ -12,8 +12,11 @@ namespace App\Services;
 
 use App\Events\SchoolCreated;
 use App\Models\School;
+use App\Models\SchoolSection;
 use App\Models\User;
 use App\Notifications\MadeAdminOfSchoolNotification;
+use App\Services\School\SchoolLifecycleService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -22,6 +25,7 @@ use Illuminate\Support\Str;
 class SchoolService
 {
     protected $activeSchool;
+
     protected $activeSection;
 
     public function setActiveSchool(School $school): void
@@ -30,12 +34,12 @@ class SchoolService
             $this->activeSchool = $school;
             session(['active_school_id' => $school->id]);
         } catch (\Exception $e) {
-            Log::error('Failed to set active school: ' . $e->getMessage());
+            Log::error('Failed to set active school: '.$e->getMessage());
             throw new \Exception('Unable to set active school.');
         }
     }
 
-    public function getActiveSchool(?\Illuminate\Http\Request $request = null): ?School
+    public function getActiveSchool(?Request $request = null): ?School
     {
         try {
             if ($this->activeSchool) {
@@ -48,7 +52,8 @@ class SchoolService
 
             return $schoolId ? School::find($schoolId) : null;
         } catch (\Exception $e) {
-            Log::error('Failed to get active school: ' . $e->getMessage());
+            Log::error('Failed to get active school: '.$e->getMessage());
+
             return null;
         }
     }
@@ -62,7 +67,7 @@ class SchoolService
     {
         // Phase 1: Draft creation (name required). Capacity + state enforced by lifecycle.
         // Clients cannot assign lifecycle state or force Active on create.
-        $lifecycle = app(\App\Services\School\SchoolLifecycleService::class);
+        $lifecycle = app(SchoolLifecycleService::class);
         $school = $lifecycle->createDraft($data);
 
         event(new SchoolCreated($school, auth()->id()));
@@ -107,7 +112,7 @@ class SchoolService
             $school->save();
 
             // Nested transaction uses a savepoint; throw rolls back attribute save too.
-            $school = app(\App\Services\School\SchoolLifecycleService::class)
+            $school = app(SchoolLifecycleService::class)
                 ->reevaluateAfterUpdate($school);
 
             Log::info('School updated successfully', ['school_id' => $school->id]);
@@ -122,7 +127,7 @@ class SchoolService
 
         $validated = validator($userData, [
             'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email,' . ($userData['id'] ?? null),
+            'email' => 'required|email|max:255|unique:users,email,'.($userData['id'] ?? null),
             'password' => 'nullable|string|min:8',
         ])->validate();
 
@@ -147,7 +152,7 @@ class SchoolService
         });
     }
 
-    public function setActiveSection(\App\Models\SchoolSection $section): void
+    public function setActiveSection(SchoolSection $section): void
     {
         $activeSchool = $this->getActiveSchool();
 
@@ -159,12 +164,12 @@ class SchoolService
             $this->activeSection = $section;
             session(['active_section_id' => $section->id]);
         } catch (\Exception $e) {
-            Log::error('Failed to set active section: ' . $e->getMessage());
+            Log::error('Failed to set active section: '.$e->getMessage());
             throw new \Exception('Unable to set active section.');
         }
     }
 
-    public function getActiveSection(?\Illuminate\Http\Request $request = null): ?\App\Models\SchoolSection
+    public function getActiveSection(?Request $request = null): ?SchoolSection
     {
         try {
             if ($this->activeSection) {
@@ -175,7 +180,7 @@ class SchoolService
                 ?? session('active_section_id');
 
             if ($sectionId) {
-                $section = \App\Models\SchoolSection::find($sectionId);
+                $section = SchoolSection::find($sectionId);
 
                 $activeSchool = $this->getActiveSchool($request);
                 if ($section && $activeSchool && $section->school_id !== $activeSchool->id) {
@@ -184,6 +189,7 @@ class SchoolService
                         'section_school_id' => $section->school_id,
                         'active_school_id' => $activeSchool->id,
                     ]);
+
                     return null;
                 }
 
@@ -191,9 +197,11 @@ class SchoolService
             }
 
             $activeSchool = $this->getActiveSchool($request);
+
             return $activeSchool?->schoolSections()->first();
         } catch (\Exception $e) {
-            Log::error('Failed to get active section: ' . $e->getMessage());
+            Log::error('Failed to get active section: '.$e->getMessage());
+
             return null;
         }
     }

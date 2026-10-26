@@ -2,9 +2,44 @@
 
 namespace App\Providers;
 
+use App\Contracts\Academic\AcademicSessionOperationalDataBoundary;
+use App\Contracts\Academic\TermOperationalDataBoundary;
 use App\Contracts\Authorization\Authorization;
+use App\Entitlements\Definitions\FileManagerFeatures;
+use App\Entitlements\Definitions\SchoolManagementFeatures;
+use App\Listeners\Student\LogLifecycleNotificationDelivery;
+use App\Models\DynamicEnum;
+use App\Models\FileManager\File;
+use App\Models\FileManager\Folder;
 use App\Models\Permission;
+use App\Models\Promotion\PromotionBatch;
+use App\Models\StorageProvider;
+use App\Models\Student\Enrollment;
+use App\Models\Student\Student;
 use App\Models\User;
+use App\Policies\DynamicEnumPolicy;
+use App\Policies\FileManager\FilePolicy;
+use App\Policies\FileManager\FolderPolicy;
+use App\Policies\Promotion\PromotionPolicy;
+use App\Policies\StorageProviderPolicy;
+use App\Policies\Student\EnrollmentPolicy;
+use App\Policies\Student\StudentPolicy;
+use App\Services\Academic\AcademicPeriodUsageRegistry;
+use App\Services\Academic\RegistryAcademicSessionOperationalData;
+use App\Services\Academic\RegistryTermOperationalData;
+use App\Services\Permission\AuthorizationService;
+use App\Settings\Definitions\AuthenticationSettings;
+use App\Settings\Definitions\FileManagerSettings;
+use App\Support\Entitlements\CapacityEvaluator;
+use App\Support\Entitlements\DefaultEntitlementProfile;
+use App\Support\Entitlements\EntitlementRegistry;
+use App\Support\Entitlements\EntitlementResolver;
+use App\Support\Entitlements\FeatureAccess;
+use App\Support\Settings\SettingsRegistry;
+use App\Support\Settings\SettingsResolver;
+use Illuminate\Notifications\Events\NotificationFailed;
+use Illuminate\Notifications\Events\NotificationSent;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -14,122 +49,122 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->singleton(\App\Support\Settings\SettingsRegistry::class, function () {
-            $registry = new \App\Support\Settings\SettingsRegistry();
-            \App\Settings\Definitions\AuthenticationSettings::register($registry);
-            \App\Settings\Definitions\FileManagerSettings::register($registry);
+        $this->app->singleton(SettingsRegistry::class, function () {
+            $registry = new SettingsRegistry;
+            AuthenticationSettings::register($registry);
+            FileManagerSettings::register($registry);
             $registry->seal();
 
             return $registry;
         });
 
-        $this->app->singleton(\App\Support\Settings\SettingsResolver::class, function ($app) {
-            return new \App\Support\Settings\SettingsResolver(
-                $app->make(\App\Support\Settings\SettingsRegistry::class)
+        $this->app->singleton(SettingsResolver::class, function ($app) {
+            return new SettingsResolver(
+                $app->make(SettingsRegistry::class)
             );
         });
 
         // Feature & Entitlement Registry (Phase 1)
-        $this->app->singleton(\App\Support\Entitlements\EntitlementRegistry::class, function () {
-            $registry = new \App\Support\Entitlements\EntitlementRegistry();
-            \App\Entitlements\Definitions\FileManagerFeatures::register($registry);
-            \App\Entitlements\Definitions\SchoolManagementFeatures::register($registry);
+        $this->app->singleton(EntitlementRegistry::class, function () {
+            $registry = new EntitlementRegistry;
+            FileManagerFeatures::register($registry);
+            SchoolManagementFeatures::register($registry);
             $registry->seal();
 
             return $registry;
         });
 
-        $this->app->singleton(\App\Support\Entitlements\DefaultEntitlementProfile::class, function () {
-            return new \App\Support\Entitlements\DefaultEntitlementProfile();
+        $this->app->singleton(DefaultEntitlementProfile::class, function () {
+            return new DefaultEntitlementProfile;
         });
 
-        $this->app->singleton(\App\Support\Entitlements\EntitlementResolver::class, function ($app) {
-            return new \App\Support\Entitlements\EntitlementResolver(
-                $app->make(\App\Support\Entitlements\EntitlementRegistry::class),
+        $this->app->singleton(EntitlementResolver::class, function ($app) {
+            return new EntitlementResolver(
+                $app->make(EntitlementRegistry::class),
                 [], // future SaaS providers bind here, highest priority first
-                $app->make(\App\Support\Entitlements\DefaultEntitlementProfile::class),
+                $app->make(DefaultEntitlementProfile::class),
             );
         });
 
-        $this->app->singleton(\App\Support\Entitlements\FeatureAccess::class, function ($app) {
-            return new \App\Support\Entitlements\FeatureAccess(
-                $app->make(\App\Support\Entitlements\EntitlementResolver::class)
+        $this->app->singleton(FeatureAccess::class, function ($app) {
+            return new FeatureAccess(
+                $app->make(EntitlementResolver::class)
             );
         });
 
-        $this->app->singleton(\App\Support\Entitlements\CapacityEvaluator::class, function ($app) {
-            return new \App\Support\Entitlements\CapacityEvaluator(
-                $app->make(\App\Support\Entitlements\EntitlementResolver::class)
+        $this->app->singleton(CapacityEvaluator::class, function ($app) {
+            return new CapacityEvaluator(
+                $app->make(EntitlementResolver::class)
             );
         });
 
         $this->app->bind(
             Authorization::class,
-            \App\Services\Permission\AuthorizationService::class
+            AuthorizationService::class
         );
 
         $this->app->bind(
-            \App\Contracts\Academic\AcademicSessionOperationalDataBoundary::class,
-            \App\Services\Academic\RegistryAcademicSessionOperationalData::class
+            AcademicSessionOperationalDataBoundary::class,
+            RegistryAcademicSessionOperationalData::class
         );
 
         $this->app->bind(
-            \App\Contracts\Academic\TermOperationalDataBoundary::class,
-            \App\Services\Academic\RegistryTermOperationalData::class
+            TermOperationalDataBoundary::class,
+            RegistryTermOperationalData::class
         );
 
         $this->app->singleton(
-            \App\Services\Academic\AcademicPeriodUsageRegistry::class
+            AcademicPeriodUsageRegistry::class
         );
     }
 
     public function boot(): void
     {
-        \Illuminate\Support\Facades\Event::listen(
-            \Illuminate\Notifications\Events\NotificationSent::class,
-            [\App\Listeners\Student\LogLifecycleNotificationDelivery::class, 'handleSent']
+        Event::listen(
+            NotificationSent::class,
+            [LogLifecycleNotificationDelivery::class, 'handleSent']
         );
-        \Illuminate\Support\Facades\Event::listen(
-            \Illuminate\Notifications\Events\NotificationFailed::class,
-            [\App\Listeners\Student\LogLifecycleNotificationDelivery::class, 'handleFailed']
-        );
-
-        Gate::policy(
-            \App\Models\Promotion\PromotionBatch::class,
-            \App\Policies\Promotion\PromotionPolicy::class
+        Event::listen(
+            NotificationFailed::class,
+            [LogLifecycleNotificationDelivery::class, 'handleFailed']
         );
 
         Gate::policy(
-            \App\Models\Student\Enrollment::class,
-            \App\Policies\Student\EnrollmentPolicy::class
+            PromotionBatch::class,
+            PromotionPolicy::class
         );
 
         Gate::policy(
-            \App\Models\Student\Student::class,
-            \App\Policies\Student\StudentPolicy::class
+            Enrollment::class,
+            EnrollmentPolicy::class
+        );
+
+        Gate::policy(
+            Student::class,
+            StudentPolicy::class
         );
         Gate::policy(
             \App\Models\Academic\Student::class,
-            \App\Policies\Student\StudentPolicy::class
+            StudentPolicy::class
         );
 
         Gate::policy(
-            \App\Models\DynamicEnum::class,
-            \App\Policies\DynamicEnumPolicy::class
+            DynamicEnum::class,
+            DynamicEnumPolicy::class
         );
 
         Gate::policy(
-            \App\Models\StorageProvider::class,
-            \App\Policies\StorageProviderPolicy::class
+            StorageProvider::class,
+            StorageProviderPolicy::class
         );
 
         Gate::policy(
-            \App\Models\FileManager\Folder::class,
-            \App\Policies\FileManager\FolderPolicy::class
+            Folder::class,
+            FolderPolicy::class
         );
         Gate::policy(
-            \App\Models\FileManager\File::class,
-            \App\Policies\FileManager\FilePolicy::class
+            File::class,
+            FilePolicy::class
         );
 
         // School Manager permission identities (permissions.name ∪ catalogue).

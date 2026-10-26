@@ -44,8 +44,11 @@
  * Works with SchoolController::update(), SchoolService::updateSchool(),
  * and the upcoming combined CreateEdit.vue page.
  */
+
 namespace App\Http\Requests;
 
+use App\Models\School;
+use App\Support\School\SchoolTypeCatalogue;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -53,8 +56,6 @@ class UpdateSchoolRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
-     *
-     * @return bool
      */
     public function authorize(): bool
     {
@@ -64,11 +65,11 @@ class UpdateSchoolRequest extends FormRequest
         }
 
         $school = $this->route('school');
-        if ($school instanceof \App\Models\School) {
+        if ($school instanceof School) {
             return $user->can('update', $school);
         }
 
-        return $user->can('create', \App\Models\School::class)
+        return $user->can('create', School::class)
             || (method_exists($user, 'hasPermission') && (bool) $user->hasPermission('school.update'));
     }
 
@@ -85,12 +86,12 @@ class UpdateSchoolRequest extends FormRequest
             // Core school fields
             // Name always required; code/email/type/contact may be incomplete on Draft.
             // Format + uniqueness apply when values are provided. Ready still needs all six conditions.
-            'name'      => ['required', 'string', 'max:255'],
-            'code'      => ['sometimes', 'nullable', 'string', 'max:50', Rule::unique('schools', 'code')->ignore($schoolId)],
-            'email'     => ['sometimes', 'nullable', 'email', 'max:255', Rule::unique('schools', 'email')->ignore($schoolId)],
+            'name' => ['required', 'string', 'max:255'],
+            'code' => ['sometimes', 'nullable', 'string', 'max:50', Rule::unique('schools', 'code')->ignore($schoolId)],
+            'email' => ['sometimes', 'nullable', 'email', 'max:255', Rule::unique('schools', 'email')->ignore($schoolId)],
             'phone_one' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'phone_two' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
-            'type'      => ['sometimes', 'nullable', 'string', \Illuminate\Validation\Rule::in(\App\Support\School\SchoolTypeCatalogue::values())],
+            'type' => ['sometimes', 'nullable', 'string', Rule::in(SchoolTypeCatalogue::values())],
 
             // Status – partial update allowed
             'state' => ['prohibited'],
@@ -103,10 +104,10 @@ class UpdateSchoolRequest extends FormRequest
             'addresses' => ['sometimes', 'array'],
 
             // Branding / Media (Spatie Media Library) – optional replacement files
-            'logo'            => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
-            'small_logo'      => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
-            'favicon'         => ['sometimes', 'file', 'mimes:jpeg,png,ico,svg+xml', 'max:2048'],
-            'dark_logo'       => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'logo' => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'small_logo' => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'favicon' => ['sometimes', 'file', 'mimes:jpeg,png,ico,svg+xml', 'max:2048'],
+            'dark_logo' => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
             'dark_small_logo' => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
 
             // Optional extra JSON data
@@ -122,17 +123,17 @@ class UpdateSchoolRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'name'            => 'school name',
-            'code'            => 'school code',
-            'email'           => 'school email',
-            'phone_one'       => 'primary phone',
-            'phone_two'       => 'secondary phone',
-            'type'            => 'school type',
-            'is_active'       => 'status',
-            'logo'            => 'main logo',
-            'small_logo'      => 'small logo',
-            'favicon'         => 'favicon',
-            'dark_logo'       => 'dark mode logo',
+            'name' => 'school name',
+            'code' => 'school code',
+            'email' => 'school email',
+            'phone_one' => 'primary phone',
+            'phone_two' => 'secondary phone',
+            'type' => 'school type',
+            'is_active' => 'status',
+            'logo' => 'main logo',
+            'small_logo' => 'small logo',
+            'favicon' => 'favicon',
+            'dark_logo' => 'dark mode logo',
             'dark_small_logo' => 'dark mode small logo',
         ];
     }

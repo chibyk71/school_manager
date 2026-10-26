@@ -2,8 +2,9 @@
 
 namespace Tests\Unit\School;
 
-use App\Models\School;
+use App\Services\DynamicEnum\DynamicEnumLifecycleService;
 use App\Services\School\SchoolLifecycleService;
+use App\Services\School\SchoolReadinessEvaluator;
 use App\Services\SchoolService;
 use App\States\School\Draft;
 use App\States\School\Ready;
@@ -32,9 +33,9 @@ class SchoolReadyDemotionTest extends TestCase
         ]);
 
         if (Schema::hasTable('addresses') && method_exists($school, 'addAddress')) {
-            if (class_exists(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class)
+            if (class_exists(DynamicEnumLifecycleService::class)
                 && Schema::hasTable('dynamic_enums')) {
-                $enum = app(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class);
+                $enum = app(DynamicEnumLifecycleService::class);
                 $def = $enum->ensureDefinition('address.type', 'Address type');
                 $enum->createTenantOption($def, 'physical', 'Physical', ['sort_order' => 1]);
             }
@@ -49,7 +50,7 @@ class SchoolReadyDemotionTest extends TestCase
         }
 
         // Force Ready if checklist passes
-        if (! app(\App\Services\School\SchoolReadinessEvaluator::class)->isReady($school)) {
+        if (! app(SchoolReadinessEvaluator::class)->isReady($school)) {
             $this->markTestSkipped('Could not satisfy readiness in this schema');
         }
 

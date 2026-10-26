@@ -4,11 +4,13 @@ namespace Tests\Feature\School;
 
 use App\Jobs\SetupSchoolOnboarding;
 use App\Models\Permission;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
 use App\Services\School\SchoolLifecycleService;
+use App\States\School\Active;
+use App\States\School\Archived;
 use App\States\School\Draft;
-use App\States\School\Ready;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -186,7 +188,7 @@ class SchoolLifecycleFeatureTest extends TestCase
         $school = $lifecycle->createDraft(['name' => 'Archive Candidate']);
 
         // Archive requires Active|Suspended; suspend path needs Active. Use service to archive from Active.
-        $school->state = \App\States\School\Active::class;
+        $school->state = Active::class;
         $school->is_active = true;
         $school->save();
 
@@ -198,14 +200,14 @@ class SchoolLifecycleFeatureTest extends TestCase
 
         $response->assertRedirect();
         $response->assertSessionHas('success');
-        $this->assertInstanceOf(\App\States\School\Archived::class, $school->fresh()->state);
+        $this->assertInstanceOf(Archived::class, $school->fresh()->state);
     }
 
     public function test_json_lifecycle_action_returns_json_without_inertia_header(): void
     {
         $this->actingAsAuthorized();
         $school = app(SchoolLifecycleService::class)->createDraft(['name' => 'JSON Lifecycle']);
-        $school->state = \App\States\School\Active::class;
+        $school->state = Active::class;
         $school->is_active = true;
         $school->save();
 
@@ -286,7 +288,7 @@ class SchoolLifecycleFeatureTest extends TestCase
         $school = app(SchoolLifecycleService::class)->createDraft(['name' => 'Deletable Empty School']);
 
         // Super-admin path on SchoolPolicy::delete (still requires users()->count() === 0).
-        $role = \App\Models\Role::query()->firstOrCreate(
+        $role = Role::query()->firstOrCreate(
             ['name' => 'super-admin'],
             ['display_name' => 'Super Admin']
         );

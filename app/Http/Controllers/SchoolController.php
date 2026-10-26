@@ -2,21 +2,24 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Country;
-use App\Models\School;
 use App\Http\Requests\StoreSchoolRequest;
 use App\Http\Requests\UpdateSchoolRequest;
-use App\Services\SchoolService;
+use App\Models\School;
 use App\Services\School\SchoolLifecycleService;
 use App\Services\School\SchoolReadinessEvaluator;
+use App\Services\SchoolService;
 use App\Support\ColumnDefinitionHelper;
-use DateTimeZone;
+use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use Inertia\Response;
 use Throwable;
 
 /**
@@ -79,9 +82,9 @@ class SchoolController extends BaseSchoolController
      * - Graceful error handling: Logs detailed errors and provides user-friendly fallbacks for both
      *   Inertia (SPA) and regular HTTP requests.
      *
-     * @param  \Illuminate\Http\Request  $request  The incoming HTTP request containing query parameters
-     *                                             such as search, filters, sort, perPage, etc.
-     * @return \Inertia\Response|\Illuminate\Http\JsonResponse
+     * @param  Request  $request  The incoming HTTP request containing query parameters
+     *                            such as search, filters, sort, perPage, etc.
+     * @return Response|JsonResponse
      */
     public function index(Request $request)
     {
@@ -109,7 +112,7 @@ class SchoolController extends BaseSchoolController
                 ->withCount([
                     'users as active_users_count' => function ($q) {
                         $q->where('is_active', true);
-                    }
+                    },
                 ]);
 
             // -----------------------------------------------------------------
@@ -147,7 +150,7 @@ class SchoolController extends BaseSchoolController
             // resources/js/Pages/Settings/School/Index.vue
             // The props are reactive and can be used directly in the component.
             return Inertia::render('Settings/School/Index', [
-                ...$paginated
+                ...$paginated,
             ]);
 
             // ---------------------------------------------------------------------
@@ -161,6 +164,7 @@ class SchoolController extends BaseSchoolController
                 'trace' => $th->getTraceAsString(),
                 'user_id' => auth()->id() ?? null,
             ]);
+
             return $this->respondWithError($request, 'Failed to fetch schools.', 500);
         }
     }
@@ -185,7 +189,7 @@ class SchoolController extends BaseSchoolController
      *   and orders alphabetically for better UX.
      * - Lean response: Only passes data actually needed by the Create.vue component.
      *
-     * @return \Inertia\Response
+     * @return Response
      */
     public function create()
     {
@@ -329,10 +333,10 @@ class SchoolController extends BaseSchoolController
      * This endpoint is typically called via an AJAX/Inertia request from the frontend
      * when opening the edit modal.
      *
-     * @param  \App\Models\School  $school
-     *         The School instance resolved via route model binding (e.g., /schools/{school}).
-     * @return \Illuminate\Http\JsonResponse
-     *         JSON response with school data on success, or error message on failure.
+     * @param  School  $school
+     *                          The School instance resolved via route model binding (e.g., /schools/{school}).
+     * @return JsonResponse
+     *                      JSON response with school data on success, or error message on failure.
      */
     public function show(School $school)
     {
@@ -396,7 +400,7 @@ class SchoolController extends BaseSchoolController
             // Return a clean, user-friendly JSON error response.
             // Frontend can handle this (e.g., show toast notification).
             return response()->json([
-                'error' => 'Failed to load school data.'
+                'error' => 'Failed to load school data.',
             ], 500);
         }
     }
@@ -514,11 +518,11 @@ class SchoolController extends BaseSchoolController
      * - Detailed error handling: Proper validation exceptions for dependency issues,
      *   logged errors for unexpected failures.
      *
-     * @param  \Illuminate\Http\Request  $request
-     *         The incoming request. May contain `ids` array for bulk operations.
+     * @param  Request  $request
+     *                            The incoming request. May contain `ids` array for bulk operations.
      * @param  string|null  $id
-     *         Optional school ID from route parameter (for single deletion).
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
+     *                           Optional school ID from route parameter (for single deletion).
+     * @return RedirectResponse|JsonResponse
      */
     public function destroy(Request $request, ?string $id = null)
     {
@@ -554,16 +558,19 @@ class SchoolController extends BaseSchoolController
                 $school = School::query()->find($schoolId);
                 if (! $school) {
                     $failures[] = "School {$schoolId} not found.";
+
                     continue;
                 }
 
                 if (! Gate::forUser($request->user())->allows('delete', $school)) {
                     $failures[] = "Not authorized to delete {$school->name}.";
+
                     continue;
                 }
 
                 if (method_exists($school, 'canDeactivate') && ! $school->canDeactivate()) {
                     $failures[] = "Cannot delete {$school->name}: active dependencies exist.";
+
                     continue;
                 }
 
@@ -628,18 +635,21 @@ class SchoolController extends BaseSchoolController
                 $school = School::onlyTrashed()->find($schoolId);
                 if (! $school) {
                     $failedSchools[] = "School with ID {$schoolId} not found or not soft-deleted.";
+
                     continue;
                 }
 
                 try {
                     Gate::authorize('forceDelete', $school);
-                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                } catch (AuthorizationException $e) {
                     $failedSchools[] = "Not authorized to permanently delete {$school->name}.";
+
                     continue;
                 }
 
                 if (method_exists($school, 'canDeactivate') && ! $school->canDeactivate()) {
                     $failedSchools[] = "Cannot permanently delete {$school->name}: active dependencies exist.";
+
                     continue;
                 }
 
@@ -719,20 +729,22 @@ class SchoolController extends BaseSchoolController
                 $school = School::onlyTrashed()->find($schoolId);
                 if (! $school) {
                     $failedSchools[] = "School with ID {$schoolId} not found or not deleted.";
+
                     continue;
                 }
 
                 try {
                     Gate::authorize('restore', $school);
-                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                } catch (AuthorizationException $e) {
                     $failedSchools[] = "Not authorized to restore {$school->name}.";
+
                     continue;
                 }
 
                 try {
                     $lifecycle->restore($school);
                     $restoredCount++;
-                } catch (\App\Support\Entitlements\Exceptions\InsufficientCapacityException $e) {
+                } catch (InsufficientCapacityException $e) {
                     $failedSchools[] = "Cannot restore {$school->name}: school capacity limit reached.";
                 } catch (Throwable $e) {
                     $failedSchools[] = "Failed to restore {$school->name}: ".$e->getMessage();
@@ -808,7 +820,7 @@ class SchoolController extends BaseSchoolController
      * Lifecycle action response: Inertia gets redirect+flash; pure JSON clients get JSON.
      * X-Inertia alone must not force JSON (router.post is an Inertia visit).
      */
-    
+
     /**
      * Invalidate school list caches without requiring a tag-aware driver.
      * database/file drivers throw on Cache::tags(); array/redis support tags.
@@ -817,14 +829,14 @@ class SchoolController extends BaseSchoolController
     {
         try {
             Cache::forget('schools.all');
-        } catch (\Throwable) {
+        } catch (Throwable) {
         }
 
         try {
             if (method_exists(Cache::getStore(), 'tags')) {
                 Cache::tags(['schools'])->flush();
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Non-tag drivers (database, file) — list key already forgotten.
         }
     }
@@ -851,8 +863,6 @@ class SchoolController extends BaseSchoolController
 
         return redirect()->back()->with('error', $message);
     }
-
-
 
     public function markReady(School $school, SchoolLifecycleService $lifecycle)
     {

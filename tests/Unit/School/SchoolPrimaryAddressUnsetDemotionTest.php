@@ -2,7 +2,7 @@
 
 namespace Tests\Unit\School;
 
-use App\Models\School;
+use App\Services\DynamicEnum\DynamicEnumLifecycleService;
 use App\Services\School\SchoolLifecycleService;
 use App\Services\School\SchoolReadinessEvaluator;
 use App\States\School\Draft;
@@ -31,9 +31,9 @@ class SchoolPrimaryAddressUnsetDemotionTest extends TestCase
             'phone_one' => '08012345678',
         ]);
 
-        if (class_exists(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class)
+        if (class_exists(DynamicEnumLifecycleService::class)
             && Schema::hasTable('dynamic_enums')) {
-            $enum = app(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class);
+            $enum = app(DynamicEnumLifecycleService::class);
             $def = $enum->ensureDefinition('address.type', 'Address type');
             $enum->createTenantOption($def, 'physical', 'Physical', ['sort_order' => 1]);
         }

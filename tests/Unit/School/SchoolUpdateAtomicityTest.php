@@ -3,6 +3,7 @@
 namespace Tests\Unit\School;
 
 use App\Models\School;
+use App\Services\DynamicEnum\DynamicEnumLifecycleService;
 use App\Services\School\SchoolCapacityService;
 use App\Services\School\SchoolLifecycleService;
 use App\Services\School\SchoolReadinessEvaluator;
@@ -44,9 +45,9 @@ class SchoolUpdateAtomicityTest extends TestCase
             $this->markTestSkipped('schools and addresses required');
         }
 
-        if (class_exists(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class)
+        if (class_exists(DynamicEnumLifecycleService::class)
             && Schema::hasTable('dynamic_enums')) {
-            $enum = app(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class);
+            $enum = app(DynamicEnumLifecycleService::class);
             $def = $enum->ensureDefinition('address.type', 'Address type');
             $enum->createTenantOption($def, 'physical', 'Physical', ['sort_order' => 1]);
         }
@@ -83,9 +84,9 @@ class SchoolUpdateAtomicityTest extends TestCase
             $this->markTestSkipped('schools and addresses required');
         }
 
-        if (class_exists(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class)
+        if (class_exists(DynamicEnumLifecycleService::class)
             && Schema::hasTable('dynamic_enums')) {
-            $enum = app(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class);
+            $enum = app(DynamicEnumLifecycleService::class);
             $def = $enum->ensureDefinition('address.type', 'Address type');
             $enum->createTenantOption($def, 'physical', 'Physical', ['sort_order' => 1]);
         }
@@ -114,10 +115,8 @@ class SchoolUpdateAtomicityTest extends TestCase
         // that throws inside reevaluateAfterUpdate (still inside updateSchool's transaction).
         $this->app->instance(
             SchoolLifecycleService::class,
-            new class(
-                app(SchoolReadinessEvaluator::class),
-                app(SchoolCapacityService::class),
-            ) extends SchoolLifecycleService {
+            new class(app(SchoolReadinessEvaluator::class), app(SchoolCapacityService::class)) extends SchoolLifecycleService
+            {
                 public function reevaluateAfterUpdate(School $school): School
                 {
                     throw new RuntimeException('forced reevaluation failure');

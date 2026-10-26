@@ -6,9 +6,9 @@ use App\Jobs\SetupSchoolOnboarding;
 use App\Models\School;
 use App\Services\School\SchoolLifecycleService;
 use App\States\School\Active;
+use Illuminate\Bus\Dispatcher;
 use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -68,14 +68,14 @@ class SchoolOnboardingDispatchTest extends TestCase
         $school = $this->makeActiveSchool('Dispatch Fail');
 
         // Capture the real concrete dispatcher so we can restore it after the mock.
-        $real = $this->app->make(\Illuminate\Bus\Dispatcher::class);
+        $real = $this->app->make(Dispatcher::class);
 
         $dispatcher = \Mockery::mock(BusDispatcher::class);
         $dispatcher->shouldReceive('dispatch')
             ->once()
             ->andThrow(new \RuntimeException('simulated dispatch failure'));
         $this->app->instance(BusDispatcher::class, $dispatcher);
-        $this->app->instance(\Illuminate\Bus\Dispatcher::class, $dispatcher);
+        $this->app->instance(Dispatcher::class, $dispatcher);
 
         try {
             app(SchoolLifecycleService::class)->ensureOperationalOnboarding($school);
@@ -90,7 +90,7 @@ class SchoolOnboardingDispatchTest extends TestCase
         $this->assertArrayNotHasKey('operational_onboarding_completed_at', $data);
 
         // Restore real dispatcher bindings, then install Queue fake for retry assertion.
-        $this->app->instance(\Illuminate\Bus\Dispatcher::class, $real);
+        $this->app->instance(Dispatcher::class, $real);
         $this->app->instance(BusDispatcher::class, $real);
         Queue::fake();
         app(SchoolLifecycleService::class)->ensureOperationalOnboarding($school->fresh());

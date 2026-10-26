@@ -36,8 +36,10 @@
  * Works with SchoolController::store(), SchoolService::createSchool(), and upcoming CreateEdit.vue page.
  * Extensible for future fields (e.g., subscription_plan).
  */
+
 namespace App\Http\Requests;
 
+use App\Support\School\SchoolTypeCatalogue;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -45,8 +47,6 @@ class StoreSchoolRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
-     *
-     * @return bool
      */
     public function authorize(): bool
     {
@@ -70,7 +70,7 @@ class StoreSchoolRequest extends FormRequest
             'phone_one' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'phone_two' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'contact_name' => ['nullable', 'string', 'max:255'],
-            'type' => ['nullable', 'string', \Illuminate\Validation\Rule::in(\App\Support\School\SchoolTypeCatalogue::values())],
+            'type' => ['nullable', 'string', Rule::in(SchoolTypeCatalogue::values())],
             'description' => ['nullable', 'string', 'max:1000'],
             'motto' => ['nullable', 'string', 'max:255'],
 

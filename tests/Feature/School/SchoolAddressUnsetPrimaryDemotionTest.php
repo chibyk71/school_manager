@@ -2,10 +2,9 @@
 
 namespace Tests\Feature\School;
 
-use App\Models\School;
 use App\Models\User;
-use App\Services\School\SchoolLifecycleService;
 use App\Services\DynamicEnum\DynamicEnumLifecycleService;
+use App\Services\School\SchoolLifecycleService;
 use App\Services\School\SchoolReadinessEvaluator;
 use App\States\School\Draft;
 use App\States\School\Ready;

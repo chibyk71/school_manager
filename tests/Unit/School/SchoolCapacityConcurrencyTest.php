@@ -5,7 +5,9 @@ namespace Tests\Unit\School;
 use App\Models\School;
 use App\Services\School\SchoolCapacityService;
 use App\Services\School\SchoolLifecycleService;
+use App\Support\Entitlements\CapacityEvaluator;
 use App\Support\Entitlements\DefaultEntitlementProfile;
+use App\Support\Entitlements\EntitlementResolver;
 use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -127,8 +129,8 @@ class SchoolCapacityConcurrencyTest extends TestCase
 
         $this->app->forgetInstance(SchoolCapacityService::class);
         $this->app->forgetInstance(SchoolLifecycleService::class);
-        $this->app->forgetInstance(\App\Support\Entitlements\EntitlementResolver::class);
-        $this->app->forgetInstance(\App\Support\Entitlements\CapacityEvaluator::class);
+        $this->app->forgetInstance(EntitlementResolver::class);
+        $this->app->forgetInstance(CapacityEvaluator::class);
     }
 
     public function test_create_draft_respects_capacity_limit(): void

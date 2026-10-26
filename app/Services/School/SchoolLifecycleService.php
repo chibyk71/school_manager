@@ -2,17 +2,17 @@
 
 namespace App\Services\School;
 
+use App\Jobs\SetupSchoolOnboarding;
 use App\Models\School;
 use App\States\School\Active;
 use App\States\School\Archived;
 use App\States\School\Draft;
 use App\States\School\Ready;
+use App\States\School\SchoolState;
 use App\States\School\Suspended;
-use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use Spatie\ModelStates\Exceptions\TransitionNotFound;
 
 /**
  * Coordinates School lifecycle transitions with readiness, capacity and authorization.
@@ -85,7 +85,6 @@ class SchoolLifecycleService
 
         return $school->fresh();
     }
-
 
     /**
      * Active → Suspended.
@@ -263,7 +262,7 @@ class SchoolLifecycleService
         }
 
         try {
-            \App\Jobs\SetupSchoolOnboarding::dispatch($school->fresh());
+            SetupSchoolOnboarding::dispatch($school->fresh());
         } catch (\Throwable $e) {
             // Failed dispatch must not permanently suppress retries.
             DB::transaction(function () use ($school) {
@@ -368,7 +367,7 @@ class SchoolLifecycleService
             }
 
             // If restored school would be in a counted state, consume capacity.
-            $stateName = $school->state instanceof \App\States\School\SchoolState
+            $stateName = $school->state instanceof SchoolState
                 ? $school->state::$name
                 : (string) $school->getRawOriginal('state');
 

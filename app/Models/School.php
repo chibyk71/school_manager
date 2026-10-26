@@ -7,6 +7,8 @@ use Abbasudo\Purity\Traits\Sortable;
 use App\Models\Academic\AcademicSession;
 use App\Models\Academic\ClassLevel;
 use App\Models\Transport\Vehicle\Vehicle;
+use App\Services\School\SchoolCapacityService;
+use App\States\School\SchoolState;
 use App\Traits\BelongsToSections;
 use App\Traits\HasAddress;
 use App\Traits\HasTableQuery;
@@ -22,8 +24,6 @@ use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Spatie\ModelStates\HasStates;
-use App\States\School\SchoolState;
-use App\States\School\Draft;
 
 /**
  * School Model – Central Tenant Representation + Laratrust Team
@@ -75,13 +75,13 @@ class School extends Team implements HasMedia
     use Filterable;
     use HasAddress;
     use HasFactory;
+    use HasStates;
     use HasTableQuery;
     use HasUuids;
     use InteractsWithMedia;
     use LogsActivity;
     use SoftDeletes;
     use Sortable;
-    use HasStates;
 
     /**
      * Explicit table so Laratrust Team constructor resolution cannot drift.
@@ -440,6 +440,6 @@ class School extends Team implements HasMedia
 
     public function scopeCountedForCapacity($query)
     {
-        return $query->whereIn('state', \App\Services\School\SchoolCapacityService::countedStateNames());
+        return $query->whereIn('state', SchoolCapacityService::countedStateNames());
     }
 }

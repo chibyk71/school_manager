@@ -98,6 +98,7 @@ final class SchoolCapacityService
      * the supported production engine.
      *
      * @template T
+     *
      * @param  callable(): T  $callback
      * @return T
      */

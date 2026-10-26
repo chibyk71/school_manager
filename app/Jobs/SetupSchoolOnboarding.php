@@ -2,9 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Models\Academic\AcademicSession;
+use App\Models\Academic\ClassLevel;
 use App\Models\School;
 use App\Models\SchoolSection;
-use App\Models\Academic\AcademicSession;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use App\States\Academic\AcademicSession\Closed as SessionClosed;
 use Illuminate\Bus\Queueable;
@@ -144,14 +145,14 @@ class SetupSchoolOnboarding implements ShouldQueue
         foreach ($levels as $sectionName => $classNames) {
             $section = $this->school->sections()->where('name', $sectionName)->first();
 
-            if (!$section) {
+            if (! $section) {
                 continue;
             }
 
             foreach ($classNames as $index => $name) {
                 // class_levels requires unique (school_section_id, sequence); default sequence=1
                 // would collide for every level after the first.
-                \App\Models\Academic\ClassLevel::firstOrCreate(
+                ClassLevel::firstOrCreate(
                     [
                         'school_section_id' => $section->id,
                         'name' => $name,

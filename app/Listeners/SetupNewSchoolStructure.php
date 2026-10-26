@@ -66,9 +66,6 @@ class SetupNewSchoolStructure implements ShouldQueue
      *
      * Dispatches the queued job that sets up the structural foundation
      * of a Nigerian school (sections, class levels, current session).
-     *
-     * @param  SchoolCreated  $event
-     * @return void
      */
     public function handle(SchoolCreated $event): void
     {

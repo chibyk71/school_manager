@@ -3,8 +3,8 @@
 namespace App\Services\School;
 
 use App\Models\School;
+use App\Support\School\SchoolTypeCatalogue;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\Rule;
 
 /**
  * Evaluates the six Phase 1 readiness conditions for Draft → Ready.
@@ -32,7 +32,6 @@ final class SchoolReadinessEvaluator
     public const CONDITION_PRIMARY_CONTACT = 'primary_contact';
 
     public const CONDITION_PRIMARY_ADDRESS = 'primary_address';
-
 
     /**
      * @return array{
@@ -128,7 +127,7 @@ final class SchoolReadinessEvaluator
         }
 
         // Prefer dynamic enum / catalogue when available; fall back to known list.
-        if (! \App\Support\School\SchoolTypeCatalogue::isValid($school->type)) {
+        if (! SchoolTypeCatalogue::isValid($school->type)) {
             // Soft-accept unknown types that were already stored (legacy), but
             // still require a non-empty type. Product may expand the catalogue.
             // For strict readiness, require membership in the catalogue.

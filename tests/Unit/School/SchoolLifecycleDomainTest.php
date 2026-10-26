@@ -4,6 +4,7 @@ namespace Tests\Unit\School;
 
 use App\Entitlements\Definitions\SchoolManagementFeatures;
 use App\Models\School;
+use App\Services\DynamicEnum\DynamicEnumLifecycleService;
 use App\Services\School\SchoolCapacityService;
 use App\Services\School\SchoolLifecycleService;
 use App\Services\School\SchoolReadinessEvaluator;
@@ -13,7 +14,7 @@ use App\States\School\Draft;
 use App\States\School\Ready;
 use App\States\School\Suspended;
 use App\Support\Entitlements\DefaultEntitlementProfile;
-use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
+use App\Support\Entitlements\EntitlementRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -225,7 +226,7 @@ class SchoolLifecycleDomainTest extends TestCase
 
     public function test_entitlement_key_registered(): void
     {
-        $registry = app(\App\Support\Entitlements\EntitlementRegistry::class);
+        $registry = app(EntitlementRegistry::class);
         $this->assertTrue($registry->hasEntitlement(SchoolManagementFeatures::MAX_COUNT_KEY));
     }
 
@@ -259,9 +260,9 @@ class SchoolLifecycleDomainTest extends TestCase
         }
 
         // HasAddress validates address_line_1 + type (Dynamic Enum address.type).
-        if (class_exists(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class)
+        if (class_exists(DynamicEnumLifecycleService::class)
             && Schema::hasTable('dynamic_enums')) {
-            $enum = app(\App\Services\DynamicEnum\DynamicEnumLifecycleService::class);
+            $enum = app(DynamicEnumLifecycleService::class);
             $def = $enum->ensureDefinition('address.type', 'Address type');
             $enum->createTenantOption($def, 'physical', 'Physical', ['sort_order' => 1]);
         }
