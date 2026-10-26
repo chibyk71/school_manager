@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Laratrust\LaratrustFacade;
 use Illuminate\Support\Facades\Log;
+use App\Support\Settings\SettingsRegistry;
+use App\Support\Settings\SettingsResolver;
 
 
 if (!function_exists('GetSchoolModel')) {
@@ -102,37 +104,6 @@ if (!function_exists('array_get')) {
 
 /**
  * Model Class Resolver Helper
- *
- * This file defines a helper function `modelClassFromName` that resolves the fully qualified class name (FQCN)
- * of an Eloquent model based on its base name (e.g., 'Student' resolves to 'App\Models\Student\Student').
- * It solves the problem of dynamically locating models in a namespaced structure, especially in large applications
- * with models organized into subdirectories (e.g., App\Models\Academic\Student).
- *
- * Key Features:
- * - Scans the 'app/Models' directory recursively to build a map of model base names to their FQCN.
- * - Uses Laravel's Cache facade to store the model map forever, reducing filesystem I/O on subsequent calls.
- * - Handles StudlyCase conversion for input names (e.g., 'student' becomes 'Student').
- * - Only includes classes that extend Illuminate\Database\Eloquent\Model.
- * - Logs errors if resolution fails, preventing silent failures.
- * - In development, clear the cache with `php artisan cache:clear` after adding/removing models to rebuild the map.
- *
- * Problems Solved:
- * - Avoids hardcoding model namespaces in controllers, services, or other helpers.
- * - Supports dynamic model resolution in polymorphic or configurable features (e.g., custom fields, permissions).
- * - Improves performance by caching the directory scan, which can be expensive in large codebases.
- * - Gracefully handles non-existent models by returning null, allowing callers to implement fallbacks.
- *
- * Usage Example:
- * $studentClass = modelClassFromName('Student');
- * if ($studentClass) {
- *     $student = new $studentClass();
- * }
- *
- * Best Practices Applied:
- * - Uses RecursiveIteratorIterator for efficient directory traversal.
- * - Ensures only valid Model subclasses are mapped.
- * - Error handling with logging for debugging.
- * - No external dependencies beyond Laravel core.
  */
 if (!function_exists('modelClassFromName')) {
     /**
@@ -161,7 +132,7 @@ if (!function_exists('generateEnrollmentId')) {
 
         $format = $settings['enrollment_id_format'] ?? '{prefix}-{year}-{number}';
         $length = $settings['enrollment_id_number_length'] ?? 6;
-        $prefix = $school->code ?? 'SCH';               // you probably have a short code on the school model
+        $prefix = $school->code ?? 'SCH';
         $year = now()->format('Y');
 
         $number = str_pad($numericPart, $length, '0', STR_PAD_LEFT);
@@ -179,12 +150,9 @@ if (!function_exists('send_school_sms')) {
     /**
      * Send an SMS using the current school's configured providers (with fallback)
      *
-     * This is the easiest way to send ad-hoc SMS from anywhere in your app.
-     * Automatically resolves the current school context.
-     *
-     * @param string              $to            Phone number (e.g. 08012345678 or +2348012345678)
+     * @param string              $to            Phone number
      * @param string              $message       SMS body
-     * @param \App\Models\School|null $school    Optional: override school (defaults to current)
+     * @param \App\Models\School|null $school    Optional: override school
      * @param array               $options       Optional: ['sender' => 'CustomID', 'force' => true]
      *
      * @return bool  true if sent via at least one provider
@@ -195,16 +163,13 @@ if (!function_exists('send_school_sms')) {
         ?\App\Models\School $school = null,
         array $options = []
     ): bool {
-        // Normalize phone number (remove spaces, dashes, etc.)
         $to = preg_replace('/[^0-9+]/', '', $to);
 
-        // Validate basic phone length
         if (strlen($to) < 10 || strlen($to) > 15) {
             \Log::warning('Invalid phone number for SMS', ['to' => $to, 'message' => $message]);
             return false;
         }
 
-        // Resolve school if not provided
         if (!$school) {
             $school = GetSchoolModel();
             if (!$school) {
@@ -213,22 +178,14 @@ if (!function_exists('send_school_sms')) {
             }
         }
 
-        // Override sender if provided
         if (!empty($options['sender'])) {
-            // Temporarily override global sender for this message
             $original = getMergedSettings('sms', $school);
             $modified = $original;
             $modified['global_sender_id'] = $options['sender'];
-            // Settings::setTemporary($modified);
         }
 
         try {
             $sent = app(\App\Services\SmsService::class)->send($to, $message, $school);
-
-            // Fire event or log if needed
-            if ($sent) {
-                // event(new \App\Events\SmsSent($to, $message, $school));
-            }
 
             return $sent;
         } catch (\Throwable $e) {
@@ -242,9 +199,6 @@ if (!function_exists('send_school_sms')) {
     }
 }
 
-
-
-
 if (! function_exists('getMergedSettings')) {
     /**
      * Resolve a settings group for a school/user owner.
@@ -253,26 +207,22 @@ if (! function_exists('getMergedSettings')) {
      * Prefer empty defaults when the group cannot be resolved so middleware
      * (e.g. maintenance) and services can apply their own fallbacks.
      *
-     * @param  string  $group
-     * @param  mixed  $owner
      * @return array<string, mixed>
      */
-    function getMergedSettings(string $group, $owner = null): array
+    function getMergedSettings(string $group, mixed $owner = null): array
     {
         try {
-            if (! app()->bound(\App\Support\Settings\SettingsRegistry::class)
-                || ! app()->bound(\App\Support\Settings\SettingsResolver::class)
+            if (! app()->bound(SettingsRegistry::class)
+                || ! app()->bound(SettingsResolver::class)
             ) {
                 return [];
             }
 
-            /** @var \App\Support\Settings\SettingsRegistry $registry */
-            $registry = app(\App\Support\Settings\SettingsRegistry::class);
-            /** @var \App\Support\Settings\SettingsResolver $resolver */
-            $resolver = app(\App\Support\Settings\SettingsResolver::class);
+            $registry = app(SettingsRegistry::class);
+            $resolver = app(SettingsResolver::class);
 
             $scope = 'global';
-            if ($owner instanceof \App\Models\School && $owner->getKey()) {
+            if ($owner instanceof School && $owner->getKey()) {
                 $scope = 'school:'.$owner->getKey();
             }
 
