@@ -1,60 +1,8 @@
 <?php
 
-use App\Http\Controllers\Academic\ExamController;
-use App\Http\Controllers\Academic\ExamResultsController;
-use App\Http\Controllers\Academic\ReportCardController;
-use App\Http\Controllers\Academic\ScoreEntryController;
-use App\Http\Controllers\AdmissionController;
-use App\Http\Controllers\AssignmentController;
-use App\Http\Controllers\AssignmentSubmissionController;
-use App\Http\Controllers\AttendanceLedgerController;
-use App\Http\Controllers\AttendanceSessionController;
-use App\Http\Controllers\BookListController;
-use App\Http\Controllers\BookOrderController;
 use App\Http\Controllers\ClassLevelController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\DynamicEnumController;
-use App\Http\Controllers\EventController;
-use App\Http\Controllers\EventTypeController;
-use App\Http\Controllers\FeedbackController;
-use App\Http\Controllers\Finance\ExpenseController;
-use App\Http\Controllers\Finance\FeeConcessionController;
-use App\Http\Controllers\Finance\FeeController;
-use App\Http\Controllers\Finance\FeeInstallmentController;
-use App\Http\Controllers\Finance\FeeInstallmentDetailController;
-use App\Http\Controllers\Finance\FeeTypeController;
-use App\Http\Controllers\Finance\FinancialReportController;
-use App\Http\Controllers\Finance\PaymentController;
-use App\Http\Controllers\Finance\TransactionController;
-use App\Http\Controllers\GuardianController;
-use App\Http\Controllers\HostelAssignmentController;
-use App\Http\Controllers\HostelController;
-use App\Http\Controllers\HostelRoomController;
-use App\Http\Controllers\LeaveAllocationController;
-use App\Http\Controllers\LeaveRequestController;
-use App\Http\Controllers\LeaveTypeController;
-use App\Http\Controllers\LessonPlanController;
-use App\Http\Controllers\LessonPlanDetailController;
-use App\Http\Controllers\NoticeController;
-use App\Http\Controllers\NotificationLogController;
-use App\Http\Controllers\PayrollController;
-use App\Http\Controllers\RouteController;
-use App\Http\Controllers\SalaryAddonController;
-use App\Http\Controllers\SalaryController;
-use App\Http\Controllers\SalaryStructureController;
 use App\Http\Controllers\SchoolController;
-use App\Http\Controllers\Settings\SchoolSectionController;
-use App\Http\Controllers\StaffController;
-use App\Http\Controllers\SubjectController;
-use App\Http\Controllers\SyllabusController;
-use App\Http\Controllers\SyllabusDetailController;
-use App\Http\Controllers\Exam\TermResultController;
-use App\Http\Controllers\Exam\TermResultDetailController;
-use App\Http\Controllers\TimeTableController;
-use App\Http\Controllers\TimeTableDetailController;
-use App\Http\Controllers\VehicleController;
-use App\Http\Controllers\VehicleDocumentController;
-use App\Http\Controllers\VehicleExpenseController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -69,13 +17,6 @@ Route::get('/', function () {
 });
 
 Route::get('/dashboard', [DashboardController::class, 'index'])->middleware(['auth'])->name('dashboard');
-
-// Phase 5 consumer options by definition key (scalar values, school-scoped via GetSchoolModel).
-// Admin catalogue/CRUD lives under settings.system.dynamic-enums.* (routes/dynamic_enums.php).
-Route::get('/dynamic-enums/{key}/options', [DynamicEnumController::class, 'options'])
-    ->where('key', '[a-z0-9_.\-]+')
-    ->middleware('auth')
-    ->name('dynamic-enums.options');
 
 Route::middleware('auth')->group(function () {
 
