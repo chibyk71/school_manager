@@ -2,11 +2,6 @@
 
 namespace App\States\School;
 
-use App\States\School\Active;
-use App\States\School\Archived;
-use App\States\School\Draft;
-use App\States\School\Ready;
-use App\States\School\Suspended;
 use Spatie\ModelStates\State;
 use Spatie\ModelStates\StateConfig;
 
