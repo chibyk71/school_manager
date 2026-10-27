@@ -14,7 +14,7 @@
  * - Removed all 'address.*' nested rules: validation now occurs in HasAddress::validateAddressData()
  *   during $school->addAddress() call in SchoolService.
  * - Keeps core school fields, media rules, and unique checks.
- * - Authorization simplified: relies on policy/permission (public onboarding handled separately if needed).
+ * - Authorization enforces SchoolPolicy::create (auth middleware alone is not enough).
  * - Boolean casting and code uppercase enforcement preserved.
  * - Custom attributes/messages updated to remove address references.
  *
@@ -50,8 +50,9 @@ class StoreSchoolRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        // Handled via policy or middleware; adjust if public onboarding allowed
-        return true; // Or auth()->user()?->hasPermission('school.create')
+        // Enforce SchoolPolicy::create — route auth middleware only proves authentication.
+        return $this->user() !== null
+            && $this->user()->can('create', \App\Models\School::class);
     }
 
     /**
@@ -78,24 +79,42 @@ class StoreSchoolRequest extends FormRequest
             'state' => ['prohibited'],
             'is_active' => ['prohibited'],
 
-            // Primary address – now optional array (validated in HasAddress trait)
-            'addresses' => ['sometimes', 'array'], // No deep rules here
+            // Media files (Spatie Media Library)
+            'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
+            'small_logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:1024'],
+            'favicon' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,ico,webp', 'max:512'],
+            'dark_logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
+            'dark_small_logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:1024'],
 
-            // Branding / Media (Spatie Media Library)
-            'logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
-            'small_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
-            'favicon' => ['nullable', 'file', 'mimes:jpeg,png,ico,svg+xml', 'max:2048'],
-            'dark_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
-            'dark_small_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            // Nested addresses for HasAddress (validated in trait on persist)
+            'addresses' => ['nullable', 'array'],
+            'addresses.*.line_1' => ['nullable', 'string', 'max:255'],
+            'addresses.*.line_2' => ['nullable', 'string', 'max:255'],
+            'addresses.*.city' => ['nullable', 'string', 'max:100'],
+            'addresses.*.state' => ['nullable', 'string', 'max:100'],
+            'addresses.*.postal_code' => ['nullable', 'string', 'max:20'],
+            'addresses.*.country' => ['nullable', 'string', 'max:100'],
+            'addresses.*.is_primary' => ['nullable', 'boolean'],
 
-            // Optional extra data
-            'extra_data' => ['nullable', 'array'],
+            // Optional admin assignment on create
+            'admin_id' => ['nullable', 'uuid'],
+            'admin_name' => ['nullable', 'string', 'max:255'],
+            'admin_email' => ['nullable', 'email', 'max:255'],
+            'admin_password' => ['nullable', 'string', 'min:8'],
         ];
     }
 
     /**
-     * Custom attribute names for error messages.
-     *
+     * Prepare the data for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('code') && is_string($this->code)) {
+            $this->merge(['code' => strtoupper(trim($this->code))]);
+        }
+    }
+
+    /**
      * @return array<string, string>
      */
     public function attributes(): array
@@ -104,45 +123,8 @@ class StoreSchoolRequest extends FormRequest
             'name' => 'school name',
             'code' => 'school code',
             'email' => 'school email',
-            'phone_one' => 'primary phone',
-            'phone_two' => 'secondary phone',
+            'contact_name' => 'primary contact name',
             'type' => 'school type',
-            'is_active' => 'status',
-            'logo' => 'main logo',
-            'small_logo' => 'small logo',
-            'favicon' => 'favicon',
-            'dark_logo' => 'dark mode logo',
-            'dark_small_logo' => 'dark mode small logo',
-        ];
-    }
-
-    /**
-     * Prepare data for validation (casting, normalization).
-     */
-    protected function prepareForValidation(): void
-    {
-        // Clients cannot assign lifecycle state or is_active. Never inject them.
-        $merge = [];
-        if ($this->filled('code')) {
-            $merge['code'] = strtoupper((string) $this->input('code'));
-        }
-        if ($merge !== []) {
-            $this->merge($merge);
-        }
-    }
-
-    /**
-     * Custom validation messages.
-     *
-     * @return array<string, string>
-     */
-    public function messages(): array
-    {
-        return [
-            'logo.image' => 'The main logo must be a valid image file.',
-            'favicon.mimes' => 'Favicon must be jpeg, png, ico, or svg.',
-            'code.unique' => 'This school code is already taken.',
-            'email.unique' => 'This email is already used by another school.',
         ];
     }
 }
