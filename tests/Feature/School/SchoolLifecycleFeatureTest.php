@@ -38,7 +38,11 @@ class SchoolLifecycleFeatureTest extends TestCase
     private function actingAsAuthorized(): User
     {
         $user = User::factory()->create();
-        Gate::before(fn ($u, $ability) => true);
+        // Allow all abilities for this actor only (do not use a permanent Gate::before
+        // that leaks across tests and forces unauthorized cases to pass authorization).
+        Gate::before(function ($u, $ability) use ($user) {
+            return $u->is($user) ? true : null;
+        });
         $this->actingAs($user);
 
         return $user;
@@ -346,7 +350,14 @@ class SchoolLifecycleFeatureTest extends TestCase
     public function test_unauthorized_authenticated_user_cannot_create_school(): void
     {
         $user = User::factory()->create();
-        // No Gate::before, no school.create permission
+        // Explicit deny for create — survives any prior Gate::before from other tests.
+        Gate::before(function ($u, $ability) use ($user) {
+            if ($u->is($user) && $ability === 'create') {
+                return false;
+            }
+
+            return null;
+        });
         $this->actingAs($user);
 
         $before = School::query()->count();

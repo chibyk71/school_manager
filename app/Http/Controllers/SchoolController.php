@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -290,8 +291,22 @@ class SchoolController extends BaseSchoolController
                 ], 201);
             }
 
+            // Prefer edit when registered; fall back to index/dashboard so a missing
+            // named route cannot surface as a generic HTTP 404 during create.
+            if (\Illuminate\Support\Facades\Route::has('schools.edit')) {
+                return redirect()
+                    ->route('schools.edit', $school)
+                    ->with('success', $message);
+            }
+
+            if (\Illuminate\Support\Facades\Route::has('schools.index')) {
+                return redirect()
+                    ->route('schools.index')
+                    ->with('success', $message);
+            }
+
             return redirect()
-                ->route('schools.edit', $school)
+                ->route('dashboard')
                 ->with('success', $message);
 
         } catch (InsufficientCapacityException $e) {
