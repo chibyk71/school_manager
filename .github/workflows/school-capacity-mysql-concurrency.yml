@@ -8,31 +8,17 @@ on:
     branches:
       - test/school-capacity-mysql-concurrency-ci
       - feature/school-management-module
-    paths:
-      - 'app/Services/School/**'
-      - 'app/Support/Entitlements/**'
-      - 'tests/Unit/School/SchoolCapacityConcurrencyTest.php'
-      - 'database/migrations/*school*'
-      - '.github/workflows/school-capacity-mysql-concurrency.yml'
-      - 'scripts/assert-school-capacity-concurrency-junit.php'
   pull_request:
     branches:
       - master
       - feature/school-management-module
-    paths:
-      - 'app/Services/School/**'
-      - 'app/Support/Entitlements/**'
-      - 'tests/Unit/School/SchoolCapacityConcurrencyTest.php'
-      - 'database/migrations/*school*'
-      - '.github/workflows/school-capacity-mysql-concurrency.yml'
-      - 'scripts/assert-school-capacity-concurrency-junit.php'
   workflow_dispatch:
 
 jobs:
   capacity-concurrency:
     name: Concurrent capacity (MySQL + pcntl)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     services:
       mysql:
@@ -48,7 +34,7 @@ jobs:
           --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
           --health-interval=5s
           --health-timeout=5s
-          --health-retries=20
+          --health-retries=30
 
     env:
       APP_ENV: testing
@@ -83,13 +69,18 @@ jobs:
           php -m | grep -i pdo_mysql
           php -r 'exit(function_exists("pcntl_fork") ? 0 : 1);'
 
+      - name: Install MySQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq mysql-client
+
       - name: Wait for MySQL
         run: |
-          for i in $(seq 1 30); do
+          for i in $(seq 1 40); do
             if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
               echo "MySQL is up"
+              mysql -h 127.0.0.1 -uschool -psecret -e "SELECT 1" school_capacity_ci
               exit 0
             fi
+            echo "waiting for mysql ($i)..."
             sleep 2
           done
           echo "MySQL failed to become healthy"
@@ -106,11 +97,13 @@ jobs:
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      - name: Run sequential + concurrent capacity tests
+      - name: Run sequential + concurrent capacity tests (MySQL config)
         run: |
-          mkdir -p storage/logs
+          mkdir -p storage/logs bootstrap/cache
+          chmod -R ug+rwx storage bootstrap/cache || true
+          # Use dedicated config — default phpunit.xml forces sqlite and would skip concurrency.
           ./vendor/bin/phpunit \
-            tests/Unit/School/SchoolCapacityConcurrencyTest.php \
+            --configuration=phpunit.school-capacity-mysql.xml \
             --log-junit storage/logs/school-capacity-junit.xml \
             --testdox
 
