@@ -85,9 +85,35 @@ class SchoolLifecycleFeatureTest extends TestCase
     {
         $this->actingAsAuthorized();
 
-        $response = $this->post(route('schools.store'), [
-            'name' => 'Name Only Draft School',
-        ]);
+        $storeUrl = route('schools.store');
+        $matchInfo = 'unmatched';
+        try {
+            $symfonyRequest = \Illuminate\Http\Request::create('/schools', 'POST', ['name' => 'Name Only Draft School']);
+            $matched = app('router')->getRoutes()->match($symfonyRequest);
+            $matchInfo = $matched->getName().' → '.$matched->getActionName();
+        } catch (\Throwable $e) {
+            $matchInfo = 'ROUTE MATCH FAILED: '.get_class($e).': '.$e->getMessage();
+        }
+
+        try {
+            $this->withoutExceptionHandling();
+            $response = $this->post('/schools', [
+                'name' => 'Name Only Draft School',
+            ]);
+        } catch (\Throwable $e) {
+            $this->fail(
+                'POST /schools raised '.get_class($e).': '.$e->getMessage()
+                ."\nURL={$storeUrl}\nMatch={$matchInfo}\nFile=".$e->getFile().':'.$e->getLine()
+            );
+        }
+
+        if ($response->status() === 404) {
+            $this->fail(
+                'POST /schools returned 404. URL='.$storeUrl
+                .' Match='.$matchInfo
+                .' content='.substr(strip_tags($response->getContent()), 0, 400)
+            );
+        }
 
         // Form posts redirect with flash (Inertia/web); not a bare 2xx JSON body.
         $response->assertRedirect();
