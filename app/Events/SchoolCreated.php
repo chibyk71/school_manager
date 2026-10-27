@@ -63,7 +63,7 @@ class SchoolCreated
      * The ID of the user who triggered the school creation.
      * May be null for public/unauthenticated onboarding flows.
      *
-     * @var int|null
+     * @var string|null
      */
     public $creatorId;
 
@@ -71,10 +71,10 @@ class SchoolCreated
      * Create a new event instance.
      *
      * @param  School  $school
-     * @param  int|null  $creatorId
+     * @param  string|null  $creatorId
      * @return void
      */
-    public function __construct(School $school, ?int $creatorId = null)
+    public function __construct(School $school, ?string $creatorId = null)
     {
         $this->school = $school;
         $this->creatorId = $creatorId;
