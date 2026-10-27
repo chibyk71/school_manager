@@ -101,11 +101,31 @@ class SchoolCapacityConcurrencyTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        // Spatie activity log (School uses LogsActivity). Prefer disabled via config;
+        // table still exists so accidental logging does not abort createDraft.
+        if (! Schema::hasTable('activity_log')) {
+            Schema::create('activity_log', function ($table) {
+                $table->bigIncrements('id');
+                $table->string('log_name')->nullable();
+                $table->text('description');
+                $table->nullableUuidMorphs('subject', 'subject');
+                $table->nullableUuidMorphs('causer', 'causer');
+                $table->json('properties')->nullable();
+                $table->uuid('batch_uuid')->nullable();
+                $table->string('event')->nullable();
+                $table->timestamps();
+                $table->index('log_name');
+            });
+        }
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Focused CI schema has no activity_log; School uses LogsActivity.
+        config(['activitylog.enabled' => false]);
 
         if (! Schema::hasTable('school_capacity_locks')) {
             Schema::create('school_capacity_locks', function ($table) {
@@ -239,6 +259,7 @@ class SchoolCapacityConcurrencyTest extends TestCase
                     DB::purge();
                     DB::reconnect();
                     $this->refreshApplication();
+                    config(['activitylog.enabled' => false]);
                     $this->bindCapacityLimit(2);
                     app(SchoolLifecycleService::class)->createDraft([
                         'name' => 'Concurrent-'.$i.'-'.getmypid(),

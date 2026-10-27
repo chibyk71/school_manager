@@ -32,5 +32,6 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="APP_KEY" value="base64:2fl+KtvkdphvQyVfipPSU5l4l+4YfYm9d4qTjJ3b8/E="/>
         <env name="SCHOOL_CAPACITY_MYSQL_CI" value="1" force="true"/>
+        <env name="ACTIVITY_LOGGER_ENABLED" value="false" force="true"/>
     </php>
 </phpunit>
