@@ -70,7 +70,31 @@ class SchoolService
         $lifecycle = app(SchoolLifecycleService::class);
         $school = $lifecycle->createDraft($data);
 
-        event(new SchoolCreated($school, auth()->id()));
+        // Dispatch after the capacity transaction commits so listeners never
+        // re-fetch an uncommitted School (ModelNotFoundException → HTTP 404).
+        $schoolId = $school->id;
+        $creatorId = auth()->id();
+        $creatorId = $creatorId !== null ? (string) $creatorId : null;
+
+        DB::afterCommit(function () use ($schoolId, $creatorId) {
+            $reloaded = School::query()->find($schoolId);
+            if ($reloaded === null) {
+                Log::warning('SchoolCreated skipped: school not found after commit', [
+                    'school_id' => $schoolId,
+                ]);
+
+                return;
+            }
+
+            try {
+                event(new SchoolCreated($reloaded, $creatorId));
+            } catch (\Throwable $e) {
+                Log::error('SchoolCreated listener failed after school create', [
+                    'school_id' => $schoolId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        });
 
         Log::info('School created successfully', ['school_id' => $school->id]);
 

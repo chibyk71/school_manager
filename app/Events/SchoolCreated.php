@@ -5,7 +5,6 @@ namespace App\Events;
 use App\Models\School;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Foundation\Events\Dispatchable;
-use Illuminate\Queue\SerializesModels;
 
 /**
  * SchoolCreated Event
@@ -32,7 +31,7 @@ use Illuminate\Queue\SerializesModels;
  *
  * Design Decisions:
  * -----------------
- * - Uses Dispatchable, InteractsWithSockets, and SerializesModels traits for full Laravel event capabilities
+ * - Uses Dispatchable, InteractsWithSockets, and Dispatchable for synchronous listeners (no SerializesModels — avoids queue re-fetch 404s)
  * - Does NOT implement ShouldBroadcast — real-time broadcasting is not required for post-creation setup
  *   (keeps it lightweight and suitable for queued listeners)
  * - Public properties for easy access in listeners (no need for accessors)
@@ -50,7 +49,7 @@ use Illuminate\Queue\SerializesModels;
  */
 class SchoolCreated
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, InteractsWithSockets;
 
     /**
      * The newly created school instance.

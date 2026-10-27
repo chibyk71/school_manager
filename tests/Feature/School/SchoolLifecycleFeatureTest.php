@@ -85,46 +85,18 @@ class SchoolLifecycleFeatureTest extends TestCase
     {
         $this->actingAsAuthorized();
 
-        $storeUrl = route('schools.store');
-        $matchInfo = 'unmatched';
-        try {
-            $symfonyRequest = \Illuminate\Http\Request::create('/schools', 'POST', ['name' => 'Name Only Draft School']);
-            $matched = app('router')->getRoutes()->match($symfonyRequest);
-            $matchInfo = $matched->getName().' → '.$matched->getActionName();
-        } catch (\Throwable $e) {
-            $matchInfo = 'ROUTE MATCH FAILED: '.get_class($e).': '.$e->getMessage();
-        }
-
         try {
             $this->withoutExceptionHandling();
-            $response = $this->post('/schools', [
+            $response = $this->post(route('schools.store'), [
                 'name' => 'Name Only Draft School',
             ]);
         } catch (\Throwable $e) {
             $this->fail(
-                'POST /schools raised '.get_class($e).': '.$e->getMessage()
-                ."\nURL={$storeUrl}\nMatch={$matchInfo}\nFile=".$e->getFile().':'.$e->getLine()
+                get_class($e).': '.$e->getMessage()."\n".$e->getTraceAsString()
             );
         }
 
-        if ($response->status() === 404) {
-            $this->fail(
-                'POST /schools returned 404. URL='.$storeUrl
-                .' Match='.$matchInfo
-                .' content='.substr(strip_tags($response->getContent()), 0, 400)
-            );
-        }
-
-        // Form posts redirect with flash (Inertia/web); not a bare 2xx JSON body.
         $response->assertRedirect();
-        $this->assertTrue(
-            $response->isRedirect() && (
-                session()->has('success')
-                || School::query()->where('name', 'Name Only Draft School')->exists()
-            ),
-            'expected success flash or persisted school'
-        );
-
         $school = School::query()->where('name', 'Name Only Draft School')->first();
         $this->assertNotNull($school);
         $this->assertInstanceOf(Draft::class, $school->state);
