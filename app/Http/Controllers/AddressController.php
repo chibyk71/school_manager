@@ -179,6 +179,20 @@ class AddressController extends Controller
     /**
      * Ready → Draft when a School owner loses readiness via address mutation.
      */
+
+    /**
+     * Lock a School owner row before readiness-critical address work so mutation
+     * and Ready→Draft demotion share one transaction boundary.
+     */
+    private function lockOwnerForReadiness(Model $ownerModel): Model
+    {
+        if ($ownerModel instanceof School) {
+            return School::query()->whereKey($ownerModel->id)->lockForUpdate()->firstOrFail();
+        }
+
+        return $ownerModel;
+    }
+
     private function reevaluateSchoolReadiness(mixed $ownerModel): void
     {
         if (! $ownerModel instanceof School) {
