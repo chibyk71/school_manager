@@ -79,42 +79,24 @@ class StoreSchoolRequest extends FormRequest
             'state' => ['prohibited'],
             'is_active' => ['prohibited'],
 
-            // Media files (Spatie Media Library)
-            'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
-            'small_logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:1024'],
-            'favicon' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,ico,webp', 'max:512'],
-            'dark_logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
-            'dark_small_logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:1024'],
+            // Primary address – now optional array (validated in HasAddress trait)
+            'addresses' => ['sometimes', 'array'], // No deep rules here
 
-            // Nested addresses for HasAddress (validated in trait on persist)
-            'addresses' => ['nullable', 'array'],
-            'addresses.*.line_1' => ['nullable', 'string', 'max:255'],
-            'addresses.*.line_2' => ['nullable', 'string', 'max:255'],
-            'addresses.*.city' => ['nullable', 'string', 'max:100'],
-            'addresses.*.state' => ['nullable', 'string', 'max:100'],
-            'addresses.*.postal_code' => ['nullable', 'string', 'max:20'],
-            'addresses.*.country' => ['nullable', 'string', 'max:100'],
-            'addresses.*.is_primary' => ['nullable', 'boolean'],
+            // Branding / Media (Spatie Media Library)
+            'logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'small_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'favicon' => ['nullable', 'file', 'mimes:jpeg,png,ico,svg+xml', 'max:2048'],
+            'dark_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'dark_small_logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
 
-            // Optional admin assignment on create
-            'admin_id' => ['nullable', 'uuid'],
-            'admin_name' => ['nullable', 'string', 'max:255'],
-            'admin_email' => ['nullable', 'email', 'max:255'],
-            'admin_password' => ['nullable', 'string', 'min:8'],
+            // Optional extra data
+            'extra_data' => ['nullable', 'array'],
         ];
     }
 
     /**
-     * Prepare the data for validation.
-     */
-    protected function prepareForValidation(): void
-    {
-        if ($this->has('code') && is_string($this->code)) {
-            $this->merge(['code' => strtoupper(trim($this->code))]);
-        }
-    }
-
-    /**
+     * Custom attribute names for error messages.
+     *
      * @return array<string, string>
      */
     public function attributes(): array
@@ -123,8 +105,45 @@ class StoreSchoolRequest extends FormRequest
             'name' => 'school name',
             'code' => 'school code',
             'email' => 'school email',
-            'contact_name' => 'primary contact name',
+            'phone_one' => 'primary phone',
+            'phone_two' => 'secondary phone',
             'type' => 'school type',
+            'is_active' => 'status',
+            'logo' => 'main logo',
+            'small_logo' => 'small logo',
+            'favicon' => 'favicon',
+            'dark_logo' => 'dark mode logo',
+            'dark_small_logo' => 'dark mode small logo',
+        ];
+    }
+
+    /**
+     * Prepare data for validation (casting, normalization).
+     */
+    protected function prepareForValidation(): void
+    {
+        // Clients cannot assign lifecycle state or is_active. Never inject them.
+        $merge = [];
+        if ($this->filled('code')) {
+            $merge['code'] = strtoupper((string) $this->input('code'));
+        }
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
+    }
+
+    /**
+     * Custom validation messages.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'logo.image' => 'The main logo must be a valid image file.',
+            'favicon.mimes' => 'Favicon must be jpeg, png, ico, or svg.',
+            'code.unique' => 'This school code is already taken.',
+            'email.unique' => 'This email is already used by another school.',
         ];
     }
 }
