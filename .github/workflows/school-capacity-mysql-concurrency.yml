@@ -18,7 +18,7 @@ jobs:
   capacity-concurrency:
     name: Concurrent capacity (MySQL + pcntl)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     services:
       mysql:
@@ -50,23 +50,24 @@ jobs:
       SESSION_DRIVER: array
       MAIL_MAILER: array
       SCHOOL_CAPACITY_MYSQL_CI: "1"
+      COMPOSER_NO_INTERACTION: "1"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup PHP 8.3 (mysql + pcntl)
+      - name: Setup PHP 8.3 (mysql + pcntl + Laravel extensions)
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: mbstring, xml, ctype, json, bcmath, pdo, pdo_mysql, pcntl, posix
+          extensions: mbstring, xml, dom, ctype, json, bcmath, pdo, pdo_mysql, pcntl, posix, zip, gd, intl, fileinfo, tokenizer, curl, openssl
           coverage: none
           tools: composer:v2
 
       - name: Verify pcntl and PDO MySQL
         run: |
-          php -m | grep -i pcntl
-          php -m | grep -i pdo_mysql
+          php -v
+          php -m | grep -iE 'pcntl|pdo_mysql|zip|gd'
           php -r 'exit(function_exists("pcntl_fork") ? 0 : 1);'
 
       - name: Install MySQL client
@@ -77,7 +78,7 @@ jobs:
           for i in $(seq 1 40); do
             if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
               echo "MySQL is up"
-              mysql -h 127.0.0.1 -uschool -psecret -e "SELECT 1" school_capacity_ci
+              mysql -h 127.0.0.1 -uschool -psecret -e "SELECT 1 AS ok" school_capacity_ci
               exit 0
             fi
             echo "waiting for mysql ($i)..."
@@ -86,22 +87,26 @@ jobs:
           echo "MySQL failed to become healthy"
           exit 1
 
-      - name: Cache Composer
-        uses: actions/cache@v4
-        with:
-          path: vendor
-          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
-          restore-keys: |
-            composer-${{ runner.os }}-
-
       - name: Install Composer dependencies
-        run: composer install --no-interaction --prefer-dist --no-progress
+        run: |
+          composer --version
+          composer install --no-interaction --prefer-dist --no-progress --no-ansi 2>&1 | tee storage-composer-install.log || true
+          if [ ! -f vendor/autoload.php ]; then
+            echo "Composer install failed — last 80 lines:"
+            tail -80 storage-composer-install.log || true
+            # Retry without cache once
+            composer clear-cache || true
+            composer install --no-interaction --prefer-dist --no-progress --no-ansi
+          fi
+          test -f vendor/bin/phpunit
+          test -f vendor/autoload.php
 
       - name: Run sequential + concurrent capacity tests (MySQL config)
         run: |
           mkdir -p storage/logs bootstrap/cache
           chmod -R ug+rwx storage bootstrap/cache || true
-          # Use dedicated config — default phpunit.xml forces sqlite and would skip concurrency.
+          echo "DB driver probe (must be mysql):"
+          php -r "require 'vendor/autoload.php'; \$app=require 'bootstrap/app.php'; \$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo config('database.default').PHP_EOL;"
           ./vendor/bin/phpunit \
             --configuration=phpunit.school-capacity-mysql.xml \
             --log-junit storage/logs/school-capacity-junit.xml \
@@ -110,10 +115,12 @@ jobs:
       - name: Assert concurrent test executed and was not skipped
         run: php scripts/assert-school-capacity-concurrency-junit.php storage/logs/school-capacity-junit.xml
 
-      - name: Upload JUnit log
+      - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: school-capacity-junit
-          path: storage/logs/school-capacity-junit.xml
+          name: school-capacity-diagnostics
+          path: |
+            storage/logs/school-capacity-junit.xml
+            storage-composer-install.log
           if-no-files-found: warn
