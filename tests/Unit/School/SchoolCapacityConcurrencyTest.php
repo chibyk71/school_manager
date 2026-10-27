@@ -10,6 +10,7 @@ use App\Support\Entitlements\DefaultEntitlementProfile;
 use App\Support\Entitlements\EntitlementResolver;
 use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -18,9 +19,11 @@ use Tests\TestCase;
  * Capacity enforcement: sequential limit on any driver; multi-process concurrency
  * only on mysql/mariadb/pgsql with pcntl.
  *
- * Important: do not disable RefreshDatabase transactions for the whole class.
- * On sqlite :memory:, empty connectionsToTransact() can leave a fresh empty DB
- * after application refresh while RefreshDatabaseState still thinks migrations ran.
+ * SCHOOL_CAPACITY_MYSQL_CI=1: use a focused MySQL schema bootstrap instead of
+ * migrate:fresh. Full migrate is blocked by a legacy exams→schools FK ordering
+ * issue outside this feature's scope. The bootstrap creates the real tables the
+ * capacity path uses (schools Phase-1 shape + school_capacity_locks) without
+ * disabling foreign-key checks and without rewriting production migrations.
  */
 class SchoolCapacityConcurrencyTest extends TestCase
 {
@@ -34,6 +37,70 @@ class SchoolCapacityConcurrencyTest extends TestCase
         }
 
         return [config('database.default')];
+    }
+
+    /**
+     * When CI flag is set, build only the schema required for capacity locking.
+     * Avoids full migrate:fresh which fails on MySQL due to exams FK before schools.
+     */
+    protected function refreshTestDatabase()
+    {
+        if (filter_var(env('SCHOOL_CAPACITY_MYSQL_CI', false), FILTER_VALIDATE_BOOLEAN)) {
+            if (! RefreshDatabaseState::$migrated) {
+                $this->bootstrapSchoolCapacityMysqlSchema();
+                RefreshDatabaseState::$migrated = true;
+            }
+
+            // Only wrap in a transaction when connectionsToTransact is non-empty
+            // (sequential tests). Concurrent test uses [] so children see commits.
+            $this->beginDatabaseTransaction();
+
+            return;
+        }
+
+        parent::refreshTestDatabase();
+    }
+
+    /**
+     * Focused MySQL schema for Gate B capacity verification only.
+     * Mirrors production schools columns used by createDraft + capacity lock.
+     */
+    private function bootstrapSchoolCapacityMysqlSchema(): void
+    {
+        Schema::dropIfExists('school_capacity_locks');
+        Schema::dropIfExists('schools');
+
+        Schema::create('schools', function ($table) {
+            $table->uuid('id')->primary();
+            $table->string('name')->unique();
+            $table->string('code')->nullable()->unique();
+            $table->string('slug')->unique();
+            $table->string('email')->nullable()->unique();
+            $table->string('phone_one')->nullable();
+            $table->string('phone_two')->nullable();
+            $table->string('contact_name')->nullable();
+            $table->string('logo')->nullable();
+            $table->string('type')->nullable();
+            $table->string('description')->nullable();
+            $table->string('motto')->nullable();
+            $table->boolean('is_active')->default(false)->index();
+            $table->string('state')->default('draft')->index();
+            $table->json('data')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        Schema::create('school_capacity_locks', function ($table) {
+            $table->id();
+            $table->string('scope_key')->default('tenant')->unique();
+            $table->timestamps();
+        });
+
+        DB::table('school_capacity_locks')->insert([
+            'scope_key' => 'tenant',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     protected function setUp(): void
@@ -63,9 +130,6 @@ class SchoolCapacityConcurrencyTest extends TestCase
             'schools table missing after RefreshDatabase — migrations did not complete.'
         );
 
-        // Sequential tests run inside a DB transaction — do not DELETE FROM schools
-        // (residual terms_old_phase3 FK metadata can make that fail on SQLite).
-        // Concurrent (committed) tests still need a clean slate.
         if ($this->isConcurrentTestCase()) {
             $this->purgeAllSchoolsSafely();
         }
@@ -73,20 +137,9 @@ class SchoolCapacityConcurrencyTest extends TestCase
         $this->bindCapacityLimit(2);
     }
 
-    protected function tearDown(): void
-    {
-        try {
-            if (Schema::hasTable('schools') && $this->isConcurrentTestCase()) {
-                $this->purgeAllSchoolsSafely();
-            }
-        } catch (\Throwable) {
-        }
-        parent::tearDown();
-    }
-
     private function isConcurrentTestCase(): bool
     {
-        return str_contains($this->name(), 'concurrent_create_draft_cannot_exceed_limit');
+        return $this->name() === 'test_concurrent_create_draft_cannot_exceed_limit';
     }
 
     private function supportsProductionConcurrency(): bool
@@ -103,9 +156,10 @@ class SchoolCapacityConcurrencyTest extends TestCase
             return;
         }
 
-        if (Schema::getConnection()->getDriverName() === 'sqlite') {
-            Schema::disableForeignKeyConstraints();
+        $driver = DB::connection()->getDriverName();
+        if ($driver === 'sqlite') {
             try {
+                Schema::disableForeignKeyConstraints();
                 Schema::dropIfExists('terms_old_phase3');
                 DB::table('schools')->delete();
             } finally {
@@ -159,10 +213,17 @@ class SchoolCapacityConcurrencyTest extends TestCase
             );
         }
 
+        // Dedicated CI job must never silently skip when the environment is wrong.
+        if (filter_var(env('SCHOOL_CAPACITY_MYSQL_CI', false), FILTER_VALIDATE_BOOLEAN)) {
+            $this->assertContains($driver, ['mysql', 'mariadb', 'pgsql']);
+            $this->assertTrue(function_exists('pcntl_fork'), 'pcntl_fork required in SCHOOL_CAPACITY_MYSQL_CI');
+        }
+
         $this->assertTrue(Schema::hasTable('schools'), 'schools required for concurrency test');
         $this->purgeAllSchoolsSafely();
         $this->bindCapacityLimit(2);
 
+        // Seed is committed (connectionsToTransact is empty for this method).
         app(SchoolLifecycleService::class)->createDraft(['name' => 'Seed-Committed']);
         $this->assertSame(1, School::query()->countedForCapacity()->count());
 

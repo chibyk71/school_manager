@@ -1,0 +1,126 @@
+# Gate B — School Management Phase 1 capacity concurrency verification.
+# Runs only the capacity concurrency tests on Linux + MySQL + pcntl.
+# A skipped concurrent test fails the job.
+name: School capacity MySQL concurrency
+
+on:
+  push:
+    branches:
+      - test/school-capacity-mysql-concurrency-ci
+      - feature/school-management-module
+    paths:
+      - 'app/Services/School/**'
+      - 'app/Support/Entitlements/**'
+      - 'tests/Unit/School/SchoolCapacityConcurrencyTest.php'
+      - 'database/migrations/*school*'
+      - '.github/workflows/school-capacity-mysql-concurrency.yml'
+      - 'scripts/assert-school-capacity-concurrency-junit.php'
+  pull_request:
+    branches:
+      - master
+      - feature/school-management-module
+    paths:
+      - 'app/Services/School/**'
+      - 'app/Support/Entitlements/**'
+      - 'tests/Unit/School/SchoolCapacityConcurrencyTest.php'
+      - 'database/migrations/*school*'
+      - '.github/workflows/school-capacity-mysql-concurrency.yml'
+      - 'scripts/assert-school-capacity-concurrency-junit.php'
+  workflow_dispatch:
+
+jobs:
+  capacity-concurrency:
+    name: Concurrent capacity (MySQL + pcntl)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: school_capacity_ci
+          MYSQL_USER: school
+          MYSQL_PASSWORD: secret
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:2fl+KtvkdphvQyVfipPSU5l4l+4YfYm9d4qTjJ3b8/E=
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: school_capacity_ci
+      DB_USERNAME: school
+      DB_PASSWORD: secret
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      SCHOOL_CAPACITY_MYSQL_CI: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3 (mysql + pcntl)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, ctype, json, bcmath, pdo, pdo_mysql, pcntl, posix
+          coverage: none
+          tools: composer:v2
+
+      - name: Verify pcntl and PDO MySQL
+        run: |
+          php -m | grep -i pcntl
+          php -m | grep -i pdo_mysql
+          php -r 'exit(function_exists("pcntl_fork") ? 0 : 1);'
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "MySQL is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MySQL failed to become healthy"
+          exit 1
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Run sequential + concurrent capacity tests
+        run: |
+          mkdir -p storage/logs
+          ./vendor/bin/phpunit \
+            tests/Unit/School/SchoolCapacityConcurrencyTest.php \
+            --log-junit storage/logs/school-capacity-junit.xml \
+            --testdox
+
+      - name: Assert concurrent test executed and was not skipped
+        run: php scripts/assert-school-capacity-concurrency-junit.php storage/logs/school-capacity-junit.xml
+
+      - name: Upload JUnit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: school-capacity-junit
+          path: storage/logs/school-capacity-junit.xml
+          if-no-files-found: warn
