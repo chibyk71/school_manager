@@ -199,7 +199,10 @@ class SchoolController extends BaseSchoolController
         // ---------------------------------------------------------------------
         // Uncomment if you want explicit authorization at method level.
         // Usually handled by policy middleware on the route, but adding here is safe.
-        Gate::authorize('create', School::class);
+        // Policy direct — avoid Gate/Laratrust team-id resolution of School::class.
+        if (! app(\App\Policies\SchoolPolicy::class)->create(auth()->user())) {
+            abort(403);
+        }
 
         // ---------------------------------------------------------------------
         // 2. Render the Inertia page
@@ -246,8 +249,10 @@ class SchoolController extends BaseSchoolController
      */
     public function store(StoreSchoolRequest $request)
     {
-        // Form Request also authorizes; explicit check keeps policy at the controller boundary.
-        $this->authorize('create', School::class);
+        // Form Request also authorizes via SchoolPolicy::create (not Gate + School::class).
+        if (! app(\App\Policies\SchoolPolicy::class)->create($request->user())) {
+            abort(403);
+        }
 
         try {
             // 1. Create core school + nested addresses[] via service (transactional)

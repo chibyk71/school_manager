@@ -38,12 +38,37 @@ class SchoolLifecycleFeatureTest extends TestCase
     private function actingAsAuthorized(): User
     {
         $user = User::factory()->create();
-        // Allow all abilities for this actor only (do not use a permanent Gate::before
-        // that leaks across tests and forces unauthorized cases to pass authorization).
-        Gate::before(function ($u, $ability) use ($user) {
-            return $u->is($user) ? true : null;
-        });
-        $this->actingAs($user);
+
+        // SchoolPolicy::create requires super-admin or school.create (tenant scope).
+        // Do not use can('create', School::class) / Gate::before with School::class —
+        // Laratrust resolves the class string as a team primary key and 404s.
+        if (Schema::hasTable('roles') && Schema::hasTable('role_user')) {
+            $role = Role::query()->firstOrCreate(
+                ['name' => 'super-admin'],
+                ['display_name' => 'Super Admin']
+            );
+            DB::table('role_user')->insertOrIgnore([
+                'role_id' => $role->id,
+                'user_id' => $user->id,
+                'user_type' => User::class,
+                'school_id' => null,
+            ]);
+        } else {
+            $permission = Permission::query()->firstOrCreate(
+                ['name' => 'school.create'],
+                ['display_name' => 'school.create']
+            );
+            if (Schema::hasTable('permission_user')) {
+                DB::table('permission_user')->insertOrIgnore([
+                    'permission_id' => $permission->id,
+                    'user_id' => $user->id,
+                    'user_type' => User::class,
+                    'school_id' => null,
+                ]);
+            }
+        }
+
+        $this->actingAs($user->fresh());
 
         return $user;
     }
@@ -85,18 +110,19 @@ class SchoolLifecycleFeatureTest extends TestCase
     {
         $this->actingAsAuthorized();
 
-        try {
-            $this->withoutExceptionHandling();
-            $response = $this->post(route('schools.store'), [
-                'name' => 'Name Only Draft School',
-            ]);
-        } catch (\Throwable $e) {
-            $this->fail(
-                get_class($e).': '.$e->getMessage()."\n".$e->getTraceAsString()
-            );
-        }
+        $response = $this->post(route('schools.store'), [
+            'name' => 'Name Only Draft School',
+        ]);
 
         $response->assertRedirect();
+        $this->assertTrue(
+            $response->isRedirect() && (
+                session()->has('success')
+                || School::query()->where('name', 'Name Only Draft School')->exists()
+            ),
+            'expected success flash or persisted school'
+        );
+
         $school = School::query()->where('name', 'Name Only Draft School')->first();
         $this->assertNotNull($school);
         $this->assertInstanceOf(Draft::class, $school->state);
@@ -347,15 +373,8 @@ class SchoolLifecycleFeatureTest extends TestCase
 
     public function test_unauthorized_authenticated_user_cannot_create_school(): void
     {
+        // Authenticated but no super-admin role and no school.create permission.
         $user = User::factory()->create();
-        // Explicit deny for create — survives any prior Gate::before from other tests.
-        Gate::before(function ($u, $ability) use ($user) {
-            if ($u->is($user) && $ability === 'create') {
-                return false;
-            }
-
-            return null;
-        });
         $this->actingAs($user);
 
         $before = School::query()->count();

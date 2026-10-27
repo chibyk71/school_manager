@@ -50,9 +50,16 @@ class StoreSchoolRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        // Enforce SchoolPolicy::create — route auth middleware only proves authentication.
-        return $this->user() !== null
-            && $this->user()->can('create', \App\Models\School::class);
+        $user = $this->user();
+        if ($user === null) {
+            return false;
+        }
+
+        // Do NOT call $user->can('create', School::class).
+        // Laratrust's Gate before-callback treats the second argument as a team id and
+        // runs School::query()->findOrFail('App\\Models\\School') → ModelNotFoundException (HTTP 404).
+        // Call the policy directly (same rules as SchoolPolicy::create).
+        return app(\App\Policies\SchoolPolicy::class)->create($user);
     }
 
     /**
