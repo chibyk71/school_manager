@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -66,8 +67,13 @@ class AddressController extends Controller
         $isPrimary = (bool) ($data['is_primary'] ?? false);
         unset($data['is_primary']);
 
-        $address = $ownerModel->addAddress($data, $isPrimary);
-        $this->reevaluateSchoolReadiness($ownerModel);
+        $address = DB::transaction(function () use ($ownerModel, $data, $isPrimary) {
+            $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+            $address = $ownerModel->addAddress($data, $isPrimary);
+            $this->reevaluateSchoolReadiness($ownerModel);
+
+            return $address;
+        });
         $address->load(['country', 'state', 'city']);
 
         return (new AddressResource($address))
@@ -87,8 +93,13 @@ class AddressController extends Controller
         $ownerModel = $this->resolveOwner($owner, $ownerId);
         Gate::authorize('update', $ownerModel);
 
-        $updated = $ownerModel->updateAddress($address, $request->validated());
-        $this->reevaluateSchoolReadiness($ownerModel);
+        $updated = DB::transaction(function () use ($ownerModel, $address, $request) {
+            $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+            $updated = $ownerModel->updateAddress($address, $request->validated());
+            $this->reevaluateSchoolReadiness($ownerModel);
+
+            return $updated;
+        });
         $updated->load(['country', 'state', 'city']);
 
         return new AddressResource($updated);
@@ -102,8 +113,11 @@ class AddressController extends Controller
         $ownerModel = $this->resolveOwner($owner, $ownerId);
         Gate::authorize('update', $ownerModel);
 
-        $ownerModel->deleteAddress($address);
-        $this->reevaluateSchoolReadiness($ownerModel);
+        DB::transaction(function () use ($ownerModel, $address) {
+            $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+            $ownerModel->deleteAddress($address);
+            $this->reevaluateSchoolReadiness($ownerModel);
+        });
 
         return response()->json(null, 204);
     }
@@ -116,8 +130,13 @@ class AddressController extends Controller
         $ownerModel = $this->resolveOwner($owner, $ownerId);
         Gate::authorize('update', $ownerModel);
 
-        $primary = $ownerModel->setPrimaryAddress($address);
-        $this->reevaluateSchoolReadiness($ownerModel);
+        $primary = DB::transaction(function () use ($ownerModel, $address) {
+            $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+            $primary = $ownerModel->setPrimaryAddress($address);
+            $this->reevaluateSchoolReadiness($ownerModel);
+
+            return $primary;
+        });
         $primary->load(['country', 'state', 'city']);
 
         return new AddressResource($primary);
@@ -140,8 +159,11 @@ class AddressController extends Controller
         $target = $ownerModel->addresses()->withoutGlobalScopes()->whereKey($address)->firstOrFail();
 
         if ($target->is_primary) {
-            $ownerModel->unsetPrimaryAddress();
-            $this->reevaluateSchoolReadiness($ownerModel);
+            DB::transaction(function () use ($ownerModel) {
+                $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+                $ownerModel->unsetPrimaryAddress();
+                $this->reevaluateSchoolReadiness($ownerModel);
+            });
         }
 
         return response()->json(null, 204);

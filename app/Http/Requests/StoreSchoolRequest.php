@@ -86,8 +86,20 @@ class StoreSchoolRequest extends FormRequest
             'state' => ['prohibited'],
             'is_active' => ['prohibited'],
 
-            // Primary address – now optional array (validated in HasAddress trait)
-            'addresses' => ['sometimes', 'array'], // No deep rules here
+            // Nested addresses validated here so failures are 422, not a late 500.
+            'addresses' => ['sometimes', 'array'],
+            'addresses.*.address_line_1' => ['required', 'string', 'max:255'],
+            'addresses.*.address_line_2' => ['nullable', 'string', 'max:255'],
+            'addresses.*.landmark' => ['nullable', 'string', 'max:255'],
+            'addresses.*.city_text' => ['nullable', 'string', 'max:100'],
+            'addresses.*.postal_code' => ['nullable', 'string', 'max:20'],
+            'addresses.*.type' => ['required', 'string', 'max:100'],
+            'addresses.*.country_id' => ['nullable', 'integer'],
+            'addresses.*.state_id' => ['nullable', 'integer'],
+            'addresses.*.city_id' => ['nullable', 'integer'],
+            'addresses.*.latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'addresses.*.longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'addresses.*.is_primary' => ['sometimes', 'boolean'],
 
             // Branding / Media (Spatie Media Library)
             'logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],

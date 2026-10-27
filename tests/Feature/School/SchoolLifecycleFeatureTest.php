@@ -470,4 +470,82 @@ class SchoolLifecycleFeatureTest extends TestCase
         );
     }
 
+
+    public function test_draft_create_does_not_change_active_school_context(): void
+    {
+        $this->actingAsAuthorized();
+
+        $existing = app(SchoolLifecycleService::class)->createDraft(['name' => 'Existing Active Context']);
+        session(['active_school_id' => $existing->id]);
+        $this->assertSame($existing->id, session('active_school_id'));
+
+        $response = $this->post(route('schools.store'), [
+            'name' => 'New Draft Must Not Steal Context',
+        ]);
+        $response->assertRedirect();
+
+        $this->assertSame(
+            $existing->id,
+            session('active_school_id'),
+            'Creating a Draft must not replace the current active school context'
+        );
+        $this->assertNotNull(
+            School::query()->where('name', 'New Draft Must Not Steal Context')->first()
+        );
+    }
+
+    public function test_malformed_nested_address_returns_validation_not_500(): void
+    {
+        $this->actingAsAuthorized();
+        $before = School::query()->count();
+
+        $response = $this->from(route('schools.create'))->post(route('schools.store'), [
+            'name' => 'Bad Address School',
+            'addresses' => [
+                [
+                    // missing required address_line_1 and type
+                    'city_text' => 'Nowhere',
+                ],
+            ],
+        ]);
+
+        $response->assertSessionHasErrors();
+        $this->assertSame($before, School::query()->count());
+        $this->assertNull(
+            School::query()->where('name', 'Bad Address School')->first()
+        );
+
+        $json = $this->postJson(route('schools.store'), [
+            'name' => 'Bad Address Json School',
+            'addresses' => [
+                ['city_text' => 'Nowhere'],
+            ],
+        ]);
+        $json->assertStatus(422);
+        $this->assertNull(
+            School::query()->where('name', 'Bad Address Json School')->first()
+        );
+    }
+
+    public function test_activate_on_active_school_retries_onboarding_without_error_state(): void
+    {
+        $this->actingAsAuthorized();
+        $lifecycle = app(SchoolLifecycleService::class);
+
+        $school = $lifecycle->createDraft(['name' => 'Onboarding Retry School']);
+        // Force Active without going through full Ready checklist in this focused test.
+        $school->state = \App\States\School\Active::class;
+        $school->is_active = true;
+        $school->data = [
+            // No completed_at, no claim — incomplete onboarding.
+        ];
+        $school->save();
+
+        $this->assertInstanceOf(\App\States\School\Active::class, $school->fresh()->state);
+
+        $response = $this->post(route('schools.activate', $school));
+        $response->assertRedirect();
+        $this->assertInstanceOf(\App\States\School\Active::class, $school->fresh()->state);
+    }
+
 }

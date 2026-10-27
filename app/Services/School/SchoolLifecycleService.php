@@ -63,12 +63,28 @@ class SchoolLifecycleService
      */
     public function activate(School $school): School
     {
+        $school = School::query()->whereKey($school->id)->firstOrFail();
+
+        // Already Active: authorized retry of operational onboarding only.
+        if ($school->state instanceof Active) {
+            try {
+                $this->ensureOperationalOnboarding($school);
+            } catch (\Throwable $e) {
+                Log::error('Operational onboarding retry failed for Active school', [
+                    'school_id' => $school->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return $school->fresh();
+        }
+
         $school = DB::transaction(function () use ($school) {
             $school = School::query()->whereKey($school->id)->lockForUpdate()->firstOrFail();
 
             if (! ($school->state instanceof Ready)) {
                 throw ValidationException::withMessages([
-                    'state' => 'Only a Ready school can be activated.',
+                    'state' => 'Only a Ready school can be activated (or retry onboarding on an Active school).',
                 ]);
             }
 
@@ -81,7 +97,16 @@ class SchoolLifecycleService
             return $school->fresh();
         });
 
-        $this->ensureOperationalOnboarding($school);
+        // Onboarding after Active commits. Dispatch failure must not reverse Active;
+        // claim is cleared so activate may be called again to retry.
+        try {
+            $this->ensureOperationalOnboarding($school);
+        } catch (\Throwable $e) {
+            Log::error('Operational onboarding dispatch failed after activation', [
+                'school_id' => $school->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $school->fresh();
     }

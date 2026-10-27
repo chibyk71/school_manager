@@ -280,9 +280,9 @@ class SchoolController extends BaseSchoolController
                 }
             }
 
-            // 5. Set active context for immediate onboarding
-            $this->schoolService->setActiveSchool($school);
-
+            // 5. Do not switch operational school context on Draft create.
+            //    Preserve the user's current active school until an authorized
+            //    activation/selection workflow establishes the new context.
             // 6. Cache invalidation
             $this->invalidateSchoolCaches();
 
@@ -338,9 +338,11 @@ class SchoolController extends BaseSchoolController
                 ->back()
                 ->withInput()
                 ->with('error', $errorMessage);
+        } catch (ValidationException $e) {
+            // Nested address / domain validation must surface as 422, not HTTP 500.
+            throw $e;
         } catch (Throwable $th) {
             Log::error('Failed to create school', [
-                'validated_data' => $request->validated(),
                 'user_id' => auth()->id() ?? 'guest',
                 'ip' => $request->ip(),
                 'error' => $th->getMessage(),
@@ -934,8 +936,29 @@ class SchoolController extends BaseSchoolController
 
         try {
             $school = $lifecycle->activate($school);
+            $data = $school->data ?? [];
+            $onboardingDone = ! empty($data['operational_onboarding_completed_at']);
+            $onboardingStarted = ! empty($data['operational_onboarding_dispatch_claimed_at'])
+                || ! empty($data['operational_onboarding_dispatched_at']);
 
-            return $this->respondLifecycle(request(), 'School activated.', $school);
+            if ($onboardingDone) {
+                return $this->respondLifecycle(request(), 'School activated.', $school);
+            }
+
+            if ($onboardingStarted) {
+                return $this->respondLifecycle(
+                    request(),
+                    'School is Active. Operational onboarding has been dispatched.',
+                    $school
+                );
+            }
+
+            // Active but onboarding did not start — truthful message; retry via activate again.
+            return $this->respondLifecycle(
+                request(),
+                'School is Active, but operational onboarding did not start. Retry activation to re-dispatch onboarding.',
+                $school
+            );
         } catch (ValidationException $e) {
             throw $e;
         } catch (Throwable $th) {
