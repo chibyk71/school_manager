@@ -1,0 +1,27 @@
+{
+    "name": "djunehor/laravel-sms",
+    "description": "Local path replacement — upstream GitHub repo is unavailable (404).",
+    "version": "2.2.0",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Djunehor\\Sms\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Djunehor\\Sms\\SmsServiceProvider"
+            ]
+        }
+    },
+    "require": {
+        "php": ">=7.1",
+        "guzzlehttp/guzzle": ">=6.5",
+        "illuminate/support": ">=5.0"
+    }
+}

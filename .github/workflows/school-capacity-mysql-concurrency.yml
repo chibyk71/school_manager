@@ -90,16 +90,12 @@ jobs:
       - name: Install Composer dependencies
         run: |
           composer --version
-          composer install --no-interaction --prefer-dist --no-progress --no-ansi 2>&1 | tee storage-composer-install.log || true
-          if [ ! -f vendor/autoload.php ]; then
-            echo "Composer install failed — last 80 lines:"
-            tail -80 storage-composer-install.log || true
-            # Retry without cache once
-            composer clear-cache || true
-            composer install --no-interaction --prefer-dist --no-progress --no-ansi
-          fi
-          test -f vendor/bin/phpunit
+          # Upstream github.com/djunehor/laravel-sms is 404; path package replaces it.
+          # Refresh lock entry so install uses packages/djunehor-laravel-sms instead of zipball.
+          composer update djunehor/laravel-sms --no-install --no-interaction --no-ansi 2>&1 | tee storage-composer-update-sms.log
+          composer install --no-interaction --prefer-dist --no-progress --no-ansi 2>&1 | tee storage-composer-install.log
           test -f vendor/autoload.php
+          test -f vendor/bin/phpunit
 
       - name: Run sequential + concurrent capacity tests (MySQL config)
         run: |
