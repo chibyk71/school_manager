@@ -16,6 +16,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use App\Support\Entitlements\DefaultEntitlementProfile;
+use App\Support\Entitlements\CapacityEvaluator;
+use App\Support\Entitlements\EntitlementResolver;
+use App\Services\School\SchoolCapacityService;
 use Tests\TestCase;
 
 class SchoolLifecycleFeatureTest extends TestCase
@@ -338,4 +342,104 @@ class SchoolLifecycleFeatureTest extends TestCase
         $response->assertStatus(422);
         $this->assertInstanceOf(Draft::class, $school->fresh()->state);
     }
+
+    public function test_unauthorized_authenticated_user_cannot_create_school(): void
+    {
+        $user = User::factory()->create();
+        // No Gate::before, no school.create permission
+        $this->actingAs($user);
+
+        $before = School::query()->count();
+
+        $response = $this->post(route('schools.store'), [
+            'name' => 'Unauthorized Create Attempt',
+        ]);
+
+        $response->assertForbidden();
+        $this->assertSame($before, School::query()->count());
+        $this->assertNull(
+            School::query()->where('name', 'Unauthorized Create Attempt')->first()
+        );
+    }
+
+    public function test_inertia_create_redirects_with_success_flash(): void
+    {
+        $this->actingAsAuthorized();
+
+        $response = $this->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Requested-With' => 'XMLHttpRequest',
+        ])->post(route('schools.store'), [
+            'name' => 'Inertia Create School',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+        // Must not be a plain JSON body for an Inertia visit
+        $this->assertStringNotContainsString(
+            'application/json',
+            strtolower((string) $response->headers->get('Content-Type', '')),
+            'Inertia create must not return application/json'
+        );
+
+        $school = School::query()->where('name', 'Inertia Create School')->first();
+        $this->assertNotNull($school);
+        $this->assertInstanceOf(Draft::class, $school->state);
+    }
+
+    public function test_json_create_without_inertia_returns_json(): void
+    {
+        $this->actingAsAuthorized();
+
+        $response = $this->postJson(route('schools.store'), [
+            'name' => 'Json Create School',
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('message', 'School created successfully!');
+        $this->assertNotNull(
+            School::query()->where('name', 'Json Create School')->first()
+        );
+    }
+
+    public function test_create_when_capacity_exhausted_returns_422_and_persists_nothing(): void
+    {
+        $this->actingAsAuthorized();
+
+        // Cap at zero additional schools via entitlement profile used by CapacityEvaluator.
+        $this->app->instance(
+            DefaultEntitlementProfile::class,
+            new DefaultEntitlementProfile([
+                DefaultEntitlementProfile::SCHOOLS_MAX_COUNT_KEY => 0,
+            ])
+        );
+        $this->app->forgetInstance(SchoolCapacityService::class);
+        $this->app->forgetInstance(SchoolLifecycleService::class);
+        $this->app->forgetInstance(EntitlementResolver::class);
+        $this->app->forgetInstance(CapacityEvaluator::class);
+
+        $before = School::query()->count();
+
+        $response = $this->from(route('schools.create'))->post(route('schools.store'), [
+            'name' => 'Over Capacity School',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('error');
+        $this->assertSame($before, School::query()->count());
+        $this->assertNull(
+            School::query()->where('name', 'Over Capacity School')->first()
+        );
+
+        // Pure JSON client gets 422, not 500
+        $json = $this->postJson(route('schools.store'), [
+            'name' => 'Over Capacity Json School',
+        ]);
+        $json->assertStatus(422);
+        $json->assertJsonFragment(['message' => 'School capacity limit reached. No additional schools can be created until capacity is available.']);
+        $this->assertNull(
+            School::query()->where('name', 'Over Capacity Json School')->first()
+        );
+    }
+
 }

@@ -245,6 +245,9 @@ class SchoolController extends BaseSchoolController
      */
     public function store(StoreSchoolRequest $request)
     {
+        // Form Request also authorizes; explicit check keeps policy at the controller boundary.
+        $this->authorize('create', School::class);
+
         try {
             // 1. Create core school + nested addresses[] via service (transactional)
             //    First address is NOT auto-primary; is_primary comes from payload only.
@@ -277,20 +280,44 @@ class SchoolController extends BaseSchoolController
             // 6. Cache invalidation
             $this->invalidateSchoolCaches();
 
-            // 7. Success response
+            // 7. Success — Inertia visits get redirect+flash; pure JSON clients get JSON.
             $message = 'School created successfully!';
 
-            if ($request->wantsJson() || $request->header('X-Inertia')) {
+            if ($request->wantsJson() && ! $request->header('X-Inertia')) {
                 return response()->json([
                     'message' => $message,
-                    'school' => $school->load('addresses'), // Include all addresses
-                ]);
+                    'school' => $school->load('addresses'),
+                ], 201);
             }
 
             return redirect()
-                ->route('dashboard')
+                ->route('schools.edit', $school)
                 ->with('success', $message);
 
+        } catch (InsufficientCapacityException $e) {
+            Log::warning('School create rejected: capacity exhausted', [
+                'user_id' => auth()->id() ?? 'guest',
+                'entitlement' => $e->entitlementKey,
+                'limit' => $e->limit,
+                'available' => $e->available,
+            ]);
+
+            $errorMessage = 'School capacity limit reached. No additional schools can be created until capacity is available.';
+
+            if ($request->wantsJson() && ! $request->header('X-Inertia')) {
+                return response()->json([
+                    'error' => $errorMessage,
+                    'message' => $errorMessage,
+                    'entitlement' => $e->entitlementKey,
+                    'limit' => $e->limit,
+                    'available' => $e->available,
+                ], 422);
+            }
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', $errorMessage);
         } catch (Throwable $th) {
             Log::error('Failed to create school', [
                 'validated_data' => $request->validated(),
@@ -302,7 +329,7 @@ class SchoolController extends BaseSchoolController
 
             $errorMessage = 'Failed to create school. Please try again.';
 
-            if ($request->wantsJson() || $request->header('X-Inertia')) {
+            if ($request->wantsJson() && ! $request->header('X-Inertia')) {
                 return response()->json(['error' => $errorMessage], 500);
             }
 
