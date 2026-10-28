@@ -28,7 +28,7 @@ class SchoolLifecycleService
     ) {}
 
     /**
-     * Draft → Ready when all six readiness conditions pass.
+     * Draft → Ready when all five readiness conditions pass (School Type is optional).
      */
     public function markReady(School $school): School
     {

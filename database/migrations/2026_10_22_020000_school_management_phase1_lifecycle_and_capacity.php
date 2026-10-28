@@ -20,7 +20,8 @@ use Illuminate\Support\Facades\Schema;
  *   is_active is then reconciled from state (Archived → is_active=false).
  * - Live schools (deleted_at null): always mapped to Draft. is_active=true alone
  *   does NOT map to Active. Active requires proven readiness (name, code, email,
- *   type, contact_name, primary address). contact_name is new on this migration,
+ *   contact_name, primary address). School Type is optional and is not a readiness
+ *   gate. contact_name is new on this migration,
  *   so no legacy row can be proven Ready/Active; all live rows become Draft with
  *   diagnostic notes in data.migration_notes.
  * - is_active is derived FROM state after backfill (Active/Suspended → true;
@@ -99,10 +100,10 @@ return new class extends Migration
             // contact_name is new — no legacy value. Primary contact readiness cannot pass.
             $notes[] = 'Backfill: contact_name was not present on legacy schema; primary-contact readiness cannot be proven.';
 
+            // School Type is optional identity metadata, not a readiness gate.
             $hasCoreIdentity = filled($row->name)
                 && filled($row->code)
-                && filled($row->email)
-                && filled($row->type);
+                && filled($row->email);
 
             $hasPhoneOrEmail = filled($row->email) || filled($row->phone_one) || filled($row->phone_two);
 
@@ -116,7 +117,7 @@ return new class extends Migration
             }
 
             if (! $hasCoreIdentity) {
-                $notes[] = 'Backfill: incomplete core identity (name/code/email/type).';
+                $notes[] = 'Backfill: incomplete core identity fields (name/code/email; School Type optional).';
             }
             if (! $hasPhoneOrEmail) {
                 $notes[] = 'Backfill: no phone or email channel recorded.';

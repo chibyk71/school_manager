@@ -80,7 +80,8 @@ final class SchoolReadinessEvaluator
             return ['passed' => false, 'message' => 'School code is required.'];
         }
 
-        $exists = School::query()
+        // Codes remain unique across soft-deleted schools (tenant-database invariant).
+        $exists = School::withTrashed()
             ->where('code', $school->code)
             ->when($school->getKey(), fn ($q) => $q->whereKeyNot($school->getKey()))
             ->exists();

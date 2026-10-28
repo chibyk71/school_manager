@@ -241,6 +241,47 @@ class SchoolLifecycleDomainTest extends TestCase
     }
 
 
+
+    public function test_code_uniqueness_includes_soft_deleted_schools(): void
+    {
+        $deleted = $this->lifecycle->createDraft(['name' => 'Deleted School', 'code' => 'SHARED1']);
+        $deleted->delete();
+        $this->assertTrue($deleted->fresh()->trashed());
+
+        $candidate = $this->lifecycle->createDraft(['name' => 'Candidate School']);
+        $candidate->code = 'SHARED1';
+        $candidate->email = 'candidate@example.com';
+        $candidate->contact_name = 'Contact';
+        $candidate->phone_one = '08011111111';
+        $candidate->save();
+
+        $result = $this->readiness->evaluate($candidate->fresh());
+        $this->assertFalse($result['conditions']['code']['passed']);
+        $this->assertStringContainsString('unique', strtolower($result['conditions']['code']['message'] ?? ''));
+    }
+
+    public function test_code_check_excludes_current_school_row(): void
+    {
+        $school = $this->lifecycle->createDraft(['name' => 'Self Code School', 'code' => 'SELF99']);
+        $school->email = 'self@example.com';
+        $school->contact_name = 'Self Contact';
+        $school->phone_one = '08022222222';
+        $school->save();
+
+        $result = $this->readiness->evaluate($school->fresh());
+        $this->assertTrue($result['conditions']['code']['passed'], 'Own code must not fail uniqueness against self');
+    }
+
+    public function test_code_uniqueness_detects_live_duplicate(): void
+    {
+        $this->lifecycle->createDraft(['name' => 'Live A', 'code' => 'LIVE01']);
+        $other = $this->lifecycle->createDraft(['name' => 'Live B']);
+        $other->code = 'LIVE01';
+        $other->save();
+
+        $result = $this->readiness->evaluate($other->fresh());
+        $this->assertFalse($result['conditions']['code']['passed']);
+    }
     public function test_ready_without_school_type(): void
     {
         $school = $this->makeReadySchool();
