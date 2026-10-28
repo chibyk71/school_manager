@@ -80,7 +80,7 @@ Route::get('/dynamic-enums/{key}/options', [DynamicEnumController::class, 'optio
 Route::middleware('auth')->group(function () {
 
     // Academics
-    Route::resource('schools', SchoolController::class)->only(['index', 'store', 'show', 'update']);
+    Route::resource('schools', SchoolController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
     Route::delete('/schools', [SchoolController::class, 'destroy'])->name('schools.destroy');
     Route::post('schools/force-delete', [SchoolController::class, 'forceDelete'])
         ->name('schools.force-delete');
@@ -88,6 +88,14 @@ Route::middleware('auth')->group(function () {
         ->name('schools.restore');
     Route::post('schools/bulk-toggle', [SchoolController::class, 'bulkToggleStatus'])
         ->name('schools.bulk-toggle');
+    Route::post('schools/{school}/mark-ready', [SchoolController::class, 'markReady'])->name('schools.mark-ready');
+    Route::post('schools/{school}/activate', [SchoolController::class, 'activate'])->name('schools.activate');
+    Route::post('schools/{school}/suspend', [SchoolController::class, 'suspend'])->name('schools.suspend');
+    Route::post('schools/{school}/reactivate', [SchoolController::class, 'reactivate'])->name('schools.reactivate');
+    Route::post('schools/{school}/archive', [SchoolController::class, 'archive'])->name('schools.archive');
+    Route::post('schools/{school}/recover', [SchoolController::class, 'recover'])->name('schools.recover');
+    Route::get('schools/{school}/readiness', [SchoolController::class, 'readiness'])->name('schools.readiness');
+
 
     // Class levels nested under sections
     Route::prefix('sections/{section}/class-levels')

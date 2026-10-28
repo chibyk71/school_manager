@@ -7,11 +7,13 @@ use App\Http\Requests\Address\UpdateAddressRequest;
 use App\Http\Resources\AddressResource;
 use App\Models\Address;
 use App\Models\School;
+use App\Services\School\SchoolLifecycleService;
 use App\Traits\HasAddress;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -65,7 +67,13 @@ class AddressController extends Controller
         $isPrimary = (bool) ($data['is_primary'] ?? false);
         unset($data['is_primary']);
 
-        $address = $ownerModel->addAddress($data, $isPrimary);
+        $address = DB::transaction(function () use ($ownerModel, $data, $isPrimary) {
+            $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+            $address = $ownerModel->addAddress($data, $isPrimary);
+            $this->reevaluateSchoolReadiness($ownerModel);
+
+            return $address;
+        });
         $address->load(['country', 'state', 'city']);
 
         return (new AddressResource($address))
@@ -85,7 +93,13 @@ class AddressController extends Controller
         $ownerModel = $this->resolveOwner($owner, $ownerId);
         Gate::authorize('update', $ownerModel);
 
-        $updated = $ownerModel->updateAddress($address, $request->validated());
+        $updated = DB::transaction(function () use ($ownerModel, $address, $request) {
+            $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+            $updated = $ownerModel->updateAddress($address, $request->validated());
+            $this->reevaluateSchoolReadiness($ownerModel);
+
+            return $updated;
+        });
         $updated->load(['country', 'state', 'city']);
 
         return new AddressResource($updated);
@@ -99,7 +113,11 @@ class AddressController extends Controller
         $ownerModel = $this->resolveOwner($owner, $ownerId);
         Gate::authorize('update', $ownerModel);
 
-        $ownerModel->deleteAddress($address);
+        DB::transaction(function () use ($ownerModel, $address) {
+            $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+            $ownerModel->deleteAddress($address);
+            $this->reevaluateSchoolReadiness($ownerModel);
+        });
 
         return response()->json(null, 204);
     }
@@ -112,7 +130,13 @@ class AddressController extends Controller
         $ownerModel = $this->resolveOwner($owner, $ownerId);
         Gate::authorize('update', $ownerModel);
 
-        $primary = $ownerModel->setPrimaryAddress($address);
+        $primary = DB::transaction(function () use ($ownerModel, $address) {
+            $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+            $primary = $ownerModel->setPrimaryAddress($address);
+            $this->reevaluateSchoolReadiness($ownerModel);
+
+            return $primary;
+        });
         $primary->load(['country', 'state', 'city']);
 
         return new AddressResource($primary);
@@ -135,7 +159,11 @@ class AddressController extends Controller
         $target = $ownerModel->addresses()->withoutGlobalScopes()->whereKey($address)->firstOrFail();
 
         if ($target->is_primary) {
-            $ownerModel->unsetPrimaryAddress();
+            DB::transaction(function () use ($ownerModel) {
+                $ownerModel = $this->lockOwnerForReadiness($ownerModel);
+                $ownerModel->unsetPrimaryAddress();
+                $this->reevaluateSchoolReadiness($ownerModel);
+            });
         }
 
         return response()->json(null, 204);
@@ -147,6 +175,34 @@ class AddressController extends Controller
      * @throws NotFoundHttpException
      * @throws ValidationException
      */
+
+    /**
+     * Ready → Draft when a School owner loses readiness via address mutation.
+     */
+
+    /**
+     * Lock a School owner row before readiness-critical address work so mutation
+     * and Ready→Draft demotion share one transaction boundary.
+     */
+    private function lockOwnerForReadiness(Model $ownerModel): Model
+    {
+        if ($ownerModel instanceof School) {
+            return School::query()->whereKey($ownerModel->id)->lockForUpdate()->firstOrFail();
+        }
+
+        return $ownerModel;
+    }
+
+    private function reevaluateSchoolReadiness(mixed $ownerModel): void
+    {
+        if (! $ownerModel instanceof School) {
+            return;
+        }
+
+        app(SchoolLifecycleService::class)
+            ->reevaluateAfterUpdate($ownerModel->fresh());
+    }
+
     private function resolveOwner(string $ownerAlias, string $ownerId): Model
     {
         $alias = strtolower(trim($ownerAlias));

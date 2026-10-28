@@ -2,6 +2,8 @@
 
 use App\Helpers\ModelResolver;
 use App\Models\School;
+use App\Support\Settings\SettingsRegistry;
+use App\Support\Settings\SettingsResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
@@ -239,6 +241,55 @@ if (!function_exists('send_school_sms')) {
             ]);
             return false;
         }
+    }
+}
+
+if (! function_exists('getMergedSettings')) {
+    /**
+     * Legacy flat-array settings resolver for a group.
+     *
+     * Uses SettingsRegistry + SettingsResolver only. Unregistered groups return [].
+     * School owners resolve under school:{id}; otherwise global.
+     * Call sites (e.g. CheckMaintenanceMode) apply their own defaults when empty.
+     *
+     * @return array<string, mixed>
+     */
+    function getMergedSettings(string $group, mixed $owner = null): array
+    {
+        // Infrastructure not bootstrapped (early bootstrap / some isolated tests).
+        if (! app()->bound(SettingsRegistry::class)
+            || ! app()->bound(SettingsResolver::class)
+        ) {
+            return [];
+        }
+
+        $registry = app(SettingsRegistry::class);
+        $resolver = app(SettingsResolver::class);
+
+        // Unregistered groups: forGroup returns [] — callers apply their own defaults
+        // (e.g. CheckMaintenanceMode treats missing mode as disabled).
+        $definitions = $registry->forGroup($group);
+        if ($definitions === []) {
+            return [];
+        }
+
+        $scope = 'global';
+        if ($owner instanceof School && $owner->getKey()) {
+            $scope = 'school:'.$owner->getKey();
+        }
+
+        $out = [];
+        foreach ($definitions as $definition) {
+            $key = $definition->key;
+            $short = str_starts_with($key, $group.'.')
+                ? substr($key, strlen($group) + 1)
+                : $key;
+            // Resolver validates stored values and throws on corruption / unknown keys.
+            // Do not swallow InvalidStoredSettingValueException or other resolver failures.
+            $out[$short] = $resolver->get($key, $scope);
+        }
+
+        return $out;
     }
 }
 

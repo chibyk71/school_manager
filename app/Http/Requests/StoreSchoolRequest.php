@@ -14,7 +14,7 @@
  * - Removed all 'address.*' nested rules: validation now occurs in HasAddress::validateAddressData()
  *   during $school->addAddress() call in SchoolService.
  * - Keeps core school fields, media rules, and unique checks.
- * - Authorization simplified: relies on policy/permission (public onboarding handled separately if needed).
+ * - Authorization enforces SchoolPolicy::create (auth middleware alone is not enough).
  * - Boolean casting and code uppercase enforcement preserved.
  * - Custom attributes/messages updated to remove address references.
  *
@@ -36,8 +36,10 @@
  * Works with SchoolController::store(), SchoolService::createSchool(), and upcoming CreateEdit.vue page.
  * Extensible for future fields (e.g., subscription_plan).
  */
+
 namespace App\Http\Requests;
 
+use App\Support\School\SchoolTypeCatalogue;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -45,13 +47,19 @@ class StoreSchoolRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
-     *
-     * @return bool
      */
     public function authorize(): bool
     {
-        // Handled via policy or middleware; adjust if public onboarding allowed
-        return true; // Or auth()->user()?->hasPermission('school.create')
+        $user = $this->user();
+        if ($user === null) {
+            return false;
+        }
+
+        // Do NOT call $user->can('create', School::class).
+        // Laratrust's Gate before-callback treats the second argument as a team id and
+        // runs School::query()->findOrFail('App\\Models\\School') → ModelNotFoundException (HTTP 404).
+        // Call the policy directly (same rules as SchoolPolicy::create).
+        return app(\App\Policies\SchoolPolicy::class)->create($user);
     }
 
     /**
@@ -62,19 +70,36 @@ class StoreSchoolRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // Core school fields
+            // Phase 1 Draft creation: only name is required.
+            // code/email/type/contact become required for Ready (readiness evaluator).
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['required', 'string', 'max:50', 'unique:schools,code'],
-            'email' => ['required', 'email', 'max:255', 'unique:schools,email'],
+            'code' => ['nullable', 'string', 'max:50', 'unique:schools,code'],
+            'email' => ['nullable', 'email', 'max:255', 'unique:schools,email'],
             'phone_one' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'phone_two' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
-            'type' => ['required', 'string', 'in:private,government,community'],
+            'contact_name' => ['nullable', 'string', 'max:255'],
+            'type' => ['nullable', 'string', Rule::in(SchoolTypeCatalogue::values())],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'motto' => ['nullable', 'string', 'max:255'],
 
-            // Status
-            'is_active' => ['sometimes', 'boolean'],
+            // Lifecycle state is never client-assignable on create/update.
+            'state' => ['prohibited'],
+            'is_active' => ['prohibited'],
 
-            // Primary address – now optional array (validated in HasAddress trait)
-            'addresses' => ['sometimes', 'array'], // No deep rules here
+            // Nested addresses validated here so failures are 422, not a late 500.
+            'addresses' => ['sometimes', 'array'],
+            'addresses.*.address_line_1' => ['required', 'string', 'max:255'],
+            'addresses.*.address_line_2' => ['nullable', 'string', 'max:255'],
+            'addresses.*.landmark' => ['nullable', 'string', 'max:255'],
+            'addresses.*.city_text' => ['nullable', 'string', 'max:100'],
+            'addresses.*.postal_code' => ['nullable', 'string', 'max:20'],
+            'addresses.*.type' => ['required', 'string', 'max:100'],
+            'addresses.*.country_id' => ['nullable', 'integer'],
+            'addresses.*.state_id' => ['nullable', 'integer'],
+            'addresses.*.city_id' => ['nullable', 'integer'],
+            'addresses.*.latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'addresses.*.longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'addresses.*.is_primary' => ['sometimes', 'boolean'],
 
             // Branding / Media (Spatie Media Library)
             'logo' => ['nullable', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
@@ -116,10 +141,14 @@ class StoreSchoolRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'is_active' => $this->has('is_active') ? (bool) $this->input('is_active') : true,
-            'code' => $this->has('code') ? strtoupper($this->input('code')) : null,
-        ]);
+        // Clients cannot assign lifecycle state or is_active. Never inject them.
+        $merge = [];
+        if ($this->filled('code')) {
+            $merge['code'] = strtoupper((string) $this->input('code'));
+        }
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
     }
 
     /**

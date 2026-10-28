@@ -12,8 +12,11 @@ namespace App\Services;
 
 use App\Events\SchoolCreated;
 use App\Models\School;
+use App\Models\SchoolSection;
 use App\Models\User;
 use App\Notifications\MadeAdminOfSchoolNotification;
+use App\Services\School\SchoolLifecycleService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -22,6 +25,7 @@ use Illuminate\Support\Str;
 class SchoolService
 {
     protected $activeSchool;
+
     protected $activeSection;
 
     public function setActiveSchool(School $school): void
@@ -30,12 +34,12 @@ class SchoolService
             $this->activeSchool = $school;
             session(['active_school_id' => $school->id]);
         } catch (\Exception $e) {
-            Log::error('Failed to set active school: ' . $e->getMessage());
+            Log::error('Failed to set active school: '.$e->getMessage());
             throw new \Exception('Unable to set active school.');
         }
     }
 
-    public function getActiveSchool(?\Illuminate\Http\Request $request = null): ?School
+    public function getActiveSchool(?Request $request = null): ?School
     {
         try {
             if ($this->activeSchool) {
@@ -48,7 +52,8 @@ class SchoolService
 
             return $schoolId ? School::find($schoolId) : null;
         } catch (\Exception $e) {
-            Log::error('Failed to get active school: ' . $e->getMessage());
+            Log::error('Failed to get active school: '.$e->getMessage());
+
             return null;
         }
     }
@@ -60,39 +65,40 @@ class SchoolService
      */
     public function createSchool(array $data): School
     {
-        return DB::transaction(function () use ($data) {
-            $schoolData = [
-                'name'       => $data['name'],
-                'code'       => $data['code'] ?? null,
-                'email'      => $data['email'],
-                'phone_one'  => $data['phone_one'] ?? null,
-                'phone_two'  => $data['phone_two'] ?? null,
-                'type'       => $data['type'],
-                'is_active'  => $data['is_active'] ?? true,
-                'data'       => $data['extra_data'] ?? [],
-            ];
+        // Phase 1: Draft creation (name required). Capacity + state enforced by lifecycle.
+        // Clients cannot assign lifecycle state or force Active on create.
+        $lifecycle = app(SchoolLifecycleService::class);
+        $school = $lifecycle->createDraft($data);
 
-            $school = School::create($schoolData);
+        // Dispatch after the capacity transaction commits so listeners never
+        // re-fetch an uncommitted School (ModelNotFoundException → HTTP 404).
+        $schoolId = $school->id;
+        $creatorId = auth()->id();
+        $creatorId = $creatorId !== null ? (string) $creatorId : null;
 
-            // Nested addresses[] on create (embedded mode). First address is NOT auto-primary;
-            // is_primary comes from submitted payload only.
-            if (! empty($data['addresses']) && is_array($data['addresses'])) {
-                foreach ($data['addresses'] as $addrData) {
-                    if (! is_array($addrData)) {
-                        continue;
-                    }
-                    $isPrimary = (bool) ($addrData['is_primary'] ?? false);
-                    unset($addrData['is_primary'], $addrData['id']);
-                    $school->addAddress($addrData, $isPrimary);
-                }
+        DB::afterCommit(function () use ($schoolId, $creatorId) {
+            $reloaded = School::query()->find($schoolId);
+            if ($reloaded === null) {
+                Log::warning('SchoolCreated skipped: school not found after commit', [
+                    'school_id' => $schoolId,
+                ]);
+
+                return;
             }
 
-            event(new SchoolCreated($school, auth()->id()));
-
-            Log::info('School created successfully', ['school_id' => $school->id]);
-
-            return $school;
+            try {
+                event(new SchoolCreated($reloaded, $creatorId));
+            } catch (\Throwable $e) {
+                Log::error('SchoolCreated listener failed after school create', [
+                    'school_id' => $schoolId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         });
+
+        Log::info('School created successfully', ['school_id' => $school->id]);
+
+        return $school;
     }
 
     /**
@@ -103,26 +109,39 @@ class SchoolService
      */
     public function updateSchool(School $school, array $data): School
     {
+        // Attribute write + readiness reevaluation are one atomic unit:
+        // lock the row first, then mutate, so a failed demotion cannot leave
+        // readiness-critical changes committed while state stays Ready.
         return DB::transaction(function () use ($school, $data) {
-            $school->fill([
-                'name'       => $data['name'] ?? $school->name,
-                'code'       => $data['code'] ?? $school->code,
-                'email'      => $data['email'] ?? $school->email,
-                'phone_one'  => $data['phone_one'] ?? $school->phone_one,
-                'phone_two'  => $data['phone_two'] ?? $school->phone_two,
-                'type'       => $data['type'] ?? $school->type,
-                'is_active'  => $data['is_active'] ?? $school->is_active,
-                'data'       => array_merge($school->data ?? [], $data['extra_data'] ?? []),
-            ]);
+            $school = School::query()->whereKey($school->id)->lockForUpdate()->firstOrFail();
+
+            // Lifecycle state is never assigned from ordinary update payloads.
+            unset($data['state'], $data['is_active'], $data['addresses'], $data['primary_address']);
+
+            $assignable = [
+                'name', 'code', 'email', 'phone_one', 'phone_two',
+                'contact_name', 'type', 'description', 'motto',
+            ];
+
+            foreach ($assignable as $field) {
+                if (array_key_exists($field, $data)) {
+                    $school->{$field} = $data[$field];
+                }
+            }
+
+            if (array_key_exists('extra_data', $data) && is_array($data['extra_data'])) {
+                $school->data = array_merge($school->data ?? [], $data['extra_data']);
+            }
 
             $school->save();
 
-            // Persisted address mutations are handled by the managed Address API (Phase 4).
-            // School update no longer upserts primary_address from the school form.
+            // Nested transaction uses a savepoint; throw rolls back attribute save too.
+            $school = app(SchoolLifecycleService::class)
+                ->reevaluateAfterUpdate($school);
 
             Log::info('School updated successfully', ['school_id' => $school->id]);
 
-            return $school;
+            return $school->fresh() ?? $school;
         });
     }
 
@@ -132,7 +151,7 @@ class SchoolService
 
         $validated = validator($userData, [
             'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email,' . ($userData['id'] ?? null),
+            'email' => 'required|email|max:255|unique:users,email,'.($userData['id'] ?? null),
             'password' => 'nullable|string|min:8',
         ])->validate();
 
@@ -157,7 +176,7 @@ class SchoolService
         });
     }
 
-    public function setActiveSection(\App\Models\SchoolSection $section): void
+    public function setActiveSection(SchoolSection $section): void
     {
         $activeSchool = $this->getActiveSchool();
 
@@ -169,12 +188,12 @@ class SchoolService
             $this->activeSection = $section;
             session(['active_section_id' => $section->id]);
         } catch (\Exception $e) {
-            Log::error('Failed to set active section: ' . $e->getMessage());
+            Log::error('Failed to set active section: '.$e->getMessage());
             throw new \Exception('Unable to set active section.');
         }
     }
 
-    public function getActiveSection(?\Illuminate\Http\Request $request = null): ?\App\Models\SchoolSection
+    public function getActiveSection(?Request $request = null): ?SchoolSection
     {
         try {
             if ($this->activeSection) {
@@ -185,7 +204,7 @@ class SchoolService
                 ?? session('active_section_id');
 
             if ($sectionId) {
-                $section = \App\Models\SchoolSection::find($sectionId);
+                $section = SchoolSection::find($sectionId);
 
                 $activeSchool = $this->getActiveSchool($request);
                 if ($section && $activeSchool && $section->school_id !== $activeSchool->id) {
@@ -194,6 +213,7 @@ class SchoolService
                         'section_school_id' => $section->school_id,
                         'active_school_id' => $activeSchool->id,
                     ]);
+
                     return null;
                 }
 
@@ -201,9 +221,11 @@ class SchoolService
             }
 
             $activeSchool = $this->getActiveSchool($request);
+
             return $activeSchool?->schoolSections()->first();
         } catch (\Exception $e) {
-            Log::error('Failed to get active section: ' . $e->getMessage());
+            Log::error('Failed to get active section: '.$e->getMessage());
+
             return null;
         }
     }

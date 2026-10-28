@@ -44,8 +44,11 @@
  * Works with SchoolController::update(), SchoolService::updateSchool(),
  * and the upcoming combined CreateEdit.vue page.
  */
+
 namespace App\Http\Requests;
 
+use App\Models\School;
+use App\Support\School\SchoolTypeCatalogue;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -53,12 +56,21 @@ class UpdateSchoolRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
-     *
-     * @return bool
      */
     public function authorize(): bool
     {
-        return auth()->user()->hasPermission('school.update');
+        $user = $this->user();
+        if (! $user) {
+            return false;
+        }
+
+        $school = $this->route('school');
+        if ($school instanceof School) {
+            return $user->can('update', $school);
+        }
+
+        return $user->can('create', School::class)
+            || (method_exists($user, 'hasPermission') && (bool) $user->hasPermission('school.update'));
     }
 
     /**
@@ -72,24 +84,30 @@ class UpdateSchoolRequest extends FormRequest
 
         return [
             // Core school fields
-            'name'      => ['required', 'string', 'max:255'],
-            'code'      => ['required', 'string', 'max:50', Rule::unique('schools', 'code')->ignore($schoolId)],
-            'email'     => ['required', 'email', 'max:255', Rule::unique('schools', 'email')->ignore($schoolId)],
+            // Name always required; code/email/type/contact may be incomplete on Draft.
+            // Format + uniqueness apply when values are provided. Ready still needs all five readiness conditions (type is optional).
+            'name' => ['required', 'string', 'max:255'],
+            'code' => ['sometimes', 'nullable', 'string', 'max:50', Rule::unique('schools', 'code')->ignore($schoolId)],
+            'email' => ['sometimes', 'nullable', 'email', 'max:255', Rule::unique('schools', 'email')->ignore($schoolId)],
             'phone_one' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
             'phone_two' => ['nullable', 'string', 'max:30', 'regex:/^([0-9\s\-\+\(\)]*)$/'],
-            'type'      => ['required', 'string', 'in:private,government,community'],
+            'type' => ['sometimes', 'nullable', 'string', Rule::in(SchoolTypeCatalogue::values())],
 
             // Status – partial update allowed
-            'is_active' => ['sometimes', 'boolean'],
+            'state' => ['prohibited'],
+            'is_active' => ['prohibited'],
+            'contact_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'motto' => ['sometimes', 'nullable', 'string', 'max:255'],
 
             // Primary address payload – optional array only (validation delegated to HasAddress trait)
             'addresses' => ['sometimes', 'array'],
 
             // Branding / Media (Spatie Media Library) – optional replacement files
-            'logo'            => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
-            'small_logo'      => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
-            'favicon'         => ['sometimes', 'file', 'mimes:jpeg,png,ico,svg+xml', 'max:2048'],
-            'dark_logo'       => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'logo' => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'small_logo' => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
+            'favicon' => ['sometimes', 'file', 'mimes:jpeg,png,ico,svg+xml', 'max:2048'],
+            'dark_logo' => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
             'dark_small_logo' => ['sometimes', 'file', 'image', 'mimes:jpeg,png,svg+xml', 'max:5120'],
 
             // Optional extra JSON data
@@ -105,17 +123,17 @@ class UpdateSchoolRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'name'            => 'school name',
-            'code'            => 'school code',
-            'email'           => 'school email',
-            'phone_one'       => 'primary phone',
-            'phone_two'       => 'secondary phone',
-            'type'            => 'school type',
-            'is_active'       => 'status',
-            'logo'            => 'main logo',
-            'small_logo'      => 'small logo',
-            'favicon'         => 'favicon',
-            'dark_logo'       => 'dark mode logo',
+            'name' => 'school name',
+            'code' => 'school code',
+            'email' => 'school email',
+            'phone_one' => 'primary phone',
+            'phone_two' => 'secondary phone',
+            'type' => 'school type',
+            'is_active' => 'status',
+            'logo' => 'main logo',
+            'small_logo' => 'small logo',
+            'favicon' => 'favicon',
+            'dark_logo' => 'dark mode logo',
             'dark_small_logo' => 'dark mode small logo',
         ];
     }
@@ -125,10 +143,14 @@ class UpdateSchoolRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $this->merge([
-            'is_active' => $this->has('is_active') ? (bool) $this->input('is_active') : null,
-            'code'      => $this->has('code') ? strtoupper($this->input('code')) : null,
-        ]);
+        // Clients cannot assign lifecycle state or is_active. Never inject them.
+        $merge = [];
+        if ($this->filled('code')) {
+            $merge['code'] = strtoupper((string) $this->input('code'));
+        }
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
     }
 
     /**

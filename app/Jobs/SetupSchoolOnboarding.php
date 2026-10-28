@@ -2,9 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Models\Academic\AcademicSession;
+use App\Models\Academic\ClassLevel;
 use App\Models\School;
 use App\Models\SchoolSection;
-use App\Models\Academic\AcademicSession;
 use App\States\Academic\AcademicSession\Active as SessionActive;
 use App\States\Academic\AcademicSession\Closed as SessionClosed;
 use Illuminate\Bus\Queueable;
@@ -29,10 +30,30 @@ class SetupSchoolOnboarding implements ShouldQueue
     public function handle(): void
     {
         try {
+            $this->school->refresh();
+            $data = $this->school->data ?? [];
+            if (! empty($data['operational_onboarding_completed_at'])) {
+                Log::info('School onboarding skipped — already completed', [
+                    'school_id' => $this->school->id,
+                ]);
+
+                return;
+            }
+
             DB::transaction(function () {
                 $this->createDefaultSections();
                 $this->createDefaultClassLevels();
                 $this->createCurrentAcademicSession();
+
+                $school = School::query()->whereKey($this->school->id)->lockForUpdate()->first();
+                if ($school) {
+                    $d = $school->data ?? [];
+                    $d['operational_onboarding_completed_at'] = now()->toIso8601String();
+                    // Claim is no longer needed once complete.
+                    unset($d['operational_onboarding_dispatch_claimed_at']);
+                    $school->data = $d;
+                    $school->save();
+                }
             });
 
             Log::info('School onboarding setup completed successfully', [
@@ -46,16 +67,56 @@ class SetupSchoolOnboarding implements ShouldQueue
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            // Clear the dispatch claim so a later activate/retry can re-dispatch.
+            // Do not set completed_at. Re-throw so the queue marks the job failed.
+            $this->clearDispatchClaim();
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Release in-flight claim after a failed attempt (completed_at stays unset).
+     * Row-locked transaction so a concurrent successful worker's completed_at is never overwritten.
+     */
+    protected function clearDispatchClaim(): void
+    {
+        try {
+            DB::transaction(function () {
+                $school = School::query()->whereKey($this->school->id)->lockForUpdate()->first();
+                if (! $school) {
+                    return;
+                }
+                $data = $school->data ?? [];
+                // Never clear claim (or touch data) if onboarding already completed.
+                if (! empty($data['operational_onboarding_completed_at'])) {
+                    return;
+                }
+                unset(
+                    $data['operational_onboarding_dispatch_claimed_at'],
+                    $data['operational_onboarding_dispatched_at']
+                );
+                $school->data = $data;
+                $school->save();
+            });
+        } catch (\Throwable $clearError) {
+            Log::error('Failed to clear onboarding dispatch claim after job failure', [
+                'school_id' => $this->school->id,
+                'error' => $clearError->getMessage(),
+            ]);
         }
     }
 
     protected function createDefaultSections(): void
     {
+        // Field names must match SchoolSection fillable / school_sections schema
+        // (name slug, display_name, short_code, sort_order) — not legacy short_name/order.
         $sections = [
-            ['name' => 'Nursery', 'short_name' => 'NUR', 'order' => 1],
-            ['name' => 'Primary', 'short_name' => 'PRI', 'order' => 2],
-            ['name' => 'Junior Secondary', 'short_name' => 'JSS', 'order' => 3],
-            ['name' => 'Senior Secondary', 'short_name' => 'SSS', 'order' => 4],
+            ['name' => 'nursery', 'display_name' => 'Nursery', 'short_code' => 'NUR', 'sort_order' => 1],
+            ['name' => 'primary', 'display_name' => 'Primary', 'short_code' => 'PRI', 'sort_order' => 2],
+            ['name' => 'junior_secondary', 'display_name' => 'Junior Secondary School', 'short_code' => 'JSS', 'sort_order' => 3],
+            ['name' => 'senior_secondary', 'display_name' => 'Senior Secondary School', 'short_code' => 'SSS', 'sort_order' => 4],
         ];
 
         foreach ($sections as $sectionData) {
@@ -64,7 +125,10 @@ class SetupSchoolOnboarding implements ShouldQueue
                     'school_id' => $this->school->id,
                     'name' => $sectionData['name'],
                 ],
-                $sectionData
+                array_merge($sectionData, [
+                    'source' => 'template',
+                    'is_active' => true,
+                ])
             );
         }
     }
@@ -72,28 +136,31 @@ class SetupSchoolOnboarding implements ShouldQueue
     protected function createDefaultClassLevels(): void
     {
         $levels = [
-            'Nursery' => ['Nursery 1', 'Nursery 2', 'Nursery 3'],
-            'Primary' => ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6'],
-            'Junior Secondary' => ['JSS1', 'JSS2', 'JSS3'],
-            'Senior Secondary' => ['SSS1', 'SSS2', 'SSS3'],
+            'nursery' => ['Nursery 1', 'Nursery 2', 'Nursery 3'],
+            'primary' => ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6'],
+            'junior_secondary' => ['JSS1', 'JSS2', 'JSS3'],
+            'senior_secondary' => ['SSS1', 'SSS2', 'SSS3'],
         ];
 
         foreach ($levels as $sectionName => $classNames) {
             $section = $this->school->sections()->where('name', $sectionName)->first();
 
-            if (!$section) {
+            if (! $section) {
                 continue;
             }
 
             foreach ($classNames as $index => $name) {
-                \App\Models\Academic\ClassLevel::firstOrCreate(
+                // class_levels requires unique (school_section_id, sequence); default sequence=1
+                // would collide for every level after the first.
+                ClassLevel::firstOrCreate(
                     [
                         'school_section_id' => $section->id,
                         'name' => $name,
                     ],
                     [
-                        'short_name' => $name,
-                        'order' => $index + 1,
+                        'display_name' => $name,
+                        'sequence' => $index + 1,
+                        'is_active' => true,
                     ]
                 );
             }

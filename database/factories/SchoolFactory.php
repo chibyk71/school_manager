@@ -2,10 +2,12 @@
 
 namespace Database\Factories;
 
+use App\Models\School;
+use App\States\School\Draft;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\School>
+ * @extends Factory<School>
  */
 class SchoolFactory extends Factory
 {
@@ -18,6 +20,8 @@ class SchoolFactory extends Factory
     {
         return [
             'name' => $this->faker->company(),
+            // Default lifecycle state (ignored when schools.state column is absent).
+            'state' => Draft::$name,
             'email' => $this->faker->companyEmail(),
             'logo' => 'https://via.placeholder.com/150',
             'phone_one' => $this->faker->phoneNumber(),

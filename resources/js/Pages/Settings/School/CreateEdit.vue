@@ -10,7 +10,7 @@ CreateEdit.vue – School create/edit with Phase 4 Address integration.
 <script setup lang="ts">
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SettingsLayout from '@/Pages/Settings/Partials/SettingsLayout.vue';
-import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { Link, useForm, usePage, router } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import Dropdown from 'primevue/dropdown';
 import FileUpload from 'primevue/fileupload';
@@ -48,8 +48,10 @@ const form = useForm({
     email: props.school?.email ?? '',
     phone_one: props.school?.phone_one ?? '',
     phone_two: props.school?.phone_two ?? '',
-    type: props.school?.type ?? 'private',
-    is_active: props.school?.is_active ?? true,
+    contact_name: props.school?.contact_name ?? '',
+    description: props.school?.description ?? '',
+    motto: props.school?.motto ?? '',
+    type: props.school?.type ?? '',
 
     // Nested addresses[] on create (embedded AddressManager). Edit uses managed API.
     addresses: [] as AddressInput[],
@@ -61,6 +63,81 @@ const form = useForm({
     dark_logo: null,
     dark_small_logo: null,
 });
+
+
+const lifecycleBusy = ref(false);
+const readiness = ref<any>(null);
+
+const currentState = computed(() => {
+    const s = props.school?.state;
+    if (!s) return '';
+    return typeof s === 'string' ? s : (s.name || String(s));
+});
+
+const readinessConditions = computed(() => {
+    const c = readiness.value?.conditions ?? readiness.value?.checks ?? null;
+    if (!c || typeof c !== 'object') return [] as Array<{ key: string; passed: boolean; message: string | null }>;
+    return Object.entries(c).map(([key, val]: [string, any]) => ({
+        key,
+        passed: !!(val?.passed ?? val === true),
+        message: val?.message ?? null,
+    }));
+});
+
+function availableLifecycleActions(): string[] {
+    const state = String(currentState.value).toLowerCase();
+    const map: Record<string, string[]> = {
+        draft: ['schools.mark-ready'],
+        ready: ['schools.activate', 'schools.archive'],
+        active: ['schools.suspend', 'schools.archive'],
+        suspended: ['schools.reactivate', 'schools.archive'],
+        archived: ['schools.recover'],
+    };
+    return map[state] ?? [];
+}
+
+const lifecycleActionLabels: Record<string, string> = {
+    'schools.mark-ready': 'Mark Ready',
+    'schools.activate': 'Activate',
+    'schools.suspend': 'Suspend',
+    'schools.reactivate': 'Reactivate',
+    'schools.archive': 'Archive',
+    'schools.recover': 'Recover',
+};
+
+function postLifecycle(routeName: string) {
+    if (!props.school?.id) return;
+    lifecycleBusy.value = true;
+    router.post(route(routeName, props.school.id), {}, {
+        preserveScroll: true,
+        onFinish: () => { lifecycleBusy.value = false; },
+        onError: (errors) => {
+            const first = Object.values(errors)[0];
+            toast.add({ severity: 'error', summary: 'Lifecycle', detail: String(first ?? 'Action failed'), life: 6000 });
+            loadReadiness();
+        },
+        onSuccess: () => {
+            toast.add({ severity: 'success', summary: 'Lifecycle', detail: 'Action completed', life: 3000 });
+            loadReadiness();
+            router.reload({ only: ['school'] });
+        },
+    });
+}
+
+function loadReadiness() {
+    if (!props.school?.id) return;
+    fetch(route('schools.readiness', props.school.id), {
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin',
+    })
+        .then(r => r.json())
+        .then(data => { readiness.value = data; })
+        .catch(() => { readiness.value = null; });
+}
+
+if (isEdit.value) {
+    loadReadiness();
+}
 
 const submit = () => {
     const url = isEdit.value
@@ -122,7 +199,7 @@ const clearFile = (field: 'logo' | 'small_logo' | 'favicon' | 'dark_logo' | 'dar
 const schoolTypeOptions = [
     { label: 'Private', value: 'private' },
     { label: 'Government', value: 'government' },
-    { label: 'Community', value: 'community' }
+    { label: 'Community', value: 'community' },
 ];
 </script>
 
@@ -147,13 +224,13 @@ const schoolTypeOptions = [
                                         :error="form.errors.name" required />
 
                                     <TextInput label="School Code" id="code" v-model="form.code"
-                                        :error="form.errors.code" required />
+                                        :error="form.errors.code" />
 
                                     <TextInput label="School Email" id="email" type="email" v-model="form.email"
-                                        :error="form.errors.email" required />
+                                        :error="form.errors.email" />
 
                                     <div>
-                                        <InputLabel for="type" value="School Type" required />
+                                        <InputLabel for="type" value="School Type" />
                                         <Select id="type" v-model="form.type" :options="schoolTypeOptions"
                                             optionLabel="label" optionValue="value" placeholder="Select school type"
                                             class="w-full" :class="{ 'p-invalid': form.errors.type }" filter>
@@ -171,14 +248,65 @@ const schoolTypeOptions = [
                                     <TextInput label="Secondary Phone" id="phone_two" :error="form.errors.phone_two"
                                         v-model="form.phone_two" />
 
-                                    <div class="col-span-1 md:col-span-2 flex items-center">
-                                        <div class="flex items-center">
-                                            <input type="checkbox" id="is_active" v-model="form.is_active"
-                                                class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 focus:ring-2 dark:bg-gray-700 dark:border-gray-600" />
-                                            <InputLabel for="is_active" value="Active School"
-                                                class="ml-2 mb-0 !text-base !font-normal" />
-                                        </div>
-                                    </div>
+                                    <TextInput label="Primary Contact Name" id="contact_name"
+                                        v-model="form.contact_name" :error="form.errors.contact_name"
+                                        hint="Contact person — not the institution name" />
+
+                                    <TextInput label="Description" id="description" v-model="form.description"
+                                        :error="form.errors.description" />
+
+                                    <TextInput label="Motto" id="motto" v-model="form.motto"
+                                        :error="form.errors.motto" />
+
+                                </div>
+                            </div>
+
+                            <div v-if="isEdit" class="mt-6 p-4 border rounded-lg space-y-4 bg-gray-50 dark:bg-gray-900/40">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <h3 class="text-lg font-semibold">Lifecycle</h3>
+                                    <p class="text-sm">
+                                        State:
+                                        <span class="font-medium capitalize">{{ school?.state_label || currentState || '—' }}</span>
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p class="text-sm font-medium mb-2">Readiness checklist (six conditions)</p>
+                                    <p v-if="!readiness" class="text-xs text-muted-foreground">Loading readiness…</p>
+                                    <ul v-else class="space-y-1 text-sm">
+                                        <li
+                                            v-for="item in readinessConditions"
+                                            :key="item.key"
+                                            class="flex gap-2"
+                                            :class="item.passed ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                                        >
+                                            <span class="font-mono text-xs uppercase shrink-0 w-40">{{ item.key }}</span>
+                                            <span>{{ item.passed ? 'Passed' : (item.message || 'Not met') }}</span>
+                                        </li>
+                                    </ul>
+                                    <p
+                                        v-if="readiness"
+                                        class="mt-2 text-sm font-medium"
+                                        :class="(readiness.ready ?? readiness.is_ready) ? 'text-green-700' : 'text-amber-600'"
+                                    >
+                                        Overall: {{ (readiness.ready ?? readiness.is_ready) ? 'Ready' : 'Incomplete' }}
+                                    </p>
+                                </div>
+
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        v-for="action in availableLifecycleActions()"
+                                        :key="action"
+                                        type="button"
+                                        class="px-3 py-1.5 text-sm border rounded disabled:opacity-50"
+                                        :disabled="lifecycleBusy"
+                                        @click="postLifecycle(action)"
+                                    >
+                                        {{ lifecycleActionLabels[action] || action }}
+                                    </button>
+                                    <p v-if="availableLifecycleActions().length === 0" class="text-xs text-muted-foreground">
+                                        No lifecycle actions available for this state.
+                                    </p>
                                 </div>
                             </div>
 

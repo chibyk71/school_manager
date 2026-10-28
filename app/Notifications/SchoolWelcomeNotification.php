@@ -4,7 +4,6 @@ namespace App\Notifications;
 
 use App\Models\School;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -41,7 +40,7 @@ use Illuminate\Notifications\Notification;
  * - Can be converted to full Markdown template for richer branding
  * - Supports attachments (e.g., setup guide PDF) if needed later
  */
-class SchoolWelcomeNotification extends Notification implements ShouldQueue
+class SchoolWelcomeNotification extends Notification
 {
     use Queueable;
 
