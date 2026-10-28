@@ -248,14 +248,12 @@ class SchoolLifecycleDomainTest extends TestCase
         $deleted->delete();
         $this->assertTrue($deleted->fresh()->trashed());
 
+        // Do not persist the colliding code — DB unique index also covers soft-deleted rows.
+        // Evaluate the readiness query against an in-memory code assignment.
         $candidate = $this->lifecycle->createDraft(['name' => 'Candidate School']);
         $candidate->code = 'SHARED1';
-        $candidate->email = 'candidate@example.com';
-        $candidate->contact_name = 'Contact';
-        $candidate->phone_one = '08011111111';
-        $candidate->save();
 
-        $result = $this->readiness->evaluate($candidate->fresh());
+        $result = $this->readiness->evaluate($candidate);
         $this->assertFalse($result['conditions']['code']['passed']);
         $this->assertStringContainsString('unique', strtolower($result['conditions']['code']['message'] ?? ''));
     }
@@ -276,11 +274,12 @@ class SchoolLifecycleDomainTest extends TestCase
     {
         $this->lifecycle->createDraft(['name' => 'Live A', 'code' => 'LIVE01']);
         $other = $this->lifecycle->createDraft(['name' => 'Live B']);
+        // In-memory collision — assert evaluator, not DB unique constraint.
         $other->code = 'LIVE01';
-        $other->save();
 
-        $result = $this->readiness->evaluate($other->fresh());
+        $result = $this->readiness->evaluate($other);
         $this->assertFalse($result['conditions']['code']['passed']);
+        $this->assertStringContainsString('unique', strtolower($result['conditions']['code']['message'] ?? ''));
     }
     public function test_ready_without_school_type(): void
     {
