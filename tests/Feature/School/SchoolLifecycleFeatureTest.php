@@ -11,7 +11,10 @@ use App\Services\School\SchoolLifecycleService;
 use App\States\School\Active;
 use App\States\School\Archived;
 use App\States\School\Draft;
+use App\States\School\Ready;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Bus\Dispatcher;
+use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
@@ -20,6 +23,7 @@ use App\Support\Entitlements\DefaultEntitlementProfile;
 use App\Support\Entitlements\CapacityEvaluator;
 use App\Support\Entitlements\EntitlementResolver;
 use App\Services\School\SchoolCapacityService;
+use Mockery;
 use Tests\TestCase;
 
 class SchoolLifecycleFeatureTest extends TestCase
@@ -527,25 +531,105 @@ class SchoolLifecycleFeatureTest extends TestCase
         );
     }
 
-    public function test_activate_on_active_school_retries_onboarding_without_error_state(): void
+    public function test_activate_dispatch_failure_keeps_active_clears_claim_and_allows_retry(): void
     {
         $this->actingAsAuthorized();
         $lifecycle = app(SchoolLifecycleService::class);
 
-        $school = $lifecycle->createDraft(['name' => 'Onboarding Retry School']);
-        // Force Active without going through full Ready checklist in this focused test.
-        $school->state = \App\States\School\Active::class;
-        $school->is_active = true;
-        $school->data = [
-            // No completed_at, no claim — incomplete onboarding.
-        ];
+        $school = $lifecycle->createDraft(['name' => 'Dispatch Fail Then Retry']);
+        $school->state = Ready::class;
+        $school->is_active = false;
+        $school->data = [];
         $school->save();
 
-        $this->assertInstanceOf(\App\States\School\Active::class, $school->fresh()->state);
+        $real = $this->app->make(Dispatcher::class);
+        $dispatcher = Mockery::mock(BusDispatcher::class);
+        $dispatcher->shouldReceive('dispatch')
+            ->once()
+            ->andThrow(new \RuntimeException('simulated dispatch failure'));
+        $this->app->instance(BusDispatcher::class, $dispatcher);
+        $this->app->instance(Dispatcher::class, $dispatcher);
 
         $response = $this->post(route('schools.activate', $school));
         $response->assertRedirect();
-        $this->assertInstanceOf(\App\States\School\Active::class, $school->fresh()->state);
+        $response->assertSessionHas('success');
+        $success = session('success');
+        $this->assertIsString($success);
+        $this->assertStringContainsString('onboarding did not start', strtolower($success));
+
+        $school = $school->fresh();
+        $this->assertInstanceOf(Active::class, $school->state);
+        $data = $school->data ?? [];
+        $this->assertArrayNotHasKey('operational_onboarding_dispatch_claimed_at', $data);
+        $this->assertArrayNotHasKey('operational_onboarding_dispatched_at', $data);
+        $this->assertArrayNotHasKey('operational_onboarding_completed_at', $data);
+
+        // Restore real bus and prove a subsequent activate dispatches successfully.
+        $this->app->instance(BusDispatcher::class, $real);
+        $this->app->instance(Dispatcher::class, $real);
+        Queue::fake();
+
+        $retry = $this->post(route('schools.activate', $school));
+        $retry->assertRedirect();
+        Queue::assertPushed(SetupSchoolOnboarding::class, 1);
+
+        $school = $school->fresh();
+        $this->assertInstanceOf(Active::class, $school->state);
+        $this->assertNotEmpty(($school->data ?? [])['operational_onboarding_dispatch_claimed_at'] ?? null);
+    }
+
+    public function test_onboarding_job_failure_clears_claim_and_activate_can_redispatch(): void
+    {
+        $this->actingAsAuthorized();
+        $lifecycle = app(SchoolLifecycleService::class);
+
+        $school = $lifecycle->createDraft(['name' => 'Job Fail Then Retry']);
+        $school->state = Active::class;
+        $school->is_active = true;
+        $school->data = [
+            'operational_onboarding_dispatch_claimed_at' => now()->toIso8601String(),
+            'operational_onboarding_dispatched_at' => now()->toIso8601String(),
+        ];
+        $school->save();
+
+        // Simulate job body failure + claim cleanup (same path as SetupSchoolOnboarding).
+        $job = new SetupSchoolOnboarding($school->fresh());
+        $ref = new \ReflectionClass($job);
+        $method = $ref->getMethod('clearDispatchClaim');
+        $method->setAccessible(true);
+        $method->invoke($job);
+
+        $data = $school->fresh()->data ?? [];
+        $this->assertArrayNotHasKey('operational_onboarding_dispatch_claimed_at', $data);
+        $this->assertArrayNotHasKey('operational_onboarding_dispatched_at', $data);
+        $this->assertArrayNotHasKey('operational_onboarding_completed_at', $data);
+        $this->assertInstanceOf(Active::class, $school->fresh()->state);
+
+        Queue::fake();
+        $retry = $this->post(route('schools.activate', $school->fresh()));
+        $retry->assertRedirect();
+        Queue::assertPushed(SetupSchoolOnboarding::class, 1);
+        $this->assertNotEmpty(($school->fresh()->data ?? [])['operational_onboarding_dispatch_claimed_at'] ?? null);
+    }
+
+    public function test_activate_does_not_redispatch_when_onboarding_already_completed(): void
+    {
+        $this->actingAsAuthorized();
+        $lifecycle = app(SchoolLifecycleService::class);
+
+        $school = $lifecycle->createDraft(['name' => 'Already Onboarded']);
+        $school->state = Active::class;
+        $school->is_active = true;
+        $school->data = [
+            'operational_onboarding_completed_at' => now()->toIso8601String(),
+        ];
+        $school->save();
+
+        Queue::fake();
+        $response = $this->post(route('schools.activate', $school));
+        $response->assertRedirect();
+        Queue::assertNotPushed(SetupSchoolOnboarding::class);
+        $this->assertNotEmpty(($school->fresh()->data ?? [])['operational_onboarding_completed_at'] ?? null);
     }
 
 }
