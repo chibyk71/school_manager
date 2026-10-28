@@ -256,38 +256,40 @@ if (! function_exists('getMergedSettings')) {
      */
     function getMergedSettings(string $group, mixed $owner = null): array
     {
-        try {
-            if (! app()->bound(SettingsRegistry::class)
-                || ! app()->bound(SettingsResolver::class)
-            ) {
-                return [];
-            }
-
-            $registry = app(SettingsRegistry::class);
-            $resolver = app(SettingsResolver::class);
-
-            $scope = 'global';
-            if ($owner instanceof School && $owner->getKey()) {
-                $scope = 'school:'.$owner->getKey();
-            }
-
-            $out = [];
-            foreach ($registry->forGroup($group) as $definition) {
-                $key = $definition->key;
-                $short = str_starts_with($key, $group.'.')
-                    ? substr($key, strlen($group) + 1)
-                    : $key;
-                try {
-                    $out[$short] = $resolver->get($key, $scope);
-                } catch (\Throwable) {
-                    $out[$short] = $definition->default ?? null;
-                }
-            }
-
-            return $out;
-        } catch (\Throwable) {
+        // Infrastructure not bootstrapped (early bootstrap / some isolated tests).
+        if (! app()->bound(SettingsRegistry::class)
+            || ! app()->bound(SettingsResolver::class)
+        ) {
             return [];
         }
+
+        $registry = app(SettingsRegistry::class);
+        $resolver = app(SettingsResolver::class);
+
+        // Unregistered groups: forGroup returns [] — callers apply their own defaults
+        // (e.g. CheckMaintenanceMode treats missing mode as disabled).
+        $definitions = $registry->forGroup($group);
+        if ($definitions === []) {
+            return [];
+        }
+
+        $scope = 'global';
+        if ($owner instanceof School && $owner->getKey()) {
+            $scope = 'school:'.$owner->getKey();
+        }
+
+        $out = [];
+        foreach ($definitions as $definition) {
+            $key = $definition->key;
+            $short = str_starts_with($key, $group.'.')
+                ? substr($key, strlen($group) + 1)
+                : $key;
+            // Resolver validates stored values and throws on corruption / unknown keys.
+            // Do not swallow InvalidStoredSettingValueException or other resolver failures.
+            $out[$short] = $resolver->get($key, $scope);
+        }
+
+        return $out;
     }
 }
 

@@ -3,10 +3,13 @@
 namespace Tests\Unit\Support;
 
 use App\Models\School;
+use App\Support\Settings\Exceptions\InvalidStoredSettingValueException;
+use App\Support\Settings\SettingDefinition;
 use App\Support\Settings\SettingsRegistry;
 use App\Support\Settings\SettingsResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use Tests\TestCase;
 
 /**
@@ -15,6 +18,12 @@ use Tests\TestCase;
 class GetMergedSettingsHelperTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
 
     public function test_helper_function_is_defined_in_production_helpers(): void
     {
@@ -34,34 +43,79 @@ class GetMergedSettingsHelperTest extends TestCase
         $this->assertIsArray($result);
     }
 
-    public function test_school_owner_uses_school_scope_when_group_registered(): void
+    public function test_school_owner_resolves_with_school_scope_and_null_owner_uses_global(): void
     {
         if (! Schema::hasTable('schools')) {
             $this->markTestSkipped('schools table required');
         }
 
-        /** @var SettingsRegistry $registry */
-        $registry = app(SettingsRegistry::class);
+        $school = School::query()->create([
+            'name' => 'Settings Scope School',
+            'is_active' => false,
+        ]);
+        $this->assertNotEmpty($school->getKey());
 
-        // Only register if the registry is not sealed, or skip if sealed and group absent.
-        try {
-            if ($registry->forGroup('test_compat') === []) {
-                // Sealed registries reject new groups — empty result is correct fallback.
-                $school = School::query()->create([
-                    'name' => 'Settings Scope School',
-                    'is_active' => false,
-                ]);
-                $result = getMergedSettings('test_compat', $school);
-                $this->assertIsArray($result);
-                $this->assertSame([], $result);
+        $definition = new SettingDefinition(
+            key: 'compat.flag',
+            groupKey: 'compat',
+            groupLabel: 'Compat',
+            type: 'boolean',
+            default: false,
+            label: 'Flag',
+        );
 
-                return;
-            }
-        } catch (\Throwable) {
-            // sealed or unavailable — empty is fine
-        }
+        $registry = Mockery::mock(SettingsRegistry::class);
+        $registry->shouldReceive('forGroup')
+            ->with('compat')
+            ->andReturn(['compat.flag' => $definition]);
 
-        $this->assertTrue(true);
+        $resolver = Mockery::mock(SettingsResolver::class);
+        $resolver->shouldReceive('get')
+            ->once()
+            ->with('compat.flag', 'school:'.$school->getKey())
+            ->andReturn(true);
+        $resolver->shouldReceive('get')
+            ->once()
+            ->with('compat.flag', 'global')
+            ->andReturn(false);
+
+        $this->app->instance(SettingsRegistry::class, $registry);
+        $this->app->instance(SettingsResolver::class, $resolver);
+
+        $schoolScoped = getMergedSettings('compat', $school);
+        $this->assertSame(['flag' => true], $schoolScoped);
+
+        $global = getMergedSettings('compat', null);
+        $this->assertSame(['flag' => false], $global);
+    }
+
+    public function test_resolver_invalid_stored_value_is_not_swallowed(): void
+    {
+        $definition = new SettingDefinition(
+            key: 'compat.flag',
+            groupKey: 'compat',
+            groupLabel: 'Compat',
+            type: 'boolean',
+            default: false,
+            label: 'Flag',
+        );
+
+        $registry = Mockery::mock(SettingsRegistry::class);
+        $registry->shouldReceive('forGroup')
+            ->with('compat')
+            ->andReturn(['compat.flag' => $definition]);
+
+        $resolver = Mockery::mock(SettingsResolver::class);
+        $resolver->shouldReceive('get')
+            ->once()
+            ->with('compat.flag', 'global')
+            ->andThrow(new InvalidStoredSettingValueException('corrupt stored value'));
+
+        $this->app->instance(SettingsRegistry::class, $registry);
+        $this->app->instance(SettingsResolver::class, $resolver);
+
+        $this->expectException(InvalidStoredSettingValueException::class);
+        getMergedSettings('compat', null);
     }
 
     public function test_maintenance_middleware_path_survives_without_registered_group(): void
