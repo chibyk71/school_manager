@@ -139,7 +139,7 @@ class GetMergedSettingsHelperTest extends TestCase
         {
             public function get(string $key, string $scope): mixed
             {
-                throw new InvalidStoredSettingValueException('corrupt stored value');
+                throw new InvalidStoredSettingValueException('compat.flag', 'global', 'corrupt stored value');
             }
         };
 
