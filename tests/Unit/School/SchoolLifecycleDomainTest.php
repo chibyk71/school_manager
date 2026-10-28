@@ -24,7 +24,7 @@ use Tests\TestCase;
 /**
  * Phase 1 School Management domain tests.
  *
- * Covers lifecycle transitions, readiness (six conditions), capacity counting,
+ * Covers lifecycle transitions, readiness (five conditions; type optional), capacity counting,
  * and capacity lock path. Full concurrency proof requires the production DB engine.
  */
 class SchoolLifecycleDomainTest extends TestCase
@@ -101,7 +101,7 @@ class SchoolLifecycleDomainTest extends TestCase
         $this->assertFalse((bool) $school->is_active);
     }
 
-    public function test_mark_ready_requires_all_six_conditions(): void
+    public function test_mark_ready_requires_all_five_conditions(): void
     {
         $school = $this->lifecycle->createDraft(['name' => 'Incomplete']);
 
@@ -112,7 +112,8 @@ class SchoolLifecycleDomainTest extends TestCase
             $errors = $e->errors();
             $this->assertArrayHasKey('code', $errors);
             $this->assertArrayHasKey('email', $errors);
-            $this->assertArrayHasKey('type', $errors);
+            // School type is optional — must not appear as a readiness failure.
+            $this->assertArrayNotHasKey('type', $errors);
             $this->assertArrayHasKey('primary_contact', $errors);
             $this->assertArrayHasKey('primary_address', $errors);
         }
@@ -239,8 +240,33 @@ class SchoolLifecycleDomainTest extends TestCase
         $this->assertArrayNotHasKey('sections', $result['conditions']);
     }
 
+
+    public function test_ready_without_school_type(): void
+    {
+        $school = $this->makeReadySchool();
+        $this->assertNull($school->type);
+
+        $result = $this->readiness->evaluate($school);
+        $this->assertTrue($result['ready'], 'Five conditions without type must be ready');
+        $this->assertArrayNotHasKey('type', $result['conditions']);
+
+        $ready = $this->lifecycle->markReady($school);
+        $this->assertInstanceOf(\App\States\School\Ready::class, $ready->state);
+    }
+
+    public function test_sections_description_motto_irrelevant_to_readiness(): void
+    {
+        $school = $this->makeReadySchool();
+        $school->description = null;
+        $school->motto = null;
+        $school->save();
+
+        $this->assertTrue($this->readiness->isReady($school->fresh()));
+        $this->assertArrayNotHasKey('type', $this->readiness->evaluate($school->fresh())['conditions']);
+    }
+
     /**
-     * Populate a school so all six readiness conditions pass.
+     * Populate a school so all five readiness conditions pass (no school type).
      */
     private function makeReadySchool(?School $school = null): School
     {
@@ -250,7 +276,8 @@ class SchoolLifecycleDomainTest extends TestCase
 
         $school->code = 'RC'.substr($school->id, 0, 6);
         $school->email = 'ready-'.substr($school->id, 0, 8).'@example.com';
-        $school->type = 'private';
+        // School type intentionally omitted — not a readiness condition.
+        $school->type = null;
         $school->contact_name = 'Jane Contact';
         $school->phone_one = '+2348000000000';
         $school->save();

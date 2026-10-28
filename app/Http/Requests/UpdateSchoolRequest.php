@@ -85,7 +85,7 @@ class UpdateSchoolRequest extends FormRequest
         return [
             // Core school fields
             // Name always required; code/email/type/contact may be incomplete on Draft.
-            // Format + uniqueness apply when values are provided. Ready still needs all six conditions.
+            // Format + uniqueness apply when values are provided. Ready still needs all five readiness conditions (type is optional).
             'name' => ['required', 'string', 'max:255'],
             'code' => ['sometimes', 'nullable', 'string', 'max:50', Rule::unique('schools', 'code')->ignore($schoolId)],
             'email' => ['sometimes', 'nullable', 'email', 'max:255', Rule::unique('schools', 'email')->ignore($schoolId)],
