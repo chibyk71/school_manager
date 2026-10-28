@@ -3,6 +3,7 @@
 namespace Tests\Feature\School;
 
 use App\Jobs\SetupSchoolOnboarding;
+use App\Notifications\SchoolWelcomeNotification;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\School;
@@ -17,6 +18,7 @@ use Illuminate\Bus\Dispatcher;
 use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use App\Support\Entitlements\DefaultEntitlementProfile;
@@ -630,6 +632,25 @@ class SchoolLifecycleFeatureTest extends TestCase
         $response->assertRedirect();
         Queue::assertNotPushed(SetupSchoolOnboarding::class);
         $this->assertNotEmpty(($school->fresh()->data ?? [])['operational_onboarding_completed_at'] ?? null);
+    }
+
+    public function test_draft_create_dispatches_queued_welcome_without_failing_http(): void
+    {
+        Notification::fake();
+        $user = $this->actingAsAuthorized();
+
+        $response = $this->post(route('schools.store'), [
+            'name' => 'Welcome Notify School',
+        ]);
+        $response->assertRedirect();
+
+        $school = School::query()->where('name', 'Welcome Notify School')->first();
+        $this->assertNotNull($school);
+        $this->assertInstanceOf(Draft::class, $school->state);
+
+        // Welcome may run sync under QUEUE_CONNECTION=sync in tests; either way
+        // create must succeed and onboarding job must not run on Draft create.
+        Notification::assertSentTo($user, SchoolWelcomeNotification::class);
     }
 
 }

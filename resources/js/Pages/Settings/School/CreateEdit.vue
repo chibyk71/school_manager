@@ -200,7 +200,6 @@ const schoolTypeOptions = [
     { label: 'Private', value: 'private' },
     { label: 'Government', value: 'government' },
     { label: 'Community', value: 'community' },
-    { label: 'Community', value: 'community' }
 ];
 </script>
 
