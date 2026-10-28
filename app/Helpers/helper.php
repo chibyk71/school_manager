@@ -2,6 +2,8 @@
 
 use App\Helpers\ModelResolver;
 use App\Models\School;
+use App\Support\Settings\SettingsRegistry;
+use App\Support\Settings\SettingsResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
@@ -238,6 +240,53 @@ if (!function_exists('send_school_sms')) {
                 'error' => $e->getMessage(),
             ]);
             return false;
+        }
+    }
+}
+
+if (! function_exists('getMergedSettings')) {
+    /**
+     * Legacy flat-array settings resolver for a group.
+     *
+     * Uses SettingsRegistry + SettingsResolver only. Unregistered groups return [].
+     * School owners resolve under school:{id}; otherwise global.
+     * Call sites (e.g. CheckMaintenanceMode) apply their own defaults when empty.
+     *
+     * @return array<string, mixed>
+     */
+    function getMergedSettings(string $group, mixed $owner = null): array
+    {
+        try {
+            if (! app()->bound(SettingsRegistry::class)
+                || ! app()->bound(SettingsResolver::class)
+            ) {
+                return [];
+            }
+
+            $registry = app(SettingsRegistry::class);
+            $resolver = app(SettingsResolver::class);
+
+            $scope = 'global';
+            if ($owner instanceof School && $owner->getKey()) {
+                $scope = 'school:'.$owner->getKey();
+            }
+
+            $out = [];
+            foreach ($registry->forGroup($group) as $definition) {
+                $key = $definition->key;
+                $short = str_starts_with($key, $group.'.')
+                    ? substr($key, strlen($group) + 1)
+                    : $key;
+                try {
+                    $out[$short] = $resolver->get($key, $scope);
+                } catch (\Throwable) {
+                    $out[$short] = $definition->default ?? null;
+                }
+            }
+
+            return $out;
+        } catch (\Throwable) {
+            return [];
         }
     }
 }
