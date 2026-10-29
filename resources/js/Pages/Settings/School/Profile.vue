@@ -185,23 +185,25 @@ function postLifecycle(action: string) {
 
 function fetchReadiness() {
     if (!props.school?.id) return;
-    router.get(route('schools.readiness', props.school.id), {}, {
-        preserveState: true,
-        preserveScroll: true,
-        only: [],
-        onSuccess: (page: any) => {
-            // readiness endpoint may redirect or return JSON; prefer props if present
-        },
-    });
+    // readiness() returns JSON only — never use Inertia router navigation here.
     fetch(route('schools.readiness', props.school.id), {
         headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         credentials: 'same-origin',
     })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-            if (data) readiness.value = data;
+        .then(async (r) => {
+            if (!r.ok) {
+                readiness.value = null;
+                return;
+            }
+            try {
+                readiness.value = await r.json();
+            } catch {
+                readiness.value = null;
+            }
         })
-        .catch(() => {});
+        .catch(() => {
+            readiness.value = null;
+        });
 }
 
 onMounted(() => {
