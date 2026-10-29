@@ -3,9 +3,12 @@
 /**
  * School Management Phase 2 — SchoolOperationalSettings registration,
  * defaults, validation helpers, and school-scope isolation.
+ *
+ * Behaviour tests build a local sealed registry (same pattern as
+ * SettingsRegistryTest) so they do not depend on AppServiceProvider
+ * composition order. Container registration is covered separately.
  */
 
-use App\Models\School;
 use App\Settings\Definitions\SchoolOperationalSettings;
 use App\Support\Settings\Exceptions\InvalidSettingValueException;
 use App\Support\Settings\Exceptions\UnknownSettingException;
@@ -15,14 +18,25 @@ use App\Support\Settings\SettingsScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
 
-uses(RefreshDatabase::class);
+/**
+ * Build a sealed registry with only school operational definitions.
+ */
+function schoolOperationalRegistry(): SettingsRegistry
+{
+    $registry = new SettingsRegistry;
+    SchoolOperationalSettings::register($registry);
+    $registry->seal();
 
-beforeEach(function () {
-    // Registry is sealed in AppServiceProvider; definitions must already include school_operational.
-});
+    return $registry;
+}
 
-test('school operational definitions are registered with intended school scope', function () {
-    $registry = app(SettingsRegistry::class);
+function schoolOperationalResolver(?SettingsRegistry $registry = null): SettingsResolver
+{
+    return new SettingsResolver($registry ?? schoolOperationalRegistry());
+}
+
+test('school operational definitions register with intended school scope', function () {
+    $registry = schoolOperationalRegistry();
 
     foreach (SchoolOperationalSettings::fieldKeyMap() as $fullKey) {
         $def = $registry->get($fullKey);
@@ -33,8 +47,19 @@ test('school operational definitions are registered with intended school scope',
     expect($registry->forGroup(SchoolOperationalSettings::GROUP))->toHaveCount(6);
 });
 
+test('container registry includes school operational definitions when AppServiceProvider registered them', function () {
+    $registry = app(SettingsRegistry::class);
+
+    expect($registry->find(SchoolOperationalSettings::TIMEZONE))->not->toBeNull(
+        'SchoolOperationalSettings must be registered in AppServiceProvider before seal()'
+    );
+
+    expect($registry->get(SchoolOperationalSettings::TIMEZONE)->intendedScope)->toBe('school')
+        ->and($registry->forGroup(SchoolOperationalSettings::GROUP))->toHaveCount(6);
+});
+
 test('defaults resolve when no school override exists', function () {
-    $resolver = app(SettingsResolver::class);
+    $resolver = schoolOperationalResolver();
     $scope = SettingsScope::school('00000000-0000-0000-0000-000000000001');
 
     expect($resolver->get(SchoolOperationalSettings::TIMEZONE, $scope))
@@ -48,7 +73,7 @@ test('defaults resolve when no school override exists', function () {
 });
 
 test('school overrides are isolated between schools', function () {
-    $resolver = app(SettingsResolver::class);
+    $resolver = schoolOperationalResolver();
     $scopeA = SettingsScope::school('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     $scopeB = SettingsScope::school('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 
@@ -57,21 +82,21 @@ test('school overrides are isolated between schools', function () {
 
     expect($resolver->get(SchoolOperationalSettings::TIMEZONE, $scopeA))->toBe('Africa/Lagos');
     expect($resolver->get(SchoolOperationalSettings::TIMEZONE, $scopeB))->toBe('Europe/London');
-    // Unrelated school still gets default — no cross-school inheritance
+
     $scopeC = SettingsScope::school('cccccccc-cccc-cccc-cccc-cccccccccccc');
     expect($resolver->get(SchoolOperationalSettings::TIMEZONE, $scopeC))
         ->toBe((string) config('app.timezone', 'UTC'));
-});
+})->uses(RefreshDatabase::class);
 
 test('unknown operational key throws', function () {
-    $resolver = app(SettingsResolver::class);
+    $resolver = schoolOperationalResolver();
 
     expect(fn () => $resolver->get('school_operational.not_a_key', SettingsScope::school('x')))
         ->toThrow(UnknownSettingException::class);
 });
 
 test('non-string values are rejected by resolver', function () {
-    $resolver = app(SettingsResolver::class);
+    $resolver = schoolOperationalResolver();
     $scope = SettingsScope::school('dddddddd-dddd-dddd-dddd-dddddddddddd');
 
     expect(fn () => $resolver->set(SchoolOperationalSettings::LOCALE, 123, $scope))
