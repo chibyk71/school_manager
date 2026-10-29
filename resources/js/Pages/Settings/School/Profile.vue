@@ -233,6 +233,7 @@ const clearFile = (
 };
 
 function submitProfile() {
+    const url = route('schools.update', props.school.id);
     profileForm
         .transform((data) => {
             const payload: Record<string, unknown> = { ...data };
@@ -240,9 +241,11 @@ function submitProfile() {
             (['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'] as const).forEach((k) => {
                 if (!(payload[k] instanceof File)) delete payload[k];
             });
+            // Resource update expects PUT/PATCH; multipart still posts with method spoofing.
+            payload._method = 'put';
             return payload;
         })
-        .post(route('schools.update', props.school.id), {
+        .submit('put', url, {
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => toast.add({ severity: 'success', summary: 'School profile updated', life: 3000 }),
