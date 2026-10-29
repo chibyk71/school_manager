@@ -5,6 +5,7 @@
  * defaults, validation helpers, and school-scope isolation.
  */
 
+use App\Models\School;
 use App\Settings\Definitions\SchoolOperationalSettings;
 use App\Support\Settings\Exceptions\InvalidSettingValueException;
 use App\Support\Settings\Exceptions\UnknownSettingException;
@@ -15,6 +16,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    // Registry is sealed in AppServiceProvider; definitions must already include school_operational.
+});
 
 test('school operational definitions are registered with intended school scope', function () {
     $registry = app(SettingsRegistry::class);
@@ -52,6 +57,7 @@ test('school overrides are isolated between schools', function () {
 
     expect($resolver->get(SchoolOperationalSettings::TIMEZONE, $scopeA))->toBe('Africa/Lagos');
     expect($resolver->get(SchoolOperationalSettings::TIMEZONE, $scopeB))->toBe('Europe/London');
+    // Unrelated school still gets default — no cross-school inheritance
     $scopeC = SettingsScope::school('cccccccc-cccc-cccc-cccc-cccccccccccc');
     expect($resolver->get(SchoolOperationalSettings::TIMEZONE, $scopeC))
         ->toBe((string) config('app.timezone', 'UTC'));

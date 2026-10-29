@@ -3,13 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreSchoolRequest;
+use App\Http\Requests\UpdateSchoolOperationalSettingsRequest;
 use App\Http\Requests\UpdateSchoolRequest;
 use App\Models\School;
 use App\Services\School\SchoolLifecycleService;
 use App\Services\School\SchoolReadinessEvaluator;
 use App\Services\SchoolService;
+use App\Settings\Definitions\SchoolOperationalSettings;
 use App\Support\ColumnDefinitionHelper;
 use App\Support\Entitlements\Exceptions\InsufficientCapacityException;
+use App\Support\Settings\SettingsResolver;
+use App\Support\Settings\SettingsScope;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -454,16 +458,59 @@ class SchoolController extends BaseSchoolController
         }
     }
 
-    public function edit(School $school)
+    public function edit(School $school, SettingsResolver $resolver)
     {
         Gate::authorize('update', $school);
 
         // Load addresses collection for managed AddressManager (primaryAddress is a method, not a relation).
         $school->load(['addresses.country', 'addresses.state', 'addresses.city']);
 
-        return Inertia::render('Settings/School/CreateEdit', [
-            'school' => $school->append(['logo_url', 'small_logo_url', 'favicon_url', 'dark_logo_url', 'dark_small_logo_url']),
+        $scope = SettingsScope::school((string) $school->getKey());
+        $operational = [];
+        foreach (SchoolOperationalSettings::fieldKeyMap() as $short => $fullKey) {
+            $operational[$short] = $resolver->get($fullKey, $scope);
+        }
+
+        return Inertia::render('Settings/School/Profile', [
+            'school' => $school->append(['logo_url', 'small_logo_url', 'favicon_url', 'dark_logo_url', 'dark_small_logo_url', 'state_label']),
+            'operationalSettings' => $operational,
+            'operationalOptions' => [
+                'date_formats' => SchoolOperationalSettings::SUPPORTED_DATE_FORMATS,
+                'time_formats' => SchoolOperationalSettings::SUPPORTED_TIME_FORMATS,
+                'week_starts' => SchoolOperationalSettings::SUPPORTED_WEEK_STARTS,
+                'locales' => SchoolOperationalSettings::SUPPORTED_LOCALES,
+                'currencies' => SchoolOperationalSettings::SUPPORTED_CURRENCIES,
+            ],
         ]);
+    }
+
+    /**
+     * Persist school-scoped operational preferences via OI Settings.
+     *
+     * Uses the route-bound School for scope only (SettingsScope::school).
+     * Does not accept a client-supplied school identifier.
+     */
+    public function updateOperationalSettings(
+        UpdateSchoolOperationalSettingsRequest $request,
+        School $school,
+        SettingsResolver $resolver,
+    ): RedirectResponse {
+        $scope = SettingsScope::school((string) $school->getKey());
+        $validated = $request->validated();
+
+        foreach (SchoolOperationalSettings::fieldKeyMap() as $short => $fullKey) {
+            if (array_key_exists($short, $validated)) {
+                $value = $validated[$short];
+                if ($short === 'default_currency') {
+                    $value = strtoupper((string) $value);
+                }
+                $resolver->set($fullKey, $value, $scope);
+            }
+        }
+
+        return redirect()
+            ->route('schools.edit', $school)
+            ->with('success', 'Operational preferences updated successfully.');
     }
 
     /**

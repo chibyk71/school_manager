@@ -95,6 +95,8 @@ Route::middleware('auth')->group(function () {
     Route::post('schools/{school}/archive', [SchoolController::class, 'archive'])->name('schools.archive');
     Route::post('schools/{school}/recover', [SchoolController::class, 'recover'])->name('schools.recover');
     Route::get('schools/{school}/readiness', [SchoolController::class, 'readiness'])->name('schools.readiness');
+    Route::put('schools/{school}/operational-settings', [SchoolController::class, 'updateOperationalSettings'])
+        ->name('schools.operational-settings.update');
 
 
     // Class levels nested under sections
