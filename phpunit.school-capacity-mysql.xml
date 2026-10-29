@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Gate B only: MySQL capacity concurrency.
+  Do not use the default phpunit.xml here — it forces DB_CONNECTION=sqlite and
+  would skip the concurrent test even when the workflow env sets MySQL.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="SchoolCapacity">
+            <file>tests/Unit/School/SchoolCapacityConcurrencyTest.php</file>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="mysql" force="true"/>
+        <env name="DB_HOST" value="127.0.0.1" force="true"/>
+        <env name="DB_PORT" value="3306" force="true"/>
+        <env name="DB_DATABASE" value="school_capacity_ci" force="true"/>
+        <env name="DB_USERNAME" value="school" force="true"/>
+        <env name="DB_PASSWORD" value="secret" force="true"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="APP_KEY" value="base64:2fl+KtvkdphvQyVfipPSU5l4l+4YfYm9d4qTjJ3b8/E="/>
+        <env name="SCHOOL_CAPACITY_MYSQL_CI" value="1" force="true"/>
+        <env name="ACTIVITY_LOGGER_ENABLED" value="false" force="true"/>
+    </php>
+</phpunit>

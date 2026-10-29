@@ -1,0 +1,122 @@
+# Gate B — School Management Phase 1 capacity concurrency verification.
+# Runs only the capacity concurrency tests on Linux + MySQL + pcntl.
+# A skipped concurrent test fails the job.
+name: School capacity MySQL concurrency
+
+on:
+  push:
+    branches:
+      - test/school-capacity-mysql-concurrency-ci
+      - feature/school-management-module
+  pull_request:
+    branches:
+      - master
+      - feature/school-management-module
+  workflow_dispatch:
+
+jobs:
+  capacity-concurrency:
+    name: Concurrent capacity (MySQL + pcntl)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: school_capacity_ci
+          MYSQL_USER: school
+          MYSQL_PASSWORD: secret
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:2fl+KtvkdphvQyVfipPSU5l4l+4YfYm9d4qTjJ3b8/E=
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: school_capacity_ci
+      DB_USERNAME: school
+      DB_PASSWORD: secret
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      SCHOOL_CAPACITY_MYSQL_CI: "1"
+      COMPOSER_NO_INTERACTION: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3 (mysql + pcntl + Laravel extensions)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, dom, ctype, json, bcmath, pdo, pdo_mysql, pcntl, posix, zip, gd, intl, fileinfo, tokenizer, curl, openssl
+          coverage: none
+          tools: composer:v2
+
+      - name: Verify pcntl and PDO MySQL
+        run: |
+          php -v
+          php -m | grep -iE 'pcntl|pdo_mysql|zip|gd'
+          php -r 'exit(function_exists("pcntl_fork") ? 0 : 1);'
+
+      - name: Install MySQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq mysql-client
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 40); do
+            if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "MySQL is up"
+              mysql -h 127.0.0.1 -uschool -psecret -e "SELECT 1 AS ok" school_capacity_ci
+              exit 0
+            fi
+            echo "waiting for mysql ($i)..."
+            sleep 2
+          done
+          echo "MySQL failed to become healthy"
+          exit 1
+
+      - name: Install Composer dependencies
+        run: |
+          composer --version
+          # Upstream github.com/djunehor/laravel-sms is 404; path package replaces it.
+          # Refresh lock entry so install uses packages/djunehor-laravel-sms instead of zipball.
+          composer update djunehor/laravel-sms --no-install --no-interaction --no-ansi 2>&1 | tee storage-composer-update-sms.log
+          composer install --no-interaction --prefer-dist --no-progress --no-ansi 2>&1 | tee storage-composer-install.log
+          test -f vendor/autoload.php
+          test -f vendor/bin/phpunit
+
+      - name: Run sequential + concurrent capacity tests (MySQL config)
+        run: |
+          mkdir -p storage/logs bootstrap/cache
+          chmod -R ug+rwx storage bootstrap/cache || true
+          echo "DB driver probe (must be mysql):"
+          php -r "require 'vendor/autoload.php'; \$app=require 'bootstrap/app.php'; \$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo config('database.default').PHP_EOL;"
+          ./vendor/bin/phpunit \
+            --configuration=phpunit.school-capacity-mysql.xml \
+            --log-junit storage/logs/school-capacity-junit.xml \
+            --testdox
+
+      - name: Assert concurrent test executed and was not skipped
+        run: php scripts/assert-school-capacity-concurrency-junit.php storage/logs/school-capacity-junit.xml
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: school-capacity-diagnostics
+          path: |
+            storage/logs/school-capacity-junit.xml
+            storage-composer-install.log
+          if-no-files-found: warn
