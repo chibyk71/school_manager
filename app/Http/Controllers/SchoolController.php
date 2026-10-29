@@ -19,6 +19,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -498,15 +499,20 @@ class SchoolController extends BaseSchoolController
         $scope = SettingsScope::school((string) $school->getKey());
         $validated = $request->validated();
 
-        foreach (SchoolOperationalSettings::fieldKeyMap() as $short => $fullKey) {
-            if (array_key_exists($short, $validated)) {
+        // Persist the full preference set in one DB transaction so a mid-loop
+        // failure does not leave a partial school override written.
+        DB::transaction(function () use ($resolver, $scope, $validated): void {
+            foreach (SchoolOperationalSettings::fieldKeyMap() as $short => $fullKey) {
+                if (! array_key_exists($short, $validated)) {
+                    continue;
+                }
                 $value = $validated[$short];
                 if ($short === 'default_currency') {
                     $value = strtoupper((string) $value);
                 }
                 $resolver->set($fullKey, $value, $scope);
             }
-        }
+        });
 
         return redirect()
             ->route('schools.edit', $school)

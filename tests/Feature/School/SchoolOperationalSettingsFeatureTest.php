@@ -109,6 +109,7 @@ class SchoolOperationalSettingsFeatureTest extends TestCase
 
         $resolver = app(SettingsResolver::class);
         $scope = SettingsScope::school((string) $school->getKey());
+        // Still the registry default — no override written
         $this->assertSame(
             (string) config('app.timezone', 'UTC'),
             $resolver->get(SchoolOperationalSettings::TIMEZONE, $scope)
@@ -123,6 +124,7 @@ class SchoolOperationalSettingsFeatureTest extends TestCase
 
         $payload = $this->validPreferences([
             'timezone' => 'Europe/London',
+            // Attempt to smuggle another school id — must be ignored
             'school_id' => $other->id,
             'school' => $other->id,
         ]);
@@ -139,6 +141,7 @@ class SchoolOperationalSettingsFeatureTest extends TestCase
             'Europe/London',
             $resolver->get(SchoolOperationalSettings::TIMEZONE, SettingsScope::school((string) $target->getKey()))
         );
+        // Other school still has default — no cross-write
         $this->assertSame(
             (string) config('app.timezone', 'UTC'),
             $resolver->get(SchoolOperationalSettings::TIMEZONE, SettingsScope::school((string) $other->getKey()))
@@ -204,6 +207,7 @@ class SchoolOperationalSettingsFeatureTest extends TestCase
             'contact_name' => 'Old Contact',
         ]);
 
+        // Mirror Profile.vue: PUT (or POST + _method=put) to schools.update
         $response = $this->put(route('schools.update', $school), [
             'name' => 'New Name',
             'contact_name' => 'New Contact',
@@ -220,6 +224,8 @@ class SchoolOperationalSettingsFeatureTest extends TestCase
 
     public function test_post_without_method_spoof_to_update_is_not_the_profile_contract(): void
     {
+        // Documents that the resource update route is PUT/PATCH only.
+        // Profile.vue must use put/submit('put') (with _method for multipart).
         $this->actingAsSuperAdmin();
         $school = School::factory()->create(['name' => 'Unchanged']);
 
@@ -227,6 +233,7 @@ class SchoolOperationalSettingsFeatureTest extends TestCase
             'name' => 'Should Not Apply',
         ]);
 
+        // Laravel resource: POST to /schools/{id} is not registered → 405 or 404
         $this->assertTrue(
             in_array($response->status(), [404, 405], true),
             'Expected 404/405 for POST to schools.update without method spoof, got '.$response->status()
