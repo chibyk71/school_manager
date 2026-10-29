@@ -174,6 +174,7 @@ class SchoolOperationalSettingsFeatureTest extends TestCase
 
     public function test_profile_edit_page_receives_school_and_operational_settings_props(): void
     {
+        $this->withoutVite();
         $this->actingAsSuperAdmin();
         $school = School::factory()->create(['name' => 'Prop School', 'code' => 'PROP1']);
         $scope = SettingsScope::school((string) $school->getKey());
