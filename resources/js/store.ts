@@ -272,7 +272,7 @@ export const menuItems = ref<SidebarMenu>([
                 icon: "ti ti-device-laptop",
                 submenu: [
                     { title: "Company Settings", link: "company-settings.html" },
-                    { title: "Localization", link: route('website.localization') },
+                    // Localization removed — school operational preferences are on School Profile
                 ],
             },
             // {

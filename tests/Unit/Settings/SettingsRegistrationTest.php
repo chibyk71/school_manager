@@ -15,6 +15,13 @@ test('container resolves registry singleton with authentication definitions', fu
         ->and($registry->isSealed())->toBeTrue();
 });
 
+test('container registry includes school operational definitions', function () {
+    $registry = app(SettingsRegistry::class);
+
+    expect($registry->get('school_operational.timezone')->intendedScope)->toBe('school')
+        ->and($registry->forGroup('school_operational'))->toHaveCount(6);
+});
+
 test('repeated container resolution does not duplicate registration', function () {
     $a = app(SettingsRegistry::class);
     $b = app(SettingsRegistry::class);

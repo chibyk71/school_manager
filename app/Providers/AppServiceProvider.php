@@ -30,6 +30,7 @@ use App\Services\Academic\RegistryTermOperationalData;
 use App\Services\Permission\AuthorizationService;
 use App\Settings\Definitions\AuthenticationSettings;
 use App\Settings\Definitions\FileManagerSettings;
+use App\Settings\Definitions\SchoolOperationalSettings;
 use App\Support\Entitlements\CapacityEvaluator;
 use App\Support\Entitlements\DefaultEntitlementProfile;
 use App\Support\Entitlements\EntitlementRegistry;
@@ -53,6 +54,7 @@ class AppServiceProvider extends ServiceProvider
             $registry = new SettingsRegistry;
             AuthenticationSettings::register($registry);
             FileManagerSettings::register($registry);
+            SchoolOperationalSettings::register($registry);
             $registry->seal();
 
             return $registry;

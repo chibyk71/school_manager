@@ -36,7 +36,6 @@ use App\Http\Controllers\Settings\System\InvoiceSettingsController;
 use App\Http\Controllers\Settings\System\PrinterSettingsController;
 use App\Http\Controllers\Settings\System\UserManagementController;
 use App\Http\Controllers\Settings\Website\CompanySettingsController;
-use App\Http\Controllers\Settings\Website\LocalizationController;
 use App\Http\Controllers\Settings\Website\PrefixesSettingsController;
 use App\Http\Controllers\Settings\Website\SocialAuthSettingsController;
 use App\Http\Controllers\Settings\Website\ThemesSettingsController;
@@ -69,8 +68,8 @@ Route::prefix('settings/website')->name('settings.website.')->group(function () 
     Route::get('company', [CompanySettingsController::class, 'index'])->name('company');
     Route::post('company', [CompanySettingsController::class, 'store'])->name('company.store');
 
-    Route::get('localization', [LocalizationController::class, 'index'])->name('localization');
-    Route::post('localization', [LocalizationController::class, 'store'])->name('localization.store');
+    // Localization routes removed in School Management Phase 2 — operational
+    // preferences live on the School Profile workspace (schools.edit / operational-settings).
 
     Route::get('themes', [ThemesSettingsController::class, 'index'])->name('themes');
     Route::post('themes', [ThemesSettingsController::class, 'store'])->name('themes.store');

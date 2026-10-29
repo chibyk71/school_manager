@@ -36,6 +36,14 @@ pest()->extend(Tests\TestCase::class)
     ->in('Feature/Settings');
 
 /*
+| Settings unit tests need the Laravel application (container / Validator).
+| Do not enable RefreshDatabase globally — pure registry tests stay lightweight;
+| individual tests opt into RefreshDatabase when they write settings rows.
+*/
+pest()->extend(Tests\TestCase::class)
+    ->in('Unit/Settings');
+
+/*
 | DataTable unit tests that need Schema / Eloquent without full migrations.
 | Do NOT use RefreshDatabase here — SQLite migrate is broken by an unrelated
 | devices migration (drop column vs index). Those tests create ephemeral tables.
