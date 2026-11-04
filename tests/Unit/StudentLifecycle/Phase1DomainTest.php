@@ -266,7 +266,7 @@ function seedSchoolGraph(): array
         'display_name' => 'Primary',
         'short_code' => 'PRI',
         'source' => 'custom',
-        'lifecycle' => 'active',
+        'is_active' => true,
         'sort_order' => 1,
     ]);
 
@@ -276,7 +276,7 @@ function seedSchoolGraph(): array
         'school_section_id' => $sectionId,
         'name' => 'Primary 1',
         'sequence' => 1,
-        'lifecycle' => 'active',
+        'is_active' => true,
     ]);
 
     return [

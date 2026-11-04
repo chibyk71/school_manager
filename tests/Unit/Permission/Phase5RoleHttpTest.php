@@ -198,7 +198,7 @@ function p5HttpSchool(string $name = 'HTTP School'): School
         'slug' => Str::slug($name).'-'.Str::random(4),
         'email' => Str::random(6).'@example.test',
         'code' => strtoupper(Str::random(4)),
-        'lifecycle' => 'active',
+        'is_active' => true,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -216,7 +216,7 @@ function p5HttpUser(array $permissions = []): User
         'id' => $id,
         'username' => 'p5_'.Str::random(8),
         'password' => bcrypt('password'),
-        'lifecycle' => 'active',
+        'is_active' => true,
         'force_password_change' => false,
         'created_at' => now(),
         'updated_at' => now(),

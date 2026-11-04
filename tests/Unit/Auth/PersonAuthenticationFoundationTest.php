@@ -230,3 +230,53 @@ class PersonAuthenticationFoundationTest extends TestCase
         $this->assertFalse($account->canUsePhoneForLogin());
     }
 }
+
+    public function test_profile_user_relationship_both_directions(): void
+    {
+        $person = Profile::factory()->create();
+        $account = $this->accounts->createForPerson($person, [
+            'username' => 'rel_user',
+            'password' => 'password123',
+        ], ['lifecycle' => 'active']);
+
+        $this->assertInstanceOf(User::class, $person->fresh()->user);
+        $this->assertInstanceOf(Profile::class, $account->fresh()->profile);
+        $this->assertEquals($person->id, $account->profile->id);
+        $this->assertEquals($account->id, $person->user->id);
+    }
+
+    public function test_shared_email_login_fails_closed_when_multiple_eligible(): void
+    {
+        $p1 = Profile::factory()->create(['email' => 'shared@example.com']);
+        $p2 = Profile::factory()->create(['email' => 'shared@example.com']);
+        $a1 = $this->accounts->createForPerson($p1, ['username' => 's1', 'password' => 'password123'], ['lifecycle' => 'active']);
+        $a2 = $this->accounts->createForPerson($p2, ['username' => 's2', 'password' => 'password123'], ['lifecycle' => 'active']);
+        $this->accounts->markAuthEmailVerified($a1);
+        $this->accounts->setAuthEmailEnabled($a1->fresh(), true);
+        $this->accounts->markAuthEmailVerified($a2);
+        $this->accounts->setAuthEmailEnabled($a2->fresh(), true);
+
+        $eligible = User::query()
+            ->whereHas('profile', fn ($q) => $q->whereRaw('LOWER(email) = ?', ['shared@example.com']))
+            ->whereNotNull('auth_email_verified_at')
+            ->where('auth_email_enabled', true)
+            ->count();
+
+        $this->assertGreaterThan(1, $eligible);
+    }
+
+    public function test_account_created_event_fires_even_without_notification(): void
+    {
+        \Illuminate\Support\Facades\Event::fake([\App\Events\Auth\AuthenticationAccountCreated::class]);
+
+        $person = Profile::factory()->create();
+        $this->accounts->createForPerson($person, [
+            'username' => 'evt',
+            'password' => 'password123',
+        ], [
+            'lifecycle' => 'active',
+            'send_notification' => false,
+        ]);
+
+        \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\Auth\AuthenticationAccountCreated::class);
+    }

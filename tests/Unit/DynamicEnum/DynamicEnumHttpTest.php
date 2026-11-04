@@ -250,7 +250,7 @@ function deHttpSchool(string $name = 'HTTP School'): School
         'code' => 'HS'.Str::random(3),
         'email' => 'school@example.com',
         'type' => 'private',
-        'lifecycle' => 'active',
+        'is_active' => true,
         'slug' => Str::slug($name).'-'.Str::random(4),
     ]);
 }
@@ -267,7 +267,7 @@ function deHttpUser(array $permissions = []): User
         'id' => (string) Str::uuid(),
         'username' => 'de_'.Str::random(8),
         'password' => bcrypt('password'),
-        'lifecycle' => 'active',
+        'is_active' => true,
         'force_password_change' => false,
     ]);
 
@@ -312,7 +312,7 @@ function deHttpSeedGender(): DynamicEnum
             'value' => DynamicEnumValue::canonicalize($value),
             'label' => $label,
             'sort_order' => $order,
-            'lifecycle' => 'active',
+            'is_active' => true,
             'is_required' => false,
         ]);
     }
@@ -371,7 +371,7 @@ test('school context catalogue returns effective options once', function () {
         'value' => DynamicEnumValue::canonicalize('male'),
         'label' => 'Male (school)',
         'sort_order' => 1,
-        'lifecycle' => 'active',
+        'is_active' => true,
         'is_required' => false,
     ]);
     DynamicEnumOption::query()->create([
@@ -381,7 +381,7 @@ test('school context catalogue returns effective options once', function () {
         'value' => DynamicEnumValue::canonicalize('non_binary'),
         'label' => 'Non-binary',
         'sort_order' => 3,
-        'lifecycle' => 'active',
+        'is_active' => true,
         'is_required' => false,
     ]);
 

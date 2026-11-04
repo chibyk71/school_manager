@@ -192,7 +192,7 @@ function addressApiMakeSchool(array $overrides = []): School
         'code' => 'TS'.Str::random(3),
         'email' => 'school@example.com',
         'type' => 'private',
-        'lifecycle' => 'active',
+        'is_active' => true,
     ], $overrides));
 }
 

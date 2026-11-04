@@ -223,7 +223,7 @@ class FileManagerPhase3HttpTest extends TestCase
         return School::query()->create([
             'id' => (string) Str::uuid(),
             'name' => $name,
-            'lifecycle' => 'active',
+            'is_active' => true,
         ]);
     }
 
@@ -233,7 +233,7 @@ class FileManagerPhase3HttpTest extends TestCase
             'id' => (string) Str::uuid(),
             'username' => 'user_'.Str::random(8),
             'password' => bcrypt('password'),
-            'lifecycle' => 'active',
+            'is_active' => true,
         ]);
 
         foreach ($permissions as $name) {

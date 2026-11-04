@@ -145,7 +145,7 @@ class StorageProviderHttpTest extends TestCase
             'name' => 'Storage Tester',
             'email' => 'storage-'.substr(md5($id), 0, 8).'@test.example',
             'password' => bcrypt('password'),
-            'lifecycle' => 'active',
+            'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

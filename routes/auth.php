@@ -78,6 +78,13 @@ Route::middleware('auth')->group(function () {
     Route::put('password', [PasswordController::class, 'update'])
         ->name('password.update');
 
+    // Restricted forced password change (no role/school required)
+    Route::get('password/force', [ForcedPasswordChangeController::class, 'edit'])
+        ->name('password.force.edit');
+    Route::put('password/force', [ForcedPasswordChangeController::class, 'update'])
+        ->name('password.force.update');
+
+
     // ── Logout ────────────────────────────────────────────────────────────────
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');                     // POST is safer & matches Inertia default

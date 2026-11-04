@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests\Auth;
 
-use App\Enums\Auth\AccountLifecycle;
 use App\Models\Profile;
 use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
@@ -17,6 +16,7 @@ use Illuminate\Validation\ValidationException;
 /**
  * Login via username, verified+enabled Person primary email, or verified+enabled auth phone.
  * Authentication eligibility is independent of roles, school membership, and dashboards.
+ * Shared communication emails: if more than one eligible account matches, fail closed.
  */
 class LoginRequest extends FormRequest
 {
@@ -66,11 +66,11 @@ class LoginRequest extends FormRequest
     }
 
     /**
-     * Resolve Authentication Account by username, auth email, or auth phone.
+     * Resolve Authentication Account by username, eligible auth email, or eligible auth phone.
+     * Email/phone: require exactly one eligible account; otherwise fail closed.
      */
     protected function resolveAccount(string $login): ?User
     {
-        // 1. Username (primary identifier)
         $byUsername = User::query()
             ->where('username', strtolower($login))
             ->first();
@@ -78,34 +78,41 @@ class LoginRequest extends FormRequest
             return $byUsername;
         }
 
-        // 2. Person primary email — only if verified + enabled on the account
         if (filter_var($login, FILTER_VALIDATE_EMAIL)) {
             $normalized = strtolower($login);
-            $profile = Profile::query()
-                ->whereRaw('LOWER(email) = ?', [$normalized])
-                ->whereNotNull('user_id')
-                ->first();
+            $candidates = User::query()
+                ->whereHas('profile', function ($q) use ($normalized) {
+                    $q->whereRaw('LOWER(email) = ?', [$normalized]);
+                })
+                ->whereNotNull('auth_email_verified_at')
+                ->where('auth_email_enabled', true)
+                ->get()
+                ->filter(fn (User $u) => $u->canUseEmailForLogin())
+                ->values();
 
-            if ($profile?->user) {
-                $account = $profile->user;
-                if ($account->canUseEmailForLogin()
-                    && strtolower((string) $profile->email) === $normalized) {
-                    return $account;
-                }
+            if ($candidates->count() === 1) {
+                return $candidates->first();
             }
 
+            // Zero or multiple eligible accounts → fail closed (use username)
             return null;
         }
 
-        // 3. Authentication phone — only if verified + enabled
         $digits = preg_replace('/[^\d+]/', '', $login);
         if ($digits !== '') {
-            $byPhone = User::query()
+            $candidates = User::query()
                 ->where('auth_phone', $digits)
-                ->first();
-            if ($byPhone && $byPhone->canUsePhoneForLogin()) {
-                return $byPhone;
+                ->whereNotNull('auth_phone_verified_at')
+                ->where('auth_phone_enabled', true)
+                ->get()
+                ->filter(fn (User $u) => $u->canUsePhoneForLogin())
+                ->values();
+
+            if ($candidates->count() === 1) {
+                return $candidates->first();
             }
+
+            return null;
         }
 
         return null;

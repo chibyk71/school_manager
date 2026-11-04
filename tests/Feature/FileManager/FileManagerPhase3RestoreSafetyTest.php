@@ -211,7 +211,7 @@ class FileManagerPhase3RestoreSafetyTest extends TestCase
         return School::query()->create([
             'id' => (string) Str::uuid(),
             'name' => $name,
-            'lifecycle' => 'active',
+            'is_active' => true,
         ]);
     }
 

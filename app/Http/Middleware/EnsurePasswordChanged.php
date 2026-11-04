@@ -16,22 +16,17 @@ class EnsurePasswordChanged
     {
         $user = $request->user();
 
-        if ($user === null) {
+        if ($user === null || ! $user->requiresPasswordChange()) {
             return $next($request);
         }
 
-        if (! $user->requiresPasswordChange()) {
-            return $next($request);
-        }
-
-        // Allow the password-change endpoints and logout only.
         if ($request->routeIs([
-            'password.edit',
-            'password.update',
-            'password.change',
-            'password.change.update',
+            'password.force.edit',
+            'password.force.update',
             'logout',
             'two-factor.*',
+            '2fa.*',
+            'verification.*',
         ])) {
             return $next($request);
         }
@@ -43,6 +38,6 @@ class EnsurePasswordChanged
             ], 403);
         }
 
-        return redirect()->route('password.edit');
+        return redirect()->route('password.force.edit');
     }
 }

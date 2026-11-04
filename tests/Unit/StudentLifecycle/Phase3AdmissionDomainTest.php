@@ -223,7 +223,7 @@ function p3Section(School $school): SchoolSection
         'school_id' => $school->id,
         'name' => 'Primary',
         'short_code' => 'PRI',
-        'lifecycle' => 'active',
+        'is_active' => true,
     ]);
     $section->save();
 
@@ -239,7 +239,7 @@ function p3ClassLevel(School $school, ?SchoolSection $section = null): ClassLeve
         'school_section_id' => $section->id,
         'name' => 'Primary 1',
         'sequence' => 1,
-        'lifecycle' => 'active',
+        'is_active' => true,
     ]);
     $level->save();
 

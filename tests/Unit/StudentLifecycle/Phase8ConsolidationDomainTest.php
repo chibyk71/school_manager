@@ -260,7 +260,7 @@ function p8School(string $name = 'School A'): School
         'name' => $name,
         'code' => strtoupper(substr(preg_replace('/\s+/', '', $name), 0, 3)),
         'slug' => Str::slug($name).'-'.Str::random(4),
-        'lifecycle' => 'active',
+        'is_active' => true,
     ]);
 }
 

@@ -208,7 +208,7 @@ function docsSchool(): School
         'id' => $id,
         'name' => 'Docs School',
         'code' => 'DOC',
-        'lifecycle' => 'active',
+        'is_active' => true,
         'created_at' => now(),
         'updated_at' => now(),
     ]);

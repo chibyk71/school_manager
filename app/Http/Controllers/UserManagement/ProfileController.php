@@ -99,7 +99,7 @@ class ProfileController extends Controller
             // 2. Build base query with eager loading of key relations
             $query = Profile::query()
                 ->with([
-                    'user' => fn($q) => $q->select('id', 'username', 'email', 'is_active'),
+                    'user' => fn($q) => $q->select('id', 'username', 'lifecycle', 'force_password_change'),
                     'students' => fn($q) => $q->select('id', 'profile_id', 'school_id', 'admission_number', 'status')
                         ->with('school:id,name'),
                     'staffPositions' => fn($q) => $q->select('id', 'profile_id', 'school_id', 'staff_id_number', 'status')
@@ -1152,6 +1152,55 @@ class ProfileController extends Controller
      */
     public function forceDelete(Request $request)
     {
+        Gate::authorize('forceDelete', Profile::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['uuid', 'exists:profiles,id'],
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
+        ]);
+
+        $reason = $validated['reason'];
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $reason) {
+            foreach ($validated['ids'] as $id) {
+                /** @var \App\Models\Profile $person */
+                $person = \App\Models\Profile::withTrashed()->with(['user', 'students', 'staffPositions', 'guardians'])->findOrFail($id);
+
+                // Specialized profiles
+                $person->students()->each(function ($s) {
+                    $s->forceDelete();
+                });
+                $person->staffPositions()->each(function ($s) {
+                    $s->forceDelete();
+                });
+                $person->guardians()->each(function ($g) {
+                    $g->forceDelete();
+                });
+
+                $account = $person->user;
+                $person->forceDelete();
+
+                if ($account) {
+                    $account->delete();
+                }
+
+                activity()
+                    ->causedBy(auth()->user())
+                    ->withProperties([
+                        'profile_id' => $id,
+                        'reason' => $reason,
+                        'account_id' => $account?->id,
+                    ])
+                    ->log('Person force-deleted with linked account and specialized profiles');
+            }
+        });
+
+        return redirect()->back()->with('success', 'Selected people permanently deleted.');
+    }
+
+    public function forceDelete_disabled_legacy(Request $request)
+    {
         // Expect 'ids' as array (bulk) or single ID as route param fallback
         $ids = $request->input('ids', []);
 
@@ -1420,6 +1469,12 @@ class ProfileController extends Controller
      * @return \Illuminate\Http\RedirectResponse
      */
     public function toggleStatus(Request $request)
+    {
+        // Phase 1: account suspension/restriction is out of scope. is_active removed.
+        abort(410, 'Account status toggle is disabled until the restrictions capability exists.');
+    }
+
+    public function toggleStatus_disabled_legacy(Request $request)
     {
         // Expect 'ids' as array (bulk) or single ID as route param fallback
         $ids = $request->input('ids', []);

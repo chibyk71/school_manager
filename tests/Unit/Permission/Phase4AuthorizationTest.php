@@ -142,7 +142,7 @@ function phase4School(string $name = 'School A'): School
         'slug' => $slug,
         'email' => $slug.'@example.test',
         'code' => strtoupper(Str::random(4)),
-        'lifecycle' => 'active',
+        'is_active' => true,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
