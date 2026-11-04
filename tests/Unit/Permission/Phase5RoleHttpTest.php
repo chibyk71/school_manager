@@ -79,8 +79,8 @@ function p5HttpBuildSchema(): void
         $table->uuid('id')->primary();
         $table->string('username')->nullable();
         $table->string('password')->nullable();
-        $table->boolean('is_active')->default(true);
-        $table->boolean('must_change_password')->default(false);
+        $table->string('lifecycle')->default('active');
+        $table->boolean('force_password_change')->default(false);
         $table->timestamps();
     });
 
@@ -198,7 +198,7 @@ function p5HttpSchool(string $name = 'HTTP School'): School
         'slug' => Str::slug($name).'-'.Str::random(4),
         'email' => Str::random(6).'@example.test',
         'code' => strtoupper(Str::random(4)),
-        'is_active' => true,
+        'lifecycle' => 'active',
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -216,8 +216,8 @@ function p5HttpUser(array $permissions = []): User
         'id' => $id,
         'username' => 'p5_'.Str::random(8),
         'password' => bcrypt('password'),
-        'is_active' => true,
-        'must_change_password' => false,
+        'lifecycle' => 'active',
+        'force_password_change' => false,
         'created_at' => now(),
         'updated_at' => now(),
     ]);

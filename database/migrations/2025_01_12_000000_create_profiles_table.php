@@ -6,9 +6,13 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Profiles table — Person identity foundation (Phase 1).
- * date_of_birth (canonical). email optional, not unique.
- * user_id nullable unique FK (at most one account per Person).
- * No school_id. SoftDeletes. Photo via Spatie Media Library only.
+ *
+ * - date_of_birth (canonical name; not dob).
+ * - email optional and not unique (Persons may share a communication email).
+ * - user_id nullable unique FK (at most one Authentication Account per Person).
+ * - No school_id (Person is tenant-scoped, independent of school).
+ * - SoftDeletes preserved.
+ * - Photo via Spatie Media Library only (no photo path column).
  */
 return new class extends Migration
 {

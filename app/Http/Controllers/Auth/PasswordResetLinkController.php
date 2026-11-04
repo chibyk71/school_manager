@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
+use App\Models\Profile;
 use App\Models\User;
 use App\Notifications\ResetPasswordNotification;
 use Ichtrojan\Otp\Otp;
@@ -131,25 +132,19 @@ class PasswordResetLinkController extends Controller
             $user = null;
             $targetEmail = $request->email;
             if ($request->filled('enrollment_id')) {
-                $user = User::where('enrollment_id', $request->enrollment_id)
-                    ->where('school_id', $school->id)
-                    ->first();
-                if ($user && $user->hasRole('student', $school?->id)) {
-                    $guardian = $user->student->guardians()->first();
-                    if (!$guardian) {
-                        throw new \Exception('No guardian found for this student.');
-                    }
-                    $targetEmail = $guardian->user->email;
-                } else {
-                    throw new \Exception('Invalid enrollment ID or user is not a student.');
-                }
-            } else {
-                $user = User::where('email', $request->email)
-                    ->where('school_id', $school->id)
-                    ->first();
+                // Phase 1: enrollment_id is not an Authentication Account identifier.
+                // Student identity resolution belongs to the academic domain, not users table.
+                throw new \Exception('Password reset by enrollment ID is not supported in this phase. Use the account email.');
             }
 
-            if (!$user) {
+            $user = Profile::query()
+                ->whereRaw('LOWER(email) = ?', [strtolower((string) $request->email)])
+                ->whereNotNull('user_id')
+                ->first()
+                ?->user;
+            $targetEmail = $request->email;
+
+            if (! $user) {
                 throw new \Exception('No user found with the provided details.');
             }
 

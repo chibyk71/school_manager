@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
 use App\Http\Requests\Auth\ResetPasswordRequest;
+use App\Models\Profile;
 use App\Models\User;
 use Ichtrojan\Otp\Otp;
 use Illuminate\Auth\Events\PasswordReset;
@@ -106,13 +107,22 @@ class NewPasswordController extends Controller
                 throw new \Exception('Invalid or expired OTP.');
             }
 
-            $user = User::where('email', $request->email)
-                ->where('school_id', $school?->id)
-                ->firstOrFail();
+            $user = Profile::query()
+                ->whereRaw('LOWER(email) = ?', [strtolower((string) $request->email)])
+                ->whereNotNull('user_id')
+                ->first()
+                ?->user;
+
+            if (! $user) {
+                throw new \Exception('No user found with the provided email.');
+            }
 
             // Update password
-            $user->password = Hash::make($request->password);
-            $user->save();
+            $user->forceFill([
+                'password' => $request->password,
+                'force_password_change' => false,
+                'lifecycle' => \App\Enums\Auth\AccountLifecycle::Active->value,
+            ])->save();
 
             // Log activity
             activity()

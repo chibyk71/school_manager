@@ -8,14 +8,15 @@ return new class extends Migration
 {
     /**
      * Authentication Account (User) schema — Phase 1 Person & Authentication foundation.
-     * Username is the primary mandatory unique identifier.
-     * Password is nullable for Provisioned accounts.
-     * Explicit lifecycle: provisioned | active (replaces is_active).
-     * force_password_change is independent of lifecycle.
-     * Person primary email lives only on profiles.email; users store only
-     * auth_email_verified_at + auth_email_enabled state.
-     * Authentication phone is optional and independent of profiles.phone.
-     * Laragear TwoFactor uses its own table.
+     *
+     * - Username is the primary mandatory unique identifier.
+     * - Password is nullable for Provisioned accounts.
+     * - Explicit lifecycle: provisioned | active (replaces is_active).
+     * - force_password_change is independent of lifecycle.
+     * - Person primary email lives only on profiles.email; users store only
+     *   auth_email_verified_at + auth_email_enabled state.
+     * - Authentication phone is optional and independent of profiles.phone.
+     * - Laragear TwoFactor uses its own table (see two_factor_authentications migration).
      */
     public function up(): void
     {

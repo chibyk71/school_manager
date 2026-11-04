@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\Auth\AccountLifecycle;
 use App\Models\Employee\Department;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -19,47 +19,12 @@ use Spatie\Activitylog\Traits\CausesActivity;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * User Model – Authentication & Core Identity (v1.0 – Aligned with New Architecture)
+ * Authentication Account (User).
  *
- * This is the central authentication model (extends Laravel's Authenticatable).
- * It links to exactly one Profile (via user_id on Profile – nullable, set null on user delete).
- * Personal data (name, photo, phone, gender, DOB, addresses, etc.) lives exclusively on Profile.
- * Role-specific data (student enrollments, staff positions, guardian responsibilities) lives on
- * dedicated models (Student, Staff, Guardian) linked to Profile.
- *
- * Key Architectural Decisions Reflected Here:
- * - No profile_type column or polymorphic profilable anymore
- * - No multiple profiles per user (1:1 User ↔ Profile)
- * - Profile is nullable → not every user needs personal data (but most do)
- * - Roles checked via Profile → Student/Staff/Guardian relationships
- * - No HasProfile trait (replaced with explicit methods on User or Profile)
- * - Legacy/deprecated relationships (departments, feeConcessions, etc.) preserved but isolated
- * - Multi-school access via schools() pivot (if users have cross-school permissions)
- *
- * Features / Problems Solved:
- * - Clean separation: Auth + settings + permissions here; personal data on Profile; role data on role models
- * - Optional personal profile → supports service accounts, system users, or future anonymous access
- * - Secure 2FA, roles/permissions (Laratrust), activity logging, notifications
- * - Role validation moved to services/controllers → avoids model bloat
- * - Performance: eager loading helpers, scoped queries, global filter fields for tables
- * - Security: hidden sensitive fields, hashed password, two-factor support
- * - Extensibility: HasRolesAndPermissions for access control
- *
- * Fits into User Management Module:
- * - Entry point for login, registration, password reset, profile linking
- * - Used in middleware (e.g., check if user has staff/student context)
- * - Integrates with Inertia: passes user + profile data to frontend
- * - Controllers (Auth, Profile, Student, Staff, Guardian) interact with this model
- * - Frontend: usePermissions composable reads roles from here; avatar from profile
- * - No direct UI manipulation of personal data here — delegated to Profile/Role flows
- *
- * Important Conventions:
- * - Never store name/phone/photo/email on User — always go through Profile
- * - User deletion → cascade set null on Profile.user_id (protected foreign key)
- * - Role checks: prefer $user->profile?->isStudent() / isStaff() / isGuardian()
- * - Cross-school access: controlled via schools() pivot + permissions
+ * Credentials and authentication capability only — not the person's full identity.
+ * Personal identity and communication email live on Profile (Person).
+ * One account belongs to exactly one Person; one Person may have zero or one account.
  */
-
 class User extends Authenticatable implements LaratrustUser, TwoFactorAuthenticatable
 {
     use HasFactory,
@@ -73,31 +38,39 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
     protected $fillable = [
         'username',
         'password',
-        'must_change_password',
-        'is_active',
+        'lifecycle',
+        'force_password_change',
+        'auth_email_verified_at',
+        'auth_email_enabled',
+        'auth_phone',
+        'auth_phone_verified_at',
+        'auth_phone_enabled',
+        'last_login_at',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
-        'must_change_password',
         'two_factor_secret',
         'two_factor_recovery_codes',
     ];
 
     protected $casts = [
-        'email_verified_at'     => 'datetime',
-        'password'              => 'hashed',
-        'is_active'             => 'boolean',
-        'must_change_password'  => 'boolean',
+        'password' => 'hashed',
+        'lifecycle' => AccountLifecycle::class,
+        'force_password_change' => 'boolean',
+        'auth_email_verified_at' => 'datetime',
+        'auth_email_enabled' => 'boolean',
+        'auth_phone_verified_at' => 'datetime',
+        'auth_phone_enabled' => 'boolean',
+        'last_login_at' => 'datetime',
     ];
 
-    // For HasTableQuery trait (if used on user listings)
     protected array $globalFilterFields = [
         'username',
-        'email',
         'profile.first_name',
         'profile.last_name',
+        'profile.email',
         'profile.phone',
     ];
 
@@ -110,24 +83,84 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
     // =================================================================
 
     /**
-     * The single personal Profile linked to this user (nullable)
+     * Linked Person (Profile). Schema ownership: profiles.user_id → users.id.
      */
     public function profile(): HasOne
     {
         return $this->hasOne(Profile::class);
     }
 
-    /**
-     * Schools this user has explicit access to (pivot table: school_users)
-     * Used for cross-school permissions or multi-school staff/guardians
-     */
     public function schools(): BelongsToMany
     {
         return $this->belongsToMany(School::class, 'school_users');
     }
 
     // =================================================================
-    // ROLE CHECK HELPERS (replaces old HasProfile trait)
+    // LIFECYCLE & ELIGIBILITY
+    // =================================================================
+
+    public function isProvisioned(): bool
+    {
+        return $this->lifecycle === AccountLifecycle::Provisioned;
+    }
+
+    public function isActiveLifecycle(): bool
+    {
+        return $this->lifecycle === AccountLifecycle::Active;
+    }
+
+    /**
+     * Whether this account may authenticate (credentials path).
+     * Does not grant workspace access when force_password_change is set.
+     */
+    public function canAuthenticate(): bool
+    {
+        if (! $this->lifecycle?->canAuthenticate()) {
+            return false;
+        }
+
+        if ($this->profile === null) {
+            return false;
+        }
+
+        if ($this->profile->trashed()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function canUseEmailForLogin(): bool
+    {
+        if (! $this->canAuthenticate()) {
+            return false;
+        }
+
+        $email = $this->profile?->email;
+
+        return filled($email)
+            && $this->auth_email_verified_at !== null
+            && $this->auth_email_enabled === true;
+    }
+
+    public function canUsePhoneForLogin(): bool
+    {
+        if (! $this->canAuthenticate()) {
+            return false;
+        }
+
+        return filled($this->auth_phone)
+            && $this->auth_phone_verified_at !== null
+            && $this->auth_phone_enabled === true;
+    }
+
+    public function requiresPasswordChange(): bool
+    {
+        return (bool) $this->force_password_change;
+    }
+
+    // =================================================================
+    // ROLE CHECK HELPERS
     // =================================================================
 
     public function isStudent(): bool
@@ -148,16 +181,12 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
     public function activeRoleType(): ?string
     {
         return match (true) {
-            $this->isStaff()    => 'staff',
-            $this->isStudent()  => 'student',
+            $this->isStaff() => 'staff',
+            $this->isStudent() => 'student',
             $this->isGuardian() => 'guardian',
-            default             => null,
+            default => null,
         };
     }
-
-    // =================================================================
-    // SCHOOL-SPECIFIC ROLE CHECKS
-    // =================================================================
 
     public function isStaffAt(School $school): bool
     {
@@ -181,7 +210,7 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
     }
 
     // =================================================================
-    // ACCESSORS (minimal – most data lives on Profile)
+    // ACCESSORS (Person data from Profile)
     // =================================================================
 
     public function getFullNameAttribute(): ?string
@@ -212,14 +241,16 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
     {
         return LogOptions::defaults()
             ->useLogName('users')
-            ->logOnly(['username', 'email', 'is_active'])
+            ->logOnly(['username', 'lifecycle', 'force_password_change', 'auth_email_enabled', 'auth_phone'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
-            ->setDescriptionForEvent(fn(string $eventName) => "User {$this->email} ({$this->full_name}) was {$eventName}");
+            ->setDescriptionForEvent(
+                fn (string $eventName) => "Authentication account {$this->username} was {$eventName}"
+            );
     }
 
     // =================================================================
-    // LEGACY / TRANSITION RELATIONSHIPS (keep for backward compatibility)
+    // LEGACY RELATIONSHIPS
     // =================================================================
 
     public function departments(): BelongsToMany

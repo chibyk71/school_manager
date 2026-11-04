@@ -6,6 +6,7 @@ use App\Events\GuardianRegistered;
 use App\Models\Guardian;
 use App\Models\Profile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -104,19 +105,22 @@ class GuardianRegistrationService
 
             // 4. Optional: Create login account (default false for guardians)
             if ($createLogin) {
-                $this->userAccountService->createForProfile(
-                    profile: $profile,
+                $this->userAccountService->createForPerson(
+                    person: $profile,
                     data: [
                         'username' => $data['username'] ?? null,
-                        'password' => $data['password'] ?? null,
+                        'password' => $data['password'] ?? Str::random(12),
                     ],
                     options: [
-                        'roles'                => ['guardian'],
-                        'autoGenerateUsername' => true,
-                        'mustChangePassword'   => true,
-                        'sendWelcome'          => true,
+                        'lifecycle' => 'active',
+                        'force_password_change' => true,
+                        'auto_generate_username' => true,
+                        'send_notification' => true,
                     ]
                 );
+                if ($profile->fresh()->user) {
+                    $profile->user->syncRoles(['guardian']);
+                }
             }
 
             // 5. Fire event (notification, audit, etc.)

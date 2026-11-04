@@ -57,6 +57,10 @@ class UserService
      */
     public function create(array $data, bool $sendWelcome = true): User
     {
+        throw new \RuntimeException(
+            'UserService::create is retired. Create a Person (Profile) then use UserAccountService::createForPerson.'
+        );
+
         // Role conflict validation: For new users, ensure email uniqueness and valid profile_type
         if (User::where('email', $data['email'])->exists()) {
             throw ValidationException::withMessages(['email' => 'A user with this email already exists.']);

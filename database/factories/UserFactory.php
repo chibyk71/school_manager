@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\Auth\AccountLifecycle;
 use App\Models\Profile;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -10,30 +11,24 @@ use Illuminate\Support\Str;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\User>
- *
- * Auth identity lives on users (username + password). Person contact fields
- * (email, phone, name) live on Profile — never on users.email.
  */
 class UserFactory extends Factory
 {
-    /**
-     * The current password being used by the factory.
-     */
     protected static ?string $password;
 
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
         return [
             'username' => fake()->unique()->userName().'_'.Str::lower(Str::random(4)),
-            'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'lifecycle' => AccountLifecycle::Active->value,
+            'force_password_change' => false,
+            'auth_email_verified_at' => null,
+            'auth_email_enabled' => false,
+            'auth_phone' => null,
+            'auth_phone_verified_at' => null,
+            'auth_phone_enabled' => false,
             'remember_token' => Str::random(10),
-            'is_active' => true,
         ];
     }
 
@@ -48,18 +43,39 @@ class UserFactory extends Factory
                 'user_id' => $user->id,
                 'first_name' => fake()->firstName(),
                 'last_name' => fake()->lastName(),
-                'email' => fake()->unique()->safeEmail(),
+                'email' => fake()->safeEmail(),
             ]);
         });
     }
 
-    /**
-     * Indicate that the model's email address should be unverified.
-     */
-    public function unverified(): static
+    public function provisioned(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'email_verified_at' => null,
+        return $this->state(fn () => [
+            'password' => null,
+            'lifecycle' => AccountLifecycle::Provisioned->value,
+        ]);
+    }
+
+    public function active(): static
+    {
+        return $this->state(fn () => [
+            'password' => static::$password ??= Hash::make('password'),
+            'lifecycle' => AccountLifecycle::Active->value,
+        ]);
+    }
+
+    public function forcePasswordChange(): static
+    {
+        return $this->state(fn () => [
+            'force_password_change' => true,
+        ]);
+    }
+
+    public function withVerifiedEmailLogin(): static
+    {
+        return $this->state(fn () => [
+            'auth_email_verified_at' => now(),
+            'auth_email_enabled' => true,
         ]);
     }
 }

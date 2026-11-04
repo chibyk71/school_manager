@@ -16,7 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
             append: [
                 \App\Http\Middleware\HandleInertiaRequests::class,
                 \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
-                \App\Http\Middleware\EnsureCurrentSession::class
+                \App\Http\Middleware\EnsureCurrentSession::class,
+                \App\Http\Middleware\EnsurePasswordChanged::class
             ],
             prepend: [
                 \App\Http\Middleware\SchoolContext::class,
@@ -27,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'school' => \App\Http\Middleware\SchoolContext::class,
             'ensure.current.session' => \App\Http\Middleware\EnsureCurrentSession::class,
+            'password.changed' => \App\Http\Middleware\EnsurePasswordChanged::class,
         ]);
 
         //

@@ -96,7 +96,7 @@ function seedDefinition(string $key, array $tenantValues, ?School $schoolOverlay
             'value' => DynamicEnumValue::canonicalize($value),
             'label' => ucfirst($value),
             'sort_order' => $i,
-            'is_active' => true,
+            'lifecycle' => 'active',
         ]);
     }
 
@@ -109,7 +109,7 @@ function seedDefinition(string $key, array $tenantValues, ?School $schoolOverlay
                 'value' => DynamicEnumValue::canonicalize($value),
                 'label' => ucfirst($value),
                 'sort_order' => $i,
-                'is_active' => true,
+                'lifecycle' => 'active',
             ]);
         }
     }
@@ -158,7 +158,7 @@ test('InDynamicEnum school isolation rejects other school option', function () {
         'value' => 'female',
         'label' => 'Female',
         'sort_order' => 0,
-        'is_active' => true,
+        'lifecycle' => 'active',
     ]);
 
     $rule = new InDynamicEnum('profile.gender', $schoolA);
@@ -300,7 +300,7 @@ test('InDynamicEnum does not implicitly resolve school from GetSchoolModel', fun
         'value' => 'school_only',
         'label' => 'School Only',
         'sort_order' => 0,
-        'is_active' => true,
+        'lifecycle' => 'active',
     ]);
 
     $ruleTenant = new InDynamicEnum('profile.gender', null);

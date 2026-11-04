@@ -815,7 +815,7 @@ it('materializes school requirement instances on start', function () {
         'name' => 'Form A',
         'type' => EnrollmentRequirementDefinition::TYPE_FORM,
         'is_required' => true,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'sort_order' => 1,
     ])->save();
 
@@ -932,7 +932,7 @@ it('materializes only same-school requirement definitions', function () {
         'name' => 'School A Form',
         'type' => EnrollmentRequirementDefinition::TYPE_FORM,
         'is_required' => true,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'sort_order' => 1,
     ])->save();
 
@@ -944,7 +944,7 @@ it('materializes only same-school requirement definitions', function () {
         'name' => 'School B Form',
         'type' => EnrollmentRequirementDefinition::TYPE_FORM,
         'is_required' => true,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'sort_order' => 1,
     ])->save();
 
@@ -978,7 +978,7 @@ it('rejects satisfying a requirement whose definition belongs to another school'
         'name' => 'Foreign Form',
         'type' => EnrollmentRequirementDefinition::TYPE_FORM,
         'is_required' => true,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'sort_order' => 1,
     ])->save();
 
@@ -1017,7 +1017,7 @@ it('model-level guard rejects saving cross-school requirement instance', functio
         'name' => 'Foreign 2',
         'type' => EnrollmentRequirementDefinition::TYPE_FORM,
         'is_required' => true,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'sort_order' => 1,
     ])->save();
 
@@ -1043,7 +1043,7 @@ it('required unsatisfied requirement blocks finalization', function () {
         'name' => 'Must Form',
         'type' => EnrollmentRequirementDefinition::TYPE_FORM,
         'is_required' => true,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'sort_order' => 1,
     ])->save();
 
@@ -1073,7 +1073,7 @@ it('waived required requirement allows finalization', function () {
         'name' => 'Waive Me',
         'type' => EnrollmentRequirementDefinition::TYPE_FORM,
         'is_required' => true,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'sort_order' => 1,
     ])->save();
 

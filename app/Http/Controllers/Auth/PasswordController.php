@@ -88,7 +88,7 @@ class PasswordController extends Controller
             // Update password
             $user->update([
                 'password' => Hash::make($validated['password']),
-                'must_change_password'=> false,
+                'force_password_change'=> false,
             ]);
 
             // Log activity
