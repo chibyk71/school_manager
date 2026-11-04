@@ -150,7 +150,7 @@ class AuthenticatedSessionController extends Controller
             }
 
             // After successful authentication
-            if (auth()->user()->must_change_password) {
+            if (auth()->user()->requiresPasswordChange()) {
                 // Clear flag after they change it (you’ll handle in ChangePassword form)
                 return redirect()->route('password.change')->with('must_change', true);
             }

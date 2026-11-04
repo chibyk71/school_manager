@@ -2,7 +2,10 @@
 
 namespace App\Services\UserManagement;
 
-use App\Events\UserAccountCreated;
+use App\Enums\Auth\AccountLifecycle;
+use App\Events\Auth\AuthenticationAccountActivated;
+use App\Events\Auth\AuthenticationAccountCreated;
+use App\Events\Auth\AuthenticationIdentifierChanged;
 use App\Models\Profile;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -11,128 +14,121 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
- * UserAccountService – Reusable Service for Creating Optional Login Accounts
+ * Central capability for Authentication Account provisioning and lifecycle.
  *
- * This is the cross-cutting helper service responsible for creating a User (login account)
- * linked to an **existing** Profile — after the Profile has already been created via a role-specific flow.
- *
- * Core Constraint Alignment:
- *   - Never creates Profiles — assumes Profile already exists (enforced by constructor)
- *   - Called optionally from role services (StudentEnrollmentService, StaffHiringService, etc.)
- *     when the UI checkbox "Create login account" is checked
- *   - Supports all role types (student, staff, guardian) without role-specific logic
- *   - Username is primary login identifier (email is only on Profile)
- *   - Password auto-generated when not provided + must_change_password flag
- *   - Laratrust roles assigned during creation (passed from caller)
- *   - Fires UserAccountCreated event → triggers welcome email, SMS, audit log, etc.
- *
- * Features / Problems Solved:
- * - Reusable across all role creation flows → no duplicated login logic
- * - Secure defaults: strong random password, must_change_password enforced
- * - Username flexibility: provided → auto-generated (settings-aware) → email prefix fallback
- * - Atomic transaction: User creation + Profile linking + role assignment
- * - Validation: username uniqueness, basic password rules
- * - Event-driven: decouples notification/audit from creation logic
- * - Error handling: clear ValidationException messages for frontend
- * - Performance: minimal queries, eager loading of profile
- * - Extensibility: easy to add 2FA setup, approval workflow, custom fields
- * - Multi-tenant safety: inherits context from Profile (no direct school_id here)
- *
- * Fits into User Management Module:
- * - Used by:
- *   - StudentEnrollmentService (rare – only if student login enabled)
- *   - StaffHiringService (very common – most staff need portal access)
- *   - GuardianRegistrationService (optional – only if guardian needs portal)
- *   - Admin user creation screens (bulk or manual account setup)
- * - Triggered from frontend modals:
- *   - StudentEnrollmentModal.vue → "Create student portal account" checkbox
- *   - StaffAssignmentModal.vue → "Grant staff login access" toggle
- * - Integrates with:
- *   - Laratrust: syncRoles()
- *   - Events: UserAccountCreated → welcome email, notification
- *   - Settings: future auto-generate username toggle (via school settings)
- * - No direct UI — pure backend service; returns User model for response
- *
- * Usage Example (in StudentEnrollmentService):
- *   if ($createLogin) {
- *       $this->userAccountService->createForProfile(
- *           $profile,
- *           ['username' => $data['username'] ?? null],
- *           ['roles' => ['student']]
- *       );
- *   }
+ * Does not create Persons, assign roles, school participation, or dashboards.
+ * Enforces at most one account per Person and respects soft-deleted eligibility.
  */
-
 class UserAccountService
 {
     /**
-     * Create a User login account linked to an existing Profile
+     * Create an Authentication Account for an existing Person.
      *
-     * @param Profile $profile       Existing profile to attach login to
-     * @param array   $data          Input: username, password, etc.
-     * @param array   $options       Flags: roles, autoGenerateUsername, etc.
-     * @return User
-     *
-     * @throws ValidationException
+     * @param  array{
+     *     username?: string,
+     *     password?: string|null,
+     *     auth_phone?: string|null
+     * }  $data
+     * @param  array{
+     *     lifecycle?: string|AccountLifecycle,
+     *     force_password_change?: bool,
+     *     auto_generate_username?: bool,
+     *     send_notification?: bool
+     * }  $options
      */
-    public function createForProfile(
-        Profile $profile,
+    public function createForPerson(
+        Profile $person,
         array $data = [],
         array $options = []
     ): User {
         $options = array_merge([
-            'roles'                => [],
-            'autoGenerateUsername' => true,
-            'mustChangePassword'   => true,
-            'sendWelcome'          => true,
+            'lifecycle' => null,
+            'force_password_change' => false,
+            'auto_generate_username' => true,
+            'send_notification' => true,
         ], $options);
 
-        // 1. Resolve username
-        $username = $this->resolveUsername($profile, $data, $options['autoGenerateUsername']);
+        if ($person->trashed()) {
+            throw ValidationException::withMessages([
+                'person' => 'Cannot create an authentication account for a deleted person.',
+            ]);
+        }
 
-        // 2. Validate uniqueness
+        $plainPassword = array_key_exists('password', $data) ? $data['password'] : null;
+        $lifecycle = $this->resolveLifecycleForCreate($options['lifecycle'] ?? null, $plainPassword);
+
+        if ($lifecycle === AccountLifecycle::Active) {
+            if ($plainPassword === null || $plainPassword === '') {
+                throw ValidationException::withMessages([
+                    'password' => 'Active accounts require usable credentials.',
+                ]);
+            }
+            if (strlen((string) $plainPassword) < 8) {
+                throw ValidationException::withMessages([
+                    'password' => 'Password must be at least 8 characters.',
+                ]);
+            }
+        } elseif ($plainPassword !== null && $plainPassword !== '' && strlen((string) $plainPassword) < 8) {
+            throw ValidationException::withMessages([
+                'password' => 'Password must be at least 8 characters.',
+            ]);
+        }
+
+        $username = $this->resolveUsername($person, $data, (bool) $options['auto_generate_username']);
+
         if (User::where('username', $username)->exists()) {
             throw ValidationException::withMessages([
                 'username' => 'This username is already taken.',
             ]);
         }
 
-        // 3. Password handling
-        $plainPassword = $data['password'] ?? Str::random(12);
-        if (strlen($plainPassword) < 8) {
-            throw ValidationException::withMessages([
-                'password' => 'Password must be at least 8 characters.',
-            ]);
-        }
+        $authPhone = isset($data['auth_phone']) ? $this->normalizePhone($data['auth_phone']) : null;
 
         return DB::transaction(function () use (
-            $profile,
+            $person,
             $username,
             $plainPassword,
-            $options
+            $lifecycle,
+            $options,
+            $authPhone
         ) {
-            // Create User
-            $user = User::create([
-                'username'             => $username,
-                'password'             => Hash::make($plainPassword),
-                'must_change_password' => $options['mustChangePassword'],
-                'is_active'            => true,
-            ]);
+            // Lock the person row to prevent concurrent dual attachment.
+            /** @var Profile $locked */
+            $locked = Profile::query()->whereKey($person->id)->lockForUpdate()->firstOrFail();
 
-            // Link Profile to User (1:1)
-            $profile->update(['user_id' => $user->id]);
-
-            // Assign Laratrust roles (passed from role service)
-            if (!empty($options['roles'])) {
-                $user->syncRoles($options['roles']);
+            if ($locked->trashed()) {
+                throw ValidationException::withMessages([
+                    'person' => 'Cannot create an authentication account for a deleted person.',
+                ]);
             }
 
-            // Fire event (welcome email, audit, etc.)
-            if ($options['sendWelcome']) {
-                event(new UserAccountCreated(
-                    user: $user,
-                    plainPassword: $plainPassword,
-                    autoGenerated: empty($data['password'])
+            if ($locked->user_id !== null) {
+                throw ValidationException::withMessages([
+                    'person' => 'This person already has an authentication account.',
+                ]);
+            }
+
+            $user = User::create([
+                'username' => $username,
+                'password' => $plainPassword !== null && $plainPassword !== ''
+                    ? $plainPassword
+                    : null,
+                'lifecycle' => $lifecycle->value,
+                'force_password_change' => (bool) $options['force_password_change'],
+                'auth_email_verified_at' => null,
+                'auth_email_enabled' => false,
+                'auth_phone' => $authPhone,
+                'auth_phone_verified_at' => null,
+                'auth_phone_enabled' => false,
+            ]);
+
+            $locked->update(['user_id' => $user->id]);
+
+            if ($options['send_notification']) {
+                event(new AuthenticationAccountCreated(
+                    account: $user,
+                    plainPassword: is_string($plainPassword) && $plainPassword !== '' ? $plainPassword : null,
+                    passwordAutoGenerated: false,
                 ));
             }
 
@@ -141,31 +137,153 @@ class UserAccountService
     }
 
     /**
-     * Determine username: priority order
-     * 1. Provided in $data
-     * 2. Auto-generate (school settings allowing)
-     * 3. Email prefix fallback
+     * Activate a Provisioned account with usable credentials.
      */
-    private function resolveUsername(Profile $profile, array $data, bool $allowAutoGenerate): string
+    public function activate(User $account, string $password): User
     {
-        // 1. Explicitly provided
-        if (!empty($data['username'])) {
-            return $data['username'];
+        if ($account->lifecycle === AccountLifecycle::Active) {
+            throw ValidationException::withMessages([
+                'lifecycle' => 'Account is already active.',
+            ]);
         }
 
-        // 2. Auto-generate if allowed
+        if ($account->lifecycle !== AccountLifecycle::Provisioned) {
+            throw ValidationException::withMessages([
+                'lifecycle' => 'Only provisioned accounts can be activated.',
+            ]);
+        }
+
+        if (strlen($password) < 8) {
+            throw ValidationException::withMessages([
+                'password' => 'Password must be at least 8 characters.',
+            ]);
+        }
+
+        if ($account->profile === null || $account->profile->trashed()) {
+            throw ValidationException::withMessages([
+                'person' => 'Account is not linked to an eligible person.',
+            ]);
+        }
+
+        $account->forceFill([
+            'password' => $password,
+            'lifecycle' => AccountLifecycle::Active->value,
+        ])->save();
+
+        event(new AuthenticationAccountActivated($account));
+
+        return $account->refresh();
+    }
+
+    public function setForcePasswordChange(User $account, bool $required): User
+    {
+        $account->forceFill([
+            'force_password_change' => $required,
+        ])->save();
+
+        return $account->refresh();
+    }
+
+    public function setAuthEmailEnabled(User $account, bool $enabled): User
+    {
+        if ($enabled) {
+            if ($account->profile === null || ! filled($account->profile->email)) {
+                throw ValidationException::withMessages([
+                    'auth_email' => 'Person must have a primary email before email login can be enabled.',
+                ]);
+            }
+            if ($account->auth_email_verified_at === null) {
+                throw ValidationException::withMessages([
+                    'auth_email' => 'Email must be verified before it can be enabled for login.',
+                ]);
+            }
+        }
+
+        $account->forceFill([
+            'auth_email_enabled' => $enabled,
+        ])->save();
+
+        event(new AuthenticationIdentifierChanged($account, 'auth_email'));
+
+        return $account->refresh();
+    }
+
+    public function setAuthPhone(User $account, ?string $phone): User
+    {
+        $normalized = $this->normalizePhone($phone);
+
+        $account->forceFill([
+            'auth_phone' => $normalized,
+            'auth_phone_verified_at' => null,
+            'auth_phone_enabled' => false,
+        ])->save();
+
+        event(new AuthenticationIdentifierChanged($account, 'auth_phone'));
+
+        return $account->refresh();
+    }
+
+    /**
+     * Mark the linked Person primary email as verified for authentication.
+     * Does not enable login by itself.
+     */
+    public function markAuthEmailVerified(User $account): User
+    {
+        if ($account->profile === null || ! filled($account->profile->email)) {
+            throw ValidationException::withMessages([
+                'auth_email' => 'Person must have a primary email to verify.',
+            ]);
+        }
+
+        $account->forceFill([
+            'auth_email_verified_at' => now(),
+        ])->save();
+
+        return $account->refresh();
+    }
+
+    private function resolveLifecycleForCreate(
+        AccountLifecycle|string|null $requested,
+        ?string $plainPassword
+    ): AccountLifecycle {
+        if ($requested === null) {
+            return ($plainPassword !== null && $plainPassword !== '')
+                ? AccountLifecycle::Active
+                : AccountLifecycle::Provisioned;
+        }
+
+        $lifecycle = $requested instanceof AccountLifecycle
+            ? $requested
+            : AccountLifecycle::from((string) $requested);
+
+        if ($lifecycle === AccountLifecycle::Active && ($plainPassword === null || $plainPassword === '')) {
+            throw ValidationException::withMessages([
+                'password' => 'Active accounts require usable credentials.',
+            ]);
+        }
+
+        return $lifecycle;
+    }
+
+    private function resolveUsername(Profile $person, array $data, bool $allowAutoGenerate): string
+    {
+        if (! empty($data['username'])) {
+            return strtolower(trim((string) $data['username']));
+        }
+
         if ($allowAutoGenerate) {
-            $prefix = strtolower(substr($profile->first_name ?? 'user', 0, 1) . $profile->last_name);
-            $prefix = preg_replace('/[^a-z0-9]/i', '', $prefix);
-            return $prefix . '_' . Str::random(4);
+            $prefix = strtolower(substr($person->first_name ?? 'user', 0, 1).($person->last_name ?? 'user'));
+            $prefix = preg_replace('/[^a-z0-9]/i', '', $prefix) ?: 'user';
+
+            return $prefix.'_'.Str::lower(Str::random(4));
         }
 
-        // 3. Fallback: email prefix
-        $email = $profile->email;
+        $email = $person->email;
         if ($email) {
-            $prefix = Str::before($email, '@');
-            $prefix = preg_replace('/[^a-z0-9]/i', '', $prefix);
-            return $prefix . '_' . Str::random(3);
+            $prefix = Str::before(strtolower($email), '@');
+            $prefix = preg_replace('/[^a-z0-9]/i', '', $prefix) ?: 'user';
+
+            return $prefix.'_'.Str::lower(Str::random(3));
         }
 
         throw ValidationException::withMessages([
@@ -173,26 +291,15 @@ class UserAccountService
         ]);
     }
 
-    /**
-     * Reset password for existing user (admin or self-service)
-     *
-     * @param User $user
-     * @param bool $notify
-     * @return string New plain password (for display/email)
-     */
-    public function resetPassword(User $user, bool $notify = true): string
+    private function normalizePhone(?string $phone): ?string
     {
-        $newPassword = Str::random(12);
-
-        $user->update([
-            'password'             => Hash::make($newPassword),
-            'must_change_password' => true,
-        ]);
-
-        if ($notify) {
-            event(new UserAccountCreated($user, $newPassword, true)); // reuse event or create new
+        if ($phone === null || trim($phone) === '') {
+            return null;
         }
 
-        return $newPassword;
+        // Preserve project convention: store digits and leading + only.
+        $normalized = preg_replace('/[^\d+]/', '', $phone);
+
+        return $normalized !== '' ? $normalized : null;
     }
 }

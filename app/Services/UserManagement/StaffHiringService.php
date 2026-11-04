@@ -5,8 +5,9 @@ namespace App\Services\UserManagement;
 use App\Events\StaffHired;
 use App\Helpers\IdGenerator;
 use App\Models\Profile;
-use App\Models\Staff;
+use App\Models\Employee\Staff;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -116,19 +117,24 @@ class StaffHiringService
 
             // 5. Create login account (default true for staff)
             if ($createLogin) {
-                $this->userAccountService->createForProfile(
-                    profile: $profile,
+                $plainPassword = $data['password'] ?? Str::random(12);
+                $this->userAccountService->createForPerson(
+                    person: $profile,
                     data: [
                         'username' => $data['username'] ?? null,
-                        'password' => $data['password'] ?? null,
+                        'password' => $plainPassword,
                     ],
                     options: [
-                        'roles'                => ['staff'], // base role – add more if needed
-                        'autoGenerateUsername' => true,
-                        'mustChangePassword'   => true,
-                        'sendWelcome'          => true,
+                        'lifecycle' => 'active',
+                        'force_password_change' => true,
+                        'auto_generate_username' => true,
+                        'send_notification' => true,
                     ]
                 );
+                // Roles are assigned by the authorization domain, not account provisioning.
+                if ($profile->fresh()->user) {
+                    $profile->user->syncRoles(! empty($data['roles']) ? $data['roles'] : ['staff']);
+                }
             }
 
             // 6. Fire event (welcome email, HR onboarding, audit, etc.)

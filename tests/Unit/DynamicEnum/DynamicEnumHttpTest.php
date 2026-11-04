@@ -75,8 +75,8 @@ function deHttpBuildSchema(): void
         $table->uuid('id')->primary();
         $table->string('username')->unique();
         $table->string('password');
-        $table->boolean('is_active')->default(true);
-        $table->boolean('must_change_password')->default(false);
+        $table->string('lifecycle')->default('active');
+        $table->boolean('force_password_change')->default(false);
         $table->rememberToken();
         $table->timestamps();
     });
@@ -250,7 +250,7 @@ function deHttpSchool(string $name = 'HTTP School'): School
         'code' => 'HS'.Str::random(3),
         'email' => 'school@example.com',
         'type' => 'private',
-        'is_active' => true,
+        'lifecycle' => 'active',
         'slug' => Str::slug($name).'-'.Str::random(4),
     ]);
 }
@@ -267,8 +267,8 @@ function deHttpUser(array $permissions = []): User
         'id' => (string) Str::uuid(),
         'username' => 'de_'.Str::random(8),
         'password' => bcrypt('password'),
-        'is_active' => true,
-        'must_change_password' => false,
+        'lifecycle' => 'active',
+        'force_password_change' => false,
     ]);
 
     foreach ($permissions as $name) {
@@ -312,7 +312,7 @@ function deHttpSeedGender(): DynamicEnum
             'value' => DynamicEnumValue::canonicalize($value),
             'label' => $label,
             'sort_order' => $order,
-            'is_active' => true,
+            'lifecycle' => 'active',
             'is_required' => false,
         ]);
     }
@@ -371,7 +371,7 @@ test('school context catalogue returns effective options once', function () {
         'value' => DynamicEnumValue::canonicalize('male'),
         'label' => 'Male (school)',
         'sort_order' => 1,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'is_required' => false,
     ]);
     DynamicEnumOption::query()->create([
@@ -381,7 +381,7 @@ test('school context catalogue returns effective options once', function () {
         'value' => DynamicEnumValue::canonicalize('non_binary'),
         'label' => 'Non-binary',
         'sort_order' => 3,
-        'is_active' => true,
+        'lifecycle' => 'active',
         'is_required' => false,
     ]);
 

@@ -226,9 +226,10 @@ class ProfileController extends Controller
                     $q->select([
                         'id',
                         'username',
-                        'email',
-                        'is_active',
-                        'must_change_password',
+                        'lifecycle',
+                        'force_password_change',
+                        'auth_email_enabled',
+                        'auth_email_verified_at',
                         'created_at',
                     ]);
                 },
@@ -699,19 +700,24 @@ class ProfileController extends Controller
 
         try {
             // Delegate to reusable service
-            $service->createForProfile(
-                profile: $profile,
+            $account = $service->createForPerson(
+                person: $profile,
                 data: [
                     'username' => $validated['username'] ?? null,
                     'password' => $validated['password'] ?? null,
                 ],
                 options: [
-                    'roles' => $validated['roles'] ?? [],
-                    'autoGenerateUsername' => true,
-                    'mustChangePassword' => true,
-                    'sendWelcome' => true,
+                    'lifecycle' => ! empty($validated['password']) ? 'active' : 'provisioned',
+                    'force_password_change' => true,
+                    'auto_generate_username' => true,
+                    'send_notification' => true,
                 ]
             );
+
+            // Role assignment is independent of account provisioning.
+            if (! empty($validated['roles'])) {
+                $account->syncRoles($validated['roles']);
+            }
 
             return redirect()
                 ->route('profiles.show', $profile)
@@ -1277,6 +1283,12 @@ class ProfileController extends Controller
      * @return \Illuminate\Http\RedirectResponse
      */
     public function merge(Request $request, Profile $profile)
+    {
+        // Phase 1: defective merge disabled. Duplicate resolution is deferred to Phase 7.
+        abort(410, 'Profile merge is disabled. Identity resolution belongs to a later phase.');
+    }
+
+    public function merge_disabled_legacy(Request $request, Profile $profile)
     {
         // Authorize merge on the source profile
         Gate::authorize('merge', $profile);

@@ -76,7 +76,7 @@ class Profile extends Model implements HasMedia
         'gender',
         'date_of_birth',
         'phone',
-        'email',           // optional — only if not using User email
+        'email',           // Person primary communication email (optional, not unique)
         'notes',
         'user_id'
     ];
@@ -108,11 +108,51 @@ class Profile extends Model implements HasMedia
     // =================================================================
 
     /**
-     * Optional login account (1:1)
+     * Optional Authentication Account (at most one).
+     * Schema ownership: profiles.user_id → users.id (unique nullable).
      */
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * Whether this Person may receive a new Authentication Account.
+     */
+    public function canReceiveAuthenticationAccount(): bool
+    {
+        if ($this->trashed()) {
+            return false;
+        }
+
+        return $this->user_id === null;
+    }
+
+    /**
+     * When primary email changes, invalidate auth email verification/enablement
+     * on the linked Authentication Account.
+     */
+    protected static function booted(): void
+    {
+        static::updating(function (Profile $profile): void {
+            if (! $profile->isDirty('email')) {
+                return;
+            }
+
+            if ($profile->user_id === null) {
+                return;
+            }
+
+            $account = $profile->user;
+            if ($account === null) {
+                return;
+            }
+
+            $account->forceFill([
+                'auth_email_verified_at' => null,
+                'auth_email_enabled' => false,
+            ])->save();
+        });
     }
 
     /**

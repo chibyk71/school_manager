@@ -112,7 +112,7 @@ if (! function_exists('phase3CreateSchema')) {
             'slug' => $slug,
             'email' => $slug.'@example.test',
             'code' => strtoupper(Str::random(4)),
-            'is_active' => true,
+            'lifecycle' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

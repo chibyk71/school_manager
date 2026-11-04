@@ -472,7 +472,7 @@ class FileManagerDomainTest extends TestCase
         return School::query()->create([
             'id' => (string) Str::uuid(),
             'name' => $name,
-            'is_active' => true,
+            'lifecycle' => 'active',
         ]);
     }
 

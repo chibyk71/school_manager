@@ -117,7 +117,7 @@ it('migrates term legacy combinations to authoritative state', function () {
     $termRows = [
         ['status' => 'pending', 'is_active' => false, 'is_closed' => false, 'expect' => 'planned'],
         ['status' => 'planned', 'is_active' => false, 'is_closed' => false, 'expect' => 'planned'],
-        ['status' => 'active', 'is_active' => true, 'is_closed' => false, 'expect' => 'active'],
+        ['status' => 'active', 'lifecycle' => 'active', 'is_closed' => false, 'expect' => 'active'],
         ['status' => 'closed', 'is_active' => false, 'is_closed' => true, 'expect' => 'closed'],
     ];
 
