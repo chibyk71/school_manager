@@ -413,7 +413,7 @@ class ProfileController extends Controller
             ]),
 
             // Pass avatar URL for preview
-            'avatar_url' => $profile->avatarUrl('medium'),
+            'avatar_url' => $profile->photo_url,
 
             // Authorization flags for frontend (hide/show buttons/features)
             'canUploadAvatar' => Gate::allows('uploadAvatar', $profile),
@@ -570,11 +570,11 @@ class ProfileController extends Controller
 
         try {
             // Clear existing avatar (single-file collection)
-            $profile->clearMediaCollection('avatar');
+            $profile->clearMediaCollection('photo');
 
             // Add the new uploaded file
             $profile->addMediaFromRequest('avatar')
-                ->toMediaCollection('avatar');
+                ->toMediaCollection('photo');
 
             return redirect()
                 ->back()
@@ -794,106 +794,39 @@ class ProfileController extends Controller
      */
     public function resetPassword(Request $request, Profile $profile, UserAccountService $service)
     {
-        // Authorize via policy (self-reset or admin force-reset)
         Gate::authorize('resetPassword', $profile);
 
-        // Early validation: must have linked User account
-        if (!$profile->user) {
+        if (! $profile->user) {
             throw ValidationException::withMessages([
-                'login' => 'This profile has no associated login account to reset.',
+                'profile' => 'This person has no authentication account.',
             ]);
         }
 
-        $isSelfReset = $request->user()->id === $profile->user_id;
+        $isSelf = auth()->id() === $profile->user_id;
 
-        try {
-            // Delegate reset to reusable service
-            $plainPassword = $service->resetPassword(
-                user: $profile->user,
-                notify: $request->boolean('notify', true)
-            );
-
-            // Admin force-reset: show new password once (with strong warning)
-            if (!$isSelfReset) {
-                return redirect()
-                    ->back()
-                    ->with('warning', "Password reset successful for {$profile->full_name}. New password (shown once): <strong>{$plainPassword}</strong><br><br><strong>Important:</strong> Share this securely and require immediate change on first login.")
-                    ->with('preserveScroll', true);
-            }
-
-            // Self-initiated reset: standard success message (link sent)
+        if ($isSelf) {
+            // Self-service must use the OTP password-recovery flow, not an undisclosed random password.
             return redirect()
-                ->back()
-                ->with('success', 'Password reset link has been sent to your email. Please check your inbox (including spam/junk).')
-                ->with('preserveScroll', true);
-
-        } catch (ValidationException $e) {
-            // Re-throw validation errors for frontend
-            throw $e;
-        } catch (\Exception $e) {
-            // Log unexpected failures
-            Log::error('Profile password reset failed', [
-                'profile_id' => $profile->id,
-                'user_id' => auth()->id(),
-                'school_id' => GetSchoolModel()?->id,
-                'is_self' => $isSelfReset,
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return redirect()
-                ->back()
-                ->with('error', 'Failed to reset password. Please try again or contact support.')
-                ->with('preserveScroll', true);
+                ->route('password.request')
+                ->with('status', 'Use the password recovery form to reset your own password.');
         }
+
+        // Administrator-initiated temporary credential reset.
+        $plain = $service->resetPassword($profile->user, null, true);
+
+        activity()
+            ->performedOn($profile->user)
+            ->causedBy(auth()->user())
+            ->withProperties(['profile_id' => $profile->id])
+            ->log('Administrator reset authentication password');
+
+        return redirect()
+            ->back()
+            ->with('success', 'A temporary password was generated and the account must change it on next login.')
+            ->with('temp_password', $plain);
     }
 
-    /**
-     * Soft-delete one or more profiles (bulk support).
-     *
-     * This method handles both single and bulk soft-deletion of profiles.
-     * It receives an array of profile IDs (via request input 'ids') to support
-     * bulk actions from the profiles index table.
-     *
-     * Important Architecture Notes:
-     *   - Only soft-deletes profiles (does not force-delete)
-     *   - Cascade behavior is handled in Profile model boot method
-     *     (roles like Student/Staff/Guardian are soft-deleted; User may be affected)
-     *   - No direct hard deletion here — forceDelete is a separate method
-     *   - Bulk mode: processes multiple IDs efficiently in one transaction
-     *   - Single mode: supports classic resource route (/{id}/delete)
-     *
-     * Features / Problems Solved:
-     * - Bulk delete support: accepts array of IDs (from DataTable bulk actions)
-     * - Atomic transaction: all deletes succeed or none do
-     * - Authorization: checks 'delete' permission on each profile individually
-     * - Performance: uses chunked delete to avoid memory issues on large bulks
-     * - Error handling: partial failures reported clearly, logs full context
-     * - User-friendly: success message shows count of deleted profiles
-     * - Security: prevents unauthorized bulk deletes via policy check per profile
-     * - Accessibility: redirect preserves filters/search state
-     * - Extensibility: easy to add pre-delete hooks (e.g. audit, notifications)
-     *
-     * Fits into User Management Module:
-     * - Main deletion endpoint for profiles (admin-only)
-     * - Called from:
-     *   - Profiles/Index.vue (bulk action button: "Delete Selected")
-     *   - Profiles/Show.vue (single delete button)
-     * - Integrates with:
-     *   - ProfilePolicy ('delete' ability)
-     *   - Inertia: redirect with flash message + preserved filters
-     *   - Model boot: cascades soft-delete to related roles/User
-     *
-     * Security & Best Practices:
-     * - Gate::authorize('delete', $profile) → per-profile check (not just global)
-     * - Uses chunk() for large bulks → avoids memory exhaustion
-     * - Transaction: rollback on any failure
-     * - No plain IDs in logs (only count & user context)
-     * - Redirect with success count → clear feedback
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
+
     public function destroy(Request $request)
     {
         // Expect 'ids' as array (bulk) or single ID as route param fallback
@@ -1152,7 +1085,7 @@ class ProfileController extends Controller
      */
     public function forceDelete(Request $request)
     {
-        Gate::authorize('forceDelete', Profile::class);
+        // Per-instance authorization inside the transaction loop
 
         $validated = $request->validate([
             'ids' => ['required', 'array', 'min:1'],
@@ -1166,6 +1099,8 @@ class ProfileController extends Controller
             foreach ($validated['ids'] as $id) {
                 /** @var \App\Models\Profile $person */
                 $person = \App\Models\Profile::withTrashed()->with(['user', 'students', 'staffPositions', 'guardians'])->findOrFail($id);
+
+                Gate::authorize('forceDelete', $person);
 
                 // Specialized profiles
                 $person->students()->each(function ($s) {

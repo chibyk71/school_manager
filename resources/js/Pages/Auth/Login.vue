@@ -82,7 +82,7 @@ const submit = () => {
                     <div class="mb-2">
                         <TextInput :label="'Username, email, or phone'" icon="pi pi-envelope" :error="form.errors.login">
                             <template #input="{ invalid }">
-                                <InputText :id="`login-input`" :invalid="invalid" v-model="form.login" required autofocus :type="loginType === 'email' ? 'email' : 'text'" fluid />
+                                <InputText :id="`login-input`" :invalid="invalid" v-model="form.login" required autofocus :type="'text'" fluid />
                             </template>
                         </TextInput>
                         <TextInput label="Password" icon="pi pi-lock" :error="form.errors.password">

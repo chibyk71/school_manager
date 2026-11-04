@@ -107,21 +107,32 @@ class NewPasswordController extends Controller
                 throw new \Exception('Invalid or expired OTP.');
             }
 
-            $user = Profile::query()
-                ->whereRaw('LOWER(email) = ?', [strtolower((string) $request->email)])
+            $normalized = strtolower((string) $request->email);
+            $matches = \App\Models\Profile::query()
+                ->whereRaw('LOWER(email) = ?', [$normalized])
                 ->whereNotNull('user_id')
-                ->first()
-                ?->user;
+                ->whereNull('deleted_at')
+                ->with('user')
+                ->get()
+                ->filter(fn ($profile) => $profile->user !== null)
+                ->values();
 
-            if (! $user) {
+            if ($matches->count() === 0) {
                 throw new \Exception('No user found with the provided email.');
             }
+            if ($matches->count() > 1) {
+                throw new \Exception(
+                    'Multiple accounts share this email. Sign in with your username to change the password, or contact an administrator.'
+                );
+            }
 
-            // Update password
+            $user = $matches->first()->user;
+
+            // Password recovery updates credentials only; does not activate Provisioned accounts
+            // or bypass AuthenticationAccountActivated semantics.
             $user->forceFill([
                 'password' => $request->password,
                 'force_password_change' => false,
-                'lifecycle' => \App\Enums\Auth\AccountLifecycle::Active->value,
             ])->save();
 
             // Log activity

@@ -229,7 +229,6 @@ class PersonAuthenticationFoundationTest extends TestCase
         $this->assertNotEquals($person->phone, $account->auth_phone);
         $this->assertFalse($account->canUsePhoneForLogin());
     }
-}
 
     public function test_profile_user_relationship_both_directions(): void
     {
@@ -280,3 +279,36 @@ class PersonAuthenticationFoundationTest extends TestCase
 
         \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\Auth\AuthenticationAccountCreated::class);
     }
+
+    public function test_password_recovery_resolution_requires_unique_linked_person(): void
+    {
+        $shared = 'dup-reset@example.com';
+        $p1 = Profile::factory()->create(['email' => $shared]);
+        $p2 = Profile::factory()->create(['email' => $shared]);
+        $this->accounts->createForPerson($p1, ['username' => 'r1', 'password' => 'password123'], ['lifecycle' => 'active']);
+        $this->accounts->createForPerson($p2, ['username' => 'r2', 'password' => 'password123'], ['lifecycle' => 'active']);
+
+        $matches = Profile::query()
+            ->whereRaw('LOWER(email) = ?', [strtolower($shared)])
+            ->whereNotNull('user_id')
+            ->whereNull('deleted_at')
+            ->count();
+
+        $this->assertGreaterThan(1, $matches);
+    }
+
+    public function test_admin_reset_password_does_not_activate_provisioned_account(): void
+    {
+        $person = Profile::factory()->create();
+        $account = $this->accounts->createForPerson($person, [
+            'username' => 'prov_reset',
+            'password' => null,
+        ], ['lifecycle' => 'provisioned']);
+
+        $this->assertTrue($account->isProvisioned());
+        $this->accounts->resetPassword($account, 'newpassword123');
+        $account->refresh();
+        $this->assertTrue($account->isProvisioned());
+        $this->assertTrue($account->requiresPasswordChange());
+    }
+}

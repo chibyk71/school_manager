@@ -150,25 +150,25 @@ class StaffHiringService
      */
     private function checkForPotentialDuplicate(array $data): void
     {
-        $existing = Profile::where('first_name', $data['first_name'])
+        // Phase 1: shared communication email alone must not block a distinct Person.
+        // Only a strong possible match (same name + DOB) fails closed without acknowledgement.
+        // Silent identity reuse is not permitted; full identity-matching engine is out of scope.
+        if (empty($data['first_name']) || empty($data['last_name']) || empty($data['date_of_birth'])) {
+            return;
+        }
+
+        $existing = \App\Models\Profile::query()
+            ->where('first_name', $data['first_name'])
             ->where('last_name', $data['last_name'])
-            ->where(function ($q) use ($data) {
-                if (!empty($data['date_of_birth'])) {
-                    $q->whereDate('date_of_birth', $data['date_of_birth']);
-                }
-                if (!empty($data['phone'])) {
-                    $q->orWhere('phone', $data['phone']);
-                }
-                if (!empty($data['email'])) {
-                    $q->orWhere('email', $data['email']);
-                }
-            })
+            ->whereDate('date_of_birth', $data['date_of_birth'])
             ->exists();
 
         if ($existing) {
-            throw ValidationException::withMessages([
-                'duplicate' => 'A profile with similar name, date of birth, and contact information already exists. Please check for duplicates.',
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'duplicate' => 'A person with the same name and date of birth already exists. Acknowledge the match and provide a reason before continuing (identity acknowledgement is required; silent reuse is not allowed).',
             ]);
         }
     }
+
+
 }

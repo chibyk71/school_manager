@@ -88,7 +88,7 @@ class PasswordController extends Controller
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
-                ->withProperties(['school_id' => $school->id])
+                ->withProperties(['school_id' => $school?->id])
                 ->log('Password updated successfully');
 
             // Clear rate limiter

@@ -98,22 +98,9 @@ class LoginRequest extends FormRequest
             return null;
         }
 
-        $digits = preg_replace('/[^\d+]/', '', $login);
-        if ($digits !== '') {
-            $candidates = User::query()
-                ->where('auth_phone', $digits)
-                ->whereNotNull('auth_phone_verified_at')
-                ->where('auth_phone_enabled', true)
-                ->get()
-                ->filter(fn (User $u) => $u->canUsePhoneForLogin())
-                ->values();
-
-            if ($candidates->count() === 1) {
-                return $candidates->first();
-            }
-
-            return null;
-        }
+        // Phone login is intentionally not accepted until a possession-proof
+        // verification challenge workflow exists (Phase 1 boundary).
+        // markAuthPhoneVerified() alone is not proof of ownership.
 
         return null;
     }

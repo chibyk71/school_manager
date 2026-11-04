@@ -137,11 +137,27 @@ class PasswordResetLinkController extends Controller
                 throw new \Exception('Password reset by enrollment ID is not supported in this phase. Use the account email.');
             }
 
-            $user = Profile::query()
-                ->whereRaw('LOWER(email) = ?', [strtolower((string) $request->email)])
+            // Shared communication emails: require exactly one linked eligible Person.
+            $normalized = strtolower((string) $request->email);
+            $matches = \App\Models\Profile::query()
+                ->whereRaw('LOWER(email) = ?', [$normalized])
                 ->whereNotNull('user_id')
-                ->first()
-                ?->user;
+                ->whereNull('deleted_at')
+                ->with('user')
+                ->get()
+                ->filter(fn ($profile) => $profile->user !== null)
+                ->values();
+
+            if ($matches->count() === 0) {
+                throw new \Exception('No user found with the provided details.');
+            }
+            if ($matches->count() > 1) {
+                throw new \Exception(
+                    'Multiple accounts share this email. Sign in with your username, then use the authenticated password-change flow, or contact an administrator.'
+                );
+            }
+
+            $user = $matches->first()->user;
             $targetEmail = $request->email;
 
             if (! $user) {

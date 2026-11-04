@@ -142,39 +142,38 @@ class UserAccountService
      */
     public function activate(User $account, string $password): User
     {
-        if ($account->lifecycle === AccountLifecycle::Active) {
-            throw ValidationException::withMessages([
-                'lifecycle' => 'Account is already active.',
-            ]);
-        }
-
-        if ($account->lifecycle !== AccountLifecycle::Provisioned) {
-            throw ValidationException::withMessages([
-                'lifecycle' => 'Only provisioned accounts can be activated.',
-            ]);
-        }
-
         if (strlen($password) < 8) {
             throw ValidationException::withMessages([
                 'password' => 'Password must be at least 8 characters.',
             ]);
         }
 
-        if ($account->profile === null || $account->profile->trashed()) {
-            throw ValidationException::withMessages([
-                'person' => 'Account is not linked to an eligible person.',
-            ]);
-        }
+        return DB::transaction(function () use ($account, $password) {
+            /** @var User $locked */
+            $locked = User::query()->whereKey($account->id)->lockForUpdate()->firstOrFail();
 
-        $account->forceFill([
-            'password' => $password,
-            'lifecycle' => AccountLifecycle::Active->value,
-        ])->save();
+            if ($locked->lifecycle === AccountLifecycle::Active) {
+                // Idempotent: already active — do not re-dispatch activation event.
+                return $locked;
+            }
 
-        event(new AuthenticationAccountActivated($account));
+            if ($locked->lifecycle !== AccountLifecycle::Provisioned) {
+                throw ValidationException::withMessages([
+                    'lifecycle' => 'Only provisioned accounts can be activated.',
+                ]);
+            }
 
-        return $account->refresh();
+            $locked->forceFill([
+                'password' => $password,
+                'lifecycle' => AccountLifecycle::Active->value,
+            ])->save();
+
+            event(new AuthenticationAccountActivated($locked));
+
+            return $locked->refresh();
+        });
     }
+
 
     public function setForcePasswordChange(User $account, bool $required): User
     {
@@ -279,7 +278,7 @@ class UserAccountService
      * Admin/service password reset: sets a new credential and requires change on next login.
      * Does not dispatch AuthenticationAccountCreated.
      */
-    public function resetPassword(User $account, ?string $newPassword = null): string
+    public function resetPassword(User $account, ?string $newPassword = null, bool $notify = false): string
     {
         $plain = $newPassword ?: \Illuminate\Support\Str::random(12);
         if (strlen($plain) < 8) {
@@ -288,14 +287,27 @@ class UserAccountService
             ]);
         }
 
+        // Admin credential reset: never bypass activation semantics.
+        // Provisioned accounts remain Provisioned; Active accounts stay Active.
+        // Always require password change on next login.
         $account->forceFill([
             'password' => $plain,
             'force_password_change' => true,
-            'lifecycle' => \App\Enums\Auth\AccountLifecycle::Active->value,
         ])->save();
+
+        if ($notify) {
+            // Controlled credential delivery (narrow path) — do not use general domain event for plaintext.
+            try {
+                \Illuminate\Support\Facades\Notification::route('mail', $account->profile?->email)
+                    ->notify(new \App\Notifications\AdminResetPasswordNotification($plain, $account));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Admin reset notification failed: '.$e->getMessage());
+            }
+        }
 
         return $plain;
     }
+
 
     public function markAuthEmailVerified(User $account): User
     {
