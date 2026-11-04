@@ -40,7 +40,7 @@ class NewPasswordController extends Controller
             // Check if password reset is allowed (Phase 1 settings capability)
             $resolver = app(SettingsResolver::class);
             $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            $allowPasswordReset = $scope ? (bool) $resolver->get('authentication.allow_password_reset', $scope) : true;
             if (! $allowPasswordReset) {
                 Log::info("Password reset disabled for school {$school->id} as per settings.");
                 return $this->respondWithError($request, 'Password reset is not allowed.', 403);
@@ -83,7 +83,7 @@ class NewPasswordController extends Controller
             // Check if password reset is allowed (Phase 1 settings capability)
             $resolver = app(SettingsResolver::class);
             $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            $allowPasswordReset = $scope ? (bool) $resolver->get('authentication.allow_password_reset', $scope) : true;
             if (! $allowPasswordReset) {
                 throw new \Exception('Password reset is not allowed.');
             }

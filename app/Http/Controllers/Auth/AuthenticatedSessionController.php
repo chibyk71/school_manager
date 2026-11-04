@@ -61,6 +61,8 @@ class AuthenticatedSessionController extends Controller
 
             // Session fixation protection
             $request->session()->regenerate();
+            // New session must re-confirm MFA
+            $request->session()->forget('auth.2fa_confirmed_at');
 
             $user = Auth::user();
 
@@ -83,6 +85,18 @@ class AuthenticatedSessionController extends Controller
                 }
 
                 return redirect()->route('password.force.edit');
+            }
+
+            if (method_exists($user, 'hasTwoFactorAuth') && $user->hasTwoFactorAuth()) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Two-factor authentication required.',
+                        'two_factor_required' => true,
+                        'redirect' => route('2fa.challenge'),
+                    ], 200);
+                }
+
+                return redirect()->route('2fa.challenge');
             }
 
             // Optionally seed active school from membership if none is selected yet.

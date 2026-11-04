@@ -35,15 +35,16 @@ class PasswordResetLinkController extends Controller
     public function create(Request $request)
     {
         try {
-            // Check school context
-            $school = GetSchoolModel();
-
-            // Check if password reset is allowed (Phase 1 settings capability)
+            // Recovery is tenant/application scoped — does not require a selected school workspace.
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
-            $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            $scope = null;
+            $allowPasswordReset = true;
+            if ($school) {
+                $scope = SettingsScope::school((string) $school->id);
+                $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
+            }
             if (! $allowPasswordReset) {
-                Log::info("Password reset disabled for school {$school->id} as per settings.");
                 return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
 
@@ -55,14 +56,14 @@ class PasswordResetLinkController extends Controller
                 return response()->json([
                     'status' => session('status'),
                     'school_id' => $school?->id,
-                    'sms_enabled' => $smsEnabled,
+                    'sms_enabled' => false,
                 ], 200);
             }
 
             return Inertia::render('Auth/ForgotPassword', [
                 'status' => session('status'),
                 'school_id' => $school?->id,
-                'sms_enabled' => $smsEnabled,
+                'sms_enabled' => false,
             ]);
         } catch (\Exception $e) {
             Log::error("Failed to display password reset link view: {$e->getMessage()}");
@@ -87,13 +88,14 @@ class PasswordResetLinkController extends Controller
         $throttleKey = null;
 
         try {
-            // Check school context
-            $school = GetSchoolModel();
-
-            // Check if password reset is allowed (Phase 1 settings capability)
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
-            $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            $scope = null;
+            $allowPasswordReset = true;
+            if ($school) {
+                $scope = SettingsScope::school((string) $school->id);
+                $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
+            }
             if (! $allowPasswordReset) {
                 throw new \Exception('Password reset is not allowed.');
             }
@@ -101,21 +103,14 @@ class PasswordResetLinkController extends Controller
             // Legacy authentication bag for non-pilot keys only
             $authSettings = getMergedSettings('authentication', $school);
 
-            // Check SMS settings (legacy path — not in Phase 1 pilot)
-            $smsSettings = getMergedSettings('sms', $school);
-            $smsEnabled = $smsSettings['sms_enabled'] ?? false;
-
-            // Validate request
+            // Validate request — email delivery only (SMS recovery disabled).
             $request->validate([
                 'email' => ['required_without:enrollment_id', 'email', 'nullable'],
                 'enrollment_id' => ['required_without:email', 'string', 'nullable'],
-                'phone_number' => ['required_if:delivery_method,sms', 'string', 'nullable'],
-                'delivery_method' => ['required', 'string', 'in:email,sms'],
-                'school_id' => ['required', 'exists:schools,id'],
+                'delivery_method' => ['nullable', 'string', 'in:email'],
             ], [
                 'email.required_without' => 'Email is required if enrollment ID is not provided.',
                 'enrollment_id.required_without' => 'Enrollment ID is required if email is not provided.',
-                'phone_number.required_if' => 'Phone number is required for SMS delivery.',
             ]);
 
             // Check rate limiting (OTP lifetime is not a rate-limit lock duration)
@@ -165,14 +160,14 @@ class PasswordResetLinkController extends Controller
             }
 
             // Check SMS delivery
-            if ($request->delivery_method === 'sms' && !$smsEnabled) {
-                throw new \Exception('SMS delivery is not enabled for this school.');
+            if ($request->input('delivery_method') === 'sms') {
+                throw new \Exception('SMS password recovery is not available. Use email delivery.');
             }
 
             // Generate OTP (lifetime from Phase 1 settings capability only)
             $otpInstance = app(Otp::class);
             $otpLength = $authSettings['otp_length'] ?? 6;
-            $otpValidity = $resolver->get('authentication.reset_password_token_life', $scope);
+            $otpValidity = isset($scope) && $scope ? $resolver->get('authentication.reset_password_token_life', $scope) : 10;
             $response = $otpInstance->generate($targetEmail, 'numeric', $otpLength, $otpValidity);
 
             if (!$response->status) {
@@ -182,18 +177,15 @@ class PasswordResetLinkController extends Controller
 
             // Send notification
             $notification = new ResetPasswordNotification($response->otp, $user);
-            if ($request->delivery_method === 'sms' && $smsEnabled) {
-                Notification::route('sms', $request->phone_number)->notify($notification);
-            } else {
-                Notification::route('mail', $targetEmail)->notify($notification);
-            }
+            // Deliver only to the matched Person primary email (never a caller-supplied phone).
+            Notification::route('mail', $targetEmail)->notify($notification);
 
             // Log activity
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
                 ->withProperties([
-                    'school_id' => $school->id,
+                    'school_id' => $school?->id,
                     'delivery_method' => $request->delivery_method,
                     'target_email' => $targetEmail,
                 ])

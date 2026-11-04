@@ -17,7 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 \App\Http\Middleware\HandleInertiaRequests::class,
                 \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
                 \App\Http\Middleware\EnsureCurrentSession::class,
-                \App\Http\Middleware\EnsurePasswordChanged::class
+                \App\Http\Middleware\EnsurePasswordChanged::class,
+                \App\Http\Middleware\EnsureTwoFactorVerified::class,
             ],
             prepend: [
                 \App\Http\Middleware\SchoolContext::class,
@@ -29,42 +30,33 @@ return Application::configure(basePath: dirname(__DIR__))
             'school' => \App\Http\Middleware\SchoolContext::class,
             'ensure.current.session' => \App\Http\Middleware\EnsureCurrentSession::class,
             'password.changed' => \App\Http\Middleware\EnsurePasswordChanged::class,
+            '2fa.verified' => \App\Http\Middleware\EnsureTwoFactorVerified::class,
         ]);
-
-        //
     })
     ->withSchedule(function (Schedule $schedule) {
         $schedule->command('finance:punish-overdue')
-            ->dailyAt('00:05')  // 5 mins after midnight
+            ->dailyAt('00:05')
             ->withoutOverlapping()
             ->onOneServer()
             ->appendOutputTo(storage_path('logs/punishment.log'));
 
-        // Phase 3: expire past-deadline admission offers + deadline reminders
         $schedule->command('admissions:process-lifecycle --reminders')
             ->hourly()
             ->withoutOverlapping()
             ->onOneServer()
             ->appendOutputTo(storage_path('logs/admissions-lifecycle.log'));
 
-        // Phase 7: incomplete enrollment + outstanding requirement reminders
         $schedule->command('enrollments:process-reminders --requirements')
             ->dailyAt('08:30')
             ->withoutOverlapping()
             ->onOneServer()
             ->appendOutputTo(storage_path('logs/enrollment-reminders.log'));
 
-        // Documentation insights: prune events older than configured retention
         $schedule->command('docent:insights:prune')
             ->dailyAt('03:15')
             ->withoutOverlapping()
             ->onOneServer()
             ->appendOutputTo(storage_path('logs/docent-insights-prune.log'));
-
-        // $schedule->job(new App\Jobs\GenerateMonthlyStudentStatement)
-        //  ->monthlyOn(1, '09:00') // 1st of every month at 9 AM
-        //  ->name('Generate Monthly Statements')
-        //  ->withoutOverlapping();
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

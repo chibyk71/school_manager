@@ -20,7 +20,15 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Spatie\Image\Enums\Fit;
 
 /**
- * Profile Model – Central Person Entity (v1.0 – Production-Ready)
+ * Profile Model – Person (tenant-scoped identity)
+ *
+ * Approved domain (Phase 1):
+ * - Person is independently creatable (no Student/Staff/Guardian required).
+ * - Person belongs to the application Tenant boundary (shared DB instance), not a School.
+ * - Person may hold multiple role capacities over time.
+ * - Person has zero or one Authentication Account (users via profiles.user_id).
+ * - Matching email addresses do not establish identity.
+ * - Identity matching belongs to consuming lifecycle workflows, not this model.
  *
  * This is the single source of truth for any individual in the system (students, staff, guardians, etc.).
  * It stores shared personal information to prevent duplication across roles and schools.

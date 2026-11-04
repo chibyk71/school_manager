@@ -94,11 +94,13 @@ class TwoFactorController extends Controller
             throw ValidationException::withMessages(['code' => 'Invalid code.']);
         }
 
+        $request->session()->put('auth.2fa_confirmed_at', time());
+
         // Optional: Set safe device cookie
         if ($request->boolean('remember')) {
             Auth2FA::setSafeDeviceCookie($request);
         }
 
-        return redirect()->intended();
+        return redirect()->intended(route('dashboard', absolute: false));
     }
 }

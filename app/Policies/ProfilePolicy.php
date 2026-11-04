@@ -81,7 +81,8 @@ class ProfilePolicy
      */
     public function create(User $user): bool
     {
-        return false;
+        // Independent Person creation (no role capacity required).
+        return $user->can('profile.create') || $user->can('profile.view-any');
     }
 
     /**

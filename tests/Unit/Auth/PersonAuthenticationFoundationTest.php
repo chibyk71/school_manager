@@ -311,4 +311,39 @@ class PersonAuthenticationFoundationTest extends TestCase
         $this->assertTrue($account->isProvisioned());
         $this->assertTrue($account->requiresPasswordChange());
     }
+
+    public function test_person_service_creates_independent_person_without_account(): void
+    {
+        $service = app(\App\Services\UserManagement\PersonService::class);
+        $person = $service->create([
+            'first_name' => 'Independent',
+            'last_name' => 'Person',
+            'email' => 'independent@example.com',
+        ]);
+
+        $this->assertInstanceOf(Profile::class, $person);
+        $this->assertNull($person->user_id);
+        $this->assertDatabaseMissing('users', ['id' => $person->user_id]);
+    }
+
+    public function test_authentication_account_created_event_has_no_plain_password_property(): void
+    {
+        $ref = new \ReflectionClass(\App\Events\Auth\AuthenticationAccountCreated::class);
+        $params = $ref->getConstructor()->getParameters();
+        $names = array_map(fn ($p) => $p->getName(), $params);
+        $this->assertNotContains('plainPassword', $names);
+    }
+
+    public function test_mark_auth_phone_verified_is_blocked_without_challenge_workflow(): void
+    {
+        $person = Profile::factory()->create();
+        $account = $this->accounts->createForPerson($person, [
+            'username' => 'nophone',
+            'password' => 'password123',
+            'auth_phone' => '+19998887777',
+        ], ['lifecycle' => 'active']);
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $this->accounts->markAuthPhoneVerified($account);
+    }
 }

@@ -80,9 +80,6 @@ class GuardianRegistrationService
         $school = GetSchoolModel(); // May be null (tenant-wide guardians allowed)
 
         return DB::transaction(function () use ($data, $createLogin, $school) {
-            // 1. Basic duplicate check (name + phone/email + DOB)
-            $this->checkForPotentialDuplicate($data);
-
             // 2. Create Profile (personal data)
             $profile = Profile::create([
                 'first_name'    => $data['first_name'],
@@ -134,27 +131,5 @@ class GuardianRegistrationService
      * Basic duplicate prevention check
      * (can be expanded with more sophisticated matching later)
      */
-    private function checkForPotentialDuplicate(array $data): void
-    {
-        // Phase 1: shared communication email alone must not block a distinct Person.
-        // Only a strong possible match (same name + DOB) fails closed without acknowledgement.
-        // Silent identity reuse is not permitted; full identity-matching engine is out of scope.
-        if (empty($data['first_name']) || empty($data['last_name']) || empty($data['date_of_birth'])) {
-            return;
-        }
-
-        $existing = \App\Models\Profile::query()
-            ->where('first_name', $data['first_name'])
-            ->where('last_name', $data['last_name'])
-            ->whereDate('date_of_birth', $data['date_of_birth'])
-            ->exists();
-
-        if ($existing) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'duplicate' => 'A person with the same name and date of birth already exists. Acknowledge the match and provide a reason before continuing (identity acknowledgement is required; silent reuse is not allowed).',
-            ]);
-        }
-    }
-
-
+    
 }

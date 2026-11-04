@@ -5,6 +5,7 @@ namespace App\Http\Controllers\UserManagement;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Models\Profile;
+use App\Services\UserManagement\PersonService;
 use App\Services\UserManagement\UserAccountService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -214,6 +215,48 @@ class ProfileController extends Controller
      * @param  Profile  $profile  The profile to display (route model binding)
      * @return \Inertia\Response
      */
+    /**
+     * Show form to create a Person independently of Student/Staff/Guardian capacity.
+     */
+    public function create(Request $request)
+    {
+        Gate::authorize('create', Profile::class);
+
+        return Inertia::render('Profiles/Create');
+    }
+
+    /**
+     * Persist an independent Person (Profile) without authentication account or role capacity.
+     */
+    public function store(Request $request, PersonService $people)
+    {
+        Gate::authorize('create', Profile::class);
+
+        $validated = $request->validate([
+            'title' => ['nullable', 'string', 'max:50'],
+            'first_name' => ['required', 'string', 'max:100'],
+            'middle_name' => ['nullable', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'gender' => ['nullable', 'string', 'max:50'],
+            'date_of_birth' => ['nullable', 'date'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $person = $people->create($validated);
+
+        activity()
+            ->performedOn($person)
+            ->causedBy($request->user())
+            ->log('Independent person created');
+
+        return redirect()
+            ->route('profiles.show', $person)
+            ->with('success', 'Person created successfully.');
+    }
+
+
     public function show(Profile $profile)
     {
         // 1. Authorization check via policy
@@ -684,14 +727,6 @@ class ProfileController extends Controller
                 'min:8',
                 'confirmed', // requires password_confirmation field
             ],
-            'roles' => [
-                'nullable',
-                'array',
-            ],
-            'roles.*' => [
-                'string',
-                'exists:roles,name',
-            ],
         ], [
             'username.regex' => 'Username may only contain letters, numbers, dots, underscores, and hyphens.',
             'password.min' => 'Password must be at least 8 characters.',
@@ -714,10 +749,8 @@ class ProfileController extends Controller
                 ]
             );
 
-            // Role assignment is independent of account provisioning.
-            if (! empty($validated['roles'])) {
-                $account->syncRoles($validated['roles']);
-            }
+            // Role assignment is not part of account provisioning.
+            // Assign roles through the Authorization / role-management domain only.
 
             return redirect()
                 ->route('profiles.show', $profile)
@@ -806,9 +839,10 @@ class ProfileController extends Controller
 
         if ($isSelf) {
             // Self-service must use the OTP password-recovery flow, not an undisclosed random password.
+            // Authenticated self-service uses the normal password update endpoint, not guest recovery.
             return redirect()
-                ->route('password.request')
-                ->with('status', 'Use the password recovery form to reset your own password.');
+                ->back()
+                ->with('status', 'Use the account password form to change your password while signed in.');
         }
 
         // Administrator-initiated temporary credential reset.
@@ -845,7 +879,7 @@ class ProfileController extends Controller
         }
 
         // Cast to array and sanitize (prevent injection)
-        $ids = array_filter(array_map('intval', (array) $ids));
+        $ids = array_values(array_filter((array) $ids, fn ($id) => is_string($id) && \Illuminate\Support\Str::isUuid($id)));
 
         if (empty($ids)) {
             return redirect()
@@ -971,7 +1005,7 @@ class ProfileController extends Controller
         }
 
         // Cast to array and sanitize (prevent injection)
-        $ids = array_filter(array_map('intval', (array) $ids));
+        $ids = array_values(array_filter((array) $ids, fn ($id) => is_string($id) && \Illuminate\Support\Str::isUuid($id)));
 
         if (empty($ids)) {
             return redirect()
@@ -1152,7 +1186,7 @@ class ProfileController extends Controller
         }
 
         // Sanitize IDs (force integers)
-        $ids = array_filter(array_map('intval', (array) $ids));
+        $ids = array_values(array_filter((array) $ids, fn ($id) => is_string($id) && \Illuminate\Support\Str::isUuid($id)));
 
         if (empty($ids)) {
             return redirect()
@@ -1427,7 +1461,7 @@ class ProfileController extends Controller
         }
 
         // Sanitize IDs
-        $ids = array_filter(array_map('intval', (array) $ids));
+        $ids = array_values(array_filter((array) $ids, fn ($id) => is_string($id) && \Illuminate\Support\Str::isUuid($id)));
 
         if (empty($ids)) {
             return redirect()
