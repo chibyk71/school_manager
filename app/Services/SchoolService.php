@@ -5,10 +5,16 @@
  *
  * A Tenant is the application/database instance. Multiple Schools share that Tenant.
  * This service manages School lifecycle operations and the authenticated user's active
- * School / Section workspace context. It does not define Tenant identity.
+ * School workspace context. It does not define Tenant identity.
  *
  * Workspace selection for authenticated users requires school_users membership.
  * Authentication itself does not require School membership.
+ *
+ * Section context is NOT owned by this service. School activation does not select,
+ * validate, or clear Section state. Section Management / Academic workflows will
+ * define Section context ownership later; coupling it to SchoolService was removed
+ * deliberately so School workspace switching remains independent of unfinished
+ * Section domain design.
  *
  * Create accepts nested addresses[] and persists via HasAddress (is_primary from payload only;
  * first address is NOT auto-primary). Update covers core school fields only; persisted address
@@ -19,7 +25,6 @@ namespace App\Services;
 
 use App\Events\SchoolCreated;
 use App\Models\School;
-use App\Models\SchoolSection;
 use App\Models\User;
 use App\Notifications\MadeAdminOfSchoolNotification;
 use App\Services\School\SchoolLifecycleService;
@@ -33,12 +38,10 @@ class SchoolService
 {
     protected $activeSchool;
 
-    protected $activeSection;
-
     /**
      * Bind an authorized School as the active workspace context.
      *
-     * Purpose: Establish which School scopes subsequent workspace operations (including Section).
+     * Purpose: Establish which School scopes subsequent School-workspace operations.
      * Architectural rule: authenticated selection requires school_users membership
      * (see SchoolWorkspaceAccess). Guests may bind in-memory context when $persistSession is false.
      *
@@ -53,10 +56,8 @@ class SchoolService
      * Postconditions:
      * - $this->activeSchool references $school.
      * - When $persistSession is true, session active_school_id equals $school->id.
-     * - If the previously active School (in-memory or session) differs from $school, Section
-     *   context is cleared (in-memory activeSection and session active_section_id).
      *
-     * Side effects: session keys active_school_id and possibly active_section_id.
+     * Side effects: session key active_school_id when $persistSession is true.
      *
      * @throws \Exception When the authenticated user is not authorized to select $school,
      *                    or when session binding fails.
@@ -69,14 +70,7 @@ class SchoolService
                 throw new \Exception('You are not authorized to select this school workspace.');
             }
 
-            // Invalidate Section when the School identity changes, whether the prior School
-            // lived in this service instance or only in the session.
-            $previousId = $this->activeSchool?->id ?? session('active_school_id');
             $this->activeSchool = $school;
-            if ($previousId !== null && (string) $previousId !== (string) $school->id) {
-                $this->activeSection = null;
-                session()->forget('active_section_id');
-            }
             if ($persistSession) {
                 session(['active_school_id' => $school->id]);
             }
@@ -87,33 +81,20 @@ class SchoolService
     }
 
     /**
-     * Clear active School and Section workspace context (in-memory and session).
+     * Clear active School workspace context (in-memory and session).
+     *
+     * Section context is intentionally not managed here. Section activation belongs
+     * to future Section Management / Academic workflows and must not be coupled to
+     * School workspace selection.
      *
      * @return void
      *
-     * Postconditions: activeSchool and activeSection are null; session keys
-     * active_school_id and active_section_id are removed.
+     * Postconditions: activeSchool is null; session active_school_id is removed.
      */
     public function clearActiveSchool(): void
     {
         $this->activeSchool = null;
-        $this->activeSection = null;
         session()->forget('active_school_id');
-        session()->forget('active_section_id');
-    }
-
-    /**
-     * Clear active Section workspace context only.
-     *
-     * @return void
-     *
-     * Postconditions: activeSection is null; session active_section_id is removed.
-     * Does not modify the active School.
-     */
-    public function clearActiveSection(): void
-    {
-        $this->activeSection = null;
-        session()->forget('active_section_id');
     }
 
     /**
@@ -127,7 +108,7 @@ class SchoolService
      * @param  Request|null  $request  Optional request (unused for header elevation).
      * @return School|null  Authorized School, or null when none is available/authorized.
      *
-     * Side effects: may clear unauthorized session School/Section context; may cache
+     * Side effects: may clear unauthorized session School context; may cache
      * the resolved School on $this->activeSchool.
      */
     public function getActiveSchool(?Request $request = null): ?School
@@ -293,114 +274,4 @@ class SchoolService
         });
     }
 
-    /**
-     * Bind a Section as the active workspace context under the authorized active School.
-     *
-     * @param  SchoolSection  $section  Section to activate. Must belong to the active School.
-     * @return void
-     *
-     * Preconditions:
-     * - An authorized active School must already be resolved.
-     * - $section->school_id must equal the active School id.
-     *
-     * Postconditions: activeSection is $section; session active_section_id is set.
-     *
-     * @throws \Exception When no active School is authorized, or the Section belongs to
-     *                    a different School, or session binding fails.
-     */
-    public function setActiveSection(SchoolSection $section): void
-    {
-        $activeSchool = $this->getActiveSchool();
-
-        if ($activeSchool === null) {
-            throw new \Exception('An authorized active school is required before selecting a section.');
-        }
-
-        if ((string) $section->school_id !== (string) $activeSchool->id) {
-            throw new \Exception('Section does not belong to the active school.');
-        }
-
-        try {
-            $this->activeSection = $section;
-            session(['active_section_id' => $section->id]);
-        } catch (\Exception $e) {
-            Log::error('Failed to set active section: '.$e->getMessage());
-            throw new \Exception($e->getMessage() ?: 'Unable to set active section.');
-        }
-    }
-
-    /**
-     * Resolve the active Section for the current authorized School.
-     *
-     * Supports session active_section_id and, when present, request header X-Section-Id.
-     * Header values are validated strictly: an authorized active School is required, the
-     * Section must exist, and it must belong to that exact School. Invalid or cross-School
-     * identifiers never become active. Session and header must not establish contradictory
-     * Section context for different Schools.
-     *
-     * @param  Request|null  $request  Optional request used to read X-Section-Id.
-     * @return SchoolSection|null  Authorized Section, or null when none is valid.
-     *
-     * Preconditions: none (returns null when no authorized School is active).
-     * Postconditions: when null is returned after an invalid context, active Section
-     * session/in-memory state is cleared.
-     * Side effects: may clear invalid Section context; may cache a valid Section.
-     */
-    public function getActiveSection(?Request $request = null): ?SchoolSection
-    {
-        try {
-            $activeSchool = $this->getActiveSchool($request);
-
-            // No authorized School means no authorized Section.
-            if ($activeSchool === null) {
-                $this->clearActiveSection();
-
-                return null;
-            }
-
-            $headerId = $request?->header('X-Section-Id');
-            $sessionId = session('active_section_id');
-
-            // Prefer explicit header when provided; otherwise session; otherwise in-memory.
-            $candidateId = $headerId ?: $sessionId;
-
-            if ($this->activeSection && ! $candidateId) {
-                if ((string) $this->activeSection->school_id !== (string) $activeSchool->id) {
-                    $this->clearActiveSection();
-
-                    return null;
-                }
-
-                return $this->activeSection;
-            }
-
-            if (! $candidateId) {
-                return null;
-            }
-
-            $section = SchoolSection::find($candidateId);
-            if (! $section || (string) $section->school_id !== (string) $activeSchool->id) {
-                Log::warning('Rejected section context outside authorized school', [
-                    'section_id' => $candidateId,
-                    'active_school_id' => $activeSchool->id,
-                    'source' => $headerId ? 'header' : 'session',
-                ]);
-                $this->clearActiveSection();
-
-                return null;
-            }
-
-            // If header and session disagree, header wins only when valid; align session.
-            $this->activeSection = $section;
-            if (session('active_section_id') !== $section->id) {
-                session(['active_section_id' => $section->id]);
-            }
-
-            return $section;
-        } catch (\Exception $e) {
-            Log::error('Failed to get active section: '.$e->getMessage());
-
-            return null;
-        }
-    }
 }

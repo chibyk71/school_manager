@@ -9,8 +9,13 @@ use Illuminate\Validation\Rules\Password;
  * Password recovery submission (OTP token + new password).
  *
  * Account recovery is Tenant/application scoped and must not require a selected School.
- * Password complexity uses application defaults rather than School-scoped settings.
+ *
+ * Password complexity uses Password::defaults() (application-wide policy). Recovery must not
+ * depend on School-scoped authentication settings solely to enforce password rules, which
+ * would reintroduce a School dependency into account-level recovery. Global defaults remain
+ * the approved policy source for this workflow.
  */
+
 class ResetPasswordRequest extends FormRequest
 {
     public function authorize(): bool

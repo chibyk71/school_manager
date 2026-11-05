@@ -77,17 +77,10 @@ class SchoolContext
     protected function clearWorkspace(Request $request): void
     {
         $request->session()->forget('active_school_id');
-        $request->session()->forget('active_section_id');
-
         try {
             $manager = app('schoolManager');
             if (method_exists($manager, 'clearActiveSchool')) {
                 $manager->clearActiveSchool();
-            }
-            if (method_exists($manager, 'clearActiveSection')) {
-                $manager->clearActiveSection();
-            } elseif (method_exists($manager, 'setActiveSection')) {
-                // best-effort null section if API exists with nullable
             }
         } catch (\Throwable) {
             // ignore
