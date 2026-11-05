@@ -126,11 +126,12 @@ class LoginRequest extends FormRequest
     public function ensureIsNotRateLimited(): void
     {
         try {
-            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
-            $authSettings = function_exists('getMergedSettings')
-                ? getMergedSettings('authentication', $school)
-                : [];
-            $maxAttempts = $authSettings['login_throttle_max'] ?? 5;
+            // Application/Tenant default — never derive login throttle limits from a
+            // client-selectable School workspace.
+            $maxAttempts = (int) (config('auth.login_throttle_max') ?? 5);
+            if ($maxAttempts < 1) {
+                $maxAttempts = 5;
+            }
 
             if (! RateLimiter::tooManyAttempts($this->throttleKey(), $maxAttempts)) {
                 return;

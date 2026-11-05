@@ -49,21 +49,55 @@ class SchoolService
     public function clearActiveSchool(): void
     {
         $this->activeSchool = null;
+        $this->activeSection = null;
         session()->forget('active_school_id');
+        session()->forget('active_section_id');
+    }
+
+    public function clearActiveSection(): void
+    {
+        $this->activeSection = null;
+        session()->forget('active_section_id');
     }
 
     public function getActiveSchool(?Request $request = null): ?School
     {
         try {
             if ($this->activeSchool) {
-                return $this->activeSchool;
+                $user = auth()->user();
+                if ($user !== null && ! \App\Support\Auth\SchoolWorkspaceAccess::canSelect($user, $this->activeSchool)) {
+                    $this->clearActiveSchool();
+                } else {
+                    return $this->activeSchool;
+                }
             }
 
-            $schoolId = $request?->header('X-School-Id')
-                ?? session('active_school_id')
-                ?? auth()->user()?->schools()->first()?->id;
+            // Never elevate a raw request header to authorized workspace context.
+            // Session is only valid if the authenticated user may select that school.
+            $sessionId = session('active_school_id');
+            if ($sessionId) {
+                $school = School::find($sessionId);
+                $user = auth()->user();
+                if ($school && $user && \App\Support\Auth\SchoolWorkspaceAccess::canSelect($user, $school)) {
+                    $this->activeSchool = $school;
 
-            return $schoolId ? School::find($schoolId) : null;
+                    return $school;
+                }
+                $this->clearActiveSchool();
+            }
+
+            // Membership convenience: first participating school only (authorized by definition).
+            $user = auth()->user();
+            if ($user) {
+                $first = $user->schools()->first();
+                if ($first) {
+                    $this->activeSchool = $first;
+
+                    return $first;
+                }
+            }
+
+            return null;
         } catch (\Exception $e) {
             Log::error('Failed to get active school: '.$e->getMessage());
 

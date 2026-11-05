@@ -77,12 +77,11 @@ class ProfilePolicy
     }
 
     /**
-     * Create profiles — intentionally forbidden
-     * (profiles are created via role services: StudentEnrollmentService, etc.)
+     * Create an independent Person (Profile) without role capacity or login.
+     * Requires the profile.create permission (not profile.view-any).
      */
     public function create(User $user): bool
     {
-        // Independent Person creation — separate from profile.view-any.
         return $user->can('profile.create');
     }
 

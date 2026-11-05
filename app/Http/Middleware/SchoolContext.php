@@ -9,14 +9,12 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Resolve active school workspace context.
+ * Resolve active school workspace context for authenticated users only when authorized.
  *
- * Guests may receive a request-scoped school for public branding/settings only;
- * the selection is not treated as authorized participation.
- *
- * Authenticated users may only bind a School workspace when they have valid
- * participation in that School or explicit Tenant-wide authority. Unauthorized
- * selections are rejected and any persisted unauthorized context is cleared.
+ * Guests may receive a non-persisted, request-scoped school for public branding/settings.
+ * Authenticated users may only bind a School workspace via valid school_users participation.
+ * Explicit unauthorized selections are rejected (403) and prior unauthorized context is cleared.
+ * Section context is cleared together with School context.
  *
  * Authentication itself does not require School membership.
  */
@@ -24,9 +22,9 @@ class SchoolContext
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $schoolId = $request->header('X-School-Id')
-            ?: session('active_school_id')
-            ?: $request->input('school_id');
+        $explicitId = $request->header('X-School-Id') ?: $request->input('school_id');
+        $sessionId = session('active_school_id');
+        $schoolId = $explicitId ?: $sessionId;
 
         if (! $schoolId) {
             return $next($request);
@@ -43,8 +41,8 @@ class SchoolContext
         $user = $request->user();
 
         if ($user === null) {
-            // Guest: in-memory context only for public pages; do not elevate session privilege.
-            app('schoolManager')->setActiveSchool($school);
+            // Guest: in-memory only — do not persist into session.
+            app('schoolManager')->setActiveSchool($school, persistSession: false);
 
             return $next($request);
         }
@@ -52,10 +50,22 @@ class SchoolContext
         if (! SchoolWorkspaceAccess::canSelect($user, $school)) {
             $this->clearWorkspace($request);
 
+            // Explicit client selection (header/input) → forbidden.
+            // Stale session alone → clear and continue without that workspace.
+            if ($explicitId && (string) $explicitId === (string) $schoolId) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'You are not authorized to select this school workspace.',
+                    ], 403);
+                }
+
+                abort(403, 'You are not authorized to select this school workspace.');
+            }
+
             return $next($request);
         }
 
-        app('schoolManager')->setActiveSchool($school);
+        app('schoolManager')->setActiveSchool($school, persistSession: true);
 
         if (session('active_school_id') !== $school->id) {
             session(['active_school_id' => $school->id]);
@@ -67,19 +77,17 @@ class SchoolContext
     protected function clearWorkspace(Request $request): void
     {
         $request->session()->forget('active_school_id');
+        $request->session()->forget('active_section_id');
 
         try {
             $manager = app('schoolManager');
             if (method_exists($manager, 'clearActiveSchool')) {
                 $manager->clearActiveSchool();
-            } elseif (method_exists($manager, 'setActiveSchool')) {
-                // Best-effort: leave manager without unauthorized school.
-                $ref = new \ReflectionClass($manager);
-                if ($ref->hasProperty('activeSchool')) {
-                    $prop = $ref->getProperty('activeSchool');
-                    $prop->setAccessible(true);
-                    $prop->setValue($manager, null);
-                }
+            }
+            if (method_exists($manager, 'clearActiveSection')) {
+                $manager->clearActiveSection();
+            } elseif (method_exists($manager, 'setActiveSection')) {
+                // best-effort null section if API exists with nullable
             }
         } catch (\Throwable) {
             // ignore

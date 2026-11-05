@@ -21,7 +21,7 @@ use Tests\TestCase;
  */
 class PersonTenantIsolationNoteTest extends TestCase
 {
-    public function test_person_schema_has_no_school_or_tenant_column_by_design(): void
+    public function test_person_model_fillable_excludes_school_and_tenant_attributes(): void
     {
         $profile = new Profile();
         $cols = $profile->getFillable();
@@ -29,7 +29,7 @@ class PersonTenantIsolationNoteTest extends TestCase
         $this->assertNotContains('tenant_id', $cols);
     }
 
-    public function test_authentication_account_fillable_has_no_school_or_tenant_column(): void
+    public function test_user_model_fillable_excludes_school_tenant_and_email_attributes(): void
     {
         $user = new \App\Models\User();
         $cols = $user->getFillable();
