@@ -24,7 +24,7 @@ use Illuminate\Validation\ValidationException;
  *
  * Features / Problems Solved:
  * - Atomic transaction: Profile + Guardian created together or rolled back
- * - Duplicate detection: basic check on name + phone/email + DOB combo
+ * - Identity matching is out of scope for this service
  * - Guardian-specific validation: minimal (notes, optional school_id)
  * - Optional login: delegates to UserAccountService (default: false for guardians)
  * - Event-driven: fires GuardianRegistered → triggers notification, audit, etc.
@@ -127,9 +127,5 @@ class GuardianRegistrationService
         });
     }
 
-    /**
-     * Basic duplicate prevention check
-     * (can be expanded with more sophisticated matching later)
-     */
-    
 }
+

@@ -48,7 +48,7 @@ use Spatie\Image\Enums\Fit;
  *
  * Fits into the User Management Module:
  * - Hub model: Created bundled with roles (e.g., StudentController creates Profile + Student; StaffController creates Profile + Staff + optional User).
- * - Never created standalone: Always through role-specific flows (enroll student, hire staff, register guardian).
+ * - Independently creatable via PersonService / ProfileController (no role capacity required).
  * - Used in:
  *   - Data tables: ProfilesTable.vue (search/merge across roles), StudentsTable.vue (joins profile for name/photo).
  *   - Modals: ProfileFormModal.vue (shared partial for name/DOB/gender), StudentEnrollmentModal.vue (extends with student fields).

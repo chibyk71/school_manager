@@ -346,4 +346,19 @@ class PersonAuthenticationFoundationTest extends TestCase
         $this->expectException(\Illuminate\Validation\ValidationException::class);
         $this->accounts->markAuthPhoneVerified($account);
     }
+
+    public function test_login_throttle_key_excludes_school(): void
+    {
+        $request = \App\Http\Requests\Auth\LoginRequest::create('/login', 'POST', [
+            'login' => 'someone',
+            'password' => 'secret',
+            'school_id' => '00000000-0000-0000-0000-000000000099',
+        ]);
+        $request->setContainer(app())->setRedirector(app('redirect'));
+        $request->headers->set('REMOTE_ADDR', '203.0.113.10');
+
+        $key = $request->throttleKey();
+        $this->assertStringNotContainsString('00000000-0000-0000-0000-000000000099', $key);
+        $this->assertStringContainsString('someone', $key);
+    }
 }

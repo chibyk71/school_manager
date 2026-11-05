@@ -28,15 +28,28 @@ class SchoolService
 
     protected $activeSection;
 
-    public function setActiveSchool(School $school): void
+    public function setActiveSchool(School $school, bool $persistSession = true): void
     {
         try {
+            $user = auth()->user();
+            if ($user !== null && ! \App\Support\Auth\SchoolWorkspaceAccess::canSelect($user, $school)) {
+                throw new \Exception('You are not authorized to select this school workspace.');
+            }
+
             $this->activeSchool = $school;
-            session(['active_school_id' => $school->id]);
+            if ($persistSession) {
+                session(['active_school_id' => $school->id]);
+            }
         } catch (\Exception $e) {
             Log::error('Failed to set active school: '.$e->getMessage());
-            throw new \Exception('Unable to set active school.');
+            throw new \Exception($e->getMessage() ?: 'Unable to set active school.');
         }
+    }
+
+    public function clearActiveSchool(): void
+    {
+        $this->activeSchool = null;
+        session()->forget('active_school_id');
     }
 
     public function getActiveSchool(?Request $request = null): ?School

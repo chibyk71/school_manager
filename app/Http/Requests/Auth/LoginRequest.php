@@ -158,11 +158,10 @@ class LoginRequest extends FormRequest
 
     public function throttleKey(): string
     {
-        $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
-        $schoolId = $school ? $school->id : 'global';
-
+        // Authentication throttling is Tenant/application-scoped.
+        // Do not partition by client-selected School workspace.
         return Str::transliterate(
-            Str::lower($this->string('login')).'|'.$this->ip().'|'.$schoolId
+            Str::lower($this->string('login')).'|'.$this->ip()
         );
     }
 }

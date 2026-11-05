@@ -2,34 +2,39 @@
 
 namespace Tests\Unit\Auth;
 
+use App\Models\Profile;
 use Tests\TestCase;
 
 /**
- * Architecture note (Phase 1):
+ * Tenant deployment invariant (confirmed):
  *
- * School Manager uses a shared-database multi-school model. Isolation boundaries are:
- * - Application/database instance = tenant boundary for Person (Profile)
- * - school_id on role records (Staff, Student, Guardian) = school workspace boundary
+ * One application and database instance per Tenant, with multiple Schools sharing
+ * that Tenant's database.
  *
- * Person (Profile) deliberately has neither school_id nor tenant_id.
- * Cross-school Person reuse is intentional (same person can be staff in School A
- * and guardian in School B). Authentication resolves Authentication Accounts globally
- * within the application database, not per-school.
+ * Therefore Profile (Person) and User (Authentication Account) remain Tenant-owned
+ * through the deployment boundary. No tenant_id is added to Profile, User, or School.
+ * No school_id is added to Profile.
  *
- * There is no database-per-tenant resolver in this repository. SchoolContext selects
- * a workspace after authentication; it is not a tenant isolation mechanism for Person.
- *
- * If a future multi-database tenancy model is introduced, Person creation, lookup,
- * authentication resolution, Profile listing, and password recovery must be bound to
- * the active tenant connection — not school_id.
+ * Cross-Tenant isolation is a deployment/infrastructure invariant, not row-level
+ * application filtering. This test protects the intended schema assumptions only;
+ * it does not claim to prove that another Tenant's database is unreachable.
  */
 class PersonTenantIsolationNoteTest extends TestCase
 {
     public function test_person_schema_has_no_school_or_tenant_column_by_design(): void
     {
-        $profile = new \App\Models\Profile();
+        $profile = new Profile();
         $cols = $profile->getFillable();
         $this->assertNotContains('school_id', $cols);
         $this->assertNotContains('tenant_id', $cols);
+    }
+
+    public function test_authentication_account_fillable_has_no_school_or_tenant_column(): void
+    {
+        $user = new \App\Models\User();
+        $cols = $user->getFillable();
+        $this->assertNotContains('school_id', $cols);
+        $this->assertNotContains('tenant_id', $cols);
+        $this->assertNotContains('email', $cols);
     }
 }

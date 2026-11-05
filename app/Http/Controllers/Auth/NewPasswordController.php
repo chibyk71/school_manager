@@ -34,15 +34,15 @@ class NewPasswordController extends Controller
     public function create(Request $request)
     {
         try {
-            // Check school context
-            $school = GetSchoolModel();
-
-            // Check if password reset is allowed (Phase 1 settings capability)
+            // Account recovery is Tenant/application scoped — no active School required.
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
-            $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $scope ? (bool) $resolver->get('authentication.allow_password_reset', $scope) : true;
+            $allowPasswordReset = true;
+            if ($school) {
+                $scope = SettingsScope::school((string) $school->id);
+                $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
+            }
             if (! $allowPasswordReset) {
-                Log::info("Password reset disabled for school {$school->id} as per settings.");
                 return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
 
@@ -77,13 +77,14 @@ class NewPasswordController extends Controller
         $throttleKey = null;
 
         try {
-            // Check school context
-            $school = GetSchoolModel();
-
-            // Check if password reset is allowed (Phase 1 settings capability)
+            // Account recovery does not require or invent a School workspace.
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
-            $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $scope ? (bool) $resolver->get('authentication.allow_password_reset', $scope) : true;
+            $allowPasswordReset = true;
+            if ($school) {
+                $scope = SettingsScope::school((string) $school->id);
+                $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
+            }
             if (! $allowPasswordReset) {
                 throw new \Exception('Password reset is not allowed.');
             }

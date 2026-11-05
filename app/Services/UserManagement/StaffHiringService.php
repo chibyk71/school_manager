@@ -23,7 +23,7 @@ use Illuminate\Validation\ValidationException;
  *
  * Features / Problems Solved:
  * - Atomic transaction: Profile + Staff created together or rolled back completely
- * - Duplicate detection: basic check on name + phone/email + DOB combo
+ * - Identity matching is out of scope for this service (consuming lifecycle domain concern)
  * - Staff-specific validation: employee number uniqueness, employment dates, etc.
  * - Automatic staff ID generation via IdGenerator helper (school-prefixed)
  * - Login creation: strongly encouraged (default true) but still optional
@@ -51,7 +51,7 @@ use Illuminate\Validation\ValidationException;
  *   $staff = $service->hire($validatedData, $createLogin = true);
  *
  * Important Conventions:
- * - No direct Profile creation outside role services
+ * - May create a new Person as part of hiring, or attach capacity to an existing Person in future phases
  * - Staff-specific fields validated here (staff_id_number, dates, employment_type)
  * - Login creation is **default true** (staff usually need access) but can be overridden
  * - Ready for future: guardian assignment (staff can be guardians), class/subject linking
@@ -141,9 +141,5 @@ class StaffHiringService
         });
     }
 
-    /**
-     * Basic duplicate prevention check
-     * (can be expanded with more sophisticated matching later)
-     */
-    
 }
+
