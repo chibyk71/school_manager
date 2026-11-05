@@ -36,7 +36,12 @@ class SchoolService
                 throw new \Exception('You are not authorized to select this school workspace.');
             }
 
+            $previousId = $this->activeSchool?->id;
             $this->activeSchool = $school;
+            if ($previousId !== null && (string) $previousId !== (string) $school->id) {
+                $this->activeSection = null;
+                session()->forget('active_section_id');
+            }
             if ($persistSession) {
                 session(['active_school_id' => $school->id]);
             }
@@ -227,7 +232,11 @@ class SchoolService
     {
         $activeSchool = $this->getActiveSchool();
 
-        if ($activeSchool && $section->school_id !== $activeSchool->id) {
+        if ($activeSchool === null) {
+            throw new \Exception('An authorized active school is required before selecting a section.');
+        }
+
+        if ((string) $section->school_id !== (string) $activeSchool->id) {
             throw new \Exception('Section does not belong to the active school.');
         }
 
@@ -236,40 +245,46 @@ class SchoolService
             session(['active_section_id' => $section->id]);
         } catch (\Exception $e) {
             Log::error('Failed to set active section: '.$e->getMessage());
-            throw new \Exception('Unable to set active section.');
+            throw new \Exception($e->getMessage() ?: 'Unable to set active section.');
         }
     }
 
     public function getActiveSection(?Request $request = null): ?SchoolSection
     {
         try {
-            if ($this->activeSection) {
-                return $this->activeSection;
-            }
-
-            $sectionId = $request?->header('X-Section-Id')
-                ?? session('active_section_id');
-
-            if ($sectionId) {
-                $section = SchoolSection::find($sectionId);
-
-                $activeSchool = $this->getActiveSchool($request);
-                if ($section && $activeSchool && $section->school_id !== $activeSchool->id) {
-                    Log::warning('Attempted to access section from different school', [
-                        'section_id' => $sectionId,
-                        'section_school_id' => $section->school_id,
-                        'active_school_id' => $activeSchool->id,
-                    ]);
-
-                    return null;
-                }
-
-                return $section;
-            }
-
             $activeSchool = $this->getActiveSchool($request);
 
-            return $activeSchool?->schoolSections()->first();
+            // No authorized School means no authorized Section.
+            if ($activeSchool === null) {
+                $this->clearActiveSection();
+
+                return null;
+            }
+
+            if ($this->activeSection) {
+                if ((string) $this->activeSection->school_id !== (string) $activeSchool->id) {
+                    $this->clearActiveSection();
+                } else {
+                    return $this->activeSection;
+                }
+            }
+
+            // Session only — never elevate a raw section header without an authorized school.
+            $sectionId = session('active_section_id');
+            if (! $sectionId) {
+                return null;
+            }
+
+            $section = SchoolSection::find($sectionId);
+            if (! $section || (string) $section->school_id !== (string) $activeSchool->id) {
+                $this->clearActiveSection();
+
+                return null;
+            }
+
+            $this->activeSection = $section;
+
+            return $section;
         } catch (\Exception $e) {
             Log::error('Failed to get active section: '.$e->getMessage());
 

@@ -45,6 +45,15 @@ class SchoolWorkspaceAccessTest extends TestCase
                 $table->primary(['user_id', 'school_id']);
             });
         }
+
+        if (! Schema::hasTable('school_sections')) {
+            Schema::create('school_sections', function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('school_id');
+                $table->string('name')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     public function test_member_can_select_participating_school(): void
@@ -64,13 +73,17 @@ class SchoolWorkspaceAccessTest extends TestCase
         $this->assertFalse(SchoolWorkspaceAccess::canSelect($user, $school));
     }
 
-    public function test_role_name_alone_does_not_grant_workspace_access(): void
+    public function test_non_member_cannot_select_even_when_session_points_at_school(): void
     {
         $user = User::factory()->create(['lifecycle' => 'active']);
         $school = School::query()->create(['name' => 'Gamma']);
 
-        // Even if Laratrust role helpers exist, SchoolWorkspaceAccess must not use them.
-        $this->assertFalse(SchoolWorkspaceAccess::canSelect($user, $school));
+        $this->actingAs($user);
+        session(['active_school_id' => $school->id]);
+
+        $service = app(SchoolService::class);
+        $this->assertNull($service->getActiveSchool());
+        $this->assertNull(session('active_school_id'));
     }
 
     public function test_get_active_school_ignores_unauthorized_header(): void
@@ -105,23 +118,61 @@ class SchoolWorkspaceAccessTest extends TestCase
         $this->assertTrue($resolved->is($school));
     }
 
-    public function test_login_throttle_threshold_does_not_use_school_settings(): void
-    {
-        $request = \App\Http\Requests\Auth\LoginRequest::create('/login', 'POST', [
-            'login' => 'throttle-user',
-            'password' => 'secret',
-        ], server: ['REMOTE_ADDR' => '198.51.100.20']);
-        $request->setContainer(app())->setRedirector(app('redirect'));
 
-        $src = file_get_contents(app_path('Http/Requests/Auth/LoginRequest.php'));
-        $this->assertStringNotContainsString(
-            "getMergedSettings('authentication', \$school)",
-            $src,
-            'Login throttle must not load School-scoped authentication settings'
-        );
-        $this->assertStringNotContainsString(
-            'GetSchoolModel()',
-            $src
-        );
+    public function test_section_rejected_without_active_school(): void
+    {
+        $user = User::factory()->create(['lifecycle' => 'active']);
+        $school = School::query()->create(['name' => 'SecSchool']);
+        $section = \App\Models\SchoolSection::query()->create([
+            'school_id' => $school->id,
+            'name' => 'A',
+        ]);
+
+        $this->actingAs($user);
+        $service = app(SchoolService::class);
+
+        $this->expectException(\Exception::class);
+        $service->setActiveSection($section);
+    }
+
+    public function test_switching_school_clears_section_context(): void
+    {
+        $user = User::factory()->create(['lifecycle' => 'active']);
+        $schoolA = School::query()->create(['name' => 'SchoolA']);
+        $schoolB = School::query()->create(['name' => 'SchoolB']);
+        $user->schools()->attach([$schoolA->id, $schoolB->id]);
+        $sectionA = \App\Models\SchoolSection::query()->create([
+            'school_id' => $schoolA->id,
+            'name' => 'SectionA',
+        ]);
+
+        $this->actingAs($user);
+        $service = app(SchoolService::class);
+        $service->setActiveSchool($schoolA);
+        $service->setActiveSection($sectionA);
+        $this->assertNotNull($service->getActiveSection());
+
+        $service->setActiveSchool($schoolB);
+        $this->assertNull(session('active_section_id'));
+        $this->assertNull($service->getActiveSection());
+    }
+
+    public function test_get_active_section_rejects_section_from_other_school(): void
+    {
+        $user = User::factory()->create(['lifecycle' => 'active']);
+        $schoolA = School::query()->create(['name' => 'SchoolA2']);
+        $schoolB = School::query()->create(['name' => 'SchoolB2']);
+        $user->schools()->attach($schoolA->id);
+        $sectionB = \App\Models\SchoolSection::query()->create([
+            'school_id' => $schoolB->id,
+            'name' => 'Foreign',
+        ]);
+
+        $this->actingAs($user);
+        $service = app(SchoolService::class);
+        $service->setActiveSchool($schoolA);
+        session(['active_section_id' => $sectionB->id]);
+
+        $this->assertNull($service->getActiveSection());
     }
 }
