@@ -175,4 +175,38 @@ class SchoolWorkspaceAccessTest extends TestCase
 
         $this->assertNull($service->getActiveSection());
     }
+
+    public function test_fresh_instance_clears_section_when_session_school_changes(): void
+    {
+        $user = User::factory()->create(['lifecycle' => 'active']);
+        $schoolA = School::query()->create(['name' => 'SessA']);
+        $schoolB = School::query()->create(['name' => 'SessB']);
+        $user->schools()->attach([$schoolA->id, $schoolB->id]);
+
+        if (! Schema::hasTable('school_sections')) {
+            Schema::create('school_sections', function (Blueprint $table) {
+                $table->uuid('id')->primary();
+                $table->uuid('school_id');
+                $table->string('name')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        $sectionA = \App\Models\SchoolSection::query()->create([
+            'school_id' => $schoolA->id,
+            'name' => 'SecA',
+        ]);
+
+        $this->actingAs($user);
+        session([
+            'active_school_id' => $schoolA->id,
+            'active_section_id' => $sectionA->id,
+        ]);
+
+        $service = app()->make(SchoolService::class);
+        $service->setActiveSchool($schoolB);
+
+        $this->assertNull(session('active_section_id'));
+        $this->assertNull($service->getActiveSection());
+    }
 }

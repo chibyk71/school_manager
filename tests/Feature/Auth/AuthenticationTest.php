@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\Auth\AccountLifecycle;
+use App\Models\School;
 use App\Models\User;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -49,31 +50,39 @@ test('users can logout', function () {
     $response->assertRedirect('/');
 });
 
-test('login throttle limit is application scoped not school scoped', function () {
+test('login throttle is application scoped across real school contexts', function () {
     config(['auth.login_throttle_max' => 3]);
 
     $user = User::factory()->create([
         'lifecycle' => AccountLifecycle::Active,
     ]);
+    $schoolA = School::factory()->create();
+    $schoolB = School::factory()->create();
+    $user->schools()->attach([$schoolA->id, $schoolB->id]);
 
-    RateLimiter::clear(strtolower($user->username).'|127.0.0.1');
+    $key = \Illuminate\Support\Str::transliterate(strtolower($user->username).'|127.0.0.1');
+    RateLimiter::clear($key);
 
     for ($i = 0; $i < 3; $i++) {
         $this->post('/login', [
             'login' => $user->username,
             'password' => 'wrong-password',
+            'school_id' => $schoolA->id,
         ], [
-            'X-School-Id' => '00000000-0000-0000-0000-0000000000aa',
+            'X-School-Id' => $schoolA->id,
         ]);
     }
 
+    // Different real School must not grant additional attempts for same login|IP.
     $response = $this->post('/login', [
         'login' => $user->username,
         'password' => 'wrong-password',
+        'school_id' => $schoolB->id,
     ], [
-        'X-School-Id' => '00000000-0000-0000-0000-0000000000bb',
+        'X-School-Id' => $schoolB->id,
     ]);
 
     $response->assertSessionHasErrors('login');
     $this->assertGuest();
+    expect(RateLimiter::tooManyAttempts($key, 3))->toBeTrue();
 });

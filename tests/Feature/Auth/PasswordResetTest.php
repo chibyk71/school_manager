@@ -1,15 +1,17 @@
 <?php
 
 /**
- * Password recovery is OTP-based (ResetPasswordNotification), not Laravel's
- * framework ResetPassword mail notification. These tests cover the current contract.
+ * OTP-based password recovery (ResetPasswordNotification via on-demand mail route).
+ * Not Laravel framework ResetPassword notification.
  */
 
 use App\Enums\Auth\AccountLifecycle;
 use App\Models\Profile;
 use App\Models\User;
 use App\Notifications\ResetPasswordNotification;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Ichtrojan\Otp\Otp;
 
 test('reset password link screen can be rendered', function () {
     $response = $this->get('/forgot-password');
@@ -17,18 +19,17 @@ test('reset password link screen can be rendered', function () {
     $response->assertStatus(200);
 });
 
-test('password recovery request rejects enrollment-only without account email resolution path', function () {
-    // Enrollment-ID recovery is intentionally fail-closed when users.enrollment_id is absent.
-    $response = $this->post('/forgot-password', [
+test('enrollment id recovery is rejected in this phase', function () {
+    $response = $this->from('/forgot-password')->post('/forgot-password', [
         'enrollment_id' => 'ENR-DOES-NOT-EXIST',
         'delivery_method' => 'email',
     ]);
 
-    // Either validation error or generic failure — must not succeed silently.
-    expect($response->status())->not->toBe(500);
+    $response->assertRedirect();
+    $response->assertSessionHasErrors();
 });
 
-test('password recovery uses person email not users.email column', function () {
+test('valid person email delivers otp notification to person primary email', function () {
     Notification::fake();
 
     $user = User::factory()->create([
@@ -36,15 +37,90 @@ test('password recovery uses person email not users.email column', function () {
     ]);
     $profile = $user->profile;
     expect($profile)->not->toBeNull();
-    expect($profile->email)->not->toBeEmpty();
+    $email = $profile->email;
+    expect($email)->not->toBeEmpty();
 
-    // Request may fail closed when multiple or zero eligible accounts; single eligible is required.
     $response = $this->post('/forgot-password', [
-        'email' => $profile->email,
+        'email' => $email,
         'delivery_method' => 'email',
     ]);
 
-    // Do not assert framework ResetPassword notification — OTP path uses ResetPasswordNotification.
-    Notification::assertNothingSentTo($user); // may be route-mail notifiable
-    expect($response->status())->not->toBe(500);
+    $response->assertRedirect();
+    $response->assertSessionHasNoErrors();
+
+    Notification::assertSentOnDemand(ResetPasswordNotification::class, function ($notification, $channels, $notifiable) use ($email, $user) {
+        expect($channels)->toContain('mail');
+        expect($notifiable->routes['mail'] ?? null)->toBe($email);
+        expect($notification->token)->not->toBeEmpty();
+        expect($notification->user->is($user))->toBeTrue();
+
+        return true;
+    });
+});
+
+test('shared email matching multiple linked accounts fails closed', function () {
+    Notification::fake();
+
+    $email = 'shared-recovery@example.com';
+
+    $userA = User::factory()->create(['lifecycle' => AccountLifecycle::Active]);
+    $userB = User::factory()->create(['lifecycle' => AccountLifecycle::Active]);
+    $userA->profile->update(['email' => $email]);
+    $userB->profile->update(['email' => $email]);
+
+    $response = $this->from('/forgot-password')->post('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ]);
+
+    $response->assertRedirect();
+    Notification::assertNothingSent();
+});
+
+test('invalid otp cannot reset password', function () {
+    $user = User::factory()->create(['lifecycle' => AccountLifecycle::Active]);
+    $email = $user->profile->email;
+
+    $response = $this->from('/reset-password')->post('/reset-password', [
+        'email' => $email,
+        'token' => '000000',
+        'password' => 'new-password-123',
+        'password_confirmation' => 'new-password-123',
+    ]);
+
+    $response->assertRedirect();
+    $user->refresh();
+    expect(Hash::check('new-password-123', $user->password))->toBeFalse();
+});
+
+test('valid otp completes password reset workflow', function () {
+    $user = User::factory()->create(['lifecycle' => AccountLifecycle::Active]);
+    $email = $user->profile->email;
+
+    $otp = app(Otp::class);
+    $generated = $otp->generate($email, 'numeric', 6, 10);
+    $token = $generated->token ?? $generated->otp ?? null;
+    if ($token === null && is_object($generated)) {
+        $token = $generated->token ?? null;
+    }
+    // ichtrojan/otp generate returns object with ->token or ->otp depending on version
+    $code = is_object($generated) ? ($generated->token ?? $generated->otp ?? (string) $generated) : (string) $generated;
+
+    if (! is_string($code) || $code === '') {
+        // Fallback: read latest otp row if table exists
+        $code = \Illuminate\Support\Facades\DB::table('otps')->where('identifier', $email)->value('token');
+    }
+
+    expect($code)->not->toBeEmpty();
+
+    $response = $this->post('/reset-password', [
+        'email' => $email,
+        'token' => $code,
+        'password' => 'brand-new-password-99',
+        'password_confirmation' => 'brand-new-password-99',
+    ]);
+
+    $response->assertRedirect(route('login'));
+    $user->refresh();
+    expect(Hash::check('brand-new-password-99', $user->password))->toBeTrue();
 });
