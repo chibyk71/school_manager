@@ -14,6 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Ninja\DeviceTracker\Modules\Location\Contracts\LocationProvider;
@@ -33,6 +34,11 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
     use RefreshDatabase;
 
     private UserAccountService $accounts;
+
+    /** Deterministic MFA-gated probe (auth + 2fa.verified); not a product route. */
+    private const PROTECTED_ROUTE_URI = '/__r13/mfa-protected';
+
+    private const PROTECTED_ROUTE_BODY = 'r13-mfa-protected-ok';
 
     protected function setUp(): void
     {
@@ -97,6 +103,19 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
                 }
             }
         );
+
+        $this->registerMfaProtectedProbeRoute();
+    }
+
+    /**
+     * Test-only route gated by auth + EnsureTwoFactorVerified.
+     * Avoids DashboardController dependencies while proving MFA-gated access.
+     */
+    private function registerMfaProtectedProbeRoute(): void
+    {
+        Route::middleware(['web', 'auth', '2fa.verified'])
+            ->get(self::PROTECTED_ROUTE_URI, fn () => response(self::PROTECTED_ROUTE_BODY, 200))
+            ->name('r13.mfa.protected');
     }
 
     private function makeActiveUser(string $username, string $password = 'password123', ?string $email = null): User
@@ -229,6 +248,19 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         return null;
     }
 
+    public function test_device_tracker_legacy_google2fa_is_disabled(): void
+    {
+        $this->assertFalse(
+            (bool) config('devices.google_2fa_enabled'),
+            'DeviceTracker Google2FA bridge must stay off; Laragear owns MFA'
+        );
+        $user = $this->makeActiveUser('g2fa_compat');
+        $this->assertFalse(
+            $user->google2faEnabled(),
+            'User::google2faEnabled() is a false shim for DeviceTracker session bootstrap only'
+        );
+    }
+
     public function test_mfa_user_identifier_is_account_username(): void
     {
         $user = $this->makeActiveUser('mfa_ident_user', email: 'mfa-ident@example.com');
@@ -258,7 +290,7 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
             ->assertRedirect();
         $this->assertAuthenticatedAs($user);
 
-        $this->get('/dashboard')
+        $this->get(self::PROTECTED_ROUTE_URI)
             ->assertRedirect(route('2fa.challenge'));
 
         $totp = $user->fresh()->makeTwoFactorCode();
@@ -268,18 +300,9 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $this->assertNotNull(session('auth.2fa_confirmed_at'));
         $this->assertAuthenticatedAs($user);
 
-        // Protected route must not re-challenge; dashboard may 500 on unrelated
-        // getPrimaryCategory gaps in focused fixtures — still prove MFA gate is open.
-        $allowed = $this->get('/dashboard');
-        $this->assertAuthenticatedAs($user);
-        $this->assertFalse(
-            $allowed->isRedirect() && str_contains((string) $allowed->headers->get('Location'), '2fa'),
-            'Must not redirect to MFA challenge after successful TOTP'
-        );
-        $this->assertStringNotContainsString(
-            'login',
-            (string) $allowed->headers->get('Location')
-        );
+        $this->get(self::PROTECTED_ROUTE_URI)
+            ->assertOk()
+            ->assertSee(self::PROTECTED_ROUTE_BODY, false);
     }
 
     public function test_mfa_invalid_totp_is_rejected(): void
@@ -378,7 +401,6 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $verify = $this->post('/2fa/verify', ['code' => $totp, 'remember' => true]);
         $verify->assertRedirect();
 
-        // Replay the cookie value actually emitted on the response (not the DB token).
         $emitted = $this->emittedCookieFromResponse($verify, $cookieName);
         $this->assertNotNull(
             $emitted,
@@ -387,12 +409,9 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $emittedValue = $emitted->getValue();
         $this->assertNotSame('', $emittedValue);
 
-        // Separate account-level record assertion only.
         $user->refresh();
         $this->assertNotEmpty($user->safeDevices(), 'safe_devices must be recorded after remember=true');
 
-        // Emitted value is already on-the-wire encrypted; withUnencryptedCookie avoids
-        // double-encryption by withCookie() so request-side decryption yields the token.
         $this->post('/logout');
         $this->withUnencryptedCookie($cookieName, $emittedValue)
             ->post('/login', ['login' => 'mfa_safe', 'password' => $password])
@@ -407,23 +426,16 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $this->assertStringNotContainsString('2fa/challenge', $challengeLocation);
         $this->assertStringNotContainsString('login', $challengeLocation);
 
-        $dashboard = $this->withUnencryptedCookie($cookieName, $emittedValue)
-            ->get('/dashboard');
-        $this->assertAuthenticatedAs($user);
-        $this->assertFalse(
-            $dashboard->isRedirect() && str_contains((string) $dashboard->headers->get('Location'), '2fa'),
-            'Dashboard must not redirect to MFA when safe-device cookie is accepted'
-        );
-        $this->assertStringNotContainsString(
-            'login',
-            (string) $dashboard->headers->get('Location')
-        );
+        $this->withUnencryptedCookie($cookieName, $emittedValue)
+            ->get(self::PROTECTED_ROUTE_URI)
+            ->assertOk()
+            ->assertSee(self::PROTECTED_ROUTE_BODY, false);
 
         config(['two-factor.safe_devices.enabled' => false]);
         session()->forget('auth.2fa_confirmed_at');
 
         $this->withUnencryptedCookie($cookieName, $emittedValue)
-            ->get('/dashboard')
+            ->get(self::PROTECTED_ROUTE_URI)
             ->assertRedirect(route('2fa.challenge'));
     }
 

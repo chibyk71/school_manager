@@ -1,7 +1,14 @@
 <?php
 
+use Ninja\DeviceTracker\Cache\DeviceCache;
+use Ninja\DeviceTracker\Cache\LocationCache;
+use Ninja\DeviceTracker\Cache\SessionCache;
+use Ninja\DeviceTracker\Cache\UserAgentCache;
 use Ninja\DeviceTracker\Enums\Transport;
+use Ninja\DeviceTracker\Modules\Location\IpinfoLocationProvider;
+use Ninja\DeviceTracker\Modules\Location\MaxmindLocationProvider;
 use Ninja\DeviceTracker\ValueObject\DeviceId;
+use Ninja\DeviceTracker\ValueObject\EventId;
 use Ninja\DeviceTracker\ValueObject\Fingerprint;
 use Ninja\DeviceTracker\ValueObject\SessionId;
 
@@ -87,7 +94,7 @@ return [
     | and serialize the event id. Must implement the StorableId interface.
     |
     */
-    'event_id_storable_class' => \Ninja\DeviceTracker\ValueObject\EventId::class,
+    'event_id_storable_class' => EventId::class,
 
     /*
     |--------------------------------------------------------------------------
@@ -353,8 +360,8 @@ return [
     |
     */
     'location_providers' => [
-        \Ninja\DeviceTracker\Modules\Location\IpinfoLocationProvider::class,
-        \Ninja\DeviceTracker\Modules\Location\MaxmindLocationProvider::class,
+        IpinfoLocationProvider::class,
+        MaxmindLocationProvider::class,
     ],
 
     /*
@@ -391,10 +398,10 @@ return [
     |
     */
     'cache_ttl' => [
-        \Ninja\DeviceTracker\Cache\SessionCache::KEY_PREFIX => 3600,
-        \Ninja\DeviceTracker\Cache\DeviceCache::KEY_PREFIX => 3600,
-        \Ninja\DeviceTracker\Cache\LocationCache::KEY_PREFIX => 2592000,
-        \Ninja\DeviceTracker\Cache\UserAgentCache::KEY_PREFIX => 2592000,
+        SessionCache::KEY_PREFIX => 3600,
+        DeviceCache::KEY_PREFIX => 3600,
+        LocationCache::KEY_PREFIX => 2592000,
+        UserAgentCache::KEY_PREFIX => 2592000,
     ],
 
     /*
@@ -474,7 +481,11 @@ return [
     |
     |
     */
-    'google_2fa_enabled' => true,
+    // School Manager MFA is owned by Laragear Two-Factor (User::hasTwoFactorEnabled /
+    // validateTwoFactorCode / safe devices). DeviceTracker's optional Google2FA bridge
+    // is not used: no Has2FA trait, no second secret, no duplicate enrollment. Must stay
+    // false so session bootstrap does not expect google2faEnabled() to mean MFA is on.
+    'google_2fa_enabled' => false,
 
     /*
     |--------------------------------------------------------------------------

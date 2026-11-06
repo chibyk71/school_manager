@@ -25,6 +25,11 @@ HRM owns Staff hiring and Staff identity resolution (whether to reuse an existin
 
 ## MFA challenge (Laragear Two-Factor v3.0.0)
 
+- DeviceTracker legacy `config/devices.php` `google_2fa_enabled` is **false**. Laragear owns
+  MFA and safe-device trust; `User::google2faEnabled()` remains a false compatibility shim
+  for DeviceTracker session bootstrap only (no second MFA stack).
+
+
 - TOTP credential label: `User::getTwoFactorUserIdentifier()` returns the account **username**
   (not Person email). The package default uses `email`, which is not a users-table attribute.
 - Label identifier only — does not change login identifiers or Person email ownership.

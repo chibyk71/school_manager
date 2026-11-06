@@ -247,12 +247,14 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
     }
 
     /**
-     * Compatibility with diego-ninja/laravel-devices session bootstrap.
+     * Compatibility with diego-ninja/laravel-devices session bootstrap only.
      *
-     * That package calls google2faEnabled() when creating tracked sessions. MFA for
-     * Authentication Accounts is owned by Laragear Two-Factor (hasTwoFactorEnabled),
-     * not the device package's optional Google2FA bridge. Always false here so device
-     * session creation does not require the Has2FA trait or google2fa tables.
+     * DeviceTracker calls this when creating tracked sessions (initialStatus). School
+     * Manager MFA is exclusively Laragear Two-Factor (`hasTwoFactorEnabled`, challenge
+     * routes, and Laragear safe devices). config/devices.php `google_2fa_enabled` is
+     * false for the same reason — no Has2FA trait, no second TOTP secret, and no
+     * DeviceTracker MFA enrollment. Always returns false so device-session status stays
+     * Active without locking on an unused Google2FA integration.
      */
     public function google2faEnabled(): bool
     {

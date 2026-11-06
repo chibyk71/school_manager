@@ -10,17 +10,16 @@ use App\Events\UserPasswordResetByAdmin;
 use App\Models\Permission;
 use App\Models\Profile;
 use App\Models\Role;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use App\Models\School;
 use App\Models\User;
 use App\Services\SchoolService;
 use App\Services\UserManagement\UserAccountService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Schema;
+use Ninja\DeviceTracker\Modules\Location\Contracts\LocationProvider;
+use Ninja\DeviceTracker\Modules\Location\DTO\Location;
 use Tests\TestCase;
 
 /**
@@ -37,9 +36,64 @@ class PersonAuthenticationR13FoundationTest extends TestCase
     {
         parent::setUp();
         $this->accounts = app(UserAccountService::class);
+
+        // Same DeviceTracker test harness as R13 corrections (Symfony UA + no GeoIP DB).
+        config([
+            'devices.user_agent_whitelist' => array_values(array_unique(array_merge(
+                (array) config('devices.user_agent_whitelist', []),
+                ['Symfony']
+            ))),
+            'devices.google_2fa_enabled' => false,
+        ]);
+        if (interface_exists(LocationProvider::class)) {
+            $this->app->instance(
+                LocationProvider::class,
+                new class implements LocationProvider
+                {
+                    public function country(): ?string
+                    {
+                        return null;
+                    }
+
+                    public function region(): ?string
+                    {
+                        return null;
+                    }
+
+                    public function city(): ?string
+                    {
+                        return null;
+                    }
+
+                    public function postal(): ?string
+                    {
+                        return null;
+                    }
+
+                    public function latitude(): ?string
+                    {
+                        return null;
+                    }
+
+                    public function longitude(): ?string
+                    {
+                        return null;
+                    }
+
+                    public function timezone(): ?string
+                    {
+                        return null;
+                    }
+
+                    public function locate(string $ip): Location
+                    {
+                        return Location::fromArray(['ip' => $ip]);
+                    }
+                }
+            );
+        }
     }
 
-    
     private function grantPermission(User $user, string $name, ?School $school = null): void
     {
         if (! Schema::hasTable('permissions')) {
@@ -66,6 +120,11 @@ class PersonAuthenticationR13FoundationTest extends TestCase
         $this->grantPermission($user, 'school.create');
         // Super-admin role fallback used by some School tests
         if (Schema::hasTable('roles') && Schema::hasTable('role_user')) {
+            // Required for assignAdmin hasRole/addRole after Laratrust team-arg fix.
+            Role::query()->firstOrCreate(
+                ['name' => 'admin', 'school_id' => null],
+                ['display_name' => 'Admin']
+            );
             $role = Role::query()->firstOrCreate(
                 ['name' => 'super-admin'],
                 ['display_name' => 'Super Admin']
@@ -361,6 +420,4 @@ class PersonAuthenticationR13FoundationTest extends TestCase
 
         $this->assertSame(1, (int) $row->active_users_count);
     }
-
-
 }
