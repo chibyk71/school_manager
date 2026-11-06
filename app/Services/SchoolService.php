@@ -23,14 +23,20 @@
 
 namespace App\Services;
 
+use App\Enums\Auth\AccountLifecycle;
 use App\Events\SchoolCreated;
+use App\Models\Profile;
 use App\Models\School;
 use App\Models\User;
 use App\Notifications\MadeAdminOfSchoolNotification;
 use App\Services\School\SchoolLifecycleService;
+use App\Services\UserManagement\UserAccountService;
+use App\Support\Auth\SchoolWorkspaceAccess;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class SchoolService
 {
@@ -64,7 +70,7 @@ class SchoolService
     {
         try {
             $user = auth()->user();
-            if ($user !== null && ! \App\Support\Auth\SchoolWorkspaceAccess::canSelect($user, $school)) {
+            if ($user !== null && ! SchoolWorkspaceAccess::canSelect($user, $school)) {
                 throw new \Exception('You are not authorized to select this school workspace.');
             }
 
@@ -104,7 +110,7 @@ class SchoolService
      * elevation without SchoolContext middleware checks.
      *
      * @param  Request|null  $request  Optional request (unused for header elevation).
-     * @return School|null  Authorized School, or null when none is available/authorized.
+     * @return School|null Authorized School, or null when none is available/authorized.
      *
      * Side effects: may clear unauthorized session School context; may cache
      * the resolved School on $this->activeSchool.
@@ -114,7 +120,7 @@ class SchoolService
         try {
             if ($this->activeSchool) {
                 $user = auth()->user();
-                if ($user !== null && ! \App\Support\Auth\SchoolWorkspaceAccess::canSelect($user, $this->activeSchool)) {
+                if ($user !== null && ! SchoolWorkspaceAccess::canSelect($user, $this->activeSchool)) {
                     $this->clearActiveSchool();
                 } else {
                     return $this->activeSchool;
@@ -127,7 +133,7 @@ class SchoolService
             if ($sessionId) {
                 $school = School::find($sessionId);
                 $user = auth()->user();
-                if ($school && $user && \App\Support\Auth\SchoolWorkspaceAccess::canSelect($user, $school)) {
+                if ($school && $user && SchoolWorkspaceAccess::canSelect($user, $school)) {
                     $this->activeSchool = $school;
 
                     return $school;
@@ -262,10 +268,10 @@ class SchoolService
      * UserAccountService.
      *
      * @param  array<string, mixed>  $userData
-     * @return User  The assigned administrator account
+     * @return User The assigned administrator account
      *
-     * @throws \Illuminate\Validation\ValidationException
-     * @throws \Illuminate\Auth\Access\AuthorizationException
+     * @throws ValidationException
+     * @throws AuthorizationException
      */
     public function assignAdmin(array $userData, School $school): User
     {
@@ -292,15 +298,18 @@ class SchoolService
                 $admin = User::query()->with('profile')->whereKey($validated['account_id'])->firstOrFail();
 
                 if ($admin->profile === null || $admin->profile->trashed()) {
-                    throw \Illuminate\Validation\ValidationException::withMessages([
+                    throw ValidationException::withMessages([
                         'account_id' => 'The selected account has no eligible Person.',
                     ]);
                 }
 
                 $admin->schools()->syncWithoutDetaching([$school->id]);
 
-                if (! $admin->hasRole('admin', $school->id)) {
-                    $admin->addRole('admin', $school->id);
+                // Pass the School model: Laratrust Helper::getIdFor() treats a plain
+                // string as a model class name (where name = $string). UUID strings
+                // therefore fail; the Eloquent instance supplies the team primary key.
+                if (! $admin->hasRole('admin', $school)) {
+                    $admin->addRole('admin', $school);
                 }
 
                 $admin->notify(new MadeAdminOfSchoolNotification($school));
@@ -336,13 +345,13 @@ class SchoolService
 
         return DB::transaction(function () use ($validated, $school) {
             // Never reuse a Person because email matches — always create a new Person.
-            $person = \App\Models\Profile::create([
+            $person = Profile::create([
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'],
                 'email' => strtolower(trim($validated['email'])),
             ]);
 
-            $accountService = app(\App\Services\UserManagement\UserAccountService::class);
+            $accountService = app(UserAccountService::class);
             $plainPassword = $validated['password'] ?? null;
             $options = [
                 'force_password_change' => true,
@@ -351,9 +360,9 @@ class SchoolService
             ];
             // Active only when usable credentials are supplied; otherwise Provisioned.
             if (filled($plainPassword)) {
-                $options['lifecycle'] = \App\Enums\Auth\AccountLifecycle::Active;
+                $options['lifecycle'] = AccountLifecycle::Active;
             } else {
-                $options['lifecycle'] = \App\Enums\Auth\AccountLifecycle::Provisioned;
+                $options['lifecycle'] = AccountLifecycle::Provisioned;
             }
 
             $admin = $accountService->createForPerson(
@@ -367,8 +376,9 @@ class SchoolService
 
             $admin->schools()->syncWithoutDetaching([$school->id]);
 
-            if (! $admin->hasRole('admin', $school->id)) {
-                $admin->addRole('admin', $school->id);
+            // Pass the School model (not $school->id): see existing-account path note.
+            if (! $admin->hasRole('admin', $school)) {
+                $admin->addRole('admin', $school);
             }
 
             $admin->notify(new MadeAdminOfSchoolNotification($school));
@@ -376,5 +386,4 @@ class SchoolService
             return $admin->load('profile');
         });
     }
-
 }

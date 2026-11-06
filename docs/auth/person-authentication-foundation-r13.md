@@ -19,8 +19,15 @@ HRM owns Staff hiring and Staff identity resolution (whether to reuse an existin
 - Existing account path: explicit account identifier; membership + admin role outside UserAccountService.
 - New account path: new Person (never email-matched), then UserAccountService; then membership + role.
 - When admin assignment is requested, School create + assignment run in one DB transaction.
+- School-scoped admin role: pass the **School model** to Laratrust `hasRole` / `addRole`
+  (not `$school->id`). A plain UUID string is treated as a model class name by Helper::getIdFor().
+
 
 ## MFA challenge (Laragear Two-Factor v3.0.0)
+
+- TOTP credential label: `User::getTwoFactorUserIdentifier()` returns the account **username**
+  (not Person email). The package default uses `email`, which is not a users-table attribute.
+- Label identifier only — does not change login identifiers or Person email ownership.
 
 - Enrollment: `createTwoFactorAuth` → `confirmTwoFactorAuth`.
 - Login challenge: `validateTwoFactorCode($code, useRecoveryCodes: true)` only.

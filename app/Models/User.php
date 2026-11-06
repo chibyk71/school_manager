@@ -27,13 +27,13 @@ use Spatie\Activitylog\Traits\LogsActivity;
  */
 class User extends Authenticatable implements LaratrustUser, TwoFactorAuthenticatable
 {
-    use HasFactory,
-        Notifiable,
-        CausesActivity,
+    use CausesActivity,
+        HasFactory,
         HasRolesAndPermissions,
         HasUuids,
-        TwoFactorAuthentication,
-        LogsActivity;
+        LogsActivity,
+        Notifiable,
+        TwoFactorAuthentication;
 
     protected $fillable = [
         'username',
@@ -226,6 +226,37 @@ class User extends Authenticatable implements LaratrustUser, TwoFactorAuthentica
     public function getEmailAttribute(): ?string
     {
         return $this->profile?->email;
+    }
+
+    /**
+     * Laragear Two-Factor TOTP credential label identifier (package v3.0.0).
+     *
+     * The package default returns {@see getAttribute('email')}. This Authentication
+     * Account model does not store Person email as a users-table column; primary
+     * communication email lives on Profile (Person). Returning that attribute would
+     * yield null and break MFA enrollment (return-type error).
+     *
+     * Username is the account's mandatory unique credential handle and is always
+     * present as a string column on users. It is used only as the TOTP URI/label
+     * identifier for authenticator apps — not as a change to login-identifier
+     * policy, email verification, or Person identity resolution.
+     */
+    public function getTwoFactorUserIdentifier(): string
+    {
+        return (string) $this->username;
+    }
+
+    /**
+     * Compatibility with diego-ninja/laravel-devices session bootstrap.
+     *
+     * That package calls google2faEnabled() when creating tracked sessions. MFA for
+     * Authentication Accounts is owned by Laragear Two-Factor (hasTwoFactorEnabled),
+     * not the device package's optional Google2FA bridge. Always false here so device
+     * session creation does not require the Has2FA trait or google2fa tables.
+     */
+    public function google2faEnabled(): bool
+    {
+        return false;
     }
 
     public function getAvatarUrlAttribute(): string
