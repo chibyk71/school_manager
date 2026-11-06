@@ -22,8 +22,8 @@ use Tests\TestCase;
  * R13 correction suite: real MFA HTTP, School admin HTTP, email OTP HTTP.
  *
  * Rate-limit tests rely on natural Cache/RateLimiter decay via time travel only
- * (no RateLimiter::clear to fake expiry). Safe-device tests require the configured
- * cookie to be issued and resent across sessions.
+ * (no RateLimiter::clear to fake expiry). Safe-device tests replay the cookie
+ * value actually emitted on the MFA verification response.
  */
 class PersonAuthenticationR13CorrectionsTest extends TestCase
 {
@@ -73,7 +73,6 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
             'school_id' => null,
         ]);
     }
-
 
     private function ensureAdminRoleExists(): void
     {
@@ -146,14 +145,15 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
     }
 
     /**
-     * Extract a named cookie value from an HTTP test response (including queued cookies).
+     * Extract the named Set-Cookie as emitted on the response (including queued cookies).
+     * Value may be encrypted by EncryptCookies — callers must replay it with withCookie().
      */
-    private function cookieValueFromResponse($response, string $name): ?string
+    private function emittedCookieFromResponse($response, string $name): ?Cookie
     {
         foreach ($response->headers->getCookies() as $cookie) {
             /** @var Cookie $cookie */
             if ($cookie->getName() === $name) {
-                return $cookie->getValue();
+                return $cookie;
             }
         }
 
@@ -182,12 +182,15 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
             ->assertRedirect();
 
         $this->assertNotNull(session('auth.2fa_confirmed_at'));
+        $this->assertAuthenticatedAs($user);
 
+        // DashboardController returns 200 Inertia for an eligible authenticated session.
         $allowed = $this->get('/dashboard');
-        $this->assertFalse(
-            $allowed->isRedirect() && str_contains((string) $allowed->headers->get('Location'), '2fa'),
-            'Protected route must not re-challenge after successful MFA'
-        );
+        $allowed->assertOk();
+        $this->assertAuthenticatedAs($user);
+        $location = (string) $allowed->headers->get('Location');
+        $this->assertStringNotContainsString('login', $location);
+        $this->assertStringNotContainsString('2fa', $location);
     }
 
     public function test_mfa_invalid_totp_is_rejected(): void
@@ -250,7 +253,6 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $this->assertGreaterThan(0, RateLimiter::availableIn($key));
         $attemptsAtLock = RateLimiter::attempts($key);
 
-        // Locked request must not increment.
         $this->from(route('2fa.challenge'))
             ->post('/2fa/verify', ['code' => '000000'])
             ->assertSessionHasErrors('code');
@@ -258,7 +260,6 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $this->assertStringContainsStringIgnoringCase('too many', $lockMessage);
         $this->assertSame($attemptsAtLock, RateLimiter::attempts($key));
 
-        // Natural expiry: decay is 15 minutes — travel past it without clear().
         $this->travel(16)->minutes();
 
         $this->assertFalse(
@@ -288,46 +289,45 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $verify = $this->post('/2fa/verify', ['code' => $totp, 'remember' => true]);
         $verify->assertRedirect();
 
-        // Cookie must appear on the response (package queues the configured cookie name).
-        $responseCookie = $this->cookieValueFromResponse($verify, $cookieName);
+        // Replay the cookie value actually emitted on the response (not the DB token).
+        $emitted = $this->emittedCookieFromResponse($verify, $cookieName);
         $this->assertNotNull(
-            $responseCookie,
+            $emitted,
             "Expected Set-Cookie for [{$cookieName}] after MFA verify with remember=true"
         );
+        $emittedValue = $emitted->getValue();
+        $this->assertNotSame('', $emittedValue);
 
-        // Plain token is stored on the account's safe_devices collection (Laragear).
+        // Separate account-level record assertion only.
         $user->refresh();
         $this->assertNotEmpty($user->safeDevices(), 'safe_devices must be recorded after remember=true');
-        $token = $user->safeDevices()->first()['2fa_remember'] ?? null;
-        $this->assertNotEmpty($token, 'Expected 2fa_remember token on the account safe device');
 
-        // Fresh login with the same cookie — MFA challenge must be bypassed.
         $this->post('/logout');
-        $this->withUnencryptedCookie($cookieName, $token)
+        $this->withCookie($cookieName, $emittedValue)
             ->post('/login', ['login' => 'mfa_safe', 'password' => $password])
             ->assertRedirect();
 
         session()->forget('auth.2fa_confirmed_at');
 
-        $challenge = $this->withUnencryptedCookie($cookieName, $token)
+        $challenge = $this->withCookie($cookieName, $emittedValue)
             ->get(route('2fa.challenge'));
         $challenge->assertRedirect();
-        $location = (string) $challenge->headers->get('Location');
-        $this->assertStringNotContainsString('2fa/challenge', $location);
-        $this->assertStringNotContainsString('login', $location);
+        $challengeLocation = (string) $challenge->headers->get('Location');
+        $this->assertStringNotContainsString('2fa/challenge', $challengeLocation);
+        $this->assertStringNotContainsString('login', $challengeLocation);
 
-        $dashboard = $this->withUnencryptedCookie($cookieName, $token)
+        $dashboard = $this->withCookie($cookieName, $emittedValue)
             ->get('/dashboard');
-        $this->assertFalse(
-            $dashboard->isRedirect() && str_contains((string) $dashboard->headers->get('Location'), '2fa'),
-            'Dashboard must not redirect to MFA when safe-device cookie is present and enabled'
-        );
+        $dashboard->assertOk();
+        $this->assertAuthenticatedAs($user);
+        $dashLocation = (string) $dashboard->headers->get('Location');
+        $this->assertStringNotContainsString('2fa', $dashLocation);
+        $this->assertStringNotContainsString('login', $dashLocation);
 
-        // Same cookie must NOT bypass when safe devices are disabled.
         config(['two-factor.safe_devices.enabled' => false]);
         session()->forget('auth.2fa_confirmed_at');
 
-        $this->withUnencryptedCookie($cookieName, $token)
+        $this->withCookie($cookieName, $emittedValue)
             ->get('/dashboard')
             ->assertRedirect(route('2fa.challenge'));
     }
@@ -348,18 +348,16 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
             'contact_name' => 'Reception',
         ]);
 
-        $this->assertTrue(
-            $response->isRedirect() || $response->status() === 201,
-            'Expected successful school create, got '.$response->status()
-        );
+        $school = School::query()->where('name', 'Contact Only School')->first();
+        $this->assertNotNull($school);
+        $response->assertRedirect(route('schools.edit', $school));
+        $response->assertSessionHas('success');
         $this->assertDatabaseHas('schools', [
             'name' => 'Contact Only School',
             'email' => 'school-contact-only@example.com',
         ]);
         $this->assertSame($usersBefore, User::query()->count());
         $this->assertSame($profilesBefore, Profile::query()->count());
-        $school = School::query()->where('name', 'Contact Only School')->first();
-        $this->assertNotNull($school);
         $this->assertSame(0, $school->users()->count());
     }
 
@@ -384,16 +382,12 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
             'admin_password' => 'password123',
         ]);
 
-        $this->assertTrue(
-            $response->isRedirect() || $response->status() === 201,
-            'Expected successful school+admin create, got '.$response->status()
-        );
-
         $school = School::query()->where('name', 'Explicit Admin School')->first();
         $this->assertNotNull($school);
+        $response->assertRedirect(route('schools.edit', $school));
+        $response->assertSessionHas('success');
         $this->assertSame('office@example.com', $school->email);
 
-        // Independent Person with same email string (no identity match).
         $this->assertSame(
             2,
             Profile::query()->whereRaw('LOWER(email) = ?', ['explicit-admin@example.com'])->count()
@@ -435,13 +429,10 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
             'account_id' => $existing->id,
         ]);
 
-        $this->assertTrue(
-            $response->isRedirect() || $response->status() === 201,
-            'Expected successful school+existing admin, got '.$response->status()
-        );
-
         $school = School::query()->where('name', 'Existing Admin School')->first();
         $this->assertNotNull($school);
+        $response->assertRedirect(route('schools.edit', $school));
+        $response->assertSessionHas('success');
 
         $existing->refresh();
         $this->assertSame($accountId, $existing->id);
@@ -460,18 +451,20 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $this->actingAsSchoolCreator();
         $schoolsBefore = School::query()->count();
         $usersBefore = User::query()->count();
+        $missingAccountId = (string) Str::uuid();
 
-        $response = $this->post(route('schools.store'), [
-            'name' => 'Rollback School',
-            'email' => 'rollback-office@example.com',
-            'account_id' => (string) Str::uuid(),
-        ]);
+        // assignAdmin validates account_id with exists:users,id; SchoolController rethrows
+        // ValidationException → web redirect back with errors (not HTTP 500).
+        $response = $this->from(route('schools.create'))
+            ->post(route('schools.store'), [
+                'name' => 'Rollback School',
+                'email' => 'rollback-office@example.com',
+                'account_id' => $missingAccountId,
+            ]);
 
-        $this->assertTrue(
-            in_array($response->status(), [302, 422, 500], true),
-            'Expected failure status, got '.$response->status()
-        );
-        // Redirect-back with error is acceptable; school must not exist.
+        $response->assertRedirect(route('schools.create'));
+        $response->assertSessionHasErrors(['account_id']);
+        $this->assertNotEquals(500, $response->status());
         $this->assertSame($schoolsBefore, School::query()->count());
         $this->assertSame($usersBefore, User::query()->count());
         $this->assertDatabaseMissing('schools', ['name' => 'Rollback School']);
@@ -526,7 +519,6 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $this->assertStringContainsString('too many', strtolower($locked->getContent()));
         $this->assertSame($attemptsAtLock, RateLimiter::attempts($key));
 
-        // Natural expiry — 15 minute decay; no clear().
         $this->travel(16)->minutes();
         $this->assertFalse(
             RateLimiter::tooManyAttempts($key, 5),
@@ -537,7 +529,6 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $token = $otp->token ?? $otp->otp ?? null;
         $this->assertNotEmpty($token, 'OTP package did not return a token');
 
-        // Prior residual attempts may remain below threshold after decay; success must clear.
         $ok = $this->postJson('/verify-email', ['otp' => (string) $token]);
         $ok->assertSuccessful();
         $user->refresh();
