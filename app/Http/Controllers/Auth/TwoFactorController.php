@@ -83,20 +83,52 @@ class TwoFactorController extends Controller
 
     public function verify(Request $request)
     {
+        $user = Auth::user();
+        if (! $user) {
+            return redirect()->route('login');
+        }
+
+        $throttleKey = '2fa-verify:'.$user->id.'|'.$request->ip();
+        if (\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = \Illuminate\Support\Facades\RateLimiter::availableIn($throttleKey);
+            throw ValidationException::withMessages([
+                'code' => "Too many verification attempts. Try again in {$seconds} seconds.",
+            ]);
+        }
+
         $request->validate([
-            'code' => 'required|totp:' . Auth::id(),
+            'code' => 'required|string',
             'remember' => 'sometimes|boolean',
         ]);
 
-        $user = Auth::user();
+        $valid = false;
+        try {
+            if (method_exists($user, 'validateTwoFactorCode')) {
+                $valid = (bool) $user->validateTwoFactorCode($request->input('code'));
+            } elseif (method_exists($user, 'confirmTwoFactorAuth')) {
+                $valid = (bool) $user->confirmTwoFactorAuth($request->input('code'));
+            }
+        } catch (\Throwable) {
+            $valid = false;
+        }
 
-        if (!$user->confirmTwoFactorAuth($request->code)) {
+        if (! $valid) {
+            try {
+                $request->validate(['code' => 'totp:'.$user->id]);
+                $valid = true;
+            } catch (ValidationException) {
+                $valid = false;
+            }
+        }
+
+        if (! $valid) {
+            \Illuminate\Support\Facades\RateLimiter::hit($throttleKey, 60 * 15);
             throw ValidationException::withMessages(['code' => 'Invalid code.']);
         }
 
+        \Illuminate\Support\Facades\RateLimiter::clear($throttleKey);
         $request->session()->put('auth.2fa_confirmed_at', time());
 
-        // Optional: Set safe device cookie
         if ($request->boolean('remember')) {
             Auth2FA::setSafeDeviceCookie($request);
         }

@@ -62,6 +62,7 @@ Route::middleware('auth')->group(function () {
 
     // Submit OTP (new route – this was missing!)
     Route::post('verify-email', [VerifyEmailController::class, '__invoke'])
+        ->middleware('throttle:10,1')
         ->name('verification.verify');                    // POST /verify-email → OTP submit
 
     // Old signed URL fallback (still supported by Laravel)
@@ -97,5 +98,5 @@ Route::middleware('auth')->group(function () {
 
 
 Route::get('/2fa/challenge', [TwoFactorController::class, 'challenge'])->name('2fa.challenge');
-Route::post('/2fa/verify', [TwoFactorController::class, 'verify'])->name('2fa.verify');
+Route::post('/2fa/verify', [TwoFactorController::class, 'verify'])->middleware('throttle:10,1')->name('2fa.verify');
 

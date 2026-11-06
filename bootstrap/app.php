@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 \App\Http\Middleware\HandleInertiaRequests::class,
                 \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
                 \App\Http\Middleware\EnsureCurrentSession::class,
+                \App\Http\Middleware\EnsureAccountEligible::class,
                 \App\Http\Middleware\EnsurePasswordChanged::class,
                 \App\Http\Middleware\EnsureTwoFactorVerified::class,
             ],
@@ -29,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'school' => \App\Http\Middleware\SchoolContext::class,
             'ensure.current.session' => \App\Http\Middleware\EnsureCurrentSession::class,
+            'account.eligible' => \App\Http\Middleware\EnsureAccountEligible::class,
             'password.changed' => \App\Http\Middleware\EnsurePasswordChanged::class,
             '2fa.verified' => \App\Http\Middleware\EnsureTwoFactorVerified::class,
         ]);

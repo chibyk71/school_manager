@@ -8,12 +8,14 @@ use Ichtrojan\Otp\Otp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Verify ownership of the Person primary email for the authenticated account.
  * Sets auth_email_verified_at only; does not enable email login.
+ *
+ * Invalid OTP guesses are rate-limited independently of resend throttling.
  */
 class VerifyEmailController extends Controller
 {
@@ -33,6 +35,14 @@ class VerifyEmailController extends Controller
             return $this->ok($request, 'Email already verified.');
         }
 
+        $throttleKey = 'email-verify-otp:'.$user->id;
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+            throw ValidationException::withMessages([
+                'otp' => "Too many verification attempts. Try again in {$seconds} seconds.",
+            ]);
+        }
+
         $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
         $authSettings = function_exists('getMergedSettings')
             ? getMergedSettings('authentication', $school)
@@ -45,9 +55,11 @@ class VerifyEmailController extends Controller
         $otpInstance = app(Otp::class);
         $response = $otpInstance->validate(strtolower($email), $validated['otp']);
         if (! $response->status) {
+            RateLimiter::hit($throttleKey, 60 * 15); // 15 minute decay lock window
             throw ValidationException::withMessages(['otp' => 'Invalid or expired OTP.']);
         }
 
+        RateLimiter::clear($throttleKey);
         $accounts->markAuthEmailVerified($user);
 
         activity()

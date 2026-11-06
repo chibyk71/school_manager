@@ -76,7 +76,7 @@ class TenantAdminBootstrapService
                 $user->assignRole('super-admin');
             }
 
-            event(new TenantAdminCreated($user, $plainPassword));
+            event(new TenantAdminCreated($user));
 
             return [$user->load('profile'), $plainPassword];
         });
