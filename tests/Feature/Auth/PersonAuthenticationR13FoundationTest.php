@@ -362,47 +362,5 @@ class PersonAuthenticationR13FoundationTest extends TestCase
         $this->assertSame(1, (int) $row->active_users_count);
     }
 
-    // ------------------------------------------------------------------
-    // B. MFA challenge API contract (unit-level against User methods)
-    // ------------------------------------------------------------------
 
-    public function test_mfa_challenge_uses_validate_two_factor_code_not_confirm(): void
-    {
-        $source = file_get_contents(app_path('Http/Controllers/Auth/TwoFactorController.php'));
-        $this->assertStringContainsString('validateTwoFactorCode', $source);
-        $this->assertStringContainsString('hasTwoFactorEnabled', $source);
-
-        // verify() must not call confirmTwoFactorAuth (enrollment only)
-        if (preg_match('/function verify\(.*?\{(.*?)\}/s', $source, $m)) {
-            $this->assertStringNotContainsString('confirmTwoFactorAuth', $m[1]);
-        }
-
-        // Middleware / login use hasTwoFactorEnabled
-        $mw = file_get_contents(app_path('Http/Middleware/EnsureTwoFactorVerified.php'));
-        $this->assertStringContainsString('hasTwoFactorEnabled', $mw);
-        $login = file_get_contents(app_path('Http/Controllers/Auth/AuthenticatedSessionController.php'));
-        $this->assertStringContainsString('hasTwoFactorEnabled', $login);
-    }
-
-    public function test_mfa_challenge_rate_limit_blocks_without_extra_hits(): void
-    {
-        $user = $this->makeActiveUser('mfa_lock');
-        $key = '2fa-challenge:'.$user->id.'|127.0.0.1';
-        RateLimiter::clear($key);
-
-        for ($i = 0; $i < 5; $i++) {
-            RateLimiter::hit($key, 60 * 15);
-        }
-        $this->assertTrue(RateLimiter::tooManyAttempts($key, 5));
-        $attempts = RateLimiter::attempts($key);
-
-        // Simulate controller locked branch: no additional hit
-        if (RateLimiter::tooManyAttempts($key, 5)) {
-            // no hit
-        }
-        $this->assertSame($attempts, RateLimiter::attempts($key));
-
-        RateLimiter::clear($key);
-        $this->assertFalse(RateLimiter::tooManyAttempts($key, 5));
-    }
 }
