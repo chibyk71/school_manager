@@ -23,12 +23,17 @@ use Inertia\Response as InertiaResponse;
  * - Re-checks authentication-email eligibility at completion time (state may have changed).
  * - Does not activate Provisioned accounts or alter lifecycle beyond credential update.
  * - Does not require School workspace context.
- * - Failed OTP attempts are counted exactly once; lock duration is applied via RateLimiter::hit.
+ * - Failed OTP attempts are counted exactly once via explicit control flow (not message matching).
+ * - Requests that are already locked out do not further increment the counter.
  *
  * @group Authentication
  */
 class NewPasswordController extends Controller
 {
+    private const MAX_ATTEMPTS = 5;
+
+    private const DECAY_MINUTES = 60;
+
     /**
      * Display the password reset form.
      */
@@ -69,18 +74,20 @@ class NewPasswordController extends Controller
     /**
      * Validate OTP and set a new password for an eligible Authentication Account.
      *
-     * Preconditions: valid ResetPasswordRequest (token, normalized email, confirmed password).
+     * Preconditions: valid ResetPasswordRequest (token, email, confirmed password).
      * Postconditions on success: password updated, force_password_change cleared, attempt
      * counter cleared, PasswordReset event fired. Lifecycle is not promoted from Provisioned.
      *
-     * Throttling: one failed OTP validation increments the counter once. Lock duration is the
-     * decay seconds passed to RateLimiter::hit (default 60 minutes).
+     * Throttling control flow:
+     * - If already locked, return error without incrementing.
+     * - Invalid OTP or post-OTP ineligibility increments once then returns.
+     * - Other failures after lock check do not use the OTP attempt counter unless they
+     *   represent a completed OTP validation attempt path.
      */
     public function store(ResetPasswordRequest $request): RedirectResponse|JsonResponse
     {
-        $throttleKey = null;
-        $decayMinutes = 60;
-        $maxAttempts = 5;
+        $normalizedEmail = AuthenticationEmail::normalize($request->input('email'));
+        $throttleKey = 'password-reset|'.$normalizedEmail.'|'.$request->ip();
 
         try {
             $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
@@ -91,30 +98,28 @@ class NewPasswordController extends Controller
                 $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
             }
             if (! $allowPasswordReset) {
-                throw new \Exception('Password reset is not allowed.');
+                return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
 
-            $normalizedEmail = AuthenticationEmail::normalize($request->input('email'));
-            $throttleKey = 'password-reset|'.$normalizedEmail.'|'.$request->ip();
-
-            if ($this->hasTooManyAttempts($throttleKey, $maxAttempts)) {
-                throw new \Exception('Too many password reset attempts. Please try again later.');
+            if ($this->hasTooManyAttempts($throttleKey, self::MAX_ATTEMPTS)) {
+                return $this->respondWithError($request, 'Too many password reset attempts. Please try again later.', 429);
             }
 
             $otpInstance = app(Otp::class);
             $otpResult = $otpInstance->validate($normalizedEmail, $request->input('token'));
 
             if (! ($otpResult->status ?? false)) {
-                // Count this failure once; do not increment again in the catch block.
-                $this->incrementAttempts($throttleKey, $decayMinutes);
-                throw new \Exception('Invalid or expired OTP.');
+                $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
+
+                return $this->respondWithError($request, 'Invalid or expired OTP.');
             }
 
             // Re-check eligibility at completion — verification/enablement may have changed.
             $user = AuthenticationEmail::resolveEligibleAccount($normalizedEmail);
             if ($user === null) {
-                $this->incrementAttempts($throttleKey, $decayMinutes);
-                throw new \Exception('Unable to reset password for this email.');
+                $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
+
+                return $this->respondWithError($request, 'Unable to reset password for this email.');
             }
 
             // Credential update only — does not activate Provisioned accounts.
@@ -139,18 +144,13 @@ class NewPasswordController extends Controller
 
             return redirect()->route('login')
                 ->with('status', 'Password reset successfully.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            Log::warning('Password reset failed: '.$e->getMessage());
+            Log::error('Password reset failed unexpectedly: '.$e->getMessage());
 
-            // OTP failures already incremented above; avoid double-count for those messages.
-            $alreadyCounted = str_contains($e->getMessage(), 'Invalid or expired OTP')
-                || str_contains($e->getMessage(), 'Unable to reset password for this email');
-
-            if ($throttleKey !== null && ! $alreadyCounted) {
-                $this->incrementAttempts($throttleKey, $decayMinutes);
-            }
-
-            return $this->respondWithError($request, $e->getMessage());
+            // Unexpected infrastructure errors: do not treat as OTP guesses.
+            return $this->respondWithError($request, 'Password reset failed. Please try again.');
         }
     }
 

@@ -23,13 +23,22 @@ use Inertia\Response as InertiaResponse;
  * Recovery is a Tenant/application authentication capability. It does not require
  * School membership or an active School workspace. The Person primary email
  * (profiles.email) is used only when the linked account has verified and enabled
- * authentication email. Soft-deleted Persons and shared-email ambiguity fail closed
- * with non-revealing client responses.
+ * authentication email.
+ *
+ * Public responses are intentionally identical for eligible, unknown, ineligible,
+ * and ambiguous emails so callers cannot probe account eligibility. Only an
+ * eligible account receives an OTP; rate limiting and internal logs still apply.
  *
  * @group Authentication
  */
 class PasswordResetLinkController extends Controller
 {
+    private const GENERIC_STATUS = 'If an eligible account exists for this email, a reset code has been sent.';
+
+    private const MAX_ATTEMPTS = 5;
+
+    private const DECAY_MINUTES = 60;
+
     /**
      * Display the password reset request form.
      *
@@ -71,23 +80,21 @@ class PasswordResetLinkController extends Controller
     }
 
     /**
-     * Request a recovery OTP for an eligible Authentication Account.
+     * Request a recovery OTP without revealing whether the email is eligible.
      *
-     * Business rules:
-     * - Email is normalized once and used for lookup, OTP identifier, notification
-     *   destination, and throttle key.
-     * - Eligibility requires verified + enabled auth email on the linked account.
-     * - Enrollment-ID recovery is not supported in this phase.
-     * - SMS recovery is disabled (OTP must not be sent to a caller-supplied phone).
-     * - Public responses do not distinguish missing, ineligible, or ambiguous emails
-     *   beyond a generic failure when resolution is not exactly one eligible account.
+     * Control flow:
+     * 1. Validate input and reject enrollment-ID / SMS channels.
+     * 2. If already locked out, return the generic success response without
+     *    incrementing the counter again.
+     * 3. Resolve at most one eligible account. If none, return generic success
+     *    (still count the initiation attempt toward abuse limits).
+     * 4. If eligible, generate OTP for the normalized email and notify that address.
+     * 5. Always return the same HTTP status, structure, and message on the public path.
      *
      * @throws ValidationException
      */
     public function store(Request $request): RedirectResponse|JsonResponse
     {
-        $throttleKey = null;
-
         try {
             $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
@@ -98,7 +105,7 @@ class PasswordResetLinkController extends Controller
                 $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
             }
             if (! $allowPasswordReset) {
-                throw new \Exception('Password reset is not allowed.');
+                return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
 
             $request->validate([
@@ -111,29 +118,37 @@ class PasswordResetLinkController extends Controller
             ]);
 
             if ($request->filled('enrollment_id')) {
-                // Fail closed: enrollment is an academic identifier, not an Authentication Account id.
-                throw new \Exception('Password reset by enrollment ID is not supported. Use the account email.');
+                // Do not reveal enrollment resolution capability; same generic response shape.
+                Log::info('Password recovery rejected: enrollment_id path is not supported in this phase.');
+
+                return $this->genericInitiationResponse($request);
             }
 
             if ($request->input('delivery_method') === 'sms') {
-                throw new \Exception('SMS password recovery is not available. Use email delivery.');
+                Log::info('Password recovery rejected: SMS delivery is disabled.');
+
+                return $this->genericInitiationResponse($request);
             }
 
             $normalizedEmail = AuthenticationEmail::normalize($request->input('email'));
             $throttleKey = 'password-reset-link|'.$normalizedEmail.'|'.$request->ip();
-            $throttleMax = 5;
-            $throttleDecayMinutes = 60;
 
-            if ($this->hasTooManyAttempts($throttleKey, $throttleMax)) {
-                throw new \Exception('Too many password reset link requests. Please try again later.');
+            // Already locked: respond generically without further counter growth.
+            if ($this->hasTooManyAttempts($throttleKey, self::MAX_ATTEMPTS)) {
+                Log::info('Password recovery initiation blocked by rate limit', ['key' => $throttleKey]);
+
+                return $this->genericInitiationResponse($request);
             }
 
             $user = AuthenticationEmail::resolveEligibleAccount($normalizedEmail);
-            if ($user === null) {
-                // Non-revealing: do not disclose whether the email exists or is ineligible.
-                $this->incrementAttempts($throttleKey, $throttleDecayMinutes);
 
-                throw new \Exception('If an eligible account exists for this email, a reset code has been sent.');
+            if ($user === null) {
+                Log::info('Password recovery initiation: no single eligible account', [
+                    'email_hash' => hash('sha256', $normalizedEmail),
+                ]);
+                $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
+
+                return $this->genericInitiationResponse($request);
             }
 
             $otpLength = 6;
@@ -149,7 +164,10 @@ class PasswordResetLinkController extends Controller
                 : (string) $otpResponse;
 
             if ($otpCode === '') {
-                throw new \Exception('Unable to generate a reset code. Please try again.');
+                Log::error('Password recovery OTP generation returned empty token');
+                $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
+
+                return $this->genericInitiationResponse($request);
             }
 
             Notification::route('mail', $normalizedEmail)
@@ -165,23 +183,29 @@ class PasswordResetLinkController extends Controller
                 ])
                 ->log('Password reset link requested');
 
-            $this->incrementAttempts($throttleKey, $throttleDecayMinutes);
+            $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
 
-            if ($request->expectsJson()) {
-                return response()->json(['message' => 'If an eligible account exists for this email, a reset code has been sent.'], 200);
-            }
-
-            return redirect()->back()->with('status', 'If an eligible account exists for this email, a reset code has been sent.');
+            return $this->genericInitiationResponse($request);
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
-            Log::warning('Password reset link request failed: '.$e->getMessage());
-            if ($throttleKey !== null && ! str_contains($e->getMessage(), 'eligible account')) {
-                $this->incrementAttempts($throttleKey, 60);
-            }
+            Log::error('Password reset link request failed: '.$e->getMessage());
 
-            return $this->respondWithError($request, $e->getMessage());
+            // Infrastructure failures must not leak eligibility; still generic to the client.
+            return $this->genericInitiationResponse($request);
         }
+    }
+
+    /**
+     * Uniform client response for all initiation outcomes (except validation / hard policy denials).
+     */
+    protected function genericInitiationResponse(Request $request): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['message' => self::GENERIC_STATUS], 200);
+        }
+
+        return redirect()->back()->with('status', self::GENERIC_STATUS);
     }
 
     protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts): bool
@@ -189,9 +213,6 @@ class PasswordResetLinkController extends Controller
         return app('Illuminate\Cache\RateLimiter')->tooManyAttempts($throttleKey, $maxAttempts);
     }
 
-    /**
-     * @param  int  $decayMinutes  Lockout window applied by RateLimiter::hit
-     */
     protected function incrementAttempts(string $throttleKey, int $decayMinutes = 60): void
     {
         app('Illuminate\Cache\RateLimiter')->hit($throttleKey, $decayMinutes * 60);

@@ -14,7 +14,6 @@ use Symfony\Component\HttpFoundation\Response;
  * Guests may receive a non-persisted, request-scoped school for public branding/settings.
  * Authenticated users may only bind a School workspace via valid school_users participation.
  * Explicit unauthorized selections are rejected (403) and prior unauthorized context is cleared.
- * Section context is cleared together with School context.
  *
  * Authentication itself does not require School membership.
  */
