@@ -263,28 +263,44 @@ class SchoolController extends BaseSchoolController
         }
 
         try {
-            // 1. Create core school + nested addresses[] via service (transactional)
-            //    First address is NOT auto-primary; is_primary comes from payload only.
-            $school = $this->schoolService->createSchool($request->validated());
+            // School contact email must never imply administrator assignment.
+            $adminRequested = $request->filled('account_id')
+                || $request->filled('admin_id')
+                || $request->filled('admin_email')
+                || $request->filled('administrator_email')
+                || $request->filled('admin_name')
+                || $request->filled('administrator_name');
 
-            // 3. Optional admin assignment (onboarding flows).
-            // Existing account: admin_id / account_id. New Person+Account: name/email/password.
-            if ($request->hasAny(['admin_id', 'account_id', 'admin_name', 'admin_email', 'first_name', 'email'])) {
-                $adminData = [
-                    'account_id' => $request->input('account_id') ?? $request->input('admin_id'),
-                    'id' => $request->input('admin_id'),
-                    'admin_name' => $request->input('admin_name'),
-                    'first_name' => $request->input('first_name'),
-                    'last_name' => $request->input('last_name'),
-                    'admin_email' => $request->input('admin_email'),
-                    'email' => $request->input('email') ?? $request->input('admin_email'),
-                    'admin_password' => $request->input('admin_password'),
-                    'password' => $request->input('admin_password') ?? $request->input('password'),
-                    'username' => $request->input('username'),
-                ];
+            // When administrator assignment is requested, School create + admin must be atomic:
+            // a failed assignment must not leave a partially provisioned School/account.
+            $createAndMaybeAdmin = function () use ($request, $adminRequested) {
+                // 1. Create core school + nested addresses[] via service (transactional).
+                //    First address is NOT auto-primary; is_primary comes from payload only.
+                $school = $this->schoolService->createSchool($request->validated());
 
-                $this->schoolService->assignAdmin($adminData, $school);
-            }
+                if ($adminRequested) {
+                    $adminData = [
+                        'account_id' => $request->input('account_id') ?? $request->input('admin_id'),
+                        'id' => $request->input('admin_id'),
+                        'admin_name' => $request->input('admin_name') ?? $request->input('administrator_name'),
+                        'first_name' => $request->input('admin_first_name') ?? $request->input('administrator_first_name'),
+                        'last_name' => $request->input('admin_last_name') ?? $request->input('administrator_last_name'),
+                        'admin_email' => $request->input('admin_email') ?? $request->input('administrator_email'),
+                        // Never fall back to School contact email for Person identity.
+                        'email' => $request->input('admin_email') ?? $request->input('administrator_email'),
+                        'admin_password' => $request->input('admin_password') ?? $request->input('administrator_password'),
+                        'password' => $request->input('admin_password') ?? $request->input('administrator_password'),
+                        'username' => $request->input('admin_username') ?? $request->input('administrator_username'),
+                    ];
+                    $this->schoolService->assignAdmin($adminData, $school);
+                }
+
+                return $school;
+            };
+
+            $school = $adminRequested
+                ? DB::transaction($createAndMaybeAdmin)
+                : $createAndMaybeAdmin();
 
             // 4. Handle media uploads (Spatie – single-file collections)
             $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];

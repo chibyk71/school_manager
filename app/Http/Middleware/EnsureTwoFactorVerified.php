@@ -17,7 +17,7 @@ class EnsureTwoFactorVerified
     {
         $user = $request->user();
 
-        if ($user === null || ! method_exists($user, 'hasTwoFactorAuth') || ! $user->hasTwoFactorAuth()) {
+        if ($user === null || ! method_exists($user, 'hasTwoFactorEnabled') || ! $user->hasTwoFactorEnabled()) {
             return $next($request);
         }
 

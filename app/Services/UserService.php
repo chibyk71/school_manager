@@ -388,7 +388,7 @@ class UserService
 
         RateLimiter::hit($key, $decayMinutes * 60); // Increment attempts
 
-        event(new UserPasswordResetByAdmin($user, $password));
+        event(new UserPasswordResetByAdmin($user));
 
         activity()
             ->causedBy(auth()->user())

@@ -244,6 +244,10 @@ class SchoolService
     /**
      * Assign a School administrator for onboarding / school create flows.
      *
+     * Invariant: the School contact email field is unrelated to administrator
+     * identity. Callers must pass explicit administrator fields; controllers must
+     * not treat generic "email" as an admin-assignment signal.
+     *
      * Two supported paths (mutually exclusive):
      * 1. Existing Authentication Account: provide account_id (users.id). The account
      *    must already exist; its linked Person is used. No Person is created or

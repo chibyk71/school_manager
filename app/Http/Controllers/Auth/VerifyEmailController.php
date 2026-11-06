@@ -16,6 +16,9 @@ use Illuminate\Validation\ValidationException;
  * Sets auth_email_verified_at only; does not enable email login.
  *
  * Invalid OTP guesses are rate-limited independently of resend throttling.
+ * Threshold: 5 failures per account; 15-minute decay. Blocked requests do not
+ * increment the counter. Success clears the limiter. Verification sets
+ * auth_email_verified_at only — it does not enable email as a login identifier.
  */
 class VerifyEmailController extends Controller
 {

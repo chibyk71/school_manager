@@ -87,7 +87,7 @@ class AuthenticatedSessionController extends Controller
                 return redirect()->route('password.force.edit');
             }
 
-            if (method_exists($user, 'hasTwoFactorAuth') && $user->hasTwoFactorAuth()) {
+            if (method_exists($user, 'hasTwoFactorEnabled') && $user->hasTwoFactorEnabled()) {
                 if ($request->expectsJson()) {
                     return response()->json([
                         'message' => 'Two-factor authentication required.',
