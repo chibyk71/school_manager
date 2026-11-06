@@ -82,14 +82,15 @@ class PasswordResetLinkController extends Controller
     /**
      * Request a recovery OTP without revealing whether the email is eligible.
      *
-     * Control flow:
-     * 1. Validate input and reject enrollment-ID / SMS channels.
-     * 2. If already locked out, return the generic success response without
-     *    incrementing the counter again.
-     * 3. Resolve at most one eligible account. If none, return generic success
-     *    (still count the initiation attempt toward abuse limits).
-     * 4. If eligible, generate OTP for the normalized email and notify that address.
-     * 5. Always return the same HTTP status, structure, and message on the public path.
+     * Control flow (throttled email path):
+     * 1. Validate input. Validation failures are not counted.
+     * 2. Reject enrollment-ID and SMS channels before the throttled workflow (not counted).
+     * 3. Build throttle key from normalized email + IP.
+     * 4. If already locked out, return the generic response without incrementing.
+     * 5. Count this accepted initiation attempt exactly once, then perform eligibility
+     *    resolution / OTP generation / notification. Infrastructure failures after the
+     *    count still leave the attempt recorded so callers cannot bypass the limit.
+     * 6. Always return the same public response shape for eligible and ineligible addresses.
      *
      * @throws ValidationException
      */
@@ -117,8 +118,8 @@ class PasswordResetLinkController extends Controller
                 'enrollment_id.required_without' => 'Enrollment ID is required if email is not provided.',
             ]);
 
+            // Pre-throttle channel rejections — not counted toward the email initiation limit.
             if ($request->filled('enrollment_id')) {
-                // Do not reveal enrollment resolution capability; same generic response shape.
                 Log::info('Password recovery rejected: enrollment_id path is not supported in this phase.');
 
                 return $this->genericInitiationResponse($request);
@@ -131,70 +132,82 @@ class PasswordResetLinkController extends Controller
             }
 
             $normalizedEmail = AuthenticationEmail::normalize($request->input('email'));
+            $emailHash = hash('sha256', $normalizedEmail);
             $throttleKey = 'password-reset-link|'.$normalizedEmail.'|'.$request->ip();
 
-            // Already locked: respond generically without further counter growth.
+            // Already locked: identical public response, no further counter growth.
             if ($this->hasTooManyAttempts($throttleKey, self::MAX_ATTEMPTS)) {
-                Log::info('Password recovery initiation blocked by rate limit', ['key' => $throttleKey]);
-
-                return $this->genericInitiationResponse($request);
-            }
-
-            $user = AuthenticationEmail::resolveEligibleAccount($normalizedEmail);
-
-            if ($user === null) {
-                Log::info('Password recovery initiation: no single eligible account', [
-                    'email_hash' => hash('sha256', $normalizedEmail),
+                Log::info('Password recovery initiation blocked by rate limit', [
+                    'email_hash' => $emailHash,
                 ]);
-                $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
 
                 return $this->genericInitiationResponse($request);
             }
 
-            $otpLength = 6;
-            $otpValidityMinutes = 10;
-            if ($scope) {
-                $otpValidityMinutes = (int) ($resolver->get('authentication.reset_password_token_life', $scope) ?: 10);
-            }
-
-            $otpInstance = app(Otp::class);
-            $otpResponse = $otpInstance->generate($normalizedEmail, 'numeric', $otpLength, $otpValidityMinutes);
-            $otpCode = is_object($otpResponse)
-                ? (string) ($otpResponse->token ?? $otpResponse->otp ?? '')
-                : (string) $otpResponse;
-
-            if ($otpCode === '') {
-                Log::error('Password recovery OTP generation returned empty token');
-                $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
-
-                return $this->genericInitiationResponse($request);
-            }
-
-            Notification::route('mail', $normalizedEmail)
-                ->notify(new ResetPasswordNotification($otpCode, $user));
-
-            activity()
-                ->performedOn($user)
-                ->causedBy($user)
-                ->withProperties([
-                    'school_id' => $school?->id,
-                    'delivery_method' => 'email',
-                    'target_email' => $normalizedEmail,
-                ])
-                ->log('Password reset link requested');
-
+            // Accept this initiation into the throttled workflow — count once before work.
             $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
+
+            try {
+                $user = AuthenticationEmail::resolveEligibleAccount($normalizedEmail);
+
+                if ($user === null) {
+                    Log::info('Password recovery initiation: no single eligible account', [
+                        'email_hash' => $emailHash,
+                    ]);
+
+                    return $this->genericInitiationResponse($request);
+                }
+
+                $otpLength = 6;
+                $otpValidityMinutes = 10;
+                if ($scope) {
+                    $otpValidityMinutes = (int) ($resolver->get('authentication.reset_password_token_life', $scope) ?: 10);
+                }
+
+                $otpInstance = app(Otp::class);
+                $otpResponse = $otpInstance->generate($normalizedEmail, 'numeric', $otpLength, $otpValidityMinutes);
+                $otpCode = is_object($otpResponse)
+                    ? (string) ($otpResponse->token ?? $otpResponse->otp ?? '')
+                    : (string) $otpResponse;
+
+                if ($otpCode === '') {
+                    Log::error('Password recovery OTP generation returned empty token', [
+                        'email_hash' => $emailHash,
+                    ]);
+
+                    return $this->genericInitiationResponse($request);
+                }
+
+                Notification::route('mail', $normalizedEmail)
+                    ->notify(new ResetPasswordNotification($otpCode, $user));
+
+                activity()
+                    ->performedOn($user)
+                    ->causedBy($user)
+                    ->withProperties([
+                        'school_id' => $school?->id,
+                        'delivery_method' => 'email',
+                        'email_hash' => $emailHash,
+                    ])
+                    ->log('Password reset link requested');
+            } catch (\Throwable $workError) {
+                // Attempt already counted; do not re-increment. Log without leaking the address.
+                Log::error('Password recovery initiation work failed after attempt counted', [
+                    'email_hash' => $emailHash,
+                    'error' => $workError->getMessage(),
+                ]);
+            }
 
             return $this->genericInitiationResponse($request);
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
-            Log::error('Password reset link request failed: '.$e->getMessage());
+            Log::error('Password reset link request failed before throttled workflow: '.$e->getMessage());
 
-            // Infrastructure failures must not leak eligibility; still generic to the client.
             return $this->genericInitiationResponse($request);
         }
     }
+
 
     /**
      * Uniform client response for all initiation outcomes (except validation / hard policy denials).

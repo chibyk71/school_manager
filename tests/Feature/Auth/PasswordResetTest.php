@@ -45,6 +45,12 @@ test('eligible and ineligible initiation responses are indistinguishable over js
     ]);
     $ineligibleEmail = $ineligible->profile->email;
 
+    $shared = 'shared-uniform@example.com';
+    $a = eligibleUser();
+    $b = eligibleUser();
+    $a->profile->update(['email' => $shared]);
+    $b->profile->update(['email' => $shared]);
+
     $ok = $this->postJson('/forgot-password', [
         'email' => $eligibleEmail,
         'delivery_method' => 'email',
@@ -57,8 +63,12 @@ test('eligible and ineligible initiation responses are indistinguishable over js
         'email' => 'nobody-exists-'.uniqid().'@example.com',
         'delivery_method' => 'email',
     ]);
+    $ambiguous = $this->postJson('/forgot-password', [
+        'email' => $shared,
+        'delivery_method' => 'email',
+    ]);
 
-    foreach ([$ok, $denied, $unknown] as $response) {
+    foreach ([$ok, $denied, $unknown, $ambiguous] as $response) {
         $response->assertOk();
         $response->assertJsonStructure(['message']);
         expect($response->json('message'))->toBe(
@@ -295,4 +305,96 @@ test('completion rechecks eligibility and rejects disabled auth email', function
 
     $user->refresh();
     expect(Hash::check('should-not-apply-99', $user->password))->toBeFalse();
+});
+
+test('initiation throttle reaches threshold via http and blocked requests do not increment', function () {
+    Notification::fake();
+
+    $email = 'throttle-init-'.uniqid().'@example.com';
+    $key = 'password-reset-link|'.AuthenticationEmail::normalize($email).'|127.0.0.1';
+    RateLimiter::clear($key);
+
+    for ($i = 0; $i < 5; $i++) {
+        $response = $this->postJson('/forgot-password', [
+            'email' => $email,
+            'delivery_method' => 'email',
+        ]);
+        $response->assertOk();
+        $response->assertJsonPath('message', 'If an eligible account exists for this email, a reset code has been sent.');
+    }
+
+    expect(RateLimiter::attempts($key))->toBe(5);
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeTrue();
+
+    $blocked = $this->postJson('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ]);
+    $blocked->assertOk();
+    $blocked->assertJsonPath('message', 'If an eligible account exists for this email, a reset code has been sent.');
+    expect(RateLimiter::attempts($key))->toBe(5);
+});
+
+test('initiation throttle expires after decay and resumes counting via http', function () {
+    Notification::fake();
+
+    $email = 'throttle-expire-'.uniqid().'@example.com';
+    $key = 'password-reset-link|'.AuthenticationEmail::normalize($email).'|127.0.0.1';
+    RateLimiter::clear($key);
+
+    for ($i = 0; $i < 5; $i++) {
+        $this->postJson('/forgot-password', [
+            'email' => $email,
+            'delivery_method' => 'email',
+        ])->assertOk();
+    }
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeTrue();
+
+    $this->travel(61)->minutes();
+
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeFalse();
+
+    $this->postJson('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ])->assertOk();
+
+    expect(RateLimiter::attempts($key))->toBe(1);
+});
+
+test('completion throttle via invalid otp resumes after lock expiry through http', function () {
+    $user = eligibleUser();
+    $email = AuthenticationEmail::normalize($user->profile->email);
+    $key = 'password-reset|'.$email.'|127.0.0.1';
+    RateLimiter::clear($key);
+
+    for ($i = 0; $i < 5; $i++) {
+        $this->post('/reset-password', [
+            'email' => $email,
+            'token' => '00000'.$i,
+            'password' => 'brand-new-password-99',
+            'password_confirmation' => 'brand-new-password-99',
+        ]);
+    }
+    expect(RateLimiter::attempts($key))->toBe(5);
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeTrue();
+
+    $this->post('/reset-password', [
+        'email' => $email,
+        'token' => '999999',
+        'password' => 'brand-new-password-99',
+        'password_confirmation' => 'brand-new-password-99',
+    ]);
+    expect(RateLimiter::attempts($key))->toBe(5);
+
+    $this->travel(61)->minutes();
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeFalse();
+
+    $this->post('/reset-password', [
+        'email' => $email,
+        'token' => '888888',
+        'password' => 'brand-new-password-99',
+        'password_confirmation' => 'brand-new-password-99',
+    ]);
+    expect(RateLimiter::attempts($key))->toBe(1);
 });

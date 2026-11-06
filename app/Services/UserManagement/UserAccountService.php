@@ -22,21 +22,6 @@ use Illuminate\Validation\ValidationException;
 class UserAccountService
 {
     /**
-     * Create an Authentication Account for an existing Person.
-     *
-     * @param  array{
-     *     username?: string,
-     *     password?: string|null,
-     *     auth_phone?: string|null
-     * }  $data
-     * @param  array{
-     *     lifecycle?: string|AccountLifecycle,
-     *     force_password_change?: bool,
-     *     auto_generate_username?: bool,
-     *     send_notification?: bool
-     * }  $options
-     */
-    /**
      * Create an Authentication Account for a Person (Profile) with one-to-one cardinality.
      *
      * @param  Profile  $person  Person that must not already have an account or be soft-deleted.
