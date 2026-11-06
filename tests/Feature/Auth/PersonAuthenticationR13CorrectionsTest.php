@@ -146,7 +146,10 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
 
     /**
      * Extract the named Set-Cookie as emitted on the response (including queued cookies).
-     * Value may be encrypted by EncryptCookies — callers must replay it with withCookie().
+     *
+     * The value has already passed through EncryptCookies on the way out. Replay it with
+     * withUnencryptedCookie() so the test client does not encrypt it a second time; the
+     * request-side EncryptCookies middleware will then decrypt once, as a browser would.
      */
     private function emittedCookieFromResponse($response, string $name): ?Cookie
     {
@@ -302,21 +305,23 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         $user->refresh();
         $this->assertNotEmpty($user->safeDevices(), 'safe_devices must be recorded after remember=true');
 
+        // Emitted value is already on-the-wire encrypted; withUnencryptedCookie avoids
+        // double-encryption by withCookie() so request-side decryption yields the token.
         $this->post('/logout');
-        $this->withCookie($cookieName, $emittedValue)
+        $this->withUnencryptedCookie($cookieName, $emittedValue)
             ->post('/login', ['login' => 'mfa_safe', 'password' => $password])
             ->assertRedirect();
 
         session()->forget('auth.2fa_confirmed_at');
 
-        $challenge = $this->withCookie($cookieName, $emittedValue)
+        $challenge = $this->withUnencryptedCookie($cookieName, $emittedValue)
             ->get(route('2fa.challenge'));
         $challenge->assertRedirect();
         $challengeLocation = (string) $challenge->headers->get('Location');
         $this->assertStringNotContainsString('2fa/challenge', $challengeLocation);
         $this->assertStringNotContainsString('login', $challengeLocation);
 
-        $dashboard = $this->withCookie($cookieName, $emittedValue)
+        $dashboard = $this->withUnencryptedCookie($cookieName, $emittedValue)
             ->get('/dashboard');
         $dashboard->assertOk();
         $this->assertAuthenticatedAs($user);
@@ -327,7 +332,7 @@ class PersonAuthenticationR13CorrectionsTest extends TestCase
         config(['two-factor.safe_devices.enabled' => false]);
         session()->forget('auth.2fa_confirmed_at');
 
-        $this->withCookie($cookieName, $emittedValue)
+        $this->withUnencryptedCookie($cookieName, $emittedValue)
             ->get('/dashboard')
             ->assertRedirect(route('2fa.challenge'));
     }
