@@ -18,7 +18,7 @@ use Illuminate\Auth\Access\Response;
  * - Regular users can view/edit their own profile
  * - Admins with permissions can view/edit any profile
  * - Force delete is explicitly allowed for admins (with safeguards)
- * - No direct create/store (profiles created via role services)
+ * - Independent Person creation is permitted with profile.create
  * - Role-specific actions (e.g. edit student data) belong to role policies
  * - Merge action: admin-only for duplicate cleanup
  * - Security: self-ownership check + permission gates
@@ -32,6 +32,7 @@ use Illuminate\Auth\Access\Response;
  *
  * Permission Gates Used (should be defined in Gates.php or Laratrust):
  * - profile.view-any
+ * - profile.create
  * - profile.view
  * - profile.edit-any
  * - profile.edit
@@ -76,12 +77,12 @@ class ProfilePolicy
     }
 
     /**
-     * Create profiles — intentionally forbidden
-     * (profiles are created via role services: StudentEnrollmentService, etc.)
+     * Create an independent Person (Profile) without role capacity or login.
+     * Requires the profile.create permission (not profile.view-any).
      */
     public function create(User $user): bool
     {
-        return false;
+        return $user->can('profile.create');
     }
 
     /**

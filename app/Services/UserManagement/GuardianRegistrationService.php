@@ -6,6 +6,7 @@ use App\Events\GuardianRegistered;
 use App\Models\Guardian;
 use App\Models\Profile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -23,7 +24,7 @@ use Illuminate\Validation\ValidationException;
  *
  * Features / Problems Solved:
  * - Atomic transaction: Profile + Guardian created together or rolled back
- * - Duplicate detection: basic check on name + phone/email + DOB combo
+ * - Identity matching is out of scope for this service
  * - Guardian-specific validation: minimal (notes, optional school_id)
  * - Optional login: delegates to UserAccountService (default: false for guardians)
  * - Event-driven: fires GuardianRegistered → triggers notification, audit, etc.
@@ -79,9 +80,6 @@ class GuardianRegistrationService
         $school = GetSchoolModel(); // May be null (tenant-wide guardians allowed)
 
         return DB::transaction(function () use ($data, $createLogin, $school) {
-            // 1. Basic duplicate check (name + phone/email + DOB)
-            $this->checkForPotentialDuplicate($data);
-
             // 2. Create Profile (personal data)
             $profile = Profile::create([
                 'first_name'    => $data['first_name'],
@@ -104,19 +102,22 @@ class GuardianRegistrationService
 
             // 4. Optional: Create login account (default false for guardians)
             if ($createLogin) {
-                $this->userAccountService->createForProfile(
-                    profile: $profile,
+                $this->userAccountService->createForPerson(
+                    person: $profile,
                     data: [
                         'username' => $data['username'] ?? null,
-                        'password' => $data['password'] ?? null,
+                        'password' => $data['password'] ?? Str::random(12),
                     ],
                     options: [
-                        'roles'                => ['guardian'],
-                        'autoGenerateUsername' => true,
-                        'mustChangePassword'   => true,
-                        'sendWelcome'          => true,
+                        'lifecycle' => 'active',
+                        'force_password_change' => true,
+                        'auto_generate_username' => true,
+                        'send_notification' => true,
                     ]
                 );
+                if ($profile->fresh()->user) {
+                    $profile->user->syncRoles(['guardian']);
+                }
             }
 
             // 5. Fire event (notification, audit, etc.)
@@ -126,31 +127,5 @@ class GuardianRegistrationService
         });
     }
 
-    /**
-     * Basic duplicate prevention check
-     * (can be expanded with more sophisticated matching later)
-     */
-    private function checkForPotentialDuplicate(array $data): void
-    {
-        $existing = Profile::where('first_name', $data['first_name'])
-            ->where('last_name', $data['last_name'])
-            ->where(function ($q) use ($data) {
-                if (!empty($data['date_of_birth'])) {
-                    $q->whereDate('date_of_birth', $data['date_of_birth']);
-                }
-                if (!empty($data['phone'])) {
-                    $q->orWhere('phone', $data['phone']);
-                }
-                if (!empty($data['email'])) {
-                    $q->orWhere('email', $data['email']);
-                }
-            })
-            ->exists();
-
-        if ($existing) {
-            throw ValidationException::withMessages([
-                'duplicate' => 'A profile with similar name, date of birth, and contact information already exists. Please check for duplicates.',
-            ]);
-        }
-    }
 }
+

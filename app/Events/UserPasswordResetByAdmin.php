@@ -3,36 +3,20 @@
 namespace App\Events;
 
 use App\Models\User;
-use Illuminate\Broadcasting\Channel;
-use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
+/**
+ * Legacy event: an admin reset an account password.
+ *
+ * Must not transport plaintext credentials. Credential delivery is handled by
+ * AdminResetPasswordNotification (or UserAccountService::resetPassword) only.
+ *
+ * @deprecated Prefer UserAccountService::resetPassword controlled delivery.
+ */
 class UserPasswordResetByAdmin
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, SerializesModels;
 
-    /**
-     * Create a new event instance.
-     */
-    public function __construct(User $target, string $password)
-    {
-        $this->target = $target;
-        $this->password  = $password;
-    }
-
-    /**
-     * Get the channels the event should broadcast on.
-     *
-     * @return array<int, \Illuminate\Broadcasting\Channel>
-     */
-    public function broadcastOn(): array
-    {
-        return [
-            new PrivateChannel('channel-name'),
-        ];
-    }
+    public function __construct(public User $target) {}
 }

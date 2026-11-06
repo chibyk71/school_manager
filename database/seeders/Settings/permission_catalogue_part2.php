@@ -15,6 +15,7 @@ return [
     ['name' => 'guardian.restore', 'display_name' => 'Restore Guardian', 'description' => 'Restore deleted guardians'],
     ['name' => 'guardian.force-delete', 'display_name' => 'Force Delete Guardian', 'description' => 'Permanently delete guardians'],
     ['name' => 'profile.view-any', 'display_name' => 'View All Profiles', 'description' => 'View the list of all profiles (admin-level access)',],
+    ['name' => 'profile.create', 'display_name' => 'Create Person', 'description' => 'Create an independent Person (Profile) without role capacity or login',],
     ['name' => 'profile.view', 'display_name' => 'View Profile', 'description' => 'View a specific profile (own profile or permitted others)',],
     ['name' => 'profile.update-own', 'display_name' => 'Update Own Profile', 'description' => 'Edit personal profile information (name, phone, photo, etc.)',],
     ['name' => 'profile.update-any', 'display_name' => 'Update Any Profile', 'description' => 'Edit any user\'s profile (admin override)',],

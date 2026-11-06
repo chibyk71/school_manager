@@ -3,29 +3,23 @@
 namespace App\Events;
 
 use App\Models\User;
-use Illuminate\Broadcasting\Channel;
-use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
+/**
+ * Legacy event: a User record was created.
+ *
+ * @deprecated Prefer Person (Profile) + AuthenticationAccountCreated domain events.
+ * Must not transport plaintext credentials.
+ */
 class UserCreated
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, SerializesModels;
 
-    /**
-     * Create a new event instance.
-     */
-    public function __construct(
-        public User $user,
-        public ?string $tempPassword = null  // Optional for welcome emails
-    ) {
-    }
+    public function __construct(public User $user) {}
 
     public function __toString(): string
     {
-        return "UserCreated event for {$this->user->full_name} ({$this->user->email})";
+        return "UserCreated event for user {$this->user->id}";
     }
 }

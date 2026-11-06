@@ -14,7 +14,7 @@ defineProps<{
 }>();
 
 const toast = useToast();
-const loginType = ref<'email' | 'enrollment_id'>('email'); // Auto-detect login type
+// Identifier: username, email, or phone
 const form = useForm({
     login: 'admin@demo.academy',
     password: '',
@@ -41,9 +41,7 @@ const submit = () => {
 };
 
 // Auto-detect login type (email vs enrollment_id)
-watch(() => form.login, (value) => {
-    loginType.value = value.includes('@') ? 'email' : 'enrollment_id';
-});
+
 </script>
 
 <template>
@@ -82,9 +80,9 @@ watch(() => form.login, (value) => {
                         <span class="span-or">Or continue with</span>
                     </div>
                     <div class="mb-2">
-                        <TextInput :label="loginType === 'email' ? 'Email Address' : 'Enrollment ID'" icon="pi pi-envelope" :error="form.errors.login">
+                        <TextInput :label="'Username, email, or phone'" icon="pi pi-envelope" :error="form.errors.login">
                             <template #input="{ invalid }">
-                                <InputText :id="`login-input`" :invalid="invalid" v-model="form.login" required autofocus :type="loginType === 'email' ? 'email' : 'text'" fluid />
+                                <InputText :id="`login-input`" :invalid="invalid" v-model="form.login" required autofocus :type="'text'" fluid />
                             </template>
                         </TextInput>
                         <TextInput label="Password" icon="pi pi-lock" :error="form.errors.password">
@@ -105,7 +103,7 @@ watch(() => form.login, (value) => {
                     <div class="mb-4">
                         <Button type="submit" :loading="form.processing" label="Sign In" severity="primary" fluid icon="pi pi-sign-in" />
                     </div>
-                    <div class="text-center text-sm" v-if="canRegister">
+                    <div class="text-center text-sm" v-if="false && canRegister">
                         <p class="font-normal text-gray-600 dark:text-gray-400 mb-0">Don't have an account? <Link :href="route('register')" class="hover-a text-primary">Create Account</Link></p>
                     </div>
                 </template>

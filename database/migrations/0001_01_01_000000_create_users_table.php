@@ -7,19 +7,36 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Run the migrations.
+     * Authentication Account (User) schema — Phase 1 Person & Authentication foundation.
+     *
+     * - Username is the primary mandatory unique identifier.
+     * - Password is nullable for Provisioned accounts.
+     * - Explicit lifecycle: provisioned | active (replaces is_active).
+     * - force_password_change is independent of lifecycle.
+     * - Person primary email lives only on profiles.email; users store only
+     *   auth_email_verified_at + auth_email_enabled state.
+     * - Authentication phone is optional and independent of profiles.phone.
+     * - Laragear TwoFactor uses its own table (see two_factor_authentications migration).
      */
     public function up(): void
     {
         Schema::create('users', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('username')->unique();
-            $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
-            $table->boolean('is_active')->default(true);
-            $table->boolean('must_change_password')->default(false);
+            $table->string('password')->nullable();
+            $table->string('lifecycle')->default('provisioned');
+            $table->boolean('force_password_change')->default(false);
+            $table->timestamp('auth_email_verified_at')->nullable();
+            $table->boolean('auth_email_enabled')->default(false);
+            $table->string('auth_phone')->nullable();
+            $table->timestamp('auth_phone_verified_at')->nullable();
+            $table->boolean('auth_phone_enabled')->default(false);
+            $table->timestamp('last_login_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
+
+            $table->index('lifecycle');
+            $table->index('auth_phone');
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
@@ -38,13 +55,10 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::dropIfExists('users');
-        Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
+        Schema::dropIfExists('password_reset_tokens');
+        Schema::dropIfExists('users');
     }
 };

@@ -87,7 +87,7 @@ class ConfirmablePasswordController extends Controller
 
             // Check school context
             $school = GetSchoolModel();
-            if (!$school || $school->id !== $request->school_id || $user->school_id !== $school->id) {
+            if ($request->filled('school_id') && $school && $school->id !== $request->school_id) {
                 throw new \Exception('Invalid school context.');
             }
 
@@ -112,7 +112,7 @@ class ConfirmablePasswordController extends Controller
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
-                ->withProperties(['school_id' => $school->id])
+                ->withProperties(['school_id' => $school?->id])
                 ->log('Password confirmed');
 
             // Clear rate limiter

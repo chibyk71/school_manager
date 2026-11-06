@@ -4,10 +4,9 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
-use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -15,271 +14,141 @@ use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 
 /**
- * Controller for managing authenticated sessions in a multi-tenant school system.
- *
- * Handles login, logout, and session management with tenant-specific settings.
- *
- * @group Authentication
+ * Session login/logout. Authentication is independent of school membership and roles.
+ * Workspace/school selection is a subsequent concern after a valid session exists.
  */
 class AuthenticatedSessionController extends Controller
 {
-    /* --------------------------------------------------------------------- */
-    /*  PUBLIC ENDPOINTS                                                     */
-    /* --------------------------------------------------------------------- */
-
-    /**
-     * Display the login view.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Inertia\Response|\Illuminate\Http\JsonResponse
-     */
     public function create(Request $request): InertiaResponse|JsonResponse|RedirectResponse
     {
         try {
-            // -----------------------------------------------------------------
-            // No school context required for the login page – system-wide
-            // admins must be able to see the login form even when no school
-            // is selected.
-            // -----------------------------------------------------------------
-            $school = GetSchoolModel(); // may be null
+            if ($request->user()) {
+                return redirect()->intended(route('dashboard', absolute: false));
+            }
 
-            $authSettings = getMergedSettings('authentication', $school);
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+            $authSettings = function_exists('getMergedSettings')
+                ? getMergedSettings('authentication', $school)
+                : [];
+
+            // Public registration is disabled in Phase 1 regardless of settings.
+            $canRegister = false;
 
             if ($request->expectsJson()) {
                 return response()->json([
-                    'canResetPassword' => $authSettings['allow_password_reset'] && Route::has('password.request'),
-                    'canRegister' => $authSettings['allow_user_registration'] && Route::has('register'),
+                    'canResetPassword' => ($authSettings['allow_password_reset'] ?? true) && Route::has('password.request'),
+                    'canRegister' => $canRegister,
                     'status' => session('status'),
-                    'school_id' => $school?->id,
-                ], 200);
+                ]);
             }
 
             return Inertia::render('Auth/Login', [
-                'canResetPassword' => $authSettings['allow_password_reset'] && Route::has('password.request'),
-                'canRegister' => $authSettings['allow_user_registration'] && Route::has('register'),
+                'canResetPassword' => ($authSettings['allow_password_reset'] ?? true) && Route::has('password.request'),
+                'canRegister' => $canRegister,
                 'status' => session('status'),
-                'school_id' => $school?->id,
             ]);
         } catch (\Exception $e) {
-            Log::error("Failed to display login view: {$e->getMessage()}");
+            Log::error('Failed to show login: '.$e->getMessage());
+
             return $this->respondWithError($request, 'Failed to load login page.');
         }
     }
 
-    /**
-     * Handle an incoming authentication request.
-     *
-     * Authenticates users via email or enrollment_id.
-     * - Regular users **must** belong to the currently selected school.
-     * - System-wide admins **do not** need a school and can manage every school.
-     *
-     * @param  \App\Http\Requests\Auth\LoginRequest  $request
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
-     */
     public function store(LoginRequest $request): RedirectResponse|JsonResponse
     {
         try {
-            // -----------------------------------------------------------------
-            // 1. Authenticate the credentials (LoginRequest does the heavy lifting)
-            // -----------------------------------------------------------------
             $request->authenticate();
+
+            // Session fixation protection
+            $request->session()->regenerate();
+            // New session must re-confirm MFA
+            $request->session()->forget('auth.2fa_confirmed_at');
+
             $user = Auth::user();
-            $school = GetSchoolModel(); // may be null
 
-            // -----------------------------------------------------------------
-            // 2. Determine if the user is a *system-wide* admin
-            // -----------------------------------------------------------------
-            $isSystemAdmin = $this->isSystemWideAdmin($user);
-
-            // If there is no active school, retrieve the first school
-            // associated with the user and set it as the active school.
-            if (is_null($school)) {
-                $school = $user->schools()->first();
-
-                if ($school) {
-                    // Set the retrieved school as the active school
-                    app('schoolManager')->setActiveSchool($school);
-                }
-            }
-
-            // -----------------------------------------------------------------
-            // 3. Enforce school-membership rule **only for non-system admins**
-            // -----------------------------------------------------------------
-            if (!($isSystemAdmin && $school)) {
-                // Normal user – must be attached to the selected school
-                if (!$user->schools()->where('school_id', $school->id)->exists()) {
-                    Auth::logout();
-                    throw new \Exception('User not associated with this school.');
-                }
-            }
-
-            // -----------------------------------------------------------------
-            // 4. Retrieve authentication settings (fallback to system defaults)
-            // -----------------------------------------------------------------
-            $authSettings = getMergedSettings('authentication', $school);
-
-            // -----------------------------------------------------------------
-            // 5. Activity log – always record the login
-            // -----------------------------------------------------------------
-            $loginField = filter_var($request->login, FILTER_VALIDATE_EMAIL) ? 'email' : 'enrollment_id';
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
                 ->withProperties([
-                    'school_id' => $school?->id,
-                    'login_field' => $loginField,
-                    'system_admin' => $isSystemAdmin,
+                    'school_id' => function_exists('GetSchoolModel') ? GetSchoolModel()?->id : null,
+                    'force_password_change' => $user->requiresPasswordChange(),
                 ])
                 ->log('User logged in');
 
-            // -----------------------------------------------------------------
-            // 6. Password-confirmation check (only for sensitive routes)
-            // -----------------------------------------------------------------
-            $intendedUrl = redirect()->intended(route('dashboard', absolute: false))->getTargetUrl();
+            if ($user->requiresPasswordChange()) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Password change required before continuing.',
+                        'force_password_change' => true,
+                        'redirect' => route('password.force.edit'),
+                    ], 200);
+                }
 
-            if (
-                ($authSettings['require_password_confirmation'] ?? false) &&
-                str_contains($intendedUrl, '/dashboard') &&
-                !$request->session()->has('auth.password_confirmed_at')
-            ) {
-                return $this->respondWithSuccess(
-                    $request,
-                    'Login successful, please confirm password.',
-                    'password.confirm'
-                );
+                return redirect()->route('password.force.edit');
             }
 
-            // After successful authentication
-            if (auth()->user()->must_change_password) {
-                // Clear flag after they change it (you’ll handle in ChangePassword form)
-                return redirect()->route('password.change')->with('must_change', true);
+            if (method_exists($user, 'hasTwoFactorEnabled') && $user->hasTwoFactorEnabled()) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Two-factor authentication required.',
+                        'two_factor_required' => true,
+                        'redirect' => route('2fa.challenge'),
+                    ], 200);
+                }
+
+                return redirect()->route('2fa.challenge');
             }
 
-            // -----------------------------------------------------------------
-            // 7. API response (SPA / mobile)
-            // -----------------------------------------------------------------
+            // Optionally seed active school from membership if none is selected yet.
+            // This is workspace convenience only — never a gate on authentication.
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+            if ($school === null) {
+                $first = $user->schools()->first();
+                if ($first) {
+                    app('schoolManager')->setActiveSchool($first);
+                    session(['active_school_id' => $first->id]);
+                }
+            }
+
             if ($request->expectsJson()) {
-                $token = $user->createToken('auth-token')->plainTextToken;
-
                 return response()->json([
                     'message' => 'Login successful.',
-                    'token' => $token,
-                    'user' => $user->only('id', 'name', 'email', 'enrollment_id', 'roles'),
-                ], 200);
+                    'user' => [
+                        'id' => $user->id,
+                        'username' => $user->username,
+                        'full_name' => $user->full_name,
+                    ],
+                ]);
             }
 
-            // -----------------------------------------------------------------
-            // 8. Web redirect
-            // -----------------------------------------------------------------
             return redirect()->intended(route('dashboard', absolute: false));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            Log::error("Login failed: {$e->getMessage()}");
+            Log::error('Login failed: '.$e->getMessage());
+            Auth::logout();
+
             return $this->respondWithError($request, $e->getMessage());
         }
     }
 
-    /**
-     * Destroy an authenticated session.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
-     */
     public function destroy(Request $request): RedirectResponse|JsonResponse
     {
-        try {
-            $user = Auth::user();
-            $school = GetSchoolModel();
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
-            if ($user && $school) {
-                activity()
-                    ->performedOn($user)
-                    ->causedBy($user)
-                    ->withProperties(['school_id' => $school->id])
-                    ->log('User logged out');
-            }
-
-            if ($request->expectsJson()) {
-                if ($user) {
-                    $user->tokens()->delete();
-                }
-                return response()->json(['message' => 'Logged out successfully.'], 200);
-            }
-
-            Auth::guard('web')->logout();
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
-
-            return redirect('/');
-        } catch (\Exception $e) {
-            Log::error("Logout failed: {$e->getMessage()}");
-            return $this->respondWithError($request, 'Failed to log out.');
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Logged out.']);
         }
+
+        return redirect('/');
     }
 
-    /* --------------------------------------------------------------------- */
-    /*  PRIVATE HELPERS                                                      */
-    /* --------------------------------------------------------------------- */
-
-    /**
-     * Determine whether the given user is a system-wide admin.
-     *
-     * System-wide admins are **not** attached to any school (i.e. the pivot
-     * table `school_user` has no rows for them).  You may extend this logic
-     * with a dedicated `is_system_admin` column or a role check if needed.
-     *
-     * @param  \App\Models\User  $user
-     * @return bool
-     */
-    private function isSystemWideAdmin(User $user): bool
+    protected function respondWithError(Request $request, string $message, int $status = 422): JsonResponse|RedirectResponse
     {
-        // Option 1: No school association at all
-        if ($user->schools()->count() === 0 || $user->hasRole('admin')) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Respond with a success message for web or API requests.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  string  $message
-     * @param  string|null  $redirectRoute
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
-     */
-    protected function respondWithSuccess(
-        Request $request,
-        string $message,
-        ?string $redirectRoute = null
-    ): RedirectResponse|JsonResponse {
         if ($request->expectsJson()) {
-            return response()->json(['message' => $message], 200);
-        }
-
-        $response = redirect()->back()->with('success', $message);
-        if ($redirectRoute) {
-            $response = redirect()->route($redirectRoute);
-        }
-
-        return $response;
-    }
-
-    /**
-     * Respond with an error message for web or API requests.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  string  $message
-     * @param  int  $statusCode
-     * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
-     */
-    protected function respondWithError(
-        Request $request,
-        string $message,
-        int $statusCode = 400
-    ): RedirectResponse|JsonResponse {
-        if ($request->expectsJson()) {
-            return response()->json(['error' => $message], $statusCode);
+            return response()->json(['message' => $message], $status);
         }
 
         return redirect()->back()->withErrors(['login' => $message]);

@@ -29,6 +29,10 @@ class UserService
      */
     public function paginate(Request $request, array $with = ['profiles', 'roles', 'schools']): LengthAwarePaginator
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         return User::query()
             ->with($with)
             ->tableQuery($request, $this->extraTableFields())
@@ -43,6 +47,10 @@ class UserService
      */
     public function all(array $with = ['profiles']): Collection
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         return User::with($with)->get()->map->transformUser();
     }
 
@@ -57,6 +65,10 @@ class UserService
      */
     public function create(array $data, bool $sendWelcome = true): User
     {
+        throw new \RuntimeException(
+            'UserService::create is retired. Create a Person (Profile) then use UserAccountService::createForPerson.'
+        );
+
         // Role conflict validation: For new users, ensure email uniqueness and valid profile_type
         if (User::where('email', $data['email'])->exists()) {
             throw ValidationException::withMessages(['email' => 'A user with this email already exists.']);
@@ -134,6 +146,10 @@ class UserService
      */
     public function update(User $user, array $data): User
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         // Role conflict validation: If changing/adding profile_type, validate
         if (isset($data['profile_type']) && $data['profile_type'] !== $user->type) {
             if (!$user->canAddRole($data['profile_type'])) {
@@ -238,6 +254,10 @@ class UserService
      */
     public function bulkCreate(array $usersData, bool $sendWelcome = false): Collection
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         // Check setting
         $settings = getMergedSettings('user_management', GetSchoolModel());
         if (!$settings['allow_bulk_user_creation']) {
@@ -279,6 +299,10 @@ class UserService
      */
     public function delete(User $user): bool
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         if ($user->profiles()->exists()) {
             throw new InvalidArgumentException('Cannot delete user with associated profiles (Student/Staff/Guardian).');
         }
@@ -298,6 +322,10 @@ class UserService
      */
     public function forceDelete(User $user): bool
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         $deleted = $user->forceDelete();
         if ($deleted) {
             activity()->performedOn($user)->log('User force deleted');
@@ -310,6 +338,10 @@ class UserService
      */
     public function bulkUpdateStatus(array $userIds, bool $active): int
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         $affected = User::whereIn('id', $userIds)
             ->where('is_active', '!=', $active)
             ->update(['is_active' => $active]);
@@ -334,6 +366,10 @@ class UserService
      */
     public function resetPassword(User $user, ?string $newPassword = null): void
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         $key = 'reset-password:' . $user->id;
         $maxAttempts = 3;
         $decayMinutes = 1; // 1 minute lockout
@@ -352,7 +388,7 @@ class UserService
 
         RateLimiter::hit($key, $decayMinutes * 60); // Increment attempts
 
-        event(new UserPasswordResetByAdmin($user, $password));
+        event(new UserPasswordResetByAdmin($user));
 
         activity()
             ->causedBy(auth()->user())
@@ -368,6 +404,10 @@ class UserService
      */
     public function changePassword(User $user, string $currentPassword, string $newPassword): bool
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         if (!Hash::check($currentPassword, $user->password)) {
             throw ValidationException::withMessages(['current_password' => 'Current password is incorrect.']);
         }
@@ -435,6 +475,10 @@ class UserService
 
     public function mergeUsers(User $fromUser, User $intoUser, ?Profile $keepPrimaryProfile = null): void
     {
+        throw new \RuntimeException(
+            'UserService account/person operations are retired. Use Profile (Person) and UserAccountService.'
+        );
+
         DB::transaction(function () use ($fromUser, $intoUser, $keepPrimaryProfile) {
             // Reassign all profiles
             $fromUser->profiles()->update(['user_id' => $intoUser->id]);

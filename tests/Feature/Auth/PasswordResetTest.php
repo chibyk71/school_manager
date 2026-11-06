@@ -1,60 +1,498 @@
 <?php
 
+/**
+ * OTP password recovery against eligible Authentication Accounts.
+ *
+ * Public initiation responses must be identical for eligible and ineligible emails.
+ * Eligibility: linked non-deleted Person + auth_email_verified_at + auth_email_enabled.
+ */
+
+use App\Enums\Auth\AccountLifecycle;
 use App\Models\User;
-use Illuminate\Auth\Notifications\ResetPassword;
+use App\Notifications\ResetPasswordNotification;
+use App\Support\Auth\AuthenticationEmail;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
+use Ichtrojan\Otp\Otp;
+
+
+function initiationKey(string $email, string $ip = '127.0.0.1'): string
+{
+    return 'password-reset-link|'.hash('sha256', AuthenticationEmail::normalize($email)).'|'.$ip;
+}
+
+function completionKey(string $email, string $ip = '127.0.0.1'): string
+{
+    return 'password-reset|'.hash('sha256', AuthenticationEmail::normalize($email)).'|'.$ip;
+}
+
+function eligibleUser(array $overrides = []): User
+{
+    $user = User::factory()->create(array_merge([
+        'lifecycle' => AccountLifecycle::Active,
+        'auth_email_verified_at' => now(),
+        'auth_email_enabled' => true,
+    ], $overrides));
+
+    return $user->fresh(['profile']);
+}
 
 test('reset password link screen can be rendered', function () {
-    $response = $this->get('/forgot-password');
-
-    $response->assertStatus(200);
+    $this->get('/forgot-password')->assertStatus(200);
 });
 
-test('reset password link can be requested', function () {
+test('eligible and ineligible initiation responses are indistinguishable over json', function () {
     Notification::fake();
 
-    $user = User::factory()->create();
+    $eligible = eligibleUser();
+    $eligibleEmail = $eligible->profile->email;
 
-    $this->post('/forgot-password', ['email' => $user->email]);
+    $ineligible = eligibleUser([
+        'auth_email_verified_at' => null,
+        'auth_email_enabled' => true,
+    ]);
+    $ineligibleEmail = $ineligible->profile->email;
 
-    Notification::assertSentTo($user, ResetPassword::class);
-});
+    $shared = 'shared-uniform@example.com';
+    $a = eligibleUser();
+    $b = eligibleUser();
+    $a->profile->update(['email' => $shared]);
+    $b->profile->update(['email' => $shared]);
 
-test('reset password screen can be rendered', function () {
-    Notification::fake();
+    $ok = $this->postJson('/forgot-password', [
+        'email' => $eligibleEmail,
+        'delivery_method' => 'email',
+    ]);
+    $denied = $this->postJson('/forgot-password', [
+        'email' => $ineligibleEmail,
+        'delivery_method' => 'email',
+    ]);
+    $unknown = $this->postJson('/forgot-password', [
+        'email' => 'nobody-exists-'.uniqid().'@example.com',
+        'delivery_method' => 'email',
+    ]);
+    $ambiguous = $this->postJson('/forgot-password', [
+        'email' => $shared,
+        'delivery_method' => 'email',
+    ]);
 
-    $user = User::factory()->create();
+    foreach ([$ok, $denied, $unknown, $ambiguous] as $response) {
+        $response->assertOk();
+        $response->assertJsonStructure(['message']);
+        expect($response->json('message'))->toBe(
+            'If an eligible account exists for this email, a reset code has been sent.'
+        );
+    }
 
-    $this->post('/forgot-password', ['email' => $user->email]);
-
-    Notification::assertSentTo($user, ResetPassword::class, function ($notification) {
-        $response = $this->get('/reset-password/'.$notification->token);
-
-        $response->assertStatus(200);
-
-        return true;
+    Notification::assertSentOnDemand(ResetPasswordNotification::class, function ($n, $channels, $notifiable) use ($eligibleEmail) {
+        return ($notifiable->routes['mail'] ?? null) === AuthenticationEmail::normalize($eligibleEmail);
     });
 });
 
-test('password can be reset with valid token', function () {
+test('unverified authentication email does not receive otp', function () {
     Notification::fake();
+    $user = eligibleUser([
+        'auth_email_verified_at' => null,
+        'auth_email_enabled' => true,
+    ]);
 
-    $user = User::factory()->create();
+    $this->postJson('/forgot-password', [
+        'email' => $user->profile->email,
+        'delivery_method' => 'email',
+    ])->assertOk();
 
-    $this->post('/forgot-password', ['email' => $user->email]);
+    Notification::assertNothingSent();
+});
 
-    Notification::assertSentTo($user, ResetPassword::class, function ($notification) use ($user) {
-        $response = $this->post('/reset-password', [
-            'token' => $notification->token,
-            'email' => $user->email,
-            'password' => 'password',
-            'password_confirmation' => 'password',
+test('disabled authentication email does not receive otp', function () {
+    Notification::fake();
+    $user = eligibleUser([
+        'auth_email_verified_at' => now(),
+        'auth_email_enabled' => false,
+    ]);
+
+    $this->postJson('/forgot-password', [
+        'email' => $user->profile->email,
+        'delivery_method' => 'email',
+    ])->assertOk();
+
+    Notification::assertNothingSent();
+});
+
+test('soft-deleted person does not receive otp', function () {
+    Notification::fake();
+    $user = eligibleUser();
+    $email = $user->profile->email;
+    $user->profile->delete();
+
+    $this->postJson('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ])->assertOk();
+
+    Notification::assertNothingSent();
+});
+
+test('shared email matching multiple eligible accounts fails closed without otp', function () {
+    Notification::fake();
+    $email = 'shared-recovery@example.com';
+
+    $a = eligibleUser();
+    $b = eligibleUser();
+    $a->profile->update(['email' => $email]);
+    $b->profile->update(['email' => $email]);
+
+    $this->postJson('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ])->assertOk();
+
+    Notification::assertNothingSent();
+});
+
+test('mixed-case email initiation uses normalized address for otp delivery', function () {
+    Notification::fake();
+    $user = eligibleUser();
+    $mixed = strtoupper(substr($user->profile->email, 0, 3)).substr($user->profile->email, 3);
+    $normalized = AuthenticationEmail::normalize($mixed);
+
+    $this->postJson('/forgot-password', [
+        'email' => $mixed,
+        'delivery_method' => 'email',
+    ])->assertOk();
+
+    Notification::assertSentOnDemand(ResetPasswordNotification::class, function ($notification, $channels, $notifiable) use ($normalized) {
+        return ($notifiable->routes['mail'] ?? null) === $normalized
+            && $notification->token !== '';
+    });
+});
+
+test('invalid otp increments attempts exactly once and blocked requests do not increment further', function () {
+    $user = eligibleUser();
+    $email = AuthenticationEmail::normalize($user->profile->email);
+    $key = completionKey($email);
+    RateLimiter::clear($key);
+    $original = $user->password;
+
+    $this->post('/reset-password', [
+        'email' => $email,
+        'token' => '000000',
+        'password' => 'brand-new-password-99',
+        'password_confirmation' => 'brand-new-password-99',
+    ]);
+    expect(RateLimiter::attempts($key))->toBe(1);
+
+    for ($i = 0; $i < 4; $i++) {
+        $this->post('/reset-password', [
+            'email' => $email,
+            'token' => '111111',
+            'password' => 'brand-new-password-99',
+            'password_confirmation' => 'brand-new-password-99',
         ]);
+    }
+    expect(RateLimiter::attempts($key))->toBe(5);
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeTrue();
 
-        $response
-            ->assertSessionHasNoErrors()
-            ->assertRedirect(route('login'));
+    // Already locked: must not grow the counter.
+    $this->post('/reset-password', [
+        'email' => $email,
+        'token' => '222222',
+        'password' => 'brand-new-password-99',
+        'password_confirmation' => 'brand-new-password-99',
+    ]);
+    expect(RateLimiter::attempts($key))->toBe(5);
 
-        return true;
-    });
+    $user->refresh();
+    expect($user->password)->toBe($original);
+});
+
+test('otp lock expires after decay window', function () {
+    $user = eligibleUser();
+    $email = AuthenticationEmail::normalize($user->profile->email);
+    $key = completionKey($email);
+    RateLimiter::clear($key);
+
+    for ($i = 0; $i < 5; $i++) {
+        RateLimiter::hit($key, 60 * 60);
+    }
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeTrue();
+
+    $this->travel(61)->minutes();
+
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeFalse();
+});
+
+test('expired otp is rejected after controlled time travel', function () {
+    Event::fake([PasswordReset::class]);
+
+    $user = eligibleUser();
+    $email = AuthenticationEmail::normalize($user->profile->email);
+    $key = completionKey($email);
+    RateLimiter::clear($key);
+    $original = $user->password;
+    $lifecycle = $user->lifecycle;
+
+    $otp = app(Otp::class);
+    // Package validity is in minutes; generate a short-lived OTP then advance past it.
+    $generated = $otp->generate($email, 'numeric', 6, 1);
+    $code = is_object($generated)
+        ? (string) ($generated->token ?? $generated->otp ?? '')
+        : (string) $generated;
+
+    expect($code)->not->toBeEmpty('OTP package must return a token for expiry testing');
+
+    $this->travel(2)->minutes();
+
+    $this->post('/reset-password', [
+        'email' => $email,
+        'token' => $code,
+        'password' => 'expired-password-attempt-1',
+        'password_confirmation' => 'expired-password-attempt-1',
+    ]);
+
+    $user->refresh();
+    expect(Hash::check('expired-password-attempt-1', $user->password))->toBeFalse();
+    expect($user->password)->toBe($original);
+    expect($user->lifecycle)->toEqual($lifecycle);
+    expect(RateLimiter::attempts($key))->toBe(1);
+    Event::assertNotDispatched(PasswordReset::class);
+});
+
+test('valid otp recovery leaves provisioned lifecycle unchanged', function () {
+    Event::fake([PasswordReset::class]);
+
+    $user = eligibleUser([
+        'lifecycle' => AccountLifecycle::Provisioned,
+    ]);
+    expect($user->lifecycle)->toBe(AccountLifecycle::Provisioned);
+
+    $email = AuthenticationEmail::normalize($user->profile->email);
+    $key = completionKey($email);
+    RateLimiter::clear($key);
+
+    $otp = app(Otp::class);
+    $generated = $otp->generate($email, 'numeric', 6, 10);
+    $code = is_object($generated)
+        ? (string) ($generated->token ?? $generated->otp ?? '')
+        : (string) $generated;
+    expect($code)->not->toBeEmpty();
+
+    $response = $this->post('/reset-password', [
+        'email' => strtoupper($email),
+        'token' => $code,
+        'password' => 'brand-new-password-99',
+        'password_confirmation' => 'brand-new-password-99',
+    ]);
+
+    $response->assertRedirect(route('login'));
+    $user->refresh();
+    expect(Hash::check('brand-new-password-99', $user->password))->toBeTrue();
+    expect($user->lifecycle)->toBe(AccountLifecycle::Provisioned);
+    expect(RateLimiter::attempts($key))->toBe(0);
+    Event::assertDispatched(PasswordReset::class);
+});
+
+test('completion rechecks eligibility and rejects disabled auth email', function () {
+    $user = eligibleUser();
+    $email = AuthenticationEmail::normalize($user->profile->email);
+
+    $otp = app(Otp::class);
+    $generated = $otp->generate($email, 'numeric', 6, 10);
+    $code = is_object($generated)
+        ? (string) ($generated->token ?? $generated->otp ?? '')
+        : (string) $generated;
+
+    $user->forceFill(['auth_email_enabled' => false])->save();
+
+    $this->post('/reset-password', [
+        'email' => $email,
+        'token' => $code,
+        'password' => 'should-not-apply-99',
+        'password_confirmation' => 'should-not-apply-99',
+    ]);
+
+    $user->refresh();
+    expect(Hash::check('should-not-apply-99', $user->password))->toBeFalse();
+});
+
+test('initiation throttle reaches threshold via http and blocked requests do not increment', function () {
+    Notification::fake();
+
+    $email = 'throttle-init-'.uniqid().'@example.com';
+    $key = initiationKey($email);
+    RateLimiter::clear($key);
+
+    for ($i = 0; $i < 5; $i++) {
+        $response = $this->postJson('/forgot-password', [
+            'email' => $email,
+            'delivery_method' => 'email',
+        ]);
+        $response->assertOk();
+        $response->assertJsonPath('message', 'If an eligible account exists for this email, a reset code has been sent.');
+    }
+
+    expect(RateLimiter::attempts($key))->toBe(5);
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeTrue();
+
+    $blocked = $this->postJson('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ]);
+    $blocked->assertOk();
+    $blocked->assertJsonPath('message', 'If an eligible account exists for this email, a reset code has been sent.');
+    expect(RateLimiter::attempts($key))->toBe(5);
+});
+
+test('initiation throttle expires after decay and resumes counting via http', function () {
+    Notification::fake();
+
+    $email = 'throttle-expire-'.uniqid().'@example.com';
+    $key = initiationKey($email);
+    RateLimiter::clear($key);
+
+    for ($i = 0; $i < 5; $i++) {
+        $this->postJson('/forgot-password', [
+            'email' => $email,
+            'delivery_method' => 'email',
+        ])->assertOk();
+    }
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeTrue();
+
+    $this->travel(61)->minutes();
+
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeFalse();
+
+    $this->postJson('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ])->assertOk();
+
+    expect(RateLimiter::attempts($key))->toBe(1);
+});
+
+test('completion throttle via invalid otp resumes after lock expiry through http', function () {
+    $user = eligibleUser();
+    $email = AuthenticationEmail::normalize($user->profile->email);
+    $key = completionKey($email);
+    RateLimiter::clear($key);
+
+    for ($i = 0; $i < 5; $i++) {
+        $this->post('/reset-password', [
+            'email' => $email,
+            'token' => '00000'.$i,
+            'password' => 'brand-new-password-99',
+            'password_confirmation' => 'brand-new-password-99',
+        ]);
+    }
+    expect(RateLimiter::attempts($key))->toBe(5);
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeTrue();
+
+    $this->post('/reset-password', [
+        'email' => $email,
+        'token' => '999999',
+        'password' => 'brand-new-password-99',
+        'password_confirmation' => 'brand-new-password-99',
+    ]);
+    expect(RateLimiter::attempts($key))->toBe(5);
+
+    $this->travel(61)->minutes();
+    expect(RateLimiter::tooManyAttempts($key, 5))->toBeFalse();
+
+    $this->post('/reset-password', [
+        'email' => $email,
+        'token' => '888888',
+        'password' => 'brand-new-password-99',
+        'password_confirmation' => 'brand-new-password-99',
+    ]);
+    expect(RateLimiter::attempts($key))->toBe(1);
+});
+
+test('notification failure still counts initiation once via http', function () {
+    $user = eligibleUser();
+    $email = $user->profile->email;
+    $key = initiationKey($email);
+    RateLimiter::clear($key);
+
+    // Force on-demand notify to throw after OTP generation. Message deliberately
+    // includes a recipient address — controller must not re-log raw exception text.
+    Notification::shouldReceive('route')
+        ->andThrow(new RuntimeException('smtp transport failed for recipient user@example.com'));
+
+    $response = $this->postJson('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ]);
+
+    $response->assertOk();
+    $response->assertJsonPath(
+        'message',
+        'If an eligible account exists for this email, a reset code has been sent.'
+    );
+    expect(RateLimiter::attempts($key))->toBe(1);
+
+    for ($i = 0; $i < 4; $i++) {
+        $this->postJson('/forgot-password', [
+            'email' => $email,
+            'delivery_method' => 'email',
+        ])->assertOk();
+    }
+    expect(RateLimiter::attempts($key))->toBe(5);
+
+    $blocked = $this->postJson('/forgot-password', [
+        'email' => $email,
+        'delivery_method' => 'email',
+    ]);
+    $blocked->assertOk();
+    expect(RateLimiter::attempts($key))->toBe(5);
+});
+
+test('eligible and ineligible responses remain uniform while throttled', function () {
+    Notification::fake();
+
+    $eligible = eligibleUser();
+    $eligibleEmail = $eligible->profile->email;
+    $ineligible = eligibleUser([
+        'auth_email_verified_at' => null,
+        'auth_email_enabled' => true,
+    ]);
+    $ineligibleEmail = $ineligible->profile->email;
+    $unknown = 'unknown-throttled-'.uniqid().'@example.com';
+
+    $shared = 'shared-throttled@example.com';
+    $a = eligibleUser();
+    $b = eligibleUser();
+    $a->profile->update(['email' => $shared]);
+    $b->profile->update(['email' => $shared]);
+
+    foreach ([$eligibleEmail, $ineligibleEmail, $unknown, $shared] as $addr) {
+        RateLimiter::clear(initiationKey($addr));
+        for ($i = 0; $i < 5; $i++) {
+            $this->postJson('/forgot-password', [
+                'email' => $addr,
+                'delivery_method' => 'email',
+            ])->assertOk();
+        }
+        expect(RateLimiter::attempts(initiationKey($addr)))->toBe(5);
+    }
+
+    $responses = [];
+    foreach ([$eligibleEmail, $ineligibleEmail, $unknown, $shared] as $addr) {
+        $responses[] = $this->postJson('/forgot-password', [
+            'email' => $addr,
+            'delivery_method' => 'email',
+        ]);
+        expect(RateLimiter::attempts(initiationKey($addr)))->toBe(5);
+    }
+
+    foreach ($responses as $response) {
+        $response->assertOk();
+        $response->assertJsonStructure(['message']);
+        expect($response->json('message'))->toBe(
+            'If an eligible account exists for this email, a reset code has been sent.'
+        );
+        expect($response->json())->toBe($responses[0]->json());
+    }
 });

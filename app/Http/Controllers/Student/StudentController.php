@@ -7,7 +7,6 @@ use App\Http\Requests\Student\UpdateStudentRequest;
 use App\Http\Resources\Student\StudentResource;
 use App\Models\Student\Student;
 use App\Services\Student\EnrollmentService;
-use App\Services\UserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -24,7 +23,6 @@ use Inertia\Inertia;
 class StudentController
 {
     public function __construct(
-        protected UserService $userService,
         protected EnrollmentService $enrollmentService,
     ) {}
 
@@ -36,7 +34,7 @@ class StudentController
             $result = Student::query()
                 ->with([
                     'profile:id,user_id,first_name,last_name,gender,date_of_birth,phone',
-                    'profile.user:id,email,is_active',
+                    'profile.user:id,username,lifecycle',
                 ])
                 ->tableQuery($request);
 
@@ -144,7 +142,7 @@ class StudentController
         }
 
         $student->load([
-            'profile.user:id,email,is_active,last_login_at',
+            'profile.user:id,username,lifecycle,last_login_at',
             'profile.addresses',
             'guardians.profile:id,first_name,last_name,phone,email',
             'sessionPlacements.academicSession',

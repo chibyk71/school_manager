@@ -79,8 +79,8 @@ function p5HttpBuildSchema(): void
         $table->uuid('id')->primary();
         $table->string('username')->nullable();
         $table->string('password')->nullable();
-        $table->boolean('is_active')->default(true);
-        $table->boolean('must_change_password')->default(false);
+        $table->string('lifecycle')->default('active');
+        $table->boolean('force_password_change')->default(false);
         $table->timestamps();
     });
 
@@ -217,7 +217,7 @@ function p5HttpUser(array $permissions = []): User
         'username' => 'p5_'.Str::random(8),
         'password' => bcrypt('password'),
         'is_active' => true,
-        'must_change_password' => false,
+        'force_password_change' => false,
         'created_at' => now(),
         'updated_at' => now(),
     ]);

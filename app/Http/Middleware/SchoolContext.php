@@ -3,61 +3,86 @@
 namespace App\Http\Middleware;
 
 use App\Models\School;
+use App\Support\Auth\SchoolWorkspaceAccess;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
+/**
+ * Resolve active school workspace context for authenticated users only when authorized.
+ *
+ * Guests may receive a non-persisted, request-scoped school for public branding/settings.
+ * Authenticated users may only bind a School workspace via valid school_users participation.
+ * Explicit unauthorized selections are rejected (403) and prior unauthorized context is cleared.
+ *
+ * Authentication itself does not require School membership.
+ */
 class SchoolContext
 {
-    /**
-     * Handle an incoming request and set the active school context.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     */
     public function handle(Request $request, Closure $next): Response
     {
-        // 1. Initialize schoolId to null
-        $schoolId = null;
+        $explicitId = $request->header('X-School-Id') ?: $request->input('school_id');
+        $sessionId = session('active_school_id');
+        $schoolId = $explicitId ?: $sessionId;
 
-        // 2. Prioritize: Authenticated User (Most reliable source for a logged-in user)
-        $schoolId = auth()->user()?->school_id;
-
-        // 3. Secondary: Explicit Header (Common for API/AJAX requests)
-        if (!$schoolId) {
-            $schoolId = $request->header('X-School-Id');
+        if (! $schoolId) {
+            return $next($request);
         }
 
-        // 4. Tertiary: Session or Request Parameter (Common for Web selection/routing)
-        if (!$schoolId) {
-            $schoolId = session('active_school_id');
+        $school = School::find($schoolId);
+
+        if (! $school) {
+            $this->clearWorkspace($request);
+
+            return $next($request);
         }
 
-        // 5. Lowest Priority: Check for explicit ID in the query string (e.g., during school selection)
-        if (!$schoolId) {
-            $schoolId = $request->input('school_id');
+        $user = $request->user();
+
+        if ($user === null) {
+            // Guest: in-memory only — do not persist into session.
+            app('schoolManager')->setActiveSchool($school, persistSession: false);
+
+            return $next($request);
         }
 
-        // ----------------------------------------------------------------------
-        // Set Context and Store in Session if we found a valid ID
-        // ----------------------------------------------------------------------
-        if ($schoolId) {
-            $school = School::find($schoolId);
+        if (! SchoolWorkspaceAccess::canSelect($user, $school)) {
+            $this->clearWorkspace($request);
 
-            if ($school) {
-                // Set the active school instance on the service container
-                app('schoolManager')->setActiveSchool($school);
-
-                // Ensure the context is stored in the session for subsequent requests
-                // that might not carry the user/header/query parameter.
-                if (session('active_school_id') !== $school->id) {
-                    session(['active_school_id' => $school->id]);
+            // Explicit client selection (header/input) → forbidden.
+            // Stale session alone → clear and continue without that workspace.
+            if ($explicitId && (string) $explicitId === (string) $schoolId) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'You are not authorized to select this school workspace.',
+                    ], 403);
                 }
-            } else {
-                // Optional: Clear session if the ID was invalid/deleted
-                $request->session()->forget('active_school_id');
+
+                abort(403, 'You are not authorized to select this school workspace.');
             }
+
+            return $next($request);
+        }
+
+        app('schoolManager')->setActiveSchool($school, persistSession: true);
+
+        if (session('active_school_id') !== $school->id) {
+            session(['active_school_id' => $school->id]);
         }
 
         return $next($request);
+    }
+
+    protected function clearWorkspace(Request $request): void
+    {
+        $request->session()->forget('active_school_id');
+        try {
+            $manager = app('schoolManager');
+            if (method_exists($manager, 'clearActiveSchool')) {
+                $manager->clearActiveSchool();
+            }
+        } catch (\Throwable) {
+            // ignore
+        }
     }
 }

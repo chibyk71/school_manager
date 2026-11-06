@@ -218,7 +218,8 @@ trait DispatchesLifecycleNotifications
 
         try {
             $users = User::query()
-                ->where('is_active', true)
+                ->where('lifecycle', \App\Enums\Auth\AccountLifecycle::Active->value)
+                ->whereHas('profile', fn ($p) => $p->whereNull('deleted_at'))
                 ->where(function ($q) use ($schoolId) {
                     $q->whereHas('schools', fn ($s) => $s->where('schools.id', $schoolId));
                 })

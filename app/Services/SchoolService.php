@@ -1,56 +1,158 @@
 <?php
 
 /**
- * SchoolService — School (tenant) orchestration with Phase 4 Address integration.
+ * SchoolService — School workspace orchestration within a Tenant deployment.
  *
- * Create: accepts nested addresses[] and persists via HasAddress (is_primary from payload only;
- * first address is NOT auto-primary).
- * Update: core school fields only; persisted address mutations use the managed Address API.
+ * A Tenant is the application/database instance. Multiple Schools share that Tenant.
+ * This service manages School lifecycle operations and the authenticated user's active
+ * School workspace context. It does not define Tenant identity.
+ *
+ * Workspace selection for authenticated users requires school_users membership.
+ * Authentication itself does not require School membership.
+ *
+ * Section context is NOT owned by this service. School activation does not select,
+ * validate, or clear Section state. Section Management / Academic workflows will
+ * define Section context ownership later; coupling it to SchoolService was removed
+ * deliberately so School workspace switching remains independent of unfinished
+ * Section domain design.
+ *
+ * Create accepts nested addresses[] and persists via HasAddress (is_primary from payload only;
+ * first address is NOT auto-primary). Update covers core school fields only; persisted address
+ * mutations use the managed Address API.
  */
 
 namespace App\Services;
 
+use App\Enums\Auth\AccountLifecycle;
 use App\Events\SchoolCreated;
+use App\Models\Profile;
 use App\Models\School;
-use App\Models\SchoolSection;
 use App\Models\User;
 use App\Notifications\MadeAdminOfSchoolNotification;
 use App\Services\School\SchoolLifecycleService;
+use App\Services\UserManagement\UserAccountService;
+use App\Support\Auth\SchoolWorkspaceAccess;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class SchoolService
 {
     protected $activeSchool;
 
-    protected $activeSection;
-
-    public function setActiveSchool(School $school): void
+    /**
+     * Bind an authorized School as the active workspace context.
+     *
+     * Purpose: Establish which School scopes subsequent School-workspace operations.
+     * Architectural rule: authenticated selection requires school_users membership
+     * (see SchoolWorkspaceAccess). Guests may bind in-memory context when $persistSession is false.
+     *
+     * @param  School  $school  The School to activate. Must exist.
+     * @param  bool  $persistSession  When true, write active_school_id into the session.
+     *                                Guests should pass false so context is request-scoped only.
+     * @return void
+     *
+     * Preconditions:
+     * - If a user is authenticated, SchoolWorkspaceAccess::canSelect($user, $school) must be true.
+     *
+     * Postconditions:
+     * - $this->activeSchool references $school.
+     * - When $persistSession is true, session active_school_id equals $school->id.
+     *
+     * Side effects: session key active_school_id when $persistSession is true.
+     *
+     * @throws \Exception When the authenticated user is not authorized to select $school,
+     *                    or when session binding fails.
+     */
+    public function setActiveSchool(School $school, bool $persistSession = true): void
     {
         try {
+            $user = auth()->user();
+            if ($user !== null && ! SchoolWorkspaceAccess::canSelect($user, $school)) {
+                throw new \Exception('You are not authorized to select this school workspace.');
+            }
+
             $this->activeSchool = $school;
-            session(['active_school_id' => $school->id]);
+            if ($persistSession) {
+                session(['active_school_id' => $school->id]);
+            }
         } catch (\Exception $e) {
             Log::error('Failed to set active school: '.$e->getMessage());
-            throw new \Exception('Unable to set active school.');
+            throw new \Exception($e->getMessage() ?: 'Unable to set active school.');
         }
     }
 
+    /**
+     * Clear active School workspace context (in-memory and session).
+     *
+     * Section context is intentionally not managed here. Section activation belongs
+     * to future Section Management / Academic workflows and must not be coupled to
+     * School workspace selection.
+     *
+     * @return void
+     *
+     * Postconditions: activeSchool is null; session active_school_id is removed.
+     */
+    public function clearActiveSchool(): void
+    {
+        $this->activeSchool = null;
+        session()->forget('active_school_id');
+    }
+
+    /**
+     * Resolve the authorized active School workspace for the current request/user.
+     *
+     * Resolution order: in-memory activeSchool → session active_school_id → first
+     * school_users membership. Raw request headers are never treated as proof of
+     * authorization; callers must not pass X-School-Id into this method expecting
+     * elevation without SchoolContext middleware checks.
+     *
+     * @param  Request|null  $request  Optional request (unused for header elevation).
+     * @return School|null Authorized School, or null when none is available/authorized.
+     *
+     * Side effects: may clear unauthorized session School context; may cache
+     * the resolved School on $this->activeSchool.
+     */
     public function getActiveSchool(?Request $request = null): ?School
     {
         try {
             if ($this->activeSchool) {
-                return $this->activeSchool;
+                $user = auth()->user();
+                if ($user !== null && ! SchoolWorkspaceAccess::canSelect($user, $this->activeSchool)) {
+                    $this->clearActiveSchool();
+                } else {
+                    return $this->activeSchool;
+                }
             }
 
-            $schoolId = $request?->header('X-School-Id')
-                ?? session('active_school_id')
-                ?? auth()->user()?->schools()->first()?->id;
+            // Never elevate a raw request header to authorized workspace context.
+            // Session is only valid if the authenticated user may select that school.
+            $sessionId = session('active_school_id');
+            if ($sessionId) {
+                $school = School::find($sessionId);
+                $user = auth()->user();
+                if ($school && $user && SchoolWorkspaceAccess::canSelect($user, $school)) {
+                    $this->activeSchool = $school;
 
-            return $schoolId ? School::find($schoolId) : null;
+                    return $school;
+                }
+                $this->clearActiveSchool();
+            }
+
+            // Membership convenience: first participating school only (authorized by definition).
+            $user = auth()->user();
+            if ($user) {
+                $first = $user->schools()->first();
+                if ($first) {
+                    $this->activeSchool = $first;
+
+                    return $first;
+                }
+            }
+
+            return null;
         } catch (\Exception $e) {
             Log::error('Failed to get active school: '.$e->getMessage());
 
@@ -145,88 +247,143 @@ class SchoolService
         });
     }
 
+    /**
+     * Assign a School administrator for onboarding / school create flows.
+     *
+     * Invariant: the School contact email field is unrelated to administrator
+     * identity. Callers must pass explicit administrator fields; controllers must
+     * not treat generic "email" as an admin-assignment signal.
+     *
+     * Two supported paths (mutually exclusive):
+     * 1. Existing Authentication Account: provide account_id (users.id). The account
+     *    must already exist; its linked Person is used. No Person is created or
+     *    matched by email.
+     * 2. New administrator: provide first_name, last_name, email (Person identity)
+     *    and optional password/username. A new Person is created, then an
+     *    Authentication Account via UserAccountService. Email is never used to
+     *    locate or reuse an existing Person.
+     *
+     * Side effects: school_users membership; Laratrust admin role on the school
+     * team scope; MadeAdminOfSchoolNotification. Role assignment stays outside
+     * UserAccountService.
+     *
+     * @param  array<string, mixed>  $userData
+     * @return User The assigned administrator account
+     *
+     * @throws ValidationException
+     * @throws AuthorizationException
+     */
     public function assignAdmin(array $userData, School $school): User
     {
         permitted('school.assign-admin');
 
-        $validated = validator($userData, [
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email,'.($userData['id'] ?? null),
+        $hasExisting = ! empty($userData['account_id']) || ! empty($userData['id']);
+        $hasNew = ! empty($userData['email']) || ! empty($userData['admin_email'])
+            || ! empty($userData['first_name']) || ! empty($userData['admin_name']);
+
+        if ($hasExisting && ($userData['email'] ?? $userData['admin_email'] ?? null)
+            && empty($userData['account_id']) && empty($userData['id'])) {
+            // Prefer explicit account_id when both shapes appear; do not invent matching.
+        }
+
+        if ($hasExisting) {
+            $accountId = $userData['account_id'] ?? $userData['id'] ?? null;
+            $validated = validator(
+                ['account_id' => $accountId],
+                ['account_id' => 'required|uuid|exists:users,id']
+            )->validate();
+
+            return DB::transaction(function () use ($validated, $school) {
+                /** @var User $admin */
+                $admin = User::query()->with('profile')->whereKey($validated['account_id'])->firstOrFail();
+
+                if ($admin->profile === null || $admin->profile->trashed()) {
+                    throw ValidationException::withMessages([
+                        'account_id' => 'The selected account has no eligible Person.',
+                    ]);
+                }
+
+                $admin->schools()->syncWithoutDetaching([$school->id]);
+
+                // Pass the School model: Laratrust Helper::getIdFor() treats a plain
+                // string as a model class name (where name = $string). UUID strings
+                // therefore fail; the Eloquent instance supplies the team primary key.
+                if (! $admin->hasRole('admin', $school)) {
+                    $admin->addRole('admin', $school);
+                }
+
+                $admin->notify(new MadeAdminOfSchoolNotification($school));
+
+                return $admin;
+            });
+        }
+
+        // New administrator path — create Person then Authentication Account.
+        $name = $userData['first_name'] ?? $userData['admin_name'] ?? $userData['name'] ?? null;
+        $email = $userData['email'] ?? $userData['admin_email'] ?? null;
+        $lastName = $userData['last_name'] ?? null;
+        if ($lastName === null && is_string($name) && str_contains(trim($name), ' ')) {
+            $parts = preg_split('/\s+/', trim($name), 2);
+            $name = $parts[0] ?? $name;
+            $lastName = $parts[1] ?? 'Administrator';
+        }
+        $lastName = $lastName ?: 'Administrator';
+
+        $validated = validator([
+            'first_name' => $name,
+            'last_name' => $lastName,
+            'email' => $email,
+            'password' => $userData['password'] ?? $userData['admin_password'] ?? null,
+            'username' => $userData['username'] ?? null,
+        ], [
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
             'password' => 'nullable|string|min:8',
+            'username' => 'nullable|string|max:255',
         ])->validate();
 
         return DB::transaction(function () use ($validated, $school) {
-            $admin = User::firstOrCreate(
-                ['email' => $validated['email']],
-                [
-                    'name' => $validated['name'],
-                    'password' => Hash::make($validated['password'] ?? Str::random(12)),
-                ]
-            );
+            // Never reuse a Person because email matches — always create a new Person.
+            $person = Profile::create([
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'email' => strtolower(trim($validated['email'])),
+            ]);
 
-            if (! $admin->hasRole('admin', $school?->id)) {
-                $admin->addRole('admin', $school?->id);
+            $accountService = app(UserAccountService::class);
+            $plainPassword = $validated['password'] ?? null;
+            $options = [
+                'force_password_change' => true,
+                'auto_generate_username' => empty($validated['username']),
+                'send_notification' => filled($plainPassword) && filled($person->email),
+            ];
+            // Active only when usable credentials are supplied; otherwise Provisioned.
+            if (filled($plainPassword)) {
+                $options['lifecycle'] = AccountLifecycle::Active;
+            } else {
+                $options['lifecycle'] = AccountLifecycle::Provisioned;
             }
 
-            $admin->schools()->syncWithoutDetaching($school?->id);
+            $admin = $accountService->createForPerson(
+                $person,
+                [
+                    'username' => $validated['username'] ?? null,
+                    'password' => $plainPassword,
+                ],
+                $options
+            );
+
+            $admin->schools()->syncWithoutDetaching([$school->id]);
+
+            // Pass the School model (not $school->id): see existing-account path note.
+            if (! $admin->hasRole('admin', $school)) {
+                $admin->addRole('admin', $school);
+            }
 
             $admin->notify(new MadeAdminOfSchoolNotification($school));
 
-            return $admin;
+            return $admin->load('profile');
         });
-    }
-
-    public function setActiveSection(SchoolSection $section): void
-    {
-        $activeSchool = $this->getActiveSchool();
-
-        if ($activeSchool && $section->school_id !== $activeSchool->id) {
-            throw new \Exception('Section does not belong to the active school.');
-        }
-
-        try {
-            $this->activeSection = $section;
-            session(['active_section_id' => $section->id]);
-        } catch (\Exception $e) {
-            Log::error('Failed to set active section: '.$e->getMessage());
-            throw new \Exception('Unable to set active section.');
-        }
-    }
-
-    public function getActiveSection(?Request $request = null): ?SchoolSection
-    {
-        try {
-            if ($this->activeSection) {
-                return $this->activeSection;
-            }
-
-            $sectionId = $request?->header('X-Section-Id')
-                ?? session('active_section_id');
-
-            if ($sectionId) {
-                $section = SchoolSection::find($sectionId);
-
-                $activeSchool = $this->getActiveSchool($request);
-                if ($section && $activeSchool && $section->school_id !== $activeSchool->id) {
-                    Log::warning('Attempted to access section from different school', [
-                        'section_id' => $sectionId,
-                        'section_school_id' => $section->school_id,
-                        'active_school_id' => $activeSchool->id,
-                    ]);
-
-                    return null;
-                }
-
-                return $section;
-            }
-
-            $activeSchool = $this->getActiveSchool($request);
-
-            return $activeSchool?->schoolSections()->first();
-        } catch (\Exception $e) {
-            Log::error('Failed to get active section: '.$e->getMessage());
-
-            return null;
-        }
     }
 }

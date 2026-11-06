@@ -39,19 +39,12 @@ class PasswordController extends Controller
                 throw new \Exception('Unauthenticated user.');
             }
 
-            // Check school context
-            $school = GetSchoolModel();
-            if (!$school || $user->school_id !== $school->id) {
-                throw new \Exception('Invalid school context.');
-            }
-
-            // Check permission to update password
-            permitted('update-password', $request->expectsJson());
-
-            // Check if password change is allowed
-            $authSettings = getMergedSettings('authentication', $school);
-            if (!($authSettings['allow_password_change'] ?? true)) {
-                Log::info("Password change disabled for user {$user->id} in school {$school->id} as per settings.");
+            // School context is optional for password update (account is tenant-level).
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+            $authSettings = function_exists('getMergedSettings')
+                ? getMergedSettings('authentication', $school)
+                : [];
+            if (! ($authSettings['allow_password_change'] ?? true)) {
                 throw new \Exception('Password change is not allowed.');
             }
 
@@ -82,20 +75,20 @@ class PasswordController extends Controller
             $validated = $request->validate([
                 'current_password' => ['required', 'current_password'],
                 'password' => ['required', 'confirmed', $passwordRules],
-                'school_id' => ['required', 'exists:schools,id'],
+                // school_id not required for account password update
             ]);
 
             // Update password
             $user->update([
-                'password' => Hash::make($validated['password']),
-                'must_change_password'=> false,
+                'password' => $validated['password'],
+                'force_password_change' => false,
             ]);
 
             // Log activity
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
-                ->withProperties(['school_id' => $school->id])
+                ->withProperties(['school_id' => $school?->id])
                 ->log('Password updated successfully');
 
             // Clear rate limiter

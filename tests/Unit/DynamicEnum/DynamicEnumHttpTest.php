@@ -75,8 +75,8 @@ function deHttpBuildSchema(): void
         $table->uuid('id')->primary();
         $table->string('username')->unique();
         $table->string('password');
-        $table->boolean('is_active')->default(true);
-        $table->boolean('must_change_password')->default(false);
+        $table->string('lifecycle')->default('active');
+        $table->boolean('force_password_change')->default(false);
         $table->rememberToken();
         $table->timestamps();
     });
@@ -268,7 +268,7 @@ function deHttpUser(array $permissions = []): User
         'username' => 'de_'.Str::random(8),
         'password' => bcrypt('password'),
         'is_active' => true,
-        'must_change_password' => false,
+        'force_password_change' => false,
     ]);
 
     foreach ($permissions as $name) {
