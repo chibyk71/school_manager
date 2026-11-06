@@ -7,7 +7,6 @@ use App\Helpers\IdGenerator;
 use App\Models\Profile;
 use App\Models\Employee\Staff;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -112,9 +111,24 @@ class StaffHiringService
                 // Add more staff-specific fields (salary scale, qualifications, etc.)
             ]);
 
-            // 5. Create login account (default true for staff)
+            // 5. Create login account (default true for staff).
+            // Do not invent an Active account with an undeliverable random password.
+            // Usable credentials → Active; otherwise Provisioned (no password).
             if ($createLogin) {
-                $plainPassword = $data['password'] ?? Str::random(12);
+                $plainPassword = isset($data['password']) && is_string($data['password']) && $data['password'] !== ''
+                    ? $data['password']
+                    : null;
+                $hasDelivery = filled($profile->email);
+                $lifecycle = ($plainPassword !== null && $hasDelivery)
+                    ? 'active'
+                    : 'provisioned';
+                // If a password was supplied but there is no email delivery path, keep
+                // the password and activate only when the operator explicitly provided it
+                // (operator-known credential). Random passwords are never generated here.
+                if ($plainPassword !== null && ! $hasDelivery) {
+                    $lifecycle = 'active';
+                }
+
                 $this->userAccountService->createForPerson(
                     person: $profile,
                     data: [
@@ -122,10 +136,10 @@ class StaffHiringService
                         'password' => $plainPassword,
                     ],
                     options: [
-                        'lifecycle' => 'active',
-                        'force_password_change' => true,
+                        'lifecycle' => $lifecycle,
+                        'force_password_change' => $plainPassword !== null,
                         'auto_generate_username' => true,
-                        'send_notification' => true,
+                        'send_notification' => $plainPassword !== null && $hasDelivery,
                     ]
                 );
                 // Roles are assigned by the authorization domain, not account provisioning.

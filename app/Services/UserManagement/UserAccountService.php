@@ -152,6 +152,15 @@ class UserAccountService
 
     /**
      * Activate a Provisioned account with usable credentials.
+     *
+     * @param  User  $account  Must currently be Provisioned (Active is idempotent).
+     * @param  string  $password  Plain credential; minimum 8 characters.
+     * @return User  Locked-and-refreshed account after transition.
+     *
+     * Side effects: password hash updated; lifecycle → Active; AuthenticationAccountActivated event.
+     * Does not assign roles, school membership, or force_password_change.
+     *
+     * @throws \Illuminate\Validation\ValidationException
      */
     public function activate(User $account, string $password): User
     {

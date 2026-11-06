@@ -30,9 +30,7 @@ use App\Notifications\MadeAdminOfSchoolNotification;
 use App\Services\School\SchoolLifecycleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class SchoolService
 {
@@ -243,34 +241,135 @@ class SchoolService
         });
     }
 
+    /**
+     * Assign a School administrator for onboarding / school create flows.
+     *
+     * Two supported paths (mutually exclusive):
+     * 1. Existing Authentication Account: provide account_id (users.id). The account
+     *    must already exist; its linked Person is used. No Person is created or
+     *    matched by email.
+     * 2. New administrator: provide first_name, last_name, email (Person identity)
+     *    and optional password/username. A new Person is created, then an
+     *    Authentication Account via UserAccountService. Email is never used to
+     *    locate or reuse an existing Person.
+     *
+     * Side effects: school_users membership; Laratrust admin role on the school
+     * team scope; MadeAdminOfSchoolNotification. Role assignment stays outside
+     * UserAccountService.
+     *
+     * @param  array<string, mixed>  $userData
+     * @return User  The assigned administrator account
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     * @throws \Illuminate\Auth\Access\AuthorizationException
+     */
     public function assignAdmin(array $userData, School $school): User
     {
         permitted('school.assign-admin');
 
-        $validated = validator($userData, [
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email,'.($userData['id'] ?? null),
+        $hasExisting = ! empty($userData['account_id']) || ! empty($userData['id']);
+        $hasNew = ! empty($userData['email']) || ! empty($userData['admin_email'])
+            || ! empty($userData['first_name']) || ! empty($userData['admin_name']);
+
+        if ($hasExisting && ($userData['email'] ?? $userData['admin_email'] ?? null)
+            && empty($userData['account_id']) && empty($userData['id'])) {
+            // Prefer explicit account_id when both shapes appear; do not invent matching.
+        }
+
+        if ($hasExisting) {
+            $accountId = $userData['account_id'] ?? $userData['id'] ?? null;
+            $validated = validator(
+                ['account_id' => $accountId],
+                ['account_id' => 'required|uuid|exists:users,id']
+            )->validate();
+
+            return DB::transaction(function () use ($validated, $school) {
+                /** @var User $admin */
+                $admin = User::query()->with('profile')->whereKey($validated['account_id'])->firstOrFail();
+
+                if ($admin->profile === null || $admin->profile->trashed()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'account_id' => 'The selected account has no eligible Person.',
+                    ]);
+                }
+
+                $admin->schools()->syncWithoutDetaching([$school->id]);
+
+                if (! $admin->hasRole('admin', $school->id)) {
+                    $admin->addRole('admin', $school->id);
+                }
+
+                $admin->notify(new MadeAdminOfSchoolNotification($school));
+
+                return $admin;
+            });
+        }
+
+        // New administrator path — create Person then Authentication Account.
+        $name = $userData['first_name'] ?? $userData['admin_name'] ?? $userData['name'] ?? null;
+        $email = $userData['email'] ?? $userData['admin_email'] ?? null;
+        $lastName = $userData['last_name'] ?? null;
+        if ($lastName === null && is_string($name) && str_contains(trim($name), ' ')) {
+            $parts = preg_split('/\s+/', trim($name), 2);
+            $name = $parts[0] ?? $name;
+            $lastName = $parts[1] ?? 'Administrator';
+        }
+        $lastName = $lastName ?: 'Administrator';
+
+        $validated = validator([
+            'first_name' => $name,
+            'last_name' => $lastName,
+            'email' => $email,
+            'password' => $userData['password'] ?? $userData['admin_password'] ?? null,
+            'username' => $userData['username'] ?? null,
+        ], [
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
             'password' => 'nullable|string|min:8',
+            'username' => 'nullable|string|max:255',
         ])->validate();
 
         return DB::transaction(function () use ($validated, $school) {
-            $admin = User::firstOrCreate(
-                ['email' => $validated['email']],
-                [
-                    'name' => $validated['name'],
-                    'password' => Hash::make($validated['password'] ?? Str::random(12)),
-                ]
-            );
+            // Never reuse a Person because email matches — always create a new Person.
+            $person = \App\Models\Profile::create([
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'email' => strtolower(trim($validated['email'])),
+            ]);
 
-            if (! $admin->hasRole('admin', $school?->id)) {
-                $admin->addRole('admin', $school?->id);
+            $accountService = app(\App\Services\UserManagement\UserAccountService::class);
+            $plainPassword = $validated['password'] ?? null;
+            $options = [
+                'force_password_change' => true,
+                'auto_generate_username' => empty($validated['username']),
+                'send_notification' => filled($plainPassword) && filled($person->email),
+            ];
+            // Active only when usable credentials are supplied; otherwise Provisioned.
+            if (filled($plainPassword)) {
+                $options['lifecycle'] = \App\Enums\Auth\AccountLifecycle::Active;
+            } else {
+                $options['lifecycle'] = \App\Enums\Auth\AccountLifecycle::Provisioned;
             }
 
-            $admin->schools()->syncWithoutDetaching($school?->id);
+            $admin = $accountService->createForPerson(
+                $person,
+                [
+                    'username' => $validated['username'] ?? null,
+                    'password' => $plainPassword,
+                ],
+                $options
+            );
+
+            $admin->schools()->syncWithoutDetaching([$school->id]);
+
+            if (! $admin->hasRole('admin', $school->id)) {
+                $admin->addRole('admin', $school->id);
+            }
 
             $admin->notify(new MadeAdminOfSchoolNotification($school));
 
-            return $admin;
+            return $admin->load('profile');
         });
     }
 

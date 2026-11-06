@@ -52,7 +52,8 @@ use Throwable;
  * ----------------
  * - The store() method is the primary entry point for tenant onboarding
  * - Admin creation is fully decoupled — handled optionally after school creation
- * - Section context is managed via SchoolService (active section resolution)
+ * - School workspace context is managed via SchoolService (active school resolution).
+ *   Section context is not owned by SchoolService.
  * - All destructive actions (deactivate, forceDelete, restore) include safety checks
  *   and support bulk operations
  *
@@ -117,7 +118,9 @@ class SchoolController extends BaseSchoolController
                 // This is far more efficient than loading the full 'users' relationship.
                 ->withCount([
                     'users as active_users_count' => function ($q) {
-                        $q->where('is_active', true);
+                        // AccountLifecycle::Active and linked Person must not be soft-deleted.
+                        $q->where('lifecycle', \App\Enums\Auth\AccountLifecycle::Active->value)
+                            ->whereHas('profile', fn ($p) => $p->whereNull('deleted_at'));
                     },
                 ]);
 
@@ -264,13 +267,20 @@ class SchoolController extends BaseSchoolController
             //    First address is NOT auto-primary; is_primary comes from payload only.
             $school = $this->schoolService->createSchool($request->validated());
 
-            // 3. Optional admin assignment (unchanged – supports onboarding flows)
-            if ($request->hasAny(['admin_id', 'admin_name', 'admin_email'])) {
+            // 3. Optional admin assignment (onboarding flows).
+            // Existing account: admin_id / account_id. New Person+Account: name/email/password.
+            if ($request->hasAny(['admin_id', 'account_id', 'admin_name', 'admin_email', 'first_name', 'email'])) {
                 $adminData = [
-                    'name' => $request->input('admin_name'),
-                    'email' => $request->input('admin_email'),
-                    'password' => $request->input('admin_password'),
+                    'account_id' => $request->input('account_id') ?? $request->input('admin_id'),
                     'id' => $request->input('admin_id'),
+                    'admin_name' => $request->input('admin_name'),
+                    'first_name' => $request->input('first_name'),
+                    'last_name' => $request->input('last_name'),
+                    'admin_email' => $request->input('admin_email'),
+                    'email' => $request->input('email') ?? $request->input('admin_email'),
+                    'admin_password' => $request->input('admin_password'),
+                    'password' => $request->input('admin_password') ?? $request->input('password'),
+                    'username' => $request->input('username'),
                 ];
 
                 $this->schoolService->assignAdmin($adminData, $school);

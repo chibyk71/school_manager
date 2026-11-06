@@ -684,7 +684,7 @@ class ProfileController extends Controller
      * - Integrates with:
      *   - ProfilePolicy ('createLogin' ability)
      *   - UserAccountService (core login creation logic)
-     *   - Events: UserAccountCreated (welcome email, audit)
+     *   - Events: AuthenticationAccountCreated (domain; credentials delivered narrowly when applicable)
      *   - Inertia: redirect with success flash
      * - Used in: admin profile management, manual account setup
      *
@@ -810,7 +810,7 @@ class ProfileController extends Controller
      * - Integrates with:
      *   - ProfilePolicy (authorization)
      *   - UserAccountService (core reset logic + event firing)
-     *   - Events: UserAccountCreated (welcome/reset notification)
+     *   - Events: AuthenticationAccountCreated / controlled credential delivery
      *   - Inertia: redirect with flash messages
      *
      * Security & Best Practices:

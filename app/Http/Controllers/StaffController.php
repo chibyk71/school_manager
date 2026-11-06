@@ -32,16 +32,24 @@ class StaffController extends BaseSchoolController
 
             $extraFields = [
                 [
-                    'field' => 'user_name',
-                    'relation' => 'profile.user',
-                    'relatedField' => 'name',
+                    'field' => 'profile_first_name',
+                    'relation' => 'profile',
+                    'relatedField' => 'first_name',
                     'filterable' => true,
                     'sortable' => true,
                     'filterType' => 'text',
                 ],
                 [
-                    'field' => 'user_email',
-                    'relation' => 'profile.user',
+                    'field' => 'profile_last_name',
+                    'relation' => 'profile',
+                    'relatedField' => 'last_name',
+                    'filterable' => true,
+                    'sortable' => true,
+                    'filterType' => 'text',
+                ],
+                [
+                    'field' => 'profile_email',
+                    'relation' => 'profile',
                     'relatedField' => 'email',
                     'filterable' => true,
                     'sortable' => true,
