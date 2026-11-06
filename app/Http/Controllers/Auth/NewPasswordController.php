@@ -87,7 +87,7 @@ class NewPasswordController extends Controller
     public function store(ResetPasswordRequest $request): RedirectResponse|JsonResponse
     {
         $normalizedEmail = AuthenticationEmail::normalize($request->input('email'));
-        $throttleKey = 'password-reset|'.$normalizedEmail.'|'.$request->ip();
+        $throttleKey = $this->completionThrottleKey($normalizedEmail, $request->ip());
 
         try {
             $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
@@ -147,11 +147,20 @@ class NewPasswordController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
-            Log::error('Password reset failed unexpectedly: '.$e->getMessage());
+            Log::error('Password reset failed unexpectedly', ['exception' => $e::class]);
 
             // Unexpected infrastructure errors: do not treat as OTP guesses.
             return $this->respondWithError($request, 'Password reset failed. Please try again.');
         }
+    }
+
+    /**
+     * Rate-limit key for recovery completion (OTP validation attempts).
+     * Email component is hashed; IP remains for client isolation.
+     */
+    protected function completionThrottleKey(string $normalizedEmail, string $ip): string
+    {
+        return 'password-reset|'.hash('sha256', $normalizedEmail).'|'.$ip;
     }
 
     protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts): bool

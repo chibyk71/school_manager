@@ -133,7 +133,7 @@ class PasswordResetLinkController extends Controller
 
             $normalizedEmail = AuthenticationEmail::normalize($request->input('email'));
             $emailHash = hash('sha256', $normalizedEmail);
-            $throttleKey = 'password-reset-link|'.$normalizedEmail.'|'.$request->ip();
+            $throttleKey = $this->initiationThrottleKey($normalizedEmail, $request->ip());
 
             // Already locked: identical public response, no further counter growth.
             if ($this->hasTooManyAttempts($throttleKey, self::MAX_ATTEMPTS)) {
@@ -191,10 +191,11 @@ class PasswordResetLinkController extends Controller
                     ])
                     ->log('Password reset link requested');
             } catch (\Throwable $workError) {
-                // Attempt already counted; do not re-increment. Log without leaking the address.
+                // Attempt already counted; do not re-increment.
+                // Log class only — transport exceptions may embed recipient addresses in messages.
                 Log::error('Password recovery initiation work failed after attempt counted', [
                     'email_hash' => $emailHash,
-                    'error' => $workError->getMessage(),
+                    'exception' => $workError::class,
                 ]);
             }
 
@@ -202,7 +203,9 @@ class PasswordResetLinkController extends Controller
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
-            Log::error('Password reset link request failed before throttled workflow: '.$e->getMessage());
+            Log::error('Password reset link request failed before throttled workflow', [
+                'exception' => $e::class,
+            ]);
 
             return $this->genericInitiationResponse($request);
         }
@@ -219,6 +222,18 @@ class PasswordResetLinkController extends Controller
         }
 
         return redirect()->back()->with('status', self::GENERIC_STATUS);
+    }
+
+
+    /**
+     * Rate-limit key for recovery initiation.
+     *
+     * Uses a hash of the normalized email so the cache key itself does not store
+     * the raw address. IP remains plaintext for per-client isolation.
+     */
+    protected function initiationThrottleKey(string $normalizedEmail, string $ip): string
+    {
+        return 'password-reset-link|'.hash('sha256', $normalizedEmail).'|'.$ip;
     }
 
     protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts): bool
