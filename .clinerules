@@ -1,0 +1,51 @@
+# Cline Project Rules — School Manager
+
+## Before Starting a Task
+
+1. Read the relevant memory-bank files (projectbrief.md, activeContext.md, systemPatterns.md) before beginning work.
+2. Identify the current development phase, active decisions, and outstanding tasks from activeContext.md.
+3. Check the existing file modifications with `git status` before making changes.
+
+## During Development
+
+4. Inspect only files relevant to the requested feature. Do not recursively read the entire repository.
+5. Plan before implementing substantial changes. Show your planning process clearly.
+6. Work in small, clearly defined development phases aligned with the project's branch naming convention (`feature/feature-name-phaseN`).
+7. Respect existing architecture and naming conventions documented in memory-bank/systemPatterns.md.
+8. Avoid unnecessary refactoring or unrelated changes. Do not expand scope beyond the task.
+9. Do not introduce dependencies (Composer or npm) without clear justification documented in the task.
+10. Preserve existing functionality. Add regression tests for business rules and edge cases.
+
+## When Making Changes
+
+11. Follow the established patterns:
+    - Thin controllers, fat services
+    - Eloquent models with reusable traits
+    - TypeScript + Composition API for Vue components
+    - AuthenticatedLayout requires `crumb` prop (never make it optional)
+12. Enforce authorization and validation on the server. Frontend visibility is not an authorization boundary.
+13. Use existing settings, lifecycle/state, address, media, feature/entitlement infrastructure where appropriate.
+14. Prefer targeted test checks (`php artisan test --filter=TestName`) over running the entire test suite unnecessarily.
+
+## Documentation Standards
+
+15. Use Docent for documentation authoring: run `php artisan docent:guide` before writing docs, `php artisan docent:check` after.
+16. Docs live in `resources/docs` per Docent conventions.
+
+## After Completing a Task
+
+17. Update memory-bank files:
+    - `activeContext.md` — Record active decisions and what changed.
+    - `progress.md` — Update completed work and note any discovered issues.
+    - Other memory files if architecture, patterns, or tech context changed.
+18. Do not turn memory-bank into a conversation transcript. Keep it concise and useful.
+19. Record important decisions and unresolved issues in the relevant memory file.
+20. Never claim something was tested when it wasn't.
+21. Provide a summary of what was done, what files were changed, and any assumptions made.
+
+## Avoid
+
+- Modifying application source code, migrations, configuration, or dependencies unless explicitly part of the task.
+- Committing changes to the repository unless asked.
+- Claiming functionality exists that was not verified.
+- Making unnecessary changes to `.clinerules`, `.clineignore`, or memory-bank files outside of explicit setup tasks.

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Git
+.git/
+
+# Generated files
+public/build/
+public/hot
+dist/
+coverage/
+
+# Laravel generated files
+storage/framework/
+bootstrap/cache/
+storage/logs/
+
+# Temporary files
+*.log
+*.tmp
+
+# Environment secrets
+.env
+.env.*
+!.env.example
