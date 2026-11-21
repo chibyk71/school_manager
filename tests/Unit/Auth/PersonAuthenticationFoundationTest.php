@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\UserManagement\UserAccountService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -161,6 +162,8 @@ class PersonAuthenticationFoundationTest extends TestCase
 
     public function test_person_email_change_resets_auth_email_state(): void
     {
+        // Stale Profile instance: createForPerson updates a locked row; caller's
+        // $person still has null user_id in memory. Invalidation must still run.
         $person = Profile::factory()->create(['email' => 'old@example.com']);
         $account = $this->accounts->createForPerson($person, [
             'username' => 'chmail',
@@ -169,6 +172,8 @@ class PersonAuthenticationFoundationTest extends TestCase
         $this->accounts->markAuthEmailVerified($account);
         $this->accounts->setAuthEmailEnabled($account->fresh(), true);
 
+        $this->assertNull($person->user_id, 'precondition: caller Profile is stale');
+
         $person->update(['email' => 'new@example.com']);
         $account->refresh();
 
@@ -176,16 +181,44 @@ class PersonAuthenticationFoundationTest extends TestCase
         $this->assertFalse($account->auth_email_enabled);
     }
 
+    public function test_person_email_change_on_fresh_profile_resets_auth_email_state(): void
+    {
+        $person = Profile::factory()->create(['email' => 'old-fresh@example.com']);
+        $account = $this->accounts->createForPerson($person, [
+            'username' => 'chmail_fresh',
+            'password' => 'password123',
+        ], ['lifecycle' => 'active']);
+        $this->accounts->markAuthEmailVerified($account);
+        $this->accounts->setAuthEmailEnabled($account->fresh(), true);
+
+        $person->fresh()->update(['email' => 'new-fresh@example.com']);
+        $account->refresh();
+
+        $this->assertNull($account->auth_email_verified_at);
+        $this->assertFalse($account->auth_email_enabled);
+    }
+
+    public function test_person_email_change_without_account_succeeds(): void
+    {
+        $person = Profile::factory()->create(['email' => 'solo@example.com']);
+        $this->assertNull($person->user_id);
+
+        $person->update(['email' => 'solo-new@example.com']);
+
+        $this->assertSame('solo-new@example.com', $person->fresh()->email);
+        $this->assertNull($person->fresh()->user_id);
+    }
+
     public function test_users_table_has_no_auth_email_string_column(): void
     {
-        $this->assertFalse(\Schema::hasColumn('users', 'auth_email'));
-        $this->assertFalse(\Schema::hasColumn('users', 'email'));
-        $this->assertFalse(\Schema::hasColumn('users', 'is_active'));
-        $this->assertFalse(\Schema::hasColumn('users', 'must_change_password'));
-        $this->assertTrue(\Schema::hasColumn('users', 'lifecycle'));
-        $this->assertTrue(\Schema::hasColumn('users', 'force_password_change'));
-        $this->assertTrue(\Schema::hasColumn('users', 'auth_email_verified_at'));
-        $this->assertTrue(\Schema::hasColumn('users', 'auth_email_enabled'));
+        $this->assertFalse(Schema::hasColumn('users', 'auth_email'));
+        $this->assertFalse(Schema::hasColumn('users', 'email'));
+        $this->assertFalse(Schema::hasColumn('users', 'is_active'));
+        $this->assertFalse(Schema::hasColumn('users', 'must_change_password'));
+        $this->assertTrue(Schema::hasColumn('users', 'lifecycle'));
+        $this->assertTrue(Schema::hasColumn('users', 'force_password_change'));
+        $this->assertTrue(Schema::hasColumn('users', 'auth_email_verified_at'));
+        $this->assertTrue(Schema::hasColumn('users', 'auth_email_enabled'));
     }
 
     public function test_no_role_required_for_authentication_eligibility(): void
@@ -241,7 +274,8 @@ class PersonAuthenticationFoundationTest extends TestCase
         $this->assertInstanceOf(User::class, $person->fresh()->user);
         $this->assertInstanceOf(Profile::class, $account->fresh()->profile);
         $this->assertEquals($person->id, $account->profile->id);
-        $this->assertEquals($account->id, $person->user->id);
+        // createForPerson updates a locked Profile row; refresh before reverse access
+        $this->assertEquals($account->id, $person->fresh()->user->id);
     }
 
     public function test_shared_email_login_fails_closed_when_multiple_eligible(): void

@@ -140,6 +140,10 @@ class Profile extends Model implements HasMedia
     /**
      * When primary email changes, invalidate auth email verification/enablement
      * on the linked Authentication Account.
+     *
+     * Resolves the account from persistence so a stale in-memory Profile
+     * (e.g. caller instance after UserAccountService::createForPerson updates a
+     * locked row) still triggers invalidation. Fail-safe: no account → no-op.
      */
     protected static function booted(): void
     {
@@ -148,11 +152,18 @@ class Profile extends Model implements HasMedia
                 return;
             }
 
-            if ($profile->user_id === null) {
+            // Prefer in-memory relation key; fall back to the persisted row so
+            // stale Profile instances (user_id still null after account link)
+            // still find the Authentication Account.
+            $accountId = $profile->user_id ?? static::query()
+                ->whereKey($profile->getKey())
+                ->value('user_id');
+
+            if ($accountId === null) {
                 return;
             }
 
-            $account = $profile->user;
+            $account = User::query()->whereKey($accountId)->first();
             if ($account === null) {
                 return;
             }
