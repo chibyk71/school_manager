@@ -293,10 +293,18 @@ class UserAccountService
     /**
      * Admin/service password reset: sets a new credential and requires change on next login.
      * Does not dispatch AuthenticationAccountCreated.
+     *
+     * Security: Must not generate or return temporary passwords.
+     * The account is flagged for forced password change; the user establishes
+     * their own credential via the forced-password-change flow (MFA/OTP-gated).
+     *
+     * @return User The updated account (no credential material returned).
      */
-    public function resetPassword(User $account, ?string $newPassword = null, bool $notify = false): string
+    public function resetPassword(User $account, ?string $newPassword = null, bool $notify = false): User
     {
-        $plain = $newPassword ?: \Illuminate\Support\Str::random(12);
+        // A random placeholder is set so the model always has a non-null password hash.
+        // The user must complete the forced-password-change flow before accessing the workspace.
+        $plain = $newPassword ?: \Illuminate\Support\Str::random(32);
         if (strlen($plain) < 8) {
             throw ValidationException::withMessages([
                 'password' => 'Password must be at least 8 characters.',
@@ -312,16 +320,17 @@ class UserAccountService
         ])->save();
 
         if ($notify) {
-            // Controlled credential delivery (narrow path) — do not use general domain event for plaintext.
+            // Notification must not contain the password.
+            // The recipient uses the standard forgot-password flow to set their own credential.
             try {
                 \Illuminate\Support\Facades\Notification::route('mail', $account->profile?->email)
-                    ->notify(new \App\Notifications\AdminResetPasswordNotification($plain, $account));
+                    ->notify(new \App\Notifications\AdminResetPasswordNotification());
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::warning('Admin reset notification failed: '.$e->getMessage());
             }
         }
 
-        return $plain;
+        return $account->refresh();
     }
 
 
