@@ -3,11 +3,11 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Services\UserManagement\UserAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -80,7 +80,10 @@ class ForcedPasswordChangeController extends Controller
             return response()->json(['message' => 'Password updated.']);
         }
 
-/**
+        return redirect()->intended(route('dashboard', absolute: false));
+    }
+
+    /**
      * Verify that the user has completed a fresh authentication challenge
      * before allowing password replacement.
      *
@@ -105,6 +108,7 @@ class ForcedPasswordChangeController extends Controller
                 }
                 throw ValidationException::withMessages(['password' => $msg]);
             }
+
             return;
         }
 
@@ -127,7 +131,5 @@ class ForcedPasswordChangeController extends Controller
             throw ValidationException::withMessages(['verification' => $msg]);
         }
         throw ValidationException::withMessages(['password' => $msg]);
-    }
-        return redirect()->intended(route('dashboard', absolute: false));
     }
 }

@@ -5,10 +5,12 @@ use App\Http\Controllers\Auth\{
     ConfirmablePasswordController,
     EmailVerificationNotificationController,
     EmailVerificationPromptController,
+    ForcedPasswordChangeController,
     NewPasswordController,
     PasswordController,
     PasswordResetLinkController,
-    RegisteredUserController, TwoFactorController,
+    RegisteredUserController,
+    TwoFactorController,
     VerifyEmailController          // ← this one controller handles both link & OTP
 };
 use Illuminate\Support\Facades\Route;
