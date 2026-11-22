@@ -3,10 +3,11 @@
 test('registration screen can be rendered', function () {
     $response = $this->get('/register');
 
-    $response->assertStatus(200);
+    // Screen may still render; store is intentionally disabled in Phase 1.
+    $response->assertOk();
 });
 
-test('new users can register', function () {
+test('public registration is disabled until person onboarding is approved', function () {
     $response = $this->post('/register', [
         'name' => 'Test User',
         'email' => 'test@example.com',
@@ -14,6 +15,6 @@ test('new users can register', function () {
         'password_confirmation' => 'password',
     ]);
 
-    $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $this->assertGuest();
+    $response->assertForbidden();
 });

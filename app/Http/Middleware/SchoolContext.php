@@ -22,7 +22,8 @@ class SchoolContext
     public function handle(Request $request, Closure $next): Response
     {
         $explicitId = $request->header('X-School-Id') ?: $request->input('school_id');
-        $sessionId = session('active_school_id');
+        // Session is only available after StartSession; this middleware must run after it.
+        $sessionId = $request->hasSession() ? $request->session()->get('active_school_id') : null;
         $schoolId = $explicitId ?: $sessionId;
 
         if (! $schoolId) {
@@ -66,8 +67,8 @@ class SchoolContext
 
         app('schoolManager')->setActiveSchool($school, persistSession: true);
 
-        if (session('active_school_id') !== $school->id) {
-            session(['active_school_id' => $school->id]);
+        if ($request->hasSession() && $request->session()->get('active_school_id') !== $school->id) {
+            $request->session()->put('active_school_id', $school->id);
         }
 
         return $next($request);
@@ -75,7 +76,9 @@ class SchoolContext
 
     protected function clearWorkspace(Request $request): void
     {
-        $request->session()->forget('active_school_id');
+        if ($request->hasSession()) {
+            $request->session()->forget('active_school_id');
+        }
         try {
             $manager = app('schoolManager');
             if (method_exists($manager, 'clearActiveSchool')) {

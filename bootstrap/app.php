@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->web(
             append: [
+                // SchoolContext needs the session store (StartSession runs in the web group).
+                \App\Http\Middleware\SchoolContext::class,
                 \App\Http\Middleware\HandleInertiaRequests::class,
                 \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
                 \App\Http\Middleware\EnsureCurrentSession::class,
@@ -22,7 +24,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 \App\Http\Middleware\EnsureTwoFactorVerified::class,
             ],
             prepend: [
-                \App\Http\Middleware\SchoolContext::class,
                 \App\Http\Middleware\CheckMaintenanceMode::class,
             ]
         );
