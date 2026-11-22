@@ -4,16 +4,20 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ConfirmPasswordRequest;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 
 /**
- * Controller for confirming user passwords before sensitive actions in a multi-tenant school system.
+ * Confirm password before sensitive actions.
+ *
+ * Account-scoped self-service: any authenticated eligible account may confirm
+ * its own password. No Laratrust permission is required.
  *
  * @group Authentication
  */
@@ -22,35 +26,26 @@ class ConfirmablePasswordController extends Controller
     /**
      * Display the confirm password view.
      *
-     * @param  Request  $request  The HTTP request instance.
-     * @return InertiaResponse|JsonResponse
+     * @return InertiaResponse|JsonResponse|RedirectResponse
      */
     public function show(Request $request)
     {
         try {
-            // Ensure authenticated user
             $user = $request->user();
             if (! $user) {
                 throw new \Exception('Unauthenticated user.');
             }
 
-            // Check school context
-            $school = GetSchoolModel();
-            if ($school && ! $user->hasRole('super-admin') && ! $user->schools()->where('id', $school->id)->exists()) {
-                throw new \Exception('Access denied. You are not assigned to this school.');
-            }
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
 
-            // Check if password confirmation is required
-            $authSettings = getMergedSettings('authentication', $school);
-            // if (!($authSettings['require_password_confirmation'] ?? false)) {
-            //     Log::info("Password confirmation skipped for user {$user->id} in school {$school->id} as per settings.");
-            //     return $this->respondWithSuccess($request, 'Password confirmation not required.', 'dashboard');
-            // }
+            $authSettings = function_exists('getMergedSettings')
+                ? getMergedSettings('authentication', $school)
+                : [];
 
-            // Check if password is already confirmed
             if (
-                $request->session()->has('auth.password_confirmed_at') &&
-                (time() - $request->session()->get('auth.password_confirmed_at') < ($authSettings['password_confirmation_ttl'] ?? 3600))
+                $request->session()->has('auth.password_confirmed_at')
+                && (time() - $request->session()->get('auth.password_confirmed_at')
+                    < (int) ($authSettings['password_confirmation_ttl'] ?? config('auth.password_timeout', 10800)))
             ) {
                 Log::info("Password already confirmed for user {$user->id}.");
 
@@ -63,10 +58,13 @@ class ConfirmablePasswordController extends Controller
 
             return Inertia::render('Auth/ConfirmPassword', [
                 'school_id' => $school?->id,
-                'user' => $user->only('id', 'name', 'email'),
+                'user' => [
+                    'id' => $user->id,
+                    'username' => $user->username,
+                ],
             ]);
         } catch (\Exception $e) {
-            Log::error("Failed to show password confirmation view for user ID {$user?->id}: {$e->getMessage()}");
+            Log::error('Failed to show password confirmation view: '.$e->getMessage());
 
             return $this->respondWithError($request, 'Failed to load password confirmation page.');
         }
@@ -74,52 +72,53 @@ class ConfirmablePasswordController extends Controller
 
     /**
      * Confirm the user's password.
-     *
-     * @param  ConfirmPasswordRequest  $request  The validated HTTP request.
      */
     public function store(ConfirmPasswordRequest $request): RedirectResponse|JsonResponse
     {
+        $user = $request->user();
+        // Always defined so catch can rate-limit without "Undefined variable $throttleKey".
+        $throttleKey = 'confirm-password|'.($user?->id ?? 'guest').'|'.$request->ip();
+
         try {
-            // Ensure authenticated user
-            $user = $request->user();
             if (! $user) {
                 throw new \Exception('Unauthenticated user.');
             }
 
-            // Check school context
-            $school = GetSchoolModel();
-            if ($request->filled('school_id') && $school && $school->id !== $request->school_id) {
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
+            if ($request->filled('school_id') && $school && $school->id !== $request->integer('school_id')) {
                 throw new \Exception('Invalid school context.');
             }
 
-            // Check permission to confirm password
-            permitted('confirm-password', $request->expectsJson());
+            // Self-service: authenticated account confirms its own credential.
+            // Do not gate on Laratrust "confirm-password" permission.
 
-            // Check rate limiting
-            $throttleKey = 'confirm-password|'.$user->id.'|'.$request->ip();
-            $throttleMax = 5; // Hardcoded, can be moved to settings if needed
-            $throttleLock = 1; // 1 minute lockout
-            if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
-                throw new \Exception('Too many password confirmation attempts. Please try again later.');
+            $throttleMax = 5;
+            if ($this->hasTooManyAttempts($throttleKey, $throttleMax)) {
+                throw ValidationException::withMessages([
+                    'password' => 'Too many password confirmation attempts. Please try again later.',
+                ]);
             }
 
-            // Validate password via ConfirmPasswordRequest
+            // Throws ValidationException on mismatch — rethrown below (not swallowed).
             $request->validatePassword();
 
-            // Store confirmation timestamp
             $request->session()->put('auth.password_confirmed_at', time());
 
-            // Log activity
-            activity()
-                ->performedOn($user)
-                ->causedBy($user)
-                ->withProperties(['school_id' => $school?->id])
-                ->log('Password confirmed');
+            if (function_exists('activity')) {
+                activity()
+                    ->performedOn($user)
+                    ->causedBy($user)
+                    ->withProperties(['school_id' => $school?->id])
+                    ->log('Password confirmed');
+            }
 
-            // Clear rate limiter
             $this->clearAttempts($throttleKey);
 
             return $this->respondWithSuccess($request, 'Password confirmed successfully.', 'dashboard');
+        } catch (ValidationException $e) {
+            $this->incrementAttempts($throttleKey);
+
+            throw $e;
         } catch (\Exception $e) {
             Log::error("Password confirmation failed for user ID {$user?->id}: {$e->getMessage()}");
             $this->incrementAttempts($throttleKey);
@@ -128,66 +127,34 @@ class ConfirmablePasswordController extends Controller
         }
     }
 
-    /**
-     * Check if there are too many attempts.
-     *
-     * @param  string  $throttleKey  The throttle key.
-     * @param  int  $maxAttempts  Maximum allowed attempts.
-     * @param  int  $lockMinutes  Lockout duration in minutes.
-     */
-    protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts, int $lockMinutes): bool
+    protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts): bool
     {
         return app('Illuminate\Cache\RateLimiter')->tooManyAttempts($throttleKey, $maxAttempts);
     }
 
-    /**
-     * Increment attempts for rate limiting.
-     *
-     * @param  string  $throttleKey  The throttle key.
-     */
     protected function incrementAttempts(string $throttleKey): void
     {
         app('Illuminate\Cache\RateLimiter')->hit($throttleKey);
     }
 
-    /**
-     * Clear attempts for rate limiting.
-     *
-     * @param  string  $throttleKey  The throttle key.
-     */
     protected function clearAttempts(string $throttleKey): void
     {
         app('Illuminate\Cache\RateLimiter')->clear($throttleKey);
     }
 
-    /**
-     * Respond with a success message for web or API requests.
-     *
-     * @param  Request  $request  The HTTP request instance.
-     * @param  string  $message  The success message.
-     * @param  string|null  $redirectRoute  Optional redirect route name.
-     */
     protected function respondWithSuccess(Request $request, string $message, ?string $redirectRoute = null): RedirectResponse|JsonResponse
     {
         if ($request->expectsJson()) {
             return response()->json(['message' => $message], 200);
         }
 
-        $response = redirect()->back()->with('status', $message);
-        if ($redirectRoute) {
-            $response = redirect()->intended(route($redirectRoute, absolute: false));
+        if ($redirectRoute && Route::has($redirectRoute)) {
+            return redirect()->intended(route($redirectRoute, absolute: false))->with('status', $message);
         }
 
-        return $response;
+        return redirect()->back()->with('status', $message);
     }
 
-    /**
-     * Respond with an error message for web or API requests.
-     *
-     * @param  Request  $request  The HTTP request instance.
-     * @param  string  $message  The error message.
-     * @param  int  $statusCode  The HTTP status code.
-     */
     protected function respondWithError(Request $request, string $message, int $statusCode = 400): RedirectResponse|JsonResponse
     {
         if ($request->expectsJson()) {
