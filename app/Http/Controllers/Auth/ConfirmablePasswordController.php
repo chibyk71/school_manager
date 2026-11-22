@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ConfirmPasswordRequest;
 use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
@@ -22,7 +22,7 @@ class ConfirmablePasswordController extends Controller
     /**
      * Display the confirm password view.
      *
-     * @param Request $request The HTTP request instance.
+     * @param  Request  $request  The HTTP request instance.
      * @return InertiaResponse|JsonResponse
      */
     public function show(Request $request)
@@ -30,13 +30,13 @@ class ConfirmablePasswordController extends Controller
         try {
             // Ensure authenticated user
             $user = $request->user();
-            if (!$user) {
+            if (! $user) {
                 throw new \Exception('Unauthenticated user.');
             }
 
             // Check school context
             $school = GetSchoolModel();
-            if ($school && !$user->hasRole('super-admin') && !$user->schools()->where('id', $school->id)->exists()) {
+            if ($school && ! $user->hasRole('super-admin') && ! $user->schools()->where('id', $school->id)->exists()) {
                 throw new \Exception('Access denied. You are not assigned to this school.');
             }
 
@@ -53,6 +53,7 @@ class ConfirmablePasswordController extends Controller
                 (time() - $request->session()->get('auth.password_confirmed_at') < ($authSettings['password_confirmation_ttl'] ?? 3600))
             ) {
                 Log::info("Password already confirmed for user {$user->id}.");
+
                 return $this->respondWithSuccess($request, 'Password already confirmed.', 'dashboard');
             }
 
@@ -66,6 +67,7 @@ class ConfirmablePasswordController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error("Failed to show password confirmation view for user ID {$user?->id}: {$e->getMessage()}");
+
             return $this->respondWithError($request, 'Failed to load password confirmation page.');
         }
     }
@@ -73,15 +75,14 @@ class ConfirmablePasswordController extends Controller
     /**
      * Confirm the user's password.
      *
-     * @param ConfirmPasswordRequest $request The validated HTTP request.
-     * @return RedirectResponse|JsonResponse
+     * @param  ConfirmPasswordRequest  $request  The validated HTTP request.
      */
     public function store(ConfirmPasswordRequest $request): RedirectResponse|JsonResponse
     {
         try {
             // Ensure authenticated user
             $user = $request->user();
-            if (!$user) {
+            if (! $user) {
                 throw new \Exception('Unauthenticated user.');
             }
 
@@ -95,7 +96,7 @@ class ConfirmablePasswordController extends Controller
             permitted('confirm-password', $request->expectsJson());
 
             // Check rate limiting
-            $throttleKey = 'confirm-password|' . $user->id . '|' . $request->ip();
+            $throttleKey = 'confirm-password|'.$user->id.'|'.$request->ip();
             $throttleMax = 5; // Hardcoded, can be moved to settings if needed
             $throttleLock = 1; // 1 minute lockout
             if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
@@ -122,6 +123,7 @@ class ConfirmablePasswordController extends Controller
         } catch (\Exception $e) {
             Log::error("Password confirmation failed for user ID {$user?->id}: {$e->getMessage()}");
             $this->incrementAttempts($throttleKey);
+
             return $this->respondWithError($request, $e->getMessage());
         }
     }
@@ -129,10 +131,9 @@ class ConfirmablePasswordController extends Controller
     /**
      * Check if there are too many attempts.
      *
-     * @param string $throttleKey The throttle key.
-     * @param int $maxAttempts Maximum allowed attempts.
-     * @param int $lockMinutes Lockout duration in minutes.
-     * @return bool
+     * @param  string  $throttleKey  The throttle key.
+     * @param  int  $maxAttempts  Maximum allowed attempts.
+     * @param  int  $lockMinutes  Lockout duration in minutes.
      */
     protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts, int $lockMinutes): bool
     {
@@ -142,8 +143,7 @@ class ConfirmablePasswordController extends Controller
     /**
      * Increment attempts for rate limiting.
      *
-     * @param string $throttleKey The throttle key.
-     * @return void
+     * @param  string  $throttleKey  The throttle key.
      */
     protected function incrementAttempts(string $throttleKey): void
     {
@@ -153,8 +153,7 @@ class ConfirmablePasswordController extends Controller
     /**
      * Clear attempts for rate limiting.
      *
-     * @param string $throttleKey The throttle key.
-     * @return void
+     * @param  string  $throttleKey  The throttle key.
      */
     protected function clearAttempts(string $throttleKey): void
     {
@@ -164,10 +163,9 @@ class ConfirmablePasswordController extends Controller
     /**
      * Respond with a success message for web or API requests.
      *
-     * @param Request $request The HTTP request instance.
-     * @param string $message The success message.
-     * @param string|null $redirectRoute Optional redirect route name.
-     * @return RedirectResponse|JsonResponse
+     * @param  Request  $request  The HTTP request instance.
+     * @param  string  $message  The success message.
+     * @param  string|null  $redirectRoute  Optional redirect route name.
      */
     protected function respondWithSuccess(Request $request, string $message, ?string $redirectRoute = null): RedirectResponse|JsonResponse
     {
@@ -186,10 +184,9 @@ class ConfirmablePasswordController extends Controller
     /**
      * Respond with an error message for web or API requests.
      *
-     * @param Request $request The HTTP request instance.
-     * @param string $message The error message.
-     * @param int $statusCode The HTTP status code.
-     * @return RedirectResponse|JsonResponse
+     * @param  Request  $request  The HTTP request instance.
+     * @param  string  $message  The error message.
+     * @param  int  $statusCode  The HTTP status code.
      */
     protected function respondWithError(Request $request, string $message, int $statusCode = 400): RedirectResponse|JsonResponse
     {
