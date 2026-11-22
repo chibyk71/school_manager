@@ -13,42 +13,36 @@ use Illuminate\Validation\ValidationException;
  */
 class ConfirmPasswordRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     *
-     * @return bool
-     */
     public function authorize(): bool
     {
-        // Authorization handled by permitted() in controller
-        return true;
+        return $this->user() !== null;
     }
 
     /**
-     * Get the validation rules that apply to the request.
-     *
      * @return array<string, mixed>
      */
     public function rules(): array
     {
         return [
             'password' => ['required', 'string'],
-            'school_id' => ['required', 'exists:schools,id'],
+            // School workspace is optional — password confirmation is account-scoped.
+            'school_id' => ['nullable', 'exists:schools,id'],
         ];
     }
 
     /**
-     * Validate the user's password.
-     *
-     * @throws ValidationException If password is invalid.
+     * @throws ValidationException
      */
     public function validatePassword(): void
     {
         $user = $this->user();
-        if (!$user || !Auth::guard('web')->validate([
-            'email' => $user->email,
-            'password' => $this->password,
-        ])) {
+        if (
+            ! $user
+            || ! Auth::guard('web')->validate([
+                'username' => $user->username,
+                'password' => $this->input('password'),
+            ])
+        ) {
             throw ValidationException::withMessages([
                 'password' => __('auth.password'),
             ]);

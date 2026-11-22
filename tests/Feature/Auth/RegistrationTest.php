@@ -1,18 +1,19 @@
 <?php
 
-test('registration screen can be rendered', function () {
+test('registration screen is blocked when registration is disabled', function () {
     $response = $this->get('/register');
 
-    // Screen may still render; store is intentionally disabled in Phase 1.
-    $response->assertOk();
+    // Settings default allow_user_registration=false → error redirect/forbidden.
+    expect(in_array($response->status(), [302, 403], true))->toBeTrue();
+    $this->assertGuest();
 });
 
-test('public registration is disabled until person onboarding is approved', function () {
+test('public registration store is disabled until person onboarding is approved', function () {
     $response = $this->post('/register', [
         'name' => 'Test User',
         'email' => 'test@example.com',
-        'password' => 'password',
-        'password_confirmation' => 'password',
+        'password' => 'password1',
+        'password_confirmation' => 'password1',
     ]);
 
     $this->assertGuest();

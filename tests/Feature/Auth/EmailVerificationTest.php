@@ -1,46 +1,62 @@
 <?php
 
+use App\Enums\Auth\AccountLifecycle;
 use App\Models\User;
-use Illuminate\Auth\Events\Verified;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\URL;
+use App\Services\UserManagement\UserAccountService;
+use Illuminate\Support\Facades\RateLimiter;
+use Ichtrojan\Otp\Otp;
 
 test('email verification screen can be rendered', function () {
-    $user = User::factory()->unverified()->create();
+    $this->withoutVite();
+
+    $user = User::factory()->unverified()->create([
+        'lifecycle' => AccountLifecycle::Active,
+    ]);
 
     $response = $this->actingAs($user)->get('/verify-email');
 
-    $response->assertStatus(200);
+    $response->assertOk();
 });
 
-test('email can be verified', function () {
-    $user = User::factory()->unverified()->create();
+test('auth email can be verified with valid otp', function () {
+    $accounts = app(UserAccountService::class);
+    $person = \App\Models\Profile::factory()->create(['email' => 'verify-otp@example.com']);
+    $user = $accounts->createForPerson($person, [
+        'username' => 'verify_otp_user',
+        'password' => 'password123',
+    ], ['lifecycle' => AccountLifecycle::Active, 'send_notification' => false]);
 
-    Event::fake();
+    RateLimiter::clear('email-verify-otp:'.$user->id);
 
-    $verificationUrl = URL::temporarySignedRoute(
-        'verification.verify',
-        now()->addMinutes(60),
-        ['id' => $user->id, 'hash' => sha1($user->email)]
-    );
+    $otp = app(Otp::class)->generate('verify-otp@example.com', 'numeric', 6, 10);
+    $token = is_object($otp) ? (string) ($otp->token ?? $otp->otp ?? '') : (string) $otp;
 
-    $response = $this->actingAs($user)->get($verificationUrl);
+    $response = $this->actingAs($user)->postJson('/verify-email', [
+        'otp' => $token,
+    ]);
 
-    Event::assertDispatched(Verified::class);
-    expect($user->fresh()->hasVerifiedEmail())->toBeTrue();
-    $response->assertRedirect(route('dashboard', absolute: false).'?verified=1');
+    $response->assertOk();
+    $user->refresh();
+    expect($user->auth_email_verified_at)->not->toBeNull();
+    // Verification must not auto-enable email login.
+    expect($user->auth_email_enabled)->toBeFalse();
 });
 
-test('email is not verified with invalid hash', function () {
-    $user = User::factory()->unverified()->create();
+test('auth email is not verified with invalid otp', function () {
+    $accounts = app(UserAccountService::class);
+    $person = \App\Models\Profile::factory()->create(['email' => 'bad-otp@example.com']);
+    $user = $accounts->createForPerson($person, [
+        'username' => 'bad_otp_user',
+        'password' => 'password123',
+    ], ['lifecycle' => AccountLifecycle::Active, 'send_notification' => false]);
 
-    $verificationUrl = URL::temporarySignedRoute(
-        'verification.verify',
-        now()->addMinutes(60),
-        ['id' => $user->id, 'hash' => sha1('wrong-email')]
-    );
+    RateLimiter::clear('email-verify-otp:'.$user->id);
 
-    $this->actingAs($user)->get($verificationUrl);
+    $response = $this->actingAs($user)->postJson('/verify-email', [
+        'otp' => '000000',
+    ]);
 
-    expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
+    $response->assertStatus(422);
+    $user->refresh();
+    expect($user->auth_email_verified_at)->toBeNull();
 });

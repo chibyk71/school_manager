@@ -72,7 +72,7 @@ class LoginRequest extends FormRequest
     protected function resolveAccount(string $login): ?User
     {
         $byUsername = User::query()
-            ->where('username', strtolower($login))
+            ->whereRaw('LOWER(username) = ?', [strtolower($login)])
             ->first();
         if ($byUsername) {
             return $byUsername;

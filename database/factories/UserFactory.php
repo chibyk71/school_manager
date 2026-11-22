@@ -19,7 +19,7 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
-            'username' => fake()->unique()->userName().'_'.Str::lower(Str::random(4)),
+            'username' => strtolower(fake()->unique()->userName().'_'.Str::lower(Str::random(4))),
             'password' => static::$password ??= Hash::make('password'),
             'lifecycle' => AccountLifecycle::Active->value,
             'force_password_change' => false,
@@ -76,6 +76,18 @@ class UserFactory extends Factory
         return $this->state(fn () => [
             'auth_email_verified_at' => now(),
             'auth_email_enabled' => true,
+        ]);
+    }
+
+    /**
+     * Breeze-compat: Authentication Account without verified auth email.
+     * Person primary email verification is independent of MustVerifyEmail.
+     */
+    public function unverified(): static
+    {
+        return $this->state(fn () => [
+            'auth_email_verified_at' => null,
+            'auth_email_enabled' => false,
         ]);
     }
 }

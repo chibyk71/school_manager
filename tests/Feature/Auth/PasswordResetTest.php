@@ -41,6 +41,7 @@ function eligibleUser(array $overrides = []): User
 }
 
 test('reset password link screen can be rendered', function () {
+    $this->withoutVite();
     $this->get('/forgot-password')->assertStatus(200);
 });
 
