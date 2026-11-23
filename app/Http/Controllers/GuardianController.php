@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreGuardianRequest;
 use App\Http\Requests\UpdateGuardianRequest;
 use App\Models\Guardian;
-use App\Services\UserService;
+use App\Services\UserManagement\GuardianRegistrationService;
 use App\Support\ColumnDefinitionHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +24,7 @@ use Inertia\Inertia;
  */
 class GuardianController extends BaseSchoolController
 {
-    public function __construct(protected UserService $userService) {}
+    public function __construct(protected GuardianRegistrationService $guardianRegistrationService) {}
 
     /**
      * Display a listing of guardians.
@@ -36,7 +36,7 @@ class GuardianController extends BaseSchoolController
         try {
             $school = $this->getActiveSchool();
             $guardians = Guardian::where('school_id', $school->id)
-                ->with(['user', 'children'])
+                ->with(['profile.user', 'children'])
                 ->tableQuery($request)
                 ->withCustomFields();
 
@@ -71,7 +71,7 @@ class GuardianController extends BaseSchoolController
     }
 
     /**
-     * Store a newly created guardian in storage using UserService.
+     * Store a newly created guardian in storage via domain registration/hiring service.
      *
      * @param StoreGuardianRequest $request
      * @return \Illuminate\Http\RedirectResponse|\Illuminate\Http\JsonResponse
@@ -81,29 +81,15 @@ class GuardianController extends BaseSchoolController
         try {
             $school = $this->getActiveSchool();
             $data = $request->validated();
-            $data['profile_type'] = 'guardian';
-            $data['profilable'] = [
-                'school_id' => $school->id,
-                // Add guardian-specific fields if any
-            ];
+            $createLogin = (bool) ($data['create_login'] ?? false);
+            $guardian = $this->guardianRegistrationService->register($data, $createLogin);
 
-            // Use UserService to create user + profile + profilable
-            $user = $this->userService->create($data);
-
-            // Get the created guardian
-            $guardian = $user->guardian;
-
-            DB::transaction(function () use ($data, $guardian) {
-                // Save custom fields
-                if (!empty($data['custom_fields'])) {
-                    $guardian->saveCustomFieldResponses($data['custom_fields']);
-                }
-
-                // Sync children
-                if (!empty($data['children'])) {
-                    $guardian->children()->sync($data['children']);
-                }
-            });
+            if (!empty($data['custom_fields'])) {
+                $guardian->saveCustomFieldResponses($data['custom_fields']);
+            }
+            if (!empty($data['children'])) {
+                $guardian->children()->sync($data['children']);
+            }
 
             return $this->respondWithSuccess($request, 'Guardian created successfully.', 'guardians.index');
         } catch (\Exception $e) {
@@ -122,7 +108,7 @@ class GuardianController extends BaseSchoolController
     {
         try {
             Gate::authorize('view', $guardian);
-            $guardian->load(['user', 'children', 'customFields']);
+            $guardian->load(['profile.user', 'children', 'customFields']);
 
             return Inertia::render('Guardians/Show', [
                 'guardian' => $guardian,
@@ -147,7 +133,7 @@ class GuardianController extends BaseSchoolController
             $customFields = $this->getCustomFieldsForForm($school->id, 'App\Models\Guardian');
 
             return Inertia::render('Guardians/Edit', [
-                'guardian' => $guardian->load(['user', 'children']),
+                'guardian' => $guardian->load(['profile.user', 'children']),
                 'customFields' => $customFields,
             ]);
         } catch (\Exception $e) {
@@ -157,7 +143,7 @@ class GuardianController extends BaseSchoolController
     }
 
     /**
-     * Update the specified guardian in storage using UserService.
+     * Update the specified guardian in storage via domain registration/hiring service.
      *
      * @param UpdateGuardianRequest $request
      * @param Guardian $guardian
@@ -169,18 +155,23 @@ class GuardianController extends BaseSchoolController
             Gate::authorize('update', $guardian);
 
             $data = $request->validated();
-            $user = $guardian->user;
 
-            // Use UserService to update user + profile
-            $this->userService->update($user, $data);
+            if ($guardian->profile) {
+                $guardian->profile->update(array_filter([
+                    'first_name' => $data['first_name'] ?? null,
+                    'middle_name' => $data['middle_name'] ?? null,
+                    'last_name' => $data['last_name'] ?? null,
+                    'gender' => $data['gender'] ?? null,
+                    'date_of_birth' => $data['date_of_birth'] ?? null,
+                    'phone' => $data['phone'] ?? null,
+                    'email' => $data['email'] ?? null,
+                ], fn ($v) => $v !== null));
+            }
 
             DB::transaction(function () use ($data, $guardian) {
-                // Save custom fields
                 if (!empty($data['custom_fields'])) {
                     $guardian->saveCustomFieldResponses($data['custom_fields']);
                 }
-
-                // Sync children
                 if (isset($data['children'])) {
                     $guardian->children()->sync($data['children']);
                 }

@@ -5,7 +5,7 @@ namespace App\Services\UserManagement;
 use App\Events\StaffHired;
 use App\Helpers\IdGenerator;
 use App\Models\Profile;
-use App\Models\Staff;
+use App\Models\Employee\Staff;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -22,7 +22,7 @@ use Illuminate\Validation\ValidationException;
  *
  * Features / Problems Solved:
  * - Atomic transaction: Profile + Staff created together or rolled back completely
- * - Duplicate detection: basic check on name + phone/email + DOB combo
+ * - Identity matching is out of scope for this service (consuming lifecycle domain concern)
  * - Staff-specific validation: employee number uniqueness, employment dates, etc.
  * - Automatic staff ID generation via IdGenerator helper (school-prefixed)
  * - Login creation: strongly encouraged (default true) but still optional
@@ -50,7 +50,7 @@ use Illuminate\Validation\ValidationException;
  *   $staff = $service->hire($validatedData, $createLogin = true);
  *
  * Important Conventions:
- * - No direct Profile creation outside role services
+ * - May create a new Person as part of hiring, or attach capacity to an existing Person in future phases
  * - Staff-specific fields validated here (staff_id_number, dates, employment_type)
  * - Login creation is **default true** (staff usually need access) but can be overridden
  * - Ready for future: guardian assignment (staff can be guardians), class/subject linking
@@ -82,9 +82,6 @@ class StaffHiringService
         }
 
         return DB::transaction(function () use ($data, $createLogin, $school) {
-            // 1. Basic duplicate check (name + phone/email + DOB)
-            $this->checkForPotentialDuplicate($data);
-
             // 2. Create Profile (personal data)
             $profile = Profile::create([
                 'first_name'    => $data['first_name'],
@@ -114,21 +111,41 @@ class StaffHiringService
                 // Add more staff-specific fields (salary scale, qualifications, etc.)
             ]);
 
-            // 5. Create login account (default true for staff)
+            // 5. Create login account (default true for staff).
+            // Do not invent an Active account with an undeliverable random password.
+            // Usable credentials → Active; otherwise Provisioned (no password).
             if ($createLogin) {
-                $this->userAccountService->createForProfile(
-                    profile: $profile,
+                $plainPassword = isset($data['password']) && is_string($data['password']) && $data['password'] !== ''
+                    ? $data['password']
+                    : null;
+                $hasDelivery = filled($profile->email);
+                $lifecycle = ($plainPassword !== null && $hasDelivery)
+                    ? 'active'
+                    : 'provisioned';
+                // If a password was supplied but there is no email delivery path, keep
+                // the password and activate only when the operator explicitly provided it
+                // (operator-known credential). Random passwords are never generated here.
+                if ($plainPassword !== null && ! $hasDelivery) {
+                    $lifecycle = 'active';
+                }
+
+                $this->userAccountService->createForPerson(
+                    person: $profile,
                     data: [
                         'username' => $data['username'] ?? null,
-                        'password' => $data['password'] ?? null,
+                        'password' => $plainPassword,
                     ],
                     options: [
-                        'roles'                => ['staff'], // base role – add more if needed
-                        'autoGenerateUsername' => true,
-                        'mustChangePassword'   => true,
-                        'sendWelcome'          => true,
+                        'lifecycle' => $lifecycle,
+                        'force_password_change' => $plainPassword !== null,
+                        'auto_generate_username' => true,
+                        'send_notification' => $plainPassword !== null && $hasDelivery,
                     ]
                 );
+                // Roles are assigned by the authorization domain, not account provisioning.
+                if ($profile->fresh()->user) {
+                    $profile->user->syncRoles(! empty($data['roles']) ? $data['roles'] : ['staff']);
+                }
             }
 
             // 6. Fire event (welcome email, HR onboarding, audit, etc.)
@@ -138,31 +155,5 @@ class StaffHiringService
         });
     }
 
-    /**
-     * Basic duplicate prevention check
-     * (can be expanded with more sophisticated matching later)
-     */
-    private function checkForPotentialDuplicate(array $data): void
-    {
-        $existing = Profile::where('first_name', $data['first_name'])
-            ->where('last_name', $data['last_name'])
-            ->where(function ($q) use ($data) {
-                if (!empty($data['date_of_birth'])) {
-                    $q->whereDate('date_of_birth', $data['date_of_birth']);
-                }
-                if (!empty($data['phone'])) {
-                    $q->orWhere('phone', $data['phone']);
-                }
-                if (!empty($data['email'])) {
-                    $q->orWhere('email', $data['email']);
-                }
-            })
-            ->exists();
-
-        if ($existing) {
-            throw ValidationException::withMessages([
-                'duplicate' => 'A profile with similar name, date of birth, and contact information already exists. Please check for duplicates.',
-            ]);
-        }
-    }
 }
+

@@ -3,45 +3,51 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ResetPasswordRequest;
+use App\Support\Auth\AuthenticationEmail;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
-use App\Http\Requests\Auth\ResetPasswordRequest;
-use App\Models\User;
 use Ichtrojan\Otp\Otp;
 use Illuminate\Auth\Events\PasswordReset;
-use Illuminate\Http\Request;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 
 /**
- * Controller for handling password reset requests in a multi-tenant school system.
+ * Complete password recovery using an OTP issued against a normalized Person email.
+ *
+ * Domain boundaries:
+ * - Re-checks authentication-email eligibility at completion time (state may have changed).
+ * - Does not activate Provisioned accounts or alter lifecycle beyond credential update.
+ * - Does not require School workspace context.
+ * - Failed OTP attempts are counted exactly once via explicit control flow (not message matching).
+ * - Requests that are already locked out do not further increment the counter.
  *
  * @group Authentication
  */
 class NewPasswordController extends Controller
 {
+    private const MAX_ATTEMPTS = 5;
+
+    private const DECAY_MINUTES = 60;
+
     /**
-     * Display the password reset view.
-     *
-     * @param Request $request The HTTP request instance.
-     * @return InertiaResponse|JsonResponse
+     * Display the password reset form.
      */
-    public function create(Request $request)
+    public function create(Request $request): InertiaResponse|JsonResponse|RedirectResponse
     {
         try {
-            // Check school context
-            $school = GetSchoolModel();
-
-            // Check if password reset is allowed (Phase 1 settings capability)
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
-            $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            $allowPasswordReset = true;
+            if ($school) {
+                $scope = SettingsScope::school((string) $school->id);
+                $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
+            }
             if (! $allowPasswordReset) {
-                Log::info("Password reset disabled for school {$school->id} as per settings.");
                 return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
 
@@ -59,72 +65,77 @@ class NewPasswordController extends Controller
                 'email' => $request->query('email'),
             ]);
         } catch (\Exception $e) {
-            Log::error("Failed to display password reset view: {$e->getMessage()}");
+            Log::error('Failed to display password reset view: '.$e->getMessage());
+
             return $this->respondWithError($request, 'Failed to load password reset page.');
         }
     }
 
     /**
-     * Handle an incoming new password request.
+     * Validate OTP and set a new password for an eligible Authentication Account.
      *
-     * @param ResetPasswordRequest $request The validated HTTP request.
-     * @return RedirectResponse|JsonResponse
+     * Preconditions: valid ResetPasswordRequest (token, email, confirmed password).
+     * Postconditions on success: password updated, force_password_change cleared, attempt
+     * counter cleared, PasswordReset event fired. Lifecycle is not promoted from Provisioned.
+     *
+     * Throttling control flow:
+     * - If already locked, return error without incrementing.
+     * - Invalid OTP or post-OTP ineligibility increments once then returns.
+     * - Other failures after lock check do not use the OTP attempt counter unless they
+     *   represent a completed OTP validation attempt path.
      */
     public function store(ResetPasswordRequest $request): RedirectResponse|JsonResponse
     {
-        // Established only once rate limiting applies; catch must not hit an unset key.
-        $throttleKey = null;
+        $normalizedEmail = AuthenticationEmail::normalize($request->input('email'));
+        $throttleKey = $this->completionThrottleKey($normalizedEmail, $request->ip());
 
         try {
-            // Check school context
-            $school = GetSchoolModel();
-
-            // Check if password reset is allowed (Phase 1 settings capability)
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
-            $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            $allowPasswordReset = true;
+            if ($school) {
+                $scope = SettingsScope::school((string) $school->id);
+                $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
+            }
             if (! $allowPasswordReset) {
-                throw new \Exception('Password reset is not allowed.');
+                return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
 
-            // Check rate limiting (OTP lifetime is not a rate-limit lock duration)
-            $throttleKey = 'password-reset|' . $request->email . '|' . $request->ip();
-            $throttleMax = 5; // Hardcoded, can be moved to settings
-            // hasTooManyAttempts currently ignores lock minutes; keep a fixed default
-            // rather than coupling to authentication.reset_password_token_life.
-            $throttleLock = 60;
-            if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
-                throw new \Exception('Too many password reset attempts. Please try again later.');
+            if ($this->hasTooManyAttempts($throttleKey, self::MAX_ATTEMPTS)) {
+                return $this->respondWithError($request, 'Too many password reset attempts. Please try again later.', 429);
             }
 
-            // Validate OTP and find user
             $otpInstance = app(Otp::class);
-            $response = $otpInstance->validate($request->email, $request->token);
+            $otpResult = $otpInstance->validate($normalizedEmail, $request->input('token'));
 
-            if (!$response->status) {
-                $this->incrementAttempts($throttleKey);
-                throw new \Exception('Invalid or expired OTP.');
+            if (! ($otpResult->status ?? false)) {
+                $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
+
+                return $this->respondWithError($request, 'Invalid or expired OTP.');
             }
 
-            $user = User::where('email', $request->email)
-                ->where('school_id', $school?->id)
-                ->firstOrFail();
+            // Re-check eligibility at completion — verification/enablement may have changed.
+            $user = AuthenticationEmail::resolveEligibleAccount($normalizedEmail);
+            if ($user === null) {
+                $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
 
-            // Update password
-            $user->password = Hash::make($request->password);
-            $user->save();
+                return $this->respondWithError($request, 'Unable to reset password for this email.');
+            }
 
-            // Log activity
+            // Credential update only — does not activate Provisioned accounts.
+            $user->forceFill([
+                'password' => $request->input('password'),
+                'force_password_change' => false,
+            ])->save();
+
             activity()
                 ->performedOn($user)
                 ->causedBy($user)
                 ->withProperties(['school_id' => $school?->id])
                 ->log('Password reset successfully');
 
-            // Fire PasswordReset event
             event(new PasswordReset($user));
 
-            // Clear rate limiter
             $this->clearAttempts($throttleKey);
 
             if ($request->expectsJson()) {
@@ -133,59 +144,40 @@ class NewPasswordController extends Controller
 
             return redirect()->route('login')
                 ->with('status', 'Password reset successfully.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
-            Log::error("Password reset failed for email {$request->email}: {$e->getMessage()}");
-            if ($throttleKey !== null) {
-                $this->incrementAttempts($throttleKey);
-            }
+            Log::error('Password reset failed unexpectedly', ['exception' => $e::class]);
 
-            return $this->respondWithError($request, $e->getMessage());
+            // Unexpected infrastructure errors: do not treat as OTP guesses.
+            return $this->respondWithError($request, 'Password reset failed. Please try again.');
         }
     }
 
     /**
-     * Check if there are too many attempts.
-     *
-     * @param string $throttleKey The throttle key.
-     * @param int $maxAttempts Maximum allowed attempts.
-     * @param int $lockMinutes Lockout duration in minutes.
-     * @return bool
+     * Rate-limit key for recovery completion (OTP validation attempts).
+     * Email component is hashed; IP remains for client isolation.
      */
-    protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts, int $lockMinutes): bool
+    protected function completionThrottleKey(string $normalizedEmail, string $ip): string
+    {
+        return 'password-reset|'.hash('sha256', $normalizedEmail).'|'.$ip;
+    }
+
+    protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts): bool
     {
         return app('Illuminate\Cache\RateLimiter')->tooManyAttempts($throttleKey, $maxAttempts);
     }
 
-    /**
-     * Increment attempts for rate limiting.
-     *
-     * @param string $throttleKey The throttle key.
-     * @return void
-     */
-    protected function incrementAttempts(string $throttleKey): void
+    protected function incrementAttempts(string $throttleKey, int $decayMinutes = 60): void
     {
-        app('Illuminate\Cache\RateLimiter')->hit($throttleKey);
+        app('Illuminate\Cache\RateLimiter')->hit($throttleKey, $decayMinutes * 60);
     }
 
-    /**
-     * Clear attempts for rate limiting.
-     *
-     * @param string $throttleKey The throttle key.
-     * @return void
-     */
     protected function clearAttempts(string $throttleKey): void
     {
         app('Illuminate\Cache\RateLimiter')->clear($throttleKey);
     }
 
-    /**
-     * Respond with an error message for web or API requests.
-     *
-     * @param Request $request The HTTP request instance.
-     * @param string $message The error message.
-     * @param int $statusCode The HTTP status code.
-     * @return RedirectResponse|JsonResponse
-     */
     protected function respondWithError(Request $request, string $message, int $statusCode = 400): RedirectResponse|JsonResponse
     {
         if ($request->expectsJson()) {

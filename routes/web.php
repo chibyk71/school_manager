@@ -406,6 +406,7 @@ Route::get('/notifications/history', [NotificationLogController::class, 'index']
     ->name('notifications.history');
 
 require __DIR__ . '/auth.php';
+require __DIR__ . '/user_management.php';
 require __DIR__ . '/options.php';
 require __DIR__ . '/settings.php';
 require __DIR__ . '/employee_management.php';

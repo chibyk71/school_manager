@@ -7,7 +7,7 @@ use App\Http\Requests\UpdateStaffRequest;
 use App\Models\Employee\DepartmentRole;
 use App\Models\Employee\Staff;
 use App\Models\SchoolSection;
-use App\Services\UserService;
+use App\Services\UserManagement\StaffHiringService;
 use App\Support\ColumnDefinitionHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +20,7 @@ use Inertia\Inertia;
  */
 class StaffController extends BaseSchoolController
 {
-    public function __construct(protected UserService $userService) {}
+    public function __construct(protected StaffHiringService $staffHiringService) {}
 
     /**
      * Display a listing of staff members.
@@ -32,16 +32,24 @@ class StaffController extends BaseSchoolController
 
             $extraFields = [
                 [
-                    'field' => 'user_name',
-                    'relation' => 'user',
-                    'relatedField' => 'name',
+                    'field' => 'profile_first_name',
+                    'relation' => 'profile',
+                    'relatedField' => 'first_name',
                     'filterable' => true,
                     'sortable' => true,
                     'filterType' => 'text',
                 ],
                 [
-                    'field' => 'user_email',
-                    'relation' => 'user',
+                    'field' => 'profile_last_name',
+                    'relation' => 'profile',
+                    'relatedField' => 'last_name',
+                    'filterable' => true,
+                    'sortable' => true,
+                    'filterType' => 'text',
+                ],
+                [
+                    'field' => 'profile_email',
+                    'relation' => 'profile',
                     'relatedField' => 'email',
                     'filterable' => true,
                     'sortable' => true,
@@ -59,7 +67,7 @@ class StaffController extends BaseSchoolController
 
             $query = Staff::where('school_id', $school->id)
                 ->with([
-                    'user:id,name,email',
+                    'profile.user:id,username',
                     'schoolSections:id,name',
                     'departmentRole:id,name',
                     'customFields',
@@ -102,7 +110,7 @@ class StaffController extends BaseSchoolController
     }
 
     /**
-     * Store a new staff member using UserService.
+     * Store a new staff member via domain registration/hiring service.
      */
     public function store(StoreStaffRequest $request)
     {
@@ -110,31 +118,15 @@ class StaffController extends BaseSchoolController
             $school = $this->getActiveSchool();
             $data = $request->validated();
 
-            // Enrich data for UserService
-            $data['profile_type'] = 'staff';
-            $data['profilable'] = [
-                'school_id' => $school->id,
-                'department_role_id' => $data['department_role_id'] ?? null,
-                'staff_id_number' => $data['staff_id_number'] ?? null,
-                'date_of_employment' => $data['date_of_employment'] ?? now(),
-            ];
+            $createLogin = (bool) ($data['create_login'] ?? true);
+            $staff = $this->staffHiringService->hire($data, $createLogin);
 
-            // Create user + profile + staff record
-            $user = $this->userService->create($data);
-
-            $staff = $user->staff; // Thanks to HasProfile trait
-
-            DB::transaction(function () use ($data, $staff) {
-                // Custom fields
-                if (!empty($data['custom_fields'])) {
-                    $staff->saveCustomFieldResponses($data['custom_fields']);
-                }
-
-                // Sync school sections
-                if (!empty($data['section_ids'])) {
-                    $staff->syncSections($data['section_ids']);
-                }
-            });
+            if (!empty($data['custom_fields'])) {
+                $staff->saveCustomFieldResponses($data['custom_fields']);
+            }
+            if (!empty($data['section_ids'])) {
+                $staff->syncSections($data['section_ids']);
+            }
 
             return $this->respondWithSuccess(
                 $request,
@@ -156,7 +148,7 @@ class StaffController extends BaseSchoolController
             Gate::authorize('view', $staff);
 
             $staff->load([
-                'user:id,name,email',
+                'profile.user:id,username',
                 'schoolSections:id,name',
                 'departmentRole:id,name',
                 'customFields',
@@ -179,7 +171,7 @@ class StaffController extends BaseSchoolController
             $school = $this->getActiveSchool();
 
             $staff->load([
-                'user:id,name,email',
+                'profile.user:id,username',
                 'schoolSections:id,name',
                 'departmentRole:id,name',
             ]);
@@ -197,17 +189,27 @@ class StaffController extends BaseSchoolController
     }
 
     /**
-     * Update staff member using UserService.
+     * Update staff member via domain registration/hiring service.
      */
     public function update(UpdateStaffRequest $request, Staff $staff)
     {
         try {
             Gate::authorize('update', $staff);
             $data = $request->validated();
-            $user = $staff->user;
+            $profile = $staff->profile;
 
-            // Update core user + profile via UserService
-            $this->userService->update($user, $data);
+                        // Update Person (Profile) fields only — Authentication Account is not multi-profile.
+            if ($staff->profile) {
+                $staff->profile->update(array_filter([
+                    'first_name' => $data['first_name'] ?? null,
+                    'middle_name' => $data['middle_name'] ?? null,
+                    'last_name' => $data['last_name'] ?? null,
+                    'gender' => $data['gender'] ?? null,
+                    'date_of_birth' => $data['date_of_birth'] ?? null,
+                    'phone' => $data['phone'] ?? null,
+                    'email' => $data['email'] ?? null,
+                ], fn ($v) => $v !== null));
+            }
 
             DB::transaction(function () use ($data, $staff) {
                 // Update staff-specific fields

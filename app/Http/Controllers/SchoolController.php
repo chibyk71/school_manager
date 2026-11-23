@@ -52,7 +52,8 @@ use Throwable;
  * ----------------
  * - The store() method is the primary entry point for tenant onboarding
  * - Admin creation is fully decoupled — handled optionally after school creation
- * - Section context is managed via SchoolService (active section resolution)
+ * - School workspace context is managed via SchoolService (active school resolution).
+ *   Section context is not owned by SchoolService.
  * - All destructive actions (deactivate, forceDelete, restore) include safety checks
  *   and support bulk operations
  *
@@ -117,7 +118,9 @@ class SchoolController extends BaseSchoolController
                 // This is far more efficient than loading the full 'users' relationship.
                 ->withCount([
                     'users as active_users_count' => function ($q) {
-                        $q->where('is_active', true);
+                        // AccountLifecycle::Active and linked Person must not be soft-deleted.
+                        $q->where('lifecycle', \App\Enums\Auth\AccountLifecycle::Active->value)
+                            ->whereHas('profile', fn ($p) => $p->whereNull('deleted_at'));
                     },
                 ]);
 
@@ -260,21 +263,44 @@ class SchoolController extends BaseSchoolController
         }
 
         try {
-            // 1. Create core school + nested addresses[] via service (transactional)
-            //    First address is NOT auto-primary; is_primary comes from payload only.
-            $school = $this->schoolService->createSchool($request->validated());
+            // School contact email must never imply administrator assignment.
+            $adminRequested = $request->filled('account_id')
+                || $request->filled('admin_id')
+                || $request->filled('admin_email')
+                || $request->filled('administrator_email')
+                || $request->filled('admin_name')
+                || $request->filled('administrator_name');
 
-            // 3. Optional admin assignment (unchanged – supports onboarding flows)
-            if ($request->hasAny(['admin_id', 'admin_name', 'admin_email'])) {
-                $adminData = [
-                    'name' => $request->input('admin_name'),
-                    'email' => $request->input('admin_email'),
-                    'password' => $request->input('admin_password'),
-                    'id' => $request->input('admin_id'),
-                ];
+            // When administrator assignment is requested, School create + admin must be atomic:
+            // a failed assignment must not leave a partially provisioned School/account.
+            $createAndMaybeAdmin = function () use ($request, $adminRequested) {
+                // 1. Create core school + nested addresses[] via service (transactional).
+                //    First address is NOT auto-primary; is_primary comes from payload only.
+                $school = $this->schoolService->createSchool($request->validated());
 
-                $this->schoolService->assignAdmin($adminData, $school);
-            }
+                if ($adminRequested) {
+                    $adminData = [
+                        'account_id' => $request->input('account_id') ?? $request->input('admin_id'),
+                        'id' => $request->input('admin_id'),
+                        'admin_name' => $request->input('admin_name') ?? $request->input('administrator_name'),
+                        'first_name' => $request->input('admin_first_name') ?? $request->input('administrator_first_name'),
+                        'last_name' => $request->input('admin_last_name') ?? $request->input('administrator_last_name'),
+                        'admin_email' => $request->input('admin_email') ?? $request->input('administrator_email'),
+                        // Never fall back to School contact email for Person identity.
+                        'email' => $request->input('admin_email') ?? $request->input('administrator_email'),
+                        'admin_password' => $request->input('admin_password') ?? $request->input('administrator_password'),
+                        'password' => $request->input('admin_password') ?? $request->input('administrator_password'),
+                        'username' => $request->input('admin_username') ?? $request->input('administrator_username'),
+                    ];
+                    $this->schoolService->assignAdmin($adminData, $school);
+                }
+
+                return $school;
+            };
+
+            $school = $adminRequested
+                ? DB::transaction($createAndMaybeAdmin)
+                : $createAndMaybeAdmin();
 
             // 4. Handle media uploads (Spatie – single-file collections)
             $mediaCollections = ['logo', 'small_logo', 'favicon', 'dark_logo', 'dark_small_logo'];

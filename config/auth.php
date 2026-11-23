@@ -20,6 +20,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Login rate limit (application / Tenant scope)
+    |--------------------------------------------------------------------------
+    |
+    | Maximum failed login attempts per throttle key (login identifier + IP).
+    | Must not be derived from a client-selected School workspace.
+    |
+    */
+    'login_throttle_max' => (int) env('AUTH_LOGIN_THROTTLE_MAX', 5),
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Guards
     |--------------------------------------------------------------------------
     |

@@ -3,244 +3,249 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Notifications\ResetPasswordNotification;
+use App\Support\Auth\AuthenticationEmail;
 use App\Support\Settings\SettingsResolver;
 use App\Support\Settings\SettingsScope;
-use App\Models\User;
-use App\Notifications\ResetPasswordNotification;
 use Ichtrojan\Otp\Otp;
-use Illuminate\Http\Request;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
-use Spatie\Activitylog\Traits\LogsActivity;
 
 /**
- * Controller for handling password reset link requests in a multi-tenant school system.
+ * Initiate password recovery for an Authentication Account.
+ *
+ * Recovery is a Tenant/application authentication capability. It does not require
+ * School membership or an active School workspace. The Person primary email
+ * (profiles.email) is used only when the linked account has verified and enabled
+ * authentication email.
+ *
+ * Public responses are intentionally identical for eligible, unknown, ineligible,
+ * and ambiguous emails so callers cannot probe account eligibility. Only an
+ * eligible account receives an OTP; rate limiting and internal logs still apply.
  *
  * @group Authentication
  */
 class PasswordResetLinkController extends Controller
 {
+    private const GENERIC_STATUS = 'If an eligible account exists for this email, a reset code has been sent.';
+
+    private const MAX_ATTEMPTS = 5;
+
+    private const DECAY_MINUTES = 60;
+
     /**
-     * Display the password reset link request view.
+     * Display the password reset request form.
      *
-     * @param Request $request The HTTP request instance.
-     * @return InertiaResponse|JsonResponse
+     * School context is optional for branding/settings only; absence of a School
+     * does not block recovery initiation.
      */
-    public function create(Request $request)
+    public function create(Request $request): InertiaResponse|JsonResponse|RedirectResponse
     {
         try {
-            // Check school context
-            $school = GetSchoolModel();
-
-            // Check if password reset is allowed (Phase 1 settings capability)
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
-            $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            $allowPasswordReset = true;
+            if ($school) {
+                $scope = SettingsScope::school((string) $school->id);
+                $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
+            }
             if (! $allowPasswordReset) {
-                Log::info("Password reset disabled for school {$school->id} as per settings.");
                 return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
-
-            // Check SMS settings (legacy path — not in Phase 1 pilot)
-            $smsSettings = getMergedSettings('sms', $school);
-            $smsEnabled = $smsSettings['sms_enabled'] ?? false;
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'status' => session('status'),
                     'school_id' => $school?->id,
-                    'sms_enabled' => $smsEnabled,
+                    'sms_enabled' => false,
                 ], 200);
             }
 
             return Inertia::render('Auth/ForgotPassword', [
                 'status' => session('status'),
                 'school_id' => $school?->id,
-                'sms_enabled' => $smsEnabled,
+                'sms_enabled' => false,
             ]);
         } catch (\Exception $e) {
-            Log::error("Failed to display password reset link view: {$e->getMessage()}");
+            Log::error('Failed to display password reset link view: '.$e->getMessage());
+
             return $this->respondWithError($request, 'Failed to load password reset page.');
         }
     }
 
     /**
-     * Handle an incoming password reset link request.
+     * Request a recovery OTP without revealing whether the email is eligible.
      *
-     * Sends a password reset OTP via email or SMS based on tenant settings and user input.
+     * Control flow (throttled email path):
+     * 1. Validate input. Validation failures are not counted.
+     * 2. Reject enrollment-ID and SMS channels before the throttled workflow (not counted).
+     * 3. Build throttle key from normalized email + IP.
+     * 4. If already locked out, return the generic response without incrementing.
+     * 5. Count this accepted initiation attempt exactly once, then perform eligibility
+     *    resolution / OTP generation / notification. Infrastructure failures after the
+     *    count still leave the attempt recorded so callers cannot bypass the limit.
+     * 6. Always return the same public response shape for eligible and ineligible addresses.
      *
-     * @param Request $request The HTTP request instance.
-     * @return RedirectResponse|JsonResponse
-     *
-     * @throws ValidationException If validation fails.
-     * @throws \Exception If user lookup or OTP generation fails.
+     * @throws ValidationException
      */
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
-        // Established only once rate limiting applies; catch must not hit an unset key.
-        $throttleKey = null;
-
         try {
-            // Check school context
-            $school = GetSchoolModel();
-
-            // Check if password reset is allowed (Phase 1 settings capability)
+            $school = function_exists('GetSchoolModel') ? GetSchoolModel() : null;
             $resolver = app(SettingsResolver::class);
-            $scope = SettingsScope::school((string) $school->id);
-            $allowPasswordReset = $resolver->get('authentication.allow_password_reset', $scope);
+            $scope = null;
+            $allowPasswordReset = true;
+            if ($school) {
+                $scope = SettingsScope::school((string) $school->id);
+                $allowPasswordReset = (bool) $resolver->get('authentication.allow_password_reset', $scope);
+            }
             if (! $allowPasswordReset) {
-                throw new \Exception('Password reset is not allowed.');
+                return $this->respondWithError($request, 'Password reset is not allowed.', 403);
             }
 
-            // Legacy authentication bag for non-pilot keys only
-            $authSettings = getMergedSettings('authentication', $school);
-
-            // Check SMS settings (legacy path — not in Phase 1 pilot)
-            $smsSettings = getMergedSettings('sms', $school);
-            $smsEnabled = $smsSettings['sms_enabled'] ?? false;
-
-            // Validate request
             $request->validate([
                 'email' => ['required_without:enrollment_id', 'email', 'nullable'],
                 'enrollment_id' => ['required_without:email', 'string', 'nullable'],
-                'phone_number' => ['required_if:delivery_method,sms', 'string', 'nullable'],
-                'delivery_method' => ['required', 'string', 'in:email,sms'],
-                'school_id' => ['required', 'exists:schools,id'],
+                'delivery_method' => ['nullable', 'string', 'in:email'],
             ], [
                 'email.required_without' => 'Email is required if enrollment ID is not provided.',
                 'enrollment_id.required_without' => 'Enrollment ID is required if email is not provided.',
-                'phone_number.required_if' => 'Phone number is required for SMS delivery.',
             ]);
 
-            // Check rate limiting (OTP lifetime is not a rate-limit lock duration)
-            $throttleKey = 'password-reset-link|' . ($request->email ?: $request->enrollment_id) . '|' . $request->ip();
-            $throttleMax = $authSettings['password_reset_max_attempts'] ?? 5;
-            // hasTooManyAttempts currently ignores lock minutes; keep a fixed default
-            // rather than coupling to authentication.reset_password_token_life.
-            $throttleLock = 60;
-            if ($this->hasTooManyAttempts($throttleKey, $throttleMax, $throttleLock)) {
-                throw new \Exception('Too many password reset link requests. Please try again later.');
-            }
-
-            // Find user
-            $user = null;
-            $targetEmail = $request->email;
+            // Pre-throttle channel rejections — not counted toward the email initiation limit.
             if ($request->filled('enrollment_id')) {
-                $user = User::where('enrollment_id', $request->enrollment_id)
-                    ->where('school_id', $school->id)
-                    ->first();
-                if ($user && $user->hasRole('student', $school?->id)) {
-                    $guardian = $user->student->guardians()->first();
-                    if (!$guardian) {
-                        throw new \Exception('No guardian found for this student.');
-                    }
-                    $targetEmail = $guardian->user->email;
-                } else {
-                    throw new \Exception('Invalid enrollment ID or user is not a student.');
+                Log::info('Password recovery rejected: enrollment_id path is not supported in this phase.');
+
+                return $this->genericInitiationResponse($request);
+            }
+
+            if ($request->input('delivery_method') === 'sms') {
+                Log::info('Password recovery rejected: SMS delivery is disabled.');
+
+                return $this->genericInitiationResponse($request);
+            }
+
+            $normalizedEmail = AuthenticationEmail::normalize($request->input('email'));
+            $emailHash = hash('sha256', $normalizedEmail);
+            $throttleKey = $this->initiationThrottleKey($normalizedEmail, $request->ip());
+
+            // Already locked: identical public response, no further counter growth.
+            if ($this->hasTooManyAttempts($throttleKey, self::MAX_ATTEMPTS)) {
+                Log::info('Password recovery initiation blocked by rate limit', [
+                    'email_hash' => $emailHash,
+                ]);
+
+                return $this->genericInitiationResponse($request);
+            }
+
+            // Accept this initiation into the throttled workflow — count once before work.
+            $this->incrementAttempts($throttleKey, self::DECAY_MINUTES);
+
+            try {
+                $user = AuthenticationEmail::resolveEligibleAccount($normalizedEmail);
+
+                if ($user === null) {
+                    Log::info('Password recovery initiation: no single eligible account', [
+                        'email_hash' => $emailHash,
+                    ]);
+
+                    return $this->genericInitiationResponse($request);
                 }
-            } else {
-                $user = User::where('email', $request->email)
-                    ->where('school_id', $school->id)
-                    ->first();
+
+                $otpLength = 6;
+                $otpValidityMinutes = 10;
+                if ($scope) {
+                    $otpValidityMinutes = (int) ($resolver->get('authentication.reset_password_token_life', $scope) ?: 10);
+                }
+
+                $otpInstance = app(Otp::class);
+                $otpResponse = $otpInstance->generate($normalizedEmail, 'numeric', $otpLength, $otpValidityMinutes);
+                $otpCode = is_object($otpResponse)
+                    ? (string) ($otpResponse->token ?? $otpResponse->otp ?? '')
+                    : (string) $otpResponse;
+
+                if ($otpCode === '') {
+                    Log::error('Password recovery OTP generation returned empty token', [
+                        'email_hash' => $emailHash,
+                    ]);
+
+                    return $this->genericInitiationResponse($request);
+                }
+
+                Notification::route('mail', $normalizedEmail)
+                    ->notify(new ResetPasswordNotification($otpCode, $user));
+
+                activity()
+                    ->performedOn($user)
+                    ->causedBy($user)
+                    ->withProperties([
+                        'school_id' => $school?->id,
+                        'delivery_method' => 'email',
+                        'email_hash' => $emailHash,
+                    ])
+                    ->log('Password reset link requested');
+            } catch (\Throwable $workError) {
+                // Attempt already counted; do not re-increment.
+                // Log class only — transport exceptions may embed recipient addresses in messages.
+                Log::error('Password recovery initiation work failed after attempt counted', [
+                    'email_hash' => $emailHash,
+                    'exception' => $workError::class,
+                ]);
             }
 
-            if (!$user) {
-                throw new \Exception('No user found with the provided details.');
-            }
-
-            // Check SMS delivery
-            if ($request->delivery_method === 'sms' && !$smsEnabled) {
-                throw new \Exception('SMS delivery is not enabled for this school.');
-            }
-
-            // Generate OTP (lifetime from Phase 1 settings capability only)
-            $otpInstance = app(Otp::class);
-            $otpLength = $authSettings['otp_length'] ?? 6;
-            $otpValidity = $resolver->get('authentication.reset_password_token_life', $scope);
-            $response = $otpInstance->generate($targetEmail, 'numeric', $otpLength, $otpValidity);
-
-            if (!$response->status) {
-                Log::error("Failed to generate OTP for email {$targetEmail}: {$response->message}");
-                throw new \Exception('Failed to generate OTP.');
-            }
-
-            // Send notification
-            $notification = new ResetPasswordNotification($response->otp, $user);
-            if ($request->delivery_method === 'sms' && $smsEnabled) {
-                Notification::route('sms', $request->phone_number)->notify($notification);
-            } else {
-                Notification::route('mail', $targetEmail)->notify($notification);
-            }
-
-            // Log activity
-            activity()
-                ->performedOn($user)
-                ->causedBy($user)
-                ->withProperties([
-                    'school_id' => $school->id,
-                    'delivery_method' => $request->delivery_method,
-                    'target_email' => $targetEmail,
-                ])
-                ->log('Password reset link requested');
-
-            // Increment rate limiter
-            $this->incrementAttempts($throttleKey);
-
-            if ($request->expectsJson()) {
-                return response()->json(['message' => 'Password reset link sent successfully.'], 200);
-            }
-
-            return redirect()->back()->with('status', 'Password reset link sent successfully.');
+            return $this->genericInitiationResponse($request);
         } catch (ValidationException $e) {
-            Log::warning("Password reset link validation failed: {$e->getMessage()}");
             throw $e;
         } catch (\Exception $e) {
-            Log::error("Password reset link request failed for email/enrollment {$request->email}/{$request->enrollment_id}: {$e->getMessage()}");
-            if ($throttleKey !== null) {
-                $this->incrementAttempts($throttleKey);
-            }
+            Log::error('Password reset link request failed before throttled workflow', [
+                'exception' => $e::class,
+            ]);
 
-            return $this->respondWithError($request, $e->getMessage());
+            return $this->genericInitiationResponse($request);
         }
     }
 
+
     /**
-     * Check if there are too many attempts.
-     *
-     * @param string $throttleKey The throttle key.
-     * @param int $maxAttempts Maximum allowed attempts.
-     * @param int $lockMinutes Lockout duration in minutes.
-     * @return bool
+     * Uniform client response for all initiation outcomes (except validation / hard policy denials).
      */
-    protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts, int $lockMinutes): bool
+    protected function genericInitiationResponse(Request $request): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['message' => self::GENERIC_STATUS], 200);
+        }
+
+        return redirect()->back()->with('status', self::GENERIC_STATUS);
+    }
+
+
+    /**
+     * Rate-limit key for recovery initiation.
+     *
+     * Uses a hash of the normalized email so the cache key itself does not store
+     * the raw address. IP remains plaintext for per-client isolation.
+     */
+    protected function initiationThrottleKey(string $normalizedEmail, string $ip): string
+    {
+        return 'password-reset-link|'.hash('sha256', $normalizedEmail).'|'.$ip;
+    }
+
+    protected function hasTooManyAttempts(string $throttleKey, int $maxAttempts): bool
     {
         return app('Illuminate\Cache\RateLimiter')->tooManyAttempts($throttleKey, $maxAttempts);
     }
 
-    /**
-     * Increment attempts for rate limiting.
-     *
-     * @param string $throttleKey The throttle key.
-     * @return void
-     */
-    protected function incrementAttempts(string $throttleKey): void
+    protected function incrementAttempts(string $throttleKey, int $decayMinutes = 60): void
     {
-        app('Illuminate\Cache\RateLimiter')->hit($throttleKey);
+        app('Illuminate\Cache\RateLimiter')->hit($throttleKey, $decayMinutes * 60);
     }
 
-    /**
-     * Respond with an error message for web or API requests.
-     *
-     * @param Request $request The HTTP request instance.
-     * @param string $message The error message.
-     * @param int $statusCode The HTTP status code.
-     * @return RedirectResponse|JsonResponse
-     */
     protected function respondWithError(Request $request, string $message, int $statusCode = 400): RedirectResponse|JsonResponse
     {
         if ($request->expectsJson()) {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\UserManagement;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Models\Profile;
+use App\Services\UserManagement\PersonService;
 use App\Services\UserManagement\UserAccountService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -99,7 +100,7 @@ class ProfileController extends Controller
             // 2. Build base query with eager loading of key relations
             $query = Profile::query()
                 ->with([
-                    'user' => fn($q) => $q->select('id', 'username', 'email', 'is_active'),
+                    'user' => fn($q) => $q->select('id', 'username', 'lifecycle', 'force_password_change'),
                     'students' => fn($q) => $q->select('id', 'profile_id', 'school_id', 'admission_number', 'status')
                         ->with('school:id,name'),
                     'staffPositions' => fn($q) => $q->select('id', 'profile_id', 'school_id', 'staff_id_number', 'status')
@@ -214,6 +215,48 @@ class ProfileController extends Controller
      * @param  Profile  $profile  The profile to display (route model binding)
      * @return \Inertia\Response
      */
+    /**
+     * Show form to create a Person independently of Student/Staff/Guardian capacity.
+     */
+    public function create(Request $request)
+    {
+        Gate::authorize('create', Profile::class);
+
+        return Inertia::render('Profiles/Create');
+    }
+
+    /**
+     * Persist an independent Person (Profile) without authentication account or role capacity.
+     */
+    public function store(Request $request, PersonService $people)
+    {
+        Gate::authorize('create', Profile::class);
+
+        $validated = $request->validate([
+            'title' => ['nullable', 'string', 'max:50'],
+            'first_name' => ['required', 'string', 'max:100'],
+            'middle_name' => ['nullable', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'gender' => ['nullable', 'string', 'max:50'],
+            'date_of_birth' => ['nullable', 'date'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $person = $people->create($validated);
+
+        activity()
+            ->performedOn($person)
+            ->causedBy($request->user())
+            ->log('Independent person created');
+
+        return redirect()
+            ->route('profiles.show', $person)
+            ->with('success', 'Person created successfully.');
+    }
+
+
     public function show(Profile $profile)
     {
         // 1. Authorization check via policy
@@ -226,9 +269,10 @@ class ProfileController extends Controller
                     $q->select([
                         'id',
                         'username',
-                        'email',
-                        'is_active',
-                        'must_change_password',
+                        'lifecycle',
+                        'force_password_change',
+                        'auth_email_enabled',
+                        'auth_email_verified_at',
                         'created_at',
                     ]);
                 },
@@ -412,7 +456,7 @@ class ProfileController extends Controller
             ]),
 
             // Pass avatar URL for preview
-            'avatar_url' => $profile->avatarUrl('medium'),
+            'avatar_url' => $profile->photo_url,
 
             // Authorization flags for frontend (hide/show buttons/features)
             'canUploadAvatar' => Gate::allows('uploadAvatar', $profile),
@@ -569,11 +613,11 @@ class ProfileController extends Controller
 
         try {
             // Clear existing avatar (single-file collection)
-            $profile->clearMediaCollection('avatar');
+            $profile->clearMediaCollection('photo');
 
             // Add the new uploaded file
             $profile->addMediaFromRequest('avatar')
-                ->toMediaCollection('avatar');
+                ->toMediaCollection('photo');
 
             return redirect()
                 ->back()
@@ -640,7 +684,7 @@ class ProfileController extends Controller
      * - Integrates with:
      *   - ProfilePolicy ('createLogin' ability)
      *   - UserAccountService (core login creation logic)
-     *   - Events: UserAccountCreated (welcome email, audit)
+     *   - Events: AuthenticationAccountCreated (domain; credentials delivered narrowly when applicable)
      *   - Inertia: redirect with success flash
      * - Used in: admin profile management, manual account setup
      *
@@ -683,14 +727,6 @@ class ProfileController extends Controller
                 'min:8',
                 'confirmed', // requires password_confirmation field
             ],
-            'roles' => [
-                'nullable',
-                'array',
-            ],
-            'roles.*' => [
-                'string',
-                'exists:roles,name',
-            ],
         ], [
             'username.regex' => 'Username may only contain letters, numbers, dots, underscores, and hyphens.',
             'password.min' => 'Password must be at least 8 characters.',
@@ -699,19 +735,22 @@ class ProfileController extends Controller
 
         try {
             // Delegate to reusable service
-            $service->createForProfile(
-                profile: $profile,
+            $account = $service->createForPerson(
+                person: $profile,
                 data: [
                     'username' => $validated['username'] ?? null,
                     'password' => $validated['password'] ?? null,
                 ],
                 options: [
-                    'roles' => $validated['roles'] ?? [],
-                    'autoGenerateUsername' => true,
-                    'mustChangePassword' => true,
-                    'sendWelcome' => true,
+                    'lifecycle' => ! empty($validated['password']) ? 'active' : 'provisioned',
+                    'force_password_change' => true,
+                    'auto_generate_username' => true,
+                    'send_notification' => true,
                 ]
             );
+
+            // Role assignment is not part of account provisioning.
+            // Assign roles through the Authorization / role-management domain only.
 
             return redirect()
                 ->route('profiles.show', $profile)
@@ -771,7 +810,7 @@ class ProfileController extends Controller
      * - Integrates with:
      *   - ProfilePolicy (authorization)
      *   - UserAccountService (core reset logic + event firing)
-     *   - Events: UserAccountCreated (welcome/reset notification)
+     *   - Events: AuthenticationAccountCreated / controlled credential delivery
      *   - Inertia: redirect with flash messages
      *
      * Security & Best Practices:
@@ -788,106 +827,40 @@ class ProfileController extends Controller
      */
     public function resetPassword(Request $request, Profile $profile, UserAccountService $service)
     {
-        // Authorize via policy (self-reset or admin force-reset)
         Gate::authorize('resetPassword', $profile);
 
-        // Early validation: must have linked User account
-        if (!$profile->user) {
+        if (! $profile->user) {
             throw ValidationException::withMessages([
-                'login' => 'This profile has no associated login account to reset.',
+                'profile' => 'This person has no authentication account.',
             ]);
         }
 
-        $isSelfReset = $request->user()->id === $profile->user_id;
+        $isSelf = auth()->id() === $profile->user_id;
 
-        try {
-            // Delegate reset to reusable service
-            $plainPassword = $service->resetPassword(
-                user: $profile->user,
-                notify: $request->boolean('notify', true)
-            );
-
-            // Admin force-reset: show new password once (with strong warning)
-            if (!$isSelfReset) {
-                return redirect()
-                    ->back()
-                    ->with('warning', "Password reset successful for {$profile->full_name}. New password (shown once): <strong>{$plainPassword}</strong><br><br><strong>Important:</strong> Share this securely and require immediate change on first login.")
-                    ->with('preserveScroll', true);
-            }
-
-            // Self-initiated reset: standard success message (link sent)
+        if ($isSelf) {
+            // Self-service must use the OTP password-recovery flow, not an undisclosed random password.
+            // Authenticated self-service uses the normal password update endpoint, not guest recovery.
             return redirect()
                 ->back()
-                ->with('success', 'Password reset link has been sent to your email. Please check your inbox (including spam/junk).')
-                ->with('preserveScroll', true);
-
-        } catch (ValidationException $e) {
-            // Re-throw validation errors for frontend
-            throw $e;
-        } catch (\Exception $e) {
-            // Log unexpected failures
-            Log::error('Profile password reset failed', [
-                'profile_id' => $profile->id,
-                'user_id' => auth()->id(),
-                'school_id' => GetSchoolModel()?->id,
-                'is_self' => $isSelfReset,
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return redirect()
-                ->back()
-                ->with('error', 'Failed to reset password. Please try again or contact support.')
-                ->with('preserveScroll', true);
+                ->with('status', 'Use the account password form to change your password while signed in.');
         }
+
+        // Administrator-initiated temporary credential reset.
+        $plain = $service->resetPassword($profile->user, null, true);
+
+        activity()
+            ->performedOn($profile->user)
+            ->causedBy(auth()->user())
+            ->withProperties(['profile_id' => $profile->id])
+            ->log('Administrator reset authentication password');
+
+        return redirect()
+            ->back()
+            ->with('success', 'A temporary password was generated and the account must change it on next login.')
+            ->with('temp_password', $plain);
     }
 
-    /**
-     * Soft-delete one or more profiles (bulk support).
-     *
-     * This method handles both single and bulk soft-deletion of profiles.
-     * It receives an array of profile IDs (via request input 'ids') to support
-     * bulk actions from the profiles index table.
-     *
-     * Important Architecture Notes:
-     *   - Only soft-deletes profiles (does not force-delete)
-     *   - Cascade behavior is handled in Profile model boot method
-     *     (roles like Student/Staff/Guardian are soft-deleted; User may be affected)
-     *   - No direct hard deletion here — forceDelete is a separate method
-     *   - Bulk mode: processes multiple IDs efficiently in one transaction
-     *   - Single mode: supports classic resource route (/{id}/delete)
-     *
-     * Features / Problems Solved:
-     * - Bulk delete support: accepts array of IDs (from DataTable bulk actions)
-     * - Atomic transaction: all deletes succeed or none do
-     * - Authorization: checks 'delete' permission on each profile individually
-     * - Performance: uses chunked delete to avoid memory issues on large bulks
-     * - Error handling: partial failures reported clearly, logs full context
-     * - User-friendly: success message shows count of deleted profiles
-     * - Security: prevents unauthorized bulk deletes via policy check per profile
-     * - Accessibility: redirect preserves filters/search state
-     * - Extensibility: easy to add pre-delete hooks (e.g. audit, notifications)
-     *
-     * Fits into User Management Module:
-     * - Main deletion endpoint for profiles (admin-only)
-     * - Called from:
-     *   - Profiles/Index.vue (bulk action button: "Delete Selected")
-     *   - Profiles/Show.vue (single delete button)
-     * - Integrates with:
-     *   - ProfilePolicy ('delete' ability)
-     *   - Inertia: redirect with flash message + preserved filters
-     *   - Model boot: cascades soft-delete to related roles/User
-     *
-     * Security & Best Practices:
-     * - Gate::authorize('delete', $profile) → per-profile check (not just global)
-     * - Uses chunk() for large bulks → avoids memory exhaustion
-     * - Transaction: rollback on any failure
-     * - No plain IDs in logs (only count & user context)
-     * - Redirect with success count → clear feedback
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\RedirectResponse
-     */
+
     public function destroy(Request $request)
     {
         // Expect 'ids' as array (bulk) or single ID as route param fallback
@@ -906,7 +879,7 @@ class ProfileController extends Controller
         }
 
         // Cast to array and sanitize (prevent injection)
-        $ids = array_filter(array_map('intval', (array) $ids));
+        $ids = array_values(array_filter((array) $ids, fn ($id) => is_string($id) && \Illuminate\Support\Str::isUuid($id)));
 
         if (empty($ids)) {
             return redirect()
@@ -1032,7 +1005,7 @@ class ProfileController extends Controller
         }
 
         // Cast to array and sanitize (prevent injection)
-        $ids = array_filter(array_map('intval', (array) $ids));
+        $ids = array_values(array_filter((array) $ids, fn ($id) => is_string($id) && \Illuminate\Support\Str::isUuid($id)));
 
         if (empty($ids)) {
             return redirect()
@@ -1146,6 +1119,57 @@ class ProfileController extends Controller
      */
     public function forceDelete(Request $request)
     {
+        // Per-instance authorization inside the transaction loop
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['uuid', 'exists:profiles,id'],
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
+        ]);
+
+        $reason = $validated['reason'];
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $reason) {
+            foreach ($validated['ids'] as $id) {
+                /** @var \App\Models\Profile $person */
+                $person = \App\Models\Profile::withTrashed()->with(['user', 'students', 'staffPositions', 'guardians'])->findOrFail($id);
+
+                Gate::authorize('forceDelete', $person);
+
+                // Specialized profiles
+                $person->students()->each(function ($s) {
+                    $s->forceDelete();
+                });
+                $person->staffPositions()->each(function ($s) {
+                    $s->forceDelete();
+                });
+                $person->guardians()->each(function ($g) {
+                    $g->forceDelete();
+                });
+
+                $account = $person->user;
+                $person->forceDelete();
+
+                if ($account) {
+                    $account->delete();
+                }
+
+                activity()
+                    ->causedBy(auth()->user())
+                    ->withProperties([
+                        'profile_id' => $id,
+                        'reason' => $reason,
+                        'account_id' => $account?->id,
+                    ])
+                    ->log('Person force-deleted with linked account and specialized profiles');
+            }
+        });
+
+        return redirect()->back()->with('success', 'Selected people permanently deleted.');
+    }
+
+    public function forceDelete_disabled_legacy(Request $request)
+    {
         // Expect 'ids' as array (bulk) or single ID as route param fallback
         $ids = $request->input('ids', []);
 
@@ -1162,7 +1186,7 @@ class ProfileController extends Controller
         }
 
         // Sanitize IDs (force integers)
-        $ids = array_filter(array_map('intval', (array) $ids));
+        $ids = array_values(array_filter((array) $ids, fn ($id) => is_string($id) && \Illuminate\Support\Str::isUuid($id)));
 
         if (empty($ids)) {
             return redirect()
@@ -1277,6 +1301,12 @@ class ProfileController extends Controller
      * @return \Illuminate\Http\RedirectResponse
      */
     public function merge(Request $request, Profile $profile)
+    {
+        // Phase 1: defective merge disabled. Duplicate resolution is deferred to Phase 7.
+        abort(410, 'Profile merge is disabled. Identity resolution belongs to a later phase.');
+    }
+
+    public function merge_disabled_legacy(Request $request, Profile $profile)
     {
         // Authorize merge on the source profile
         Gate::authorize('merge', $profile);
@@ -1409,6 +1439,12 @@ class ProfileController extends Controller
      */
     public function toggleStatus(Request $request)
     {
+        // Phase 1: account suspension/restriction is out of scope. is_active removed.
+        abort(410, 'Account status toggle is disabled until the restrictions capability exists.');
+    }
+
+    public function toggleStatus_disabled_legacy(Request $request)
+    {
         // Expect 'ids' as array (bulk) or single ID as route param fallback
         $ids = $request->input('ids', []);
 
@@ -1425,7 +1461,7 @@ class ProfileController extends Controller
         }
 
         // Sanitize IDs
-        $ids = array_filter(array_map('intval', (array) $ids));
+        $ids = array_values(array_filter((array) $ids, fn ($id) => is_string($id) && \Illuminate\Support\Str::isUuid($id)));
 
         if (empty($ids)) {
             return redirect()

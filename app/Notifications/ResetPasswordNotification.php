@@ -1,53 +1,45 @@
 <?php
+
 namespace App\Notifications;
 
-use Illuminate\Notifications\Notification;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification;
 
+/**
+ * OTP password-recovery notification delivered on-demand to the Person primary email.
+ * Must not trust a caller-supplied SMS destination.
+ */
 class ResetPasswordNotification extends Notification
 {
-    public $token;
-    public $user;
+    public function __construct(
+        public string $token,
+        public $user,
+    ) {}
 
-    public function __construct(string $token, $user)
+    public function via($notifiable): array
     {
-        $this->token = $token;
-        $this->user = $user;
+        return ['mail'];
     }
 
-    public function via($notifiable)
+    public function toMail($notifiable): MailMessage
     {
-        return [request()->delivery_method === 'sms' ? 'sms' : 'mail'];
-    }
+        $email = is_object($notifiable) && isset($notifiable->email)
+            ? $notifiable->email
+            : (is_object($notifiable) && isset($notifiable->routes['mail']) ? $notifiable->routes['mail'] : null);
 
-    public function toMail($notifiable)
-    {
-        $school = GetSchoolModel();
-        $url = route('password.reset', [
+        $url = route('password.reset', array_filter([
             'token' => $this->token,
-            'email' => $notifiable->email,
-            'school_id' => $school->id,
-        ]);
+            'email' => $email,
+        ]));
+
+        $username = $this->user->username ?? $this->user->name ?? 'user';
 
         return (new MailMessage)
             ->subject('Password Reset Request')
             ->line('You are receiving this email because we received a password reset request.')
-            ->line('User: ' . $this->user->name)
-            ->line('OTP: ' . $this->token)
+            ->line('Username: '.$username)
+            ->line('OTP: '.$this->token)
             ->action('Reset Password', $url)
-            ->line('This OTP is valid for ' . (getMergedSettings('authentication', $school)['reset_password_token_life'] ?? 60) . ' minutes.')
             ->line('If you did not request a password reset, no further action is required.');
-    }
-
-    public function toSms($notifiable)
-    {
-        $school = GetSchoolModel();
-        $url = route('password.reset', [
-            'token' => $this->token,
-            'email' => $notifiable->email,
-            'school_id' => $school->id,
-        ]);
-
-        return "Password reset request for {$this->user->name}. OTP: {$this->token}. Use at {$url}. Valid for " . (getMergedSettings('authentication', $school)['reset_password_token_life'] ?? 60) . " minutes.";
     }
 }

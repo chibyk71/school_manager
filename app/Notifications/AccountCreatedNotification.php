@@ -4,53 +4,39 @@ namespace App\Notifications;
 
 use App\Models\User;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
+/**
+ * Narrow credential-delivery notification for newly provisioned accounts.
+ * Not a general domain event — plaintext is only used to compose this mail.
+ */
 class AccountCreatedNotification extends Notification
 {
     use Queueable;
 
-    /**
-     * Create a new notification instance.
-     */
-    public function __construct(User $user)
-    {
-        $this->user = $user;
-        // TODO : add more details if needed
-    }
+    public function __construct(
+        public User $user,
+        public ?string $temporaryPassword = null,
+    ) {}
 
-    /**
-     * Get the notification's delivery channels.
-     *
-     * @return array<int, string>
-     */
     public function via(object $notifiable): array
     {
         return ['mail'];
     }
 
-    /**
-     * Get the mail representation of the notification.
-     */
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-                    ->line('The introduction to the notification.')
-                    ->action('Notification Action', url('/'))
-                    ->line('Thank you for using our application!');
-    }
+        $mail = (new MailMessage)
+            ->subject('Your school manager account')
+            ->line('An authentication account was created for you.')
+            ->line('Username: '.$this->user->username);
 
-    /**
-     * Get the array representation of the notification.
-     *
-     * @return array<string, mixed>
-     */
-    public function toArray(object $notifiable): array
-    {
-        return [
-            //
-        ];
+        if (filled($this->temporaryPassword)) {
+            $mail->line('Temporary password: '.$this->temporaryPassword)
+                ->line('You will be required to change this password after signing in.');
+        }
+
+        return $mail->action('Sign in', url('/login'));
     }
 }

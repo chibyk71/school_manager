@@ -83,6 +83,10 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse|JsonResponse
     {
+        // Phase 1: public registration creates orphan accounts without Person.
+        // Disabled until an approved Person + Authentication Account onboarding workflow exists.
+        abort(403, 'Public registration is disabled.');
+
         try {
             $school = GetSchoolModel(); // null → system admin registration
             $auth   = getMergedSettings('authentication', $school);
